@@ -1,0 +1,208 @@
+use cooper/cooper
+use cooper/event
+use cooper/surface
+use go:github.com/rockorager/go-uucode as uucode
+use go:go.rockorager.dev/vaxis
+use go:strings
+use go:unicode
+
+// Controls whether bounded text clips hard lines or wraps at Unicode line-break opportunities.
+enum WrapMode {
+  none,
+  word,
+}
+
+struct Text {
+  content: Str,
+  wrap_mode: WrapMode,
+}
+
+private struct SegmentParts {
+  word: Str,
+  trailing: Str,
+}
+
+fn new(content: Str, wrap_mode: WrapMode?) Text {
+  Text{content: content, wrap_mode: wrap_mode.or(WrapMode::word)}
+}
+
+private fn measured_width(ctx: surface::RenderContext, content: Str) Int {
+  mut width = 0
+  for character in vaxis::Characters(content) {
+    width = width + ctx.measure_text(character.Grapheme)
+  }
+  width
+}
+
+private fn split_trailing_space(segment: Str) SegmentParts {
+  let word = strings::TrimRightFunc(segment, unicode::IsSpace)
+  SegmentParts{word: word, trailing: segment.slice(start: word.size()).or("")}
+}
+
+private fn is_hard_break(value: Int32) Bool {
+  let kind = uucode::LineBreak(value)
+  kind == uucode::LineBreakBK or kind == uucode::LineBreakCR or kind == uucode::LineBreakLF or kind == uucode::LineBreakNL
+}
+
+private fn strip_hard_breaks(segment: Str) Str {
+  strings::TrimRightFunc(segment, is_hard_break)
+}
+
+private fn has_line_capacity(count: Int, maximum: Int?) Bool {
+  match maximum {
+    limit => count < limit,
+    _ => true,
+  }
+}
+
+private fn hard_lines(content: Str, max_lines: Int?) [Str] {
+  let lines = mut List::new<Str>()
+  let iterator = mut uucode::NewLineIterator(content)
+  mut current = ""
+  mut scanning = has_line_capacity(lines.size(), max_lines)
+
+  while scanning {
+    match iterator.Next() {
+      line_segment => {
+        let segment = content.slice(
+          start: line_segment.Start,
+          end: line_segment.End,
+        ).expect("uucode line segment bounds")
+        if line_segment.Break == uucode::LineMustBreak {
+          current = "{current}{strip_hard_breaks(segment)}"
+          lines.push(current)
+          current = ""
+          scanning = has_line_capacity(lines.size(), max_lines)
+        } else {
+          current = "{current}{segment}"
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+
+  lines.@
+}
+
+private fn word_lines(ctx: surface::RenderContext, content: Str, width: Int, max_lines: Int?) [Str] {
+  let lines = mut List::new<Str>()
+  let iterator = mut uucode::NewLineIterator(content)
+  mut current = ""
+  mut current_width = 0
+  mut scanning = width > 0 and has_line_capacity(lines.size(), max_lines)
+
+  while scanning {
+    match iterator.Next() {
+      line_segment => {
+        let segment = content.slice(
+          start: line_segment.Start,
+          end: line_segment.End,
+        ).expect("uucode line segment bounds")
+        let parts = split_trailing_space(segment)
+        let word_width = measured_width(ctx, parts.word)
+
+        if word_width > width {
+          let graphemes = mut uucode::NewGraphemeIterator(parts.word)
+          mut wrapping = true
+          while wrapping and scanning {
+            match graphemes.Next() {
+              grapheme => {
+                let value = parts.word.slice(
+                  start: grapheme.Start,
+                  end: grapheme.End,
+                ).expect("uucode grapheme bounds")
+                let grapheme_width = ctx.measure_text(value)
+                if current_width > 0 and grapheme_width > width - current_width {
+                  lines.push(current)
+                  current = ""
+                  current_width = 0
+                  scanning = has_line_capacity(lines.size(), max_lines)
+                }
+                if scanning {
+                  current = "{current}{value}"
+                  current_width = current_width + grapheme_width
+                }
+              },
+              _ => { wrapping = false },
+            }
+          }
+        } else {
+          if current_width > 0 and word_width > width - current_width {
+            lines.push(current)
+            current = ""
+            current_width = 0
+            scanning = has_line_capacity(lines.size(), max_lines)
+          }
+          if scanning {
+            current = "{current}{parts.word}"
+            current_width = current_width + word_width
+          }
+        }
+
+        if scanning {
+          if line_segment.Break == uucode::LineMustBreak {
+            let trailing = strip_hard_breaks(parts.trailing)
+            current = "{current}{trailing}"
+            lines.push(current)
+            current = ""
+            current_width = 0
+            scanning = has_line_capacity(lines.size(), max_lines)
+          } else {
+            let trailing_width = measured_width(ctx, parts.trailing)
+            if trailing_width > width - current_width {
+              lines.push(current)
+              current = ""
+              current_width = 0
+              scanning = has_line_capacity(lines.size(), max_lines)
+            } else {
+              current = "{current}{parts.trailing}"
+              current_width = current_width + trailing_width
+            }
+          }
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+
+  lines.@
+}
+
+private fn layout_lines(ctx: surface::RenderContext, content: Str, mode: WrapMode) [Str] {
+  match mode {
+    WrapMode::none => hard_lines(content, ctx.constraints.max_height),
+    WrapMode::word => {
+      match ctx.constraints.max_width {
+        width => word_lines(ctx, content, width, ctx.constraints.max_height),
+        _ => hard_lines(content, ctx.constraints.max_height),
+      }
+    },
+  }
+}
+
+impl cooper::Widget for Text {
+  fn render(ctx: surface::RenderContext) surface::Surface {
+    let lines = layout_lines(ctx, self.content, self.wrap_mode)
+    mut intrinsic_width = 0
+    for line in lines {
+      let width = measured_width(ctx, line)
+      if width > intrinsic_width {
+        intrinsic_width = width
+      }
+    }
+
+    let width = ctx.constraints.constrain_width(intrinsic_width)
+    let height = ctx.constraints.constrain_height(lines.size())
+    let rendered = mut surface::blank(width, height)
+    for line, row in lines {
+      if row < height {
+        rendered.write(ctx, 0, row, line)
+      }
+    }
+    rendered.@
+  }
+
+  fn event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
+    event::EventResult::ignored
+  }
+}

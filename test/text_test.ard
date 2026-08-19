@@ -1,0 +1,341 @@
+use ard/testing
+
+use cooper/event
+use cooper/surface
+use cooper/text
+use go:go.rockorager.dev/vaxis
+use go:strings
+
+private struct WrapCase {
+  name: Str,
+  content: Str,
+  width: Int,
+  expected: [Str],
+}
+
+private fn rendered_line(rendered: surface::Surface, row: Int) Str {
+  mut line = ""
+  mut column = 0
+  while column < rendered.size.width {
+    match rendered.cell(column, row) {
+      cell => {
+        if cell.width > 0 {
+          line = "{line}{cell.grapheme}"
+        }
+      },
+      _ => (),
+    }
+    column =+ 1
+  }
+  strings::TrimRight(line, " ")
+}
+
+private fn assert_rendered_lines(rendered: surface::Surface, expected: [Str], name: Str) Void!Str {
+  try testing::assert(
+    rendered.size.height == expected.size(),
+    "Expected {name} to render {expected.size()} lines, got {rendered.size.height}",
+  )
+  for line, row in expected {
+    try testing::assert(
+      rendered_line(rendered, row) == line,
+      "Expected {name} row {row} to equal '{line}', got '{rendered_line(rendered, row)}'",
+    )
+  }
+  Result::ok(())
+}
+
+test fn text_uses_its_intrinsic_size() Void!Str {
+  let label = text::new(content: "hello")
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 3)},
+  )
+
+  try testing::assert(rendered.size.width == 5, "Expected text to use its measured width")
+  try testing::assert(rendered.size.height == 1, "Expected text to use one row")
+  testing::assert(
+    rendered.cell(4, 0).expect("last text cell").grapheme == "o",
+    "Expected the surface to contain the text",
+  )
+}
+
+test fn text_respects_minimum_constraints() Void!Str {
+  let label = text::new(content: "hi")
+  let rendered = label.render(
+    surface::RenderContext{
+      constraints: surface::Constraints{
+        min_width: 4,
+        max_width: 10,
+        min_height: 2,
+        max_height: 3,
+      },
+    },
+  )
+
+  try testing::assert(rendered.size.width == 4, "Expected minimum width padding")
+  try testing::assert(rendered.size.height == 2, "Expected minimum height padding")
+  testing::assert(
+    rendered.cell(3, 1).expect("padded cell").grapheme == " ",
+    "Expected unconstrained space to remain blank",
+  )
+}
+
+test fn text_clips_at_the_maximum_width() Void!Str {
+  let label = text::new(content: "hello", wrap_mode: text::WrapMode::none)
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 3, max_height: 1)},
+  )
+
+  try testing::assert(rendered.size.width == 3, "Expected text to respect maximum width")
+  testing::assert(
+    rendered.cell(2, 0).expect("last visible cell").grapheme == "l",
+    "Expected text to be clipped to the surface",
+  )
+}
+
+test fn text_does_not_render_a_partial_wide_grapheme() Void!Str {
+  let label = text::new(content: "a🙂", wrap_mode: text::WrapMode::none)
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 2, max_height: 1)},
+  )
+
+  try testing::assert(
+    rendered.cell(0, 0).expect("first cell").grapheme == "a",
+    "Expected the fitting prefix to render",
+  )
+  testing::assert(
+    rendered.cell(1, 0).expect("clipped wide cell").grapheme == " ",
+    "Expected a non-fitting wide grapheme to remain blank",
+  )
+}
+
+test fn text_uses_the_frame_width_measurer() Void!Str {
+  let label = text::new(content: "🙂")
+  let rendered = label.render(
+    surface::RenderContext{
+      constraints: surface::bounded(max_width: 4, max_height: 1),
+      width_measurer: fn(value: Str) Int {
+        match value == "🙂" {
+          true => 3,
+          false => surface::text_width(value),
+        }
+      },
+    },
+  )
+
+  try testing::assert(rendered.size.width == 3, "Expected terminal-aware intrinsic width")
+  testing::assert(
+    rendered.cell(2, 0).expect("wide continuation cell").width == 0,
+    "Expected rendering to use the same width measurement",
+  )
+}
+
+test fn word_wrapping_matches_vxfw_behavior() Void!Str {
+  let cases = [
+    WrapCase{
+      name: "no wrap, perfect width",
+      content: "foo",
+      width: 3,
+      expected: ["foo"],
+    },
+    WrapCase{
+      name: "no wrap, large",
+      content: "foo",
+      width: 4,
+      expected: ["foo"],
+    },
+    WrapCase{
+      name: "simple",
+      content: "foo bar",
+      width: 3,
+      expected: ["foo", "bar"],
+    },
+    WrapCase{
+      name: "hard break",
+      content: "foo\nbar",
+      width: 3,
+      expected: ["foo", "bar"],
+    },
+    WrapCase{
+      name: "lots of space",
+      content: "foo         bar",
+      width: 3,
+      expected: ["foo", "bar"],
+    },
+    WrapCase{
+      name: "hard break and leading space",
+      content: " foo\n bar",
+      width: 4,
+      expected: [" foo", " bar"],
+    },
+    WrapCase{
+      name: "long word",
+      content: "longwordwithnobreaks",
+      width: 4,
+      expected: ["long", "word", "with", "nobr", "eaks"],
+    },
+    WrapCase{
+      name: "no soft wrap needed",
+      content: "each line\nfits",
+      width: 10,
+      expected: ["each line", "fits"],
+    },
+  ]
+
+  for case in cases {
+    let label = text::new(content: case.content)
+    let rendered = label.render(
+      surface::RenderContext{constraints: surface::bounded(max_width: case.width, max_height: 20)},
+    )
+    try assert_rendered_lines(rendered, case.expected, case.name)
+  }
+  Result::ok(())
+}
+
+test fn text_without_wrapping_preserves_hard_lines() Void!Str {
+  let label = text::new(content: "hello\nworld", wrap_mode: text::WrapMode::none)
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 3, max_height: 3)},
+  )
+
+  assert_rendered_lines(rendered, ["hel", "wor"], "non-wrapped hard lines")
+}
+
+test fn unbounded_text_preserves_hard_lines_without_soft_wrapping() Void!Str {
+  let label = text::new(content: "foo bar\nbaz")
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::Constraints{min_width: 0, min_height: 0}},
+  )
+
+  try testing::assert(rendered.size.width == 7, "Expected the widest hard line")
+  assert_rendered_lines(rendered, ["foo bar", "baz"], "unbounded text")
+}
+
+test fn wrapping_respects_maximum_height() Void!Str {
+  let label = text::new(content: "foo bar baz")
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 3, max_height: 2)},
+  )
+
+  assert_rendered_lines(rendered, ["foo", "bar"], "height-constrained wrapping")
+}
+
+test fn hard_lines_remove_complete_crlf_breaks() Void!Str {
+  let label = text::new(content: "foo\r\nbar")
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 3, max_height: 3)},
+  )
+
+  assert_rendered_lines(rendered, ["foo", "bar"], "CRLF hard lines")
+}
+
+test fn oversized_grapheme_makes_wrapping_progress() Void!Str {
+  let label = text::new(content: "🙂a")
+  let rendered = label.render(
+    surface::RenderContext{
+      constraints: surface::bounded(max_width: 2, max_height: 2),
+      width_measurer: fn(value: Str) Int {
+        match value == "🙂" {
+          true => 3,
+          false => surface::text_width(value),
+        }
+      },
+    },
+  )
+
+  assert_rendered_lines(rendered, ["", "a"], "oversized grapheme wrapping")
+}
+
+test fn maximum_height_excludes_hidden_lines_from_width() Void!Str {
+  let label = text::new(content: "a\nlongline", wrap_mode: text::WrapMode::none)
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 20, max_height: 1)},
+  )
+
+  try testing::assert(rendered.size.width == 1, "Expected width from the visible line only")
+  assert_rendered_lines(rendered, ["a"], "height-limited intrinsic width")
+}
+
+test fn oversized_grapheme_consumes_its_hard_break() Void!Str {
+  let label = text::new(content: "🙂\na")
+  let rendered = label.render(
+    surface::RenderContext{
+      constraints: surface::bounded(max_width: 2, max_height: 3),
+      width_measurer: fn(value: Str) Int {
+        match value == "🙂" {
+          true => 3,
+          false => surface::text_width(value),
+        }
+      },
+    },
+  )
+
+  assert_rendered_lines(rendered, ["", "a"], "oversized grapheme before a hard break")
+}
+
+test fn hard_lines_preserve_leading_and_consecutive_breaks() Void!Str {
+  let label = text::new(content: "\nfoo\n\nbar\n")
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 4, max_height: 10)},
+  )
+
+  assert_rendered_lines(rendered, ["", "foo", "", "bar"], "consecutive hard breaks")
+}
+
+test fn wrapping_uses_unicode_line_break_opportunities() Void!Str {
+  let label = text::new(content: "日本語")
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 2, max_height: 3)},
+  )
+
+  assert_rendered_lines(rendered, ["日", "本", "語"], "CJK wrapping")
+}
+
+test fn wrapping_does_not_split_combining_or_zwj_graphemes() Void!Str {
+  let combining = text::new(content: "éé")
+  let combining_rendered = combining.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 2)},
+  )
+  try assert_rendered_lines(combining_rendered, ["é", "é"], "combining grapheme wrapping")
+
+  let emoji = text::new(content: "👩\u200d💻a")
+  let emoji_rendered = emoji.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 2, max_height: 2)},
+  )
+  assert_rendered_lines(emoji_rendered, ["👩\u200d💻", "a"], "ZWJ grapheme wrapping")
+}
+
+test fn text_preserves_trailing_spaces_in_intrinsic_width() Void!Str {
+  let label = text::new(content: "a  ")
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 4, max_height: 1)},
+  )
+
+  try testing::assert(rendered.size.width == 3, "Expected trailing spaces in measured width")
+  try testing::assert(
+    rendered.cell(1, 0).expect("first trailing space").grapheme == " ",
+    "Expected the first trailing space",
+  )
+  testing::assert(
+    rendered.cell(2, 0).expect("second trailing space").grapheme == " ",
+    "Expected the second trailing space",
+  )
+}
+
+test fn empty_text_has_no_intrinsic_rows() Void!Str {
+  let label = text::new(content: "")
+  let rendered = label.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 4, max_height: 2)},
+  )
+
+  try testing::assert(rendered.size.width == 0, "Expected empty text to have no width")
+  testing::assert(rendered.size.height == 0, "Expected empty text to have no rows")
+}
+
+test fn text_ignores_events() Void!Str {
+  let label = mut text::new(content: "status")
+  let ctx = mut event::new_context()
+
+  let result = label.event(ctx, vaxis::Key{Text: "x"})
+
+  testing::assert(result == event::EventResult::ignored, "Expected stateless text to ignore events")
+}

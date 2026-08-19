@@ -19,7 +19,7 @@ private fn cursor_style(shape: surface::CursorShape) raw::CursorStyle {
 
 private fn paint(root: mut Widget, app: mut raw::Vaxis) {
   let window = app.Window()
-  let rendered = root.render(
+  let rendered_tree = root.render(
     surface::RenderContext{
       constraints: surface::bounded(max_width: window.Width, max_height: window.Height),
       width_measurer: surface::WidthMeasurer{measure: fn(text: Str) Int {
@@ -27,6 +27,7 @@ private fn paint(root: mut Widget, app: mut raw::Vaxis) {
       }},
     },
   )
+  let rendered = surface::flatten(rendered_tree)
 
   window.Clear()
   app.HideCursor()
@@ -35,7 +36,7 @@ private fn paint(root: mut Widget, app: mut raw::Vaxis) {
     for cell, index in rendered.cells {
       let x = index % rendered.size.width
       let y = index / rendered.size.width
-      if x < window.Width and y < rendered.size.height and y < window.Height {
+      if cell.width > 0 and x < window.Width and cell.width <= window.Width - x and y < rendered.size.height and y < window.Height {
         window.SetCell(
           x,
           y,

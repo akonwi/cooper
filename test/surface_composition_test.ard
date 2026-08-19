@@ -1,0 +1,153 @@
+use ard/testing
+
+use cooper/surface
+
+fn render_context(width: Int, height: Int) surface::RenderContext {
+  surface::RenderContext{constraints: surface::bounded(max_width: width, max_height: height)}
+}
+
+test fn positioned_child_cells_are_composited() Void!Str {
+  let ctx = render_context(5, 3)
+  let root = mut surface::blank(5, 3)
+  let child = mut surface::blank(3, 1)
+  child.write(ctx, 0, 0, "cat")
+  root.add_child(1, 1, child.@)
+
+  let flattened = surface::flatten(root.@)
+
+  try testing::assert(
+    flattened.cell(1, 1).expect("child start").grapheme == "c",
+    "Expected child cells at their translated origin",
+  )
+  testing::assert(
+    flattened.cell(3, 1).expect("child end").grapheme == "t",
+    "Expected all child cells to be composited",
+  )
+}
+
+test fn children_are_clipped_to_parent_bounds() Void!Str {
+  let ctx = render_context(5, 1)
+  let root = mut surface::blank(5, 1)
+  let child = mut surface::blank(4, 1)
+  child.write(ctx, 0, 0, "abcd")
+  root.add_child(3, 0, child.@)
+
+  let flattened = surface::flatten(root.@)
+
+  try testing::assert(
+    flattened.cell(3, 0).expect("first visible child cell").grapheme == "a",
+    "Expected the visible child prefix",
+  )
+  try testing::assert(
+    flattened.cell(4, 0).expect("last visible child cell").grapheme == "b",
+    "Expected clipping at the parent edge",
+  )
+  testing::assert(flattened.cells.size() == 5, "Expected clipping not to grow the parent buffer")
+}
+
+test fn partially_clipped_wide_graphemes_clear_their_visible_area() Void!Str {
+  let ctx = render_context(2, 1)
+  let root = mut surface::blank(2, 1)
+  root.write(ctx, 0, 0, "ab")
+  let child = mut surface::blank(2, 1)
+  child.write(ctx, 0, 0, "🙂")
+  root.add_child(-1, 0, child.@)
+
+  let flattened = surface::flatten(root.@)
+
+  try testing::assert(
+    flattened.cell(0, 0).expect("visible clipped area").grapheme == " ",
+    "Expected the visible half of a clipped wide grapheme to clear lower content",
+  )
+  testing::assert(
+    flattened.cell(1, 0).expect("uncovered parent cell").grapheme == "b",
+    "Expected clipping not to clear unrelated parent cells",
+  )
+}
+
+test fn descendants_are_clipped_by_each_ancestor() Void!Str {
+  let ctx = render_context(4, 1)
+  let root = mut surface::blank(4, 1)
+  let parent = mut surface::blank(1, 1)
+  let child = mut surface::blank(3, 1)
+  child.write(ctx, 0, 0, "abc")
+  parent.add_child(0, 0, child.@)
+  root.add_child(1, 0, parent.@)
+
+  let flattened = surface::flatten(root.@)
+
+  try testing::assert(
+    flattened.cell(1, 0).expect("visible descendant cell").grapheme == "a",
+    "Expected descendant content inside the parent clip",
+  )
+  testing::assert(
+    flattened.cell(2, 0).expect("clipped descendant cell").grapheme == " ",
+    "Expected the immediate parent to clip its descendant",
+  )
+}
+
+test fn nested_child_cursor_is_translated_to_root_coordinates() Void!Str {
+  let root = mut surface::blank(8, 4)
+  let child = mut surface::blank(4, 2)
+  let grandchild = mut surface::blank(2, 1)
+  grandchild.show_cursor(surface::Point{x: 1, y: 0}, surface::CursorShape::beam)
+  child.add_child(1, 1, grandchild.@)
+  root.add_child(2, 1, child.@)
+
+  let flattened = surface::flatten(root.@)
+  let cursor = flattened.cursor.expect("nested cursor")
+
+  try testing::assert(cursor.point.x == 4, "Expected nested cursor x translation")
+  testing::assert(cursor.point.y == 2, "Expected nested cursor y translation")
+}
+
+test fn cursor_is_hidden_when_a_later_child_turns_its_cell_into_a_continuation() Void!Str {
+  let ctx = render_context(2, 1)
+  let root = mut surface::blank(2, 1)
+  root.show_cursor(surface::Point{x: 1, y: 0}, surface::CursorShape::beam)
+  let child = mut surface::blank(2, 1)
+  child.write(ctx, 0, 0, "🙂")
+  root.add_child(0, 0, child.@)
+
+  let flattened = surface::flatten(root.@)
+
+  testing::assert(
+    not flattened.cursor.is_some(),
+    "Expected composition not to place a cursor on a continuation cell",
+  )
+}
+
+test fn add_child_snapshots_the_child_surface() Void!Str {
+  let ctx = render_context(1, 1)
+  let root = mut surface::blank(1, 1)
+  let child = mut surface::blank(1, 1)
+  child.write(ctx, 0, 0, "a")
+  root.add_child(0, 0, child.@)
+  child.write(ctx, 0, 0, "b")
+
+  let flattened = surface::flatten(root.@)
+
+  testing::assert(
+    flattened.cell(0, 0).expect("snapshotted child cell").grapheme == "a",
+    "Expected attached child surfaces not to change through retained aliases",
+  )
+}
+
+test fn later_children_clear_overlapped_wide_graphemes() Void!Str {
+  let ctx = render_context(2, 1)
+  let root = mut surface::blank(2, 1)
+  root.write(ctx, 0, 0, "🙂")
+  let child = surface::blank(1, 1)
+  root.add_child(1, 0, child)
+
+  let flattened = surface::flatten(root.@)
+
+  try testing::assert(
+    flattened.cell(0, 0).expect("cleared wide origin").grapheme == " ",
+    "Expected an overlap on a continuation cell to clear the wide origin",
+  )
+  testing::assert(
+    flattened.cell(1, 0).expect("child cell").grapheme == " ",
+    "Expected the later child to own the overlapped cell",
+  )
+}

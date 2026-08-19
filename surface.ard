@@ -101,9 +101,15 @@ struct Cursor {
   shape: CursorShape,
 }
 
+struct PositionedSurface {
+  origin: Point,
+  surface: Surface,
+}
+
 struct Surface {
   size: Size,
   cells: [Cell],
+  children: [PositionedSurface],
   cursor: Cursor?,
 }
 
@@ -118,13 +124,21 @@ fn blank(width: Int, height: Int) Surface {
   }
 
   let cells: mut [Cell] = mut []
-  mut index = 0
-  while index < safe_width * safe_height {
-    cells.push(Cell{grapheme: " ", width: 1})
-    index = index + 1
+  mut row = 0
+  while row < safe_height {
+    mut column = 0
+    while column < safe_width {
+      cells.push(Cell{grapheme: " ", width: 1})
+      column = column + 1
+    }
+    row = row + 1
   }
 
-  Surface{size: Size{width: safe_width, height: safe_height}, cells: cells.@}
+  Surface{
+    size: Size{width: safe_width, height: safe_height},
+    cells: cells.@,
+    children: [],
+  }
 }
 
 fn text_width(text: Str) Int {
@@ -144,6 +158,71 @@ impl RenderContext {
   }
 }
 
+fn blank_cell() Cell {
+  Cell{grapheme: " ", width: 1}
+}
+
+private fn snapshot(surface: Surface) Surface {
+  let cells: mut [Cell] = mut []
+  for cell in surface.cells {
+    cells.push(cell)
+  }
+  let children: mut [PositionedSurface] = mut []
+  for positioned in surface.children {
+    children.push(
+      PositionedSurface{origin: positioned.origin, surface: snapshot(positioned.surface)},
+    )
+  }
+  Surface{
+    size: surface.size,
+    cells: cells.@,
+    children: children.@,
+    cursor: surface.cursor,
+  }
+}
+
+private struct Clip {
+  left: Int,
+  top: Int,
+  right: Int,
+  bottom: Int,
+}
+
+impl Clip {
+  private fn is_empty() Bool {
+    self.left >= self.right or self.top >= self.bottom
+  }
+
+  private fn contains(x: Int, y: Int) Bool {
+    x >= self.left and x < self.right and y >= self.top and y < self.bottom
+  }
+}
+
+private fn intersect(a: Clip, b: Clip) Clip {
+  mut left = a.left
+  mut top = a.top
+  mut right = a.right
+  mut bottom = a.bottom
+  if b.left > left {
+    left = b.left
+  }
+  if b.top > top {
+    top = b.top
+  }
+  if b.right < right {
+    right = b.right
+  }
+  if b.bottom < bottom {
+    bottom = b.bottom
+  }
+  Clip{
+    left: left,
+    top: top,
+    right: right,
+    bottom: bottom,
+  }
+}
+
 impl Surface {
   fn cell(x: Int, y: Int) Cell? {
     if x >= 0 and x < self.size.width and y >= 0 and y < self.size.height {
@@ -153,9 +232,67 @@ impl Surface {
     }
   }
 
-  fn mut set_cell(x: Int, y: Int, cell: Cell) {
+  private fn mut set_raw(x: Int, y: Int, cell: Cell) {
     if x >= 0 and x < self.size.width and y >= 0 and y < self.size.height {
       self.cells.set(y * self.size.width + x, cell)
+    }
+  }
+
+  private fn span_origin(x: Int, y: Int) Int {
+    mut origin = x
+    mut searching = true
+    while origin > 0 and searching {
+      match self.cell(origin, y) {
+        cell => {
+          if cell.width == 0 {
+            origin = origin - 1
+          } else {
+            searching = false
+          }
+        },
+        _ => { searching = false },
+      }
+    }
+    origin
+  }
+
+  private fn mut clear_span_at(x: Int, y: Int) {
+    let origin = self.span_origin(x, y)
+    match self.cell(origin, y) {
+      cell => {
+        mut width = cell.width
+        let remaining = self.size.width - origin
+        if width < 1 {
+          width = 1
+        }
+        if width > remaining {
+          width = remaining
+        }
+        mut offset = 0
+        while offset < width {
+          self.set_raw(origin + offset, y, blank_cell())
+          offset = offset + 1
+        }
+      },
+      _ => (),
+    }
+  }
+
+  fn mut set_cell(x: Int, y: Int, cell: Cell) {
+    if cell.width > 0 and x >= 0 and x < self.size.width and cell.width <= self.size.width - x and y >= 0 and y < self.size.height {
+      let end = x + cell.width
+      mut column = x
+      while column < end {
+        self.clear_span_at(column, y)
+        column = column + 1
+      }
+
+      self.set_raw(x, y, cell)
+      column = x + 1
+      while column < end {
+        self.set_raw(column, y, Cell{grapheme: "", width: 0})
+        column = column + 1
+      }
     }
   }
 
@@ -163,20 +300,122 @@ impl Surface {
     mut column = x
     for character in raw::Characters(text) {
       let width = ctx.measure_text(character.Grapheme)
-      let end = column + width
-      if width > 0 and column >= 0 and end <= self.size.width {
-        self.set_cell(column, y, Cell{grapheme: character.Grapheme, width: width})
-        mut continuation = column + 1
-        while continuation < end {
-          self.set_cell(continuation, y, Cell{grapheme: "", width: 0})
-          continuation = continuation + 1
-        }
-      }
-      column = end
+      self.set_cell(column, y, Cell{grapheme: character.Grapheme, width: width})
+      column = column + width
     }
+  }
+
+  fn mut add_child(x: Int, y: Int, child: Surface) {
+    self.children.push(PositionedSurface{origin: Point{x: x, y: y}, surface: snapshot(child)})
   }
 
   fn mut show_cursor(point: Point, shape: CursorShape) {
     self.cursor = Cursor{point: point, shape: shape}
   }
+
+  private fn mut hide_cursor() {
+    self.cursor = Maybe::new<Cursor>()
+  }
+}
+
+private fn clear_clipped_span(target: mut Surface, x: Int, y: Int, width: Int, clip: Clip) {
+  mut start = x
+  mut end = x + width
+  if start < clip.left {
+    start = clip.left
+  }
+  if end > clip.right {
+    end = clip.right
+  }
+  if start < 0 {
+    start = 0
+  }
+  if end > target.size.width {
+    end = target.size.width
+  }
+  if y >= clip.top and y < clip.bottom and y >= 0 and y < target.size.height {
+    mut column = start
+    while column < end {
+      target.set_cell(column, y, blank_cell())
+      column = column + 1
+    }
+  }
+}
+
+private fn composite(target: mut Surface, source: Surface, origin: Point, clip: Clip) {
+  if source.size.width > 0 and not clip.is_empty() {
+    for cell, index in source.cells {
+      if cell.width > 0 {
+        let local_x = index % source.size.width
+        let local_y = index / source.size.width
+        if local_y < source.size.height {
+          let x = origin.x + local_x
+          let y = origin.y + local_y
+          let source_remaining = source.size.width - local_x
+          let valid_span = cell.width <= source_remaining
+          let fully_visible = valid_span and clip.contains(x, y) and cell.width <= clip.right - x
+          if fully_visible {
+            target.set_cell(x, y, cell)
+          } else {
+            mut visible_width = cell.width
+            if visible_width > source_remaining {
+              visible_width = source_remaining
+            }
+            clear_clipped_span(target, x, y, visible_width, clip)
+          }
+        }
+      }
+    }
+  }
+
+  match source.cursor {
+    cursor => {
+      let translated = Point{x: origin.x + cursor.point.x, y: origin.y + cursor.point.y}
+      if cursor.point.x >= 0 and cursor.point.x < source.size.width and cursor.point.y >= 0 and cursor.point.y < source.size.height and clip.contains(translated.x, translated.y) {
+        target.show_cursor(translated, cursor.shape)
+      }
+    },
+    _ => (),
+  }
+
+  for positioned in source.children {
+    let child_origin = Point{x: origin.x + positioned.origin.x, y: origin.y + positioned.origin.y}
+    let child_clip = intersect(
+      clip,
+      Clip{
+        left: child_origin.x,
+        top: child_origin.y,
+        right: child_origin.x + positioned.surface.size.width,
+        bottom: child_origin.y + positioned.surface.size.height,
+      },
+    )
+    if not child_clip.is_empty() {
+      composite(target, positioned.surface, child_origin, child_clip)
+    }
+  }
+}
+
+fn flatten(surface: Surface) Surface {
+  let flattened = mut blank(surface.size.width, surface.size.height)
+  let root_clip = Clip{
+    left: 0,
+    top: 0,
+    right: surface.size.width,
+    bottom: surface.size.height,
+  }
+  composite(flattened, surface, Point{x: 0, y: 0}, root_clip)
+  match flattened.cursor {
+    cursor => {
+      match flattened.cell(cursor.point.x, cursor.point.y) {
+        cell => {
+          if cell.width == 0 {
+            flattened.hide_cursor()
+          }
+        },
+        _ => flattened.hide_cursor(),
+      }
+    },
+    _ => (),
+  }
+  flattened.@
 }

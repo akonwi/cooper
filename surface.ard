@@ -74,13 +74,9 @@ impl Constraints {
   }
 }
 
-struct WidthMeasurer {
-  measure: fn(Str) Int,
-}
-
 struct RenderContext {
   constraints: Constraints,
-  width_measurer: WidthMeasurer?,
+  width_measurer: (fn(Str) Int)?,
 }
 
 struct Cell {
@@ -152,7 +148,7 @@ fn text_width(text: Str) Int {
 impl RenderContext {
   fn measure_text(text: Str) Int {
     match self.width_measurer {
-      measurer => measurer.measure(text),
+      measurer => measurer(text),
       _ => text_width(text),
     }
   }

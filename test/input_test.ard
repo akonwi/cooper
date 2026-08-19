@@ -128,13 +128,11 @@ test fn render_context_controls_terminal_specific_widths() Void!Str {
   let rendered = field.render(
     surface::RenderContext{
       constraints: surface::bounded(max_width: 3, max_height: 1),
-      width_measurer: surface::WidthMeasurer{
-        measure: fn(text: Str) Int {
-          match text == "🙂" {
-            true => 4,
-            false => surface::text_width(text),
-          }
-        },
+      width_measurer: fn(text: Str) Int {
+        match text == "🙂" {
+          true => 4,
+          false => surface::text_width(text),
+        }
       },
     },
   )

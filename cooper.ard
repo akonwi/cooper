@@ -22,9 +22,9 @@ private fn paint(root: mut Widget, app: mut raw::Vaxis) {
   let rendered_tree = root.render(
     surface::RenderContext{
       constraints: surface::bounded(max_width: window.Width, max_height: window.Height),
-      width_measurer: surface::WidthMeasurer{measure: fn(text: Str) Int {
+      width_measurer: fn(text: Str) Int {
         app.RenderedWidth(text)
-      }},
+      },
     },
   )
   let rendered = surface::flatten(rendered_tree)

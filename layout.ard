@@ -1,0 +1,91 @@
+use cooper/cooper
+use cooper/event
+use cooper/surface
+use go:go.rockorager.dev/vaxis
+use go:math
+
+struct Column {
+  children: [mut cooper::Widget],
+}
+
+fn column(children: [mut cooper::Widget]) Column {
+  let owned = mut List::new<mut cooper::Widget>()
+  for child in children {
+    owned.push(child)
+  }
+  Column{children: owned.@}
+}
+
+private fn nonnegative(value: Int) Int {
+  if value < 0 {
+    0
+  } else {
+    value
+  }
+}
+
+private fn saturating_add(total: Int, added: Int, limit: Int) Int {
+  let cap = nonnegative(limit)
+  let current = nonnegative(total)
+  let increment = nonnegative(added)
+  if current >= cap {
+    cap
+  } else if increment >= cap - current {
+    cap
+  } else {
+    current + increment
+  }
+}
+
+impl cooper::Widget for Column {
+  fn render(ctx: surface::RenderContext) surface::Surface {
+    let child_ctx = surface::RenderContext{
+      constraints: surface::Constraints{
+        min_width: 0,
+        max_width: ctx.constraints.max_width,
+        min_height: 0,
+      },
+      width_measurer: ctx.width_measurer,
+    }
+    let rendered_children = mut List::new<surface::Surface>()
+    let height_limit = nonnegative(ctx.constraints.max_height.or(math::MaxInt))
+    mut content_width = 0
+    mut content_height = 0
+
+    for child in self.children {
+      let rendered = mut child.render(child_ctx)
+      rendered.size.width = nonnegative(rendered.size.width)
+      rendered.size.height = nonnegative(rendered.size.height)
+      if rendered.size.width > content_width {
+        content_width = rendered.size.width
+      }
+      content_height = saturating_add(content_height, rendered.size.height, height_limit)
+      rendered_children.push(rendered.@)
+    }
+
+    let width = ctx.constraints.constrain_width(content_width)
+    let height = ctx.constraints.constrain_height(content_height)
+    let output = mut surface::Surface{
+      size: surface::Size{width: width, height: height},
+      cells: [],
+      children: [],
+    }
+    mut y = 0
+    for rendered in rendered_children {
+      output.add_child(0, y, rendered)
+      y = saturating_add(y, rendered.size.height, math::MaxInt)
+    }
+    output.@
+  }
+
+  fn mut event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
+    mut result = event::EventResult::ignored
+    for child in self.children {
+      result = child.event(ctx, received)
+      if result == event::EventResult::handled {
+        break
+      }
+    }
+    result
+  }
+}

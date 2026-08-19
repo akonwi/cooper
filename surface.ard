@@ -1,4 +1,4 @@
-use go:go.rockorager.dev/vaxis as raw
+use go:go.rockorager.dev/vaxis
 
 struct Size {
   width: Int,
@@ -139,7 +139,7 @@ fn blank(width: Int, height: Int) Surface {
 
 fn text_width(text: Str) Int {
   mut width = 0
-  for character in raw::Characters(text) {
+  for character in vaxis::Characters(text) {
     width = width + character.Width
   }
   width
@@ -294,7 +294,7 @@ impl Surface {
 
   fn mut write(ctx: RenderContext, x: Int, y: Int, text: Str) {
     mut column = x
-    for character in raw::Characters(text) {
+    for character in vaxis::Characters(text) {
       let width = ctx.measure_text(character.Grapheme)
       self.set_cell(column, y, Cell{grapheme: character.Grapheme, width: width})
       column = column + width

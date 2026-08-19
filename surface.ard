@@ -119,15 +119,15 @@ fn blank(width: Int, height: Int) Surface {
     safe_height = 0
   }
 
-  let cells: mut [Cell] = mut []
+  let cells = mut List::new<Cell>()
   mut row = 0
   while row < safe_height {
     mut column = 0
     while column < safe_width {
-      cells.push(Cell{grapheme: " ", width: 1})
-      column = column + 1
+      cells.push(blank_cell())
+      column =+ 1
     }
-    row = row + 1
+    row =+ 1
   }
 
   Surface{

@@ -389,18 +389,14 @@ fn flatten(surface: Surface) Surface {
     bottom: surface.size.height,
   }
   composite(flattened, surface, Point{x: 0, y: 0}, root_clip)
-  match flattened.cursor {
-    cursor => {
-      match flattened.cell(cursor.point.x, cursor.point.y) {
-        cell => {
-          if cell.width == 0 {
-            flattened.hide_cursor()
-          }
-        },
-        _ => flattened.hide_cursor(),
-      }
-    },
-    _ => (),
+
+  let cursor = try flattened.cursor -> _ { flattened.@ }
+  let cell = try flattened.cell(cursor.point.x, cursor.point.y) -> _ {
+    flattened.hide_cursor()
+    flattened.@
+  }
+  if cell.width == 0 {
+    flattened.hide_cursor()
   }
   flattened.@
 }

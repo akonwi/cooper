@@ -1,12 +1,12 @@
 use ard/testing
 
+use cooper/cooper as framework
+use cooper/event
+use cooper/input
+use cooper/surface
 use go:go.rockorager.dev/vaxis as raw
-use vaxis/retained
-use vaxis/retained/event
-use vaxis/retained/input
-use vaxis/retained/surface
 
-fn send(widget: mut retained::Widget, received: raw::Event) event::EventContext {
+fn send(widget: mut framework::Widget, received: raw::Event) event::EventContext {
   let ctx = mut event::new_context()
   let _ = widget.event(ctx, received)
   ctx.@

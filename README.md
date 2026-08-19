@@ -1,26 +1,31 @@
-# A retained mode TUI framework
+# Cooper
 
-An Ard-native retained-mode framework using
-[Vaxis](https://github.com/rockorager/vaxis) as its terminal backend.
-Application state lives in retained Ard widget structs; the framework handles
-layout, surfaces, events, focus, and redraws.
+**A retained mode TUI framework** for [Ard](https://ard.run), powered by
+[Vaxis](https://github.com/rockorager/vaxis).
 
-> [!IMPORTANT]
-> The retained framework is under active development on the
-> `experiment/retained-widgets` branch. The APIs documented below describe the
-> previous binding implementation and will be replaced.
+Cooper keeps application state directly in long-lived Ard widget structs.
+Events mutate those widgets through `mut Widget`; rendering observes their
+current state and returns composable cell surfaces.
 
-See [the retained-mode architecture](./docs/architecture.md) for the accepted
-direction and implementation milestones.
+## Status
 
-## Retained input vertical slice
+Cooper is under active development. The first vertical slice provides a direct
+Vaxis runtime, headless surface model, and retained single-line `Input`.
 
-The first retained widget owns its value and cursor directly. Events mutate the
-same long-lived Ard struct through `mut Widget`:
+See [the architecture](./docs/architecture.md) for the accepted design and
+implementation milestones.
+
+## Install
+
+```sh
+ard add github.com/akonwi/cooper@latest
+```
+
+## Quick start
 
 ```ard
-use vaxis/retained
-use vaxis/retained/input
+use cooper
+use cooper/input
 
 fn main() {
   let field = mut input::new(
@@ -28,192 +33,63 @@ fn main() {
     placeholder: "Type here, then press Ctrl+C to quit",
   )
 
-  retained::run(mut field).expect("run retained input")
+  cooper::run(mut field).expect("run Cooper")
 }
 ```
 
-The experimental `vaxis/retained` namespace isolates this work from the
-previous bindings. It will become the package root after the retained model is
-validated.
+`Input` retains its value and cursor directly. It supports Unicode grapheme
+editing, Left/Right/Home/End movement, Backspace/Delete, horizontal scrolling,
+paste, resize, and Ctrl+C.
 
-## Install
+## Widget model
+
+Widgets render without mutating themselves and handle events through an
+explicit mutable receiver contract:
+
+```ard
+trait Widget {
+  fn render(ctx: RenderContext) Surface
+  fn mut event(ctx: mut EventContext, event: vaxis::Event) EventResult
+}
+```
+
+The current runtime redraws the complete logical surface after state changes
+and lets Vaxis efficiently diff terminal cells.
+
+## Project structure
+
+```text
+cooper.ard      Widget contract and application runtime
+event.ard       EventContext and EventResult
+surface.ard     constraints, cells, surfaces, cursor, text measurement
+input.ard       retained single-line Input widget
+test/           deterministic headless tests
+examples/       runnable PTY-tested examples
+```
+
+## Development
 
 ```sh
-ard add github.com/akonwi/vaxis-ard@latest
+ard test test
+
+cd examples
+ard build input.ard --out input
+python3 test_input.py
 ```
 
-## Quick start — vaxis/ui (recommended)
+The PTY smoke test covers terminal startup, editing, resize, cursor redraws,
+and clean exit.
 
-```ard
-use vaxis
-use vaxis/ui
+## Design principles
 
-fn main() Void {
-  ui::run(ui::text("Hello from vaxis/ui"))
-}
-```
+- Ard owns widget state, layout, event behavior, and surfaces.
+- Vaxis is a narrow terminal backend rather than Cooper's public model.
+- Rendering observes state; events mutate retained widgets.
+- Layout uses signed `Int` dimensions and explicit unbounded constraints.
+- A frame uses one terminal-aware text measurer for layout, cells, and cursor
+  positions.
+- Prefer deterministic headless tests and reserve PTYs for terminal integration.
 
-Stateful counter:
+## License
 
-```ard
-use vaxis
-use vaxis/ui
-
-struct Counter { count: Int }
-
-fn main() Void {
-  ui::run(
-    ui::stateful(
-      key: "counter",
-      init: fn(ctx: ui::BuildContext) Counter { Counter{ count: 0 } },
-      build: fn(ctx: ui::BuildContext, state: ui::State<Counter>) ui::Widget {
-        let model = state.value()
-        ui::shortcuts(
-          ui::actions(
-            ui::center(ui::text(model.count.to_str())),
-            [
-              ui::action("inc", fn(ctx: ui::EventContext, intent: Str) ui::EventResult {
-                state.set(fn(mut s: Counter) { s.count = s.count + 1 })
-                ui::EventResult::handled
-              }),
-              ui::action("quit", fn(ctx: ui::EventContext, intent: Str) ui::EventResult {
-                ui::quit(ctx)
-                ui::EventResult::handled
-              }),
-            ],
-          ),
-          ["+": "inc", "q": "quit"],
-        )
-      },
-    )
-  )
-}
-```
-
-## Quick start — base vaxis (imperative)
-
-```ard
-use vaxis
-
-fn main() Void {
-  mut app = vaxis::app_open("My TUI").expect("open terminal")
-  let mut win = app.root_window()
-  win.clear()
-  win.write(2, 1, "Hello from Vaxis", vaxis::default_style())
-  try app.render()
-  let key = try app.read_key()
-  app.close().expect("close terminal")
-}
-```
-
-## Base vaxis API
-
-### App lifecycle
-
-```ard
-mut app = vaxis::app_open(title: Str, opts: Options?).expect("open terminal")
-app.close().expect("close terminal")
-app.suspend().expect("suspend")
-app.resume().expect("resume")
-```
-
-### Rendering
-
-```ard
-app.render().expect("render")     // flush cell buffer to terminal
-app.refresh()                      // force full redraw
-let mut win = app.root_window()   // full-screen window
-let sub = app.window(col, row, w, h)  // sub-window
-```
-
-### Window drawing
-
-```ard
-win.clear()                        // clear window region
-win.write(col, row, text, style)   // write styled text at position
-win.set_cell(col, row, cell)       // place a single Cell
-win.fill(cell)                     // fill entire window with a Cell
-win.print(col, row, [seg(...)])    // print Segments with wrapping
-win.show_cursor(col, row, style?)  // position hardware cursor
-```
-
-### Colors and styles
-
-```ard
-let red = vaxis::Color::IndexedColor(IndexedColor{ value: 1 })
-let blue = vaxis::rgb(0, 0, 255)
-let style = vaxis::default_style().with_fg(red).with_bold(true)
-```
-
-### Events
-
-```ard
-let event = try app.read_event()
-match event {
-  vaxis::KeyEvent(ev) => { /* ev.key is "q", "up", "a", etc. */ },
-  vaxis::ResizeEvent(ev) => { /* ev.cols × ev.rows */ },
-  vaxis::MouseEvent(ev) => { /* ev.button, ev.col, ev.row */ },
-  vaxis::QuitEvent => { /* quit requested */ },
-  _ => {},
-}
-```
-
-### Input helpers
-
-```ard
-let key = try app.read_key()       // blocking, returns "q", "up", etc.
-app.set_mouse_shape(vaxis::MouseShape::pointer)
-app.post_event("custom-event")
-```
-
-## vaxis/ui API
-
-See `ui.ard` for the full binding surface. Key entry points:
-
-| Category | Functions |
-|---|---|
-| **Lifecycle** | `run(root, theme_set?)`, `quit(ctx)` |
-| **Layout** | `row(children, ...)`, `column(children, ...)`, `flex(axis, children, ...)`, `center(child)`, `padding(all, child)`, `expanded(child)`, `sized_box(w, h, child)`, `constrained_box(child, ...)`, `stack(children, ...)`, `positioned(left, top, child)` |
-| **Text** | `text(value, ...)`, `styled_text(value, fg?, bg?, attrs?)`, `rich_text(spans, ...)`, `span(text, ...)` |
-| **Controls** | `button(label, on_pressed)`, `text_field(value, on_changed, ...)`, `text_area(value, on_changed, ...)`, `checkbox(checked, label, on_changed, ...)`, `radio(value, group, label, on_changed, ...)` |
-| **Scroll** | `scroll_view(child, axis?)`, `scrollbar(child, axis?)`, `scroll_pane(child, controller?)`, `custom_scroll_view(controller, slivers, ...)`, `sliver_list_builder(count, builder, ...)` |
-| **State** | `stateful(key, init, build)`, `State<T>`, `BuildContext`, `Runtime<T>` |
-| **Input** | `shortcuts(child, bindings)`, `actions(child, bindings)`, `action(name, handler)`, `focus(child)`, `focus_scope(child, trap, auto_focus)` |
-| **Overlays** | `dialog(title, child, actions, width, on_dismiss)`, `overlay(child, entries)`, `overlay_modal(child, modal_child)`, `command_palette(items, ...)` |
-| **Tables** | `table(columns, column_gap, row_gap, rows)`, `table_column_intrinsic()`, `table_column_fixed(w)`, `table_column_flex(f)` |
-| **Theme** | `theme_default()`, `must_have_theme(ctx)`, `provider_theme(theme, child)`, `default_theme_set()` |
-| **Animation** | `animation_controller(ctx, duration_ms, ...)`, `anim_forward(ctrl)`, `anim_reset(ctrl)`, `anim_value(ctrl)` |
-
-## Examples
-
-```bash
-cd examples/
-
-# Imperative (base vaxis)
-ard build --out counter counter.ard && ./counter
-ard build --out tic_tac_toe tic_tac_toe.ard && ./tic_tac_toe
-
-# Declarative (vaxis/ui widgets)
-ard build --out todo todo.ard && ./todo
-ard build --out demo demo.ard && ./demo
-```
-
-## Testing
-
-Python PTY smoke tests exercise built example binaries behind a pseudoterminal.
-
-```bash
-cd examples/
-python3 test_counter.py
-python3 test_tic_tac_toe.py
-python3 test_todo.py
-python3 test_demo.py
-```
-
-Infrastructure is shared in `test_harness.py`. Run tests after binding changes to validate nothing regressed.
-
-## Dependencies
-
-- Go: `go.rockorager.dev/vaxis` (post-v0.16.0 tip)
-- Ard: `>= 0.19.2`
-- Go target requires Go ≥1.26
+BSD 3-Clause. See [LICENSE](./LICENSE).

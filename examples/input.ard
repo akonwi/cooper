@@ -1,8 +1,8 @@
-use vaxis/retained
-use vaxis/retained/input
+use cooper
+use cooper/input
 
 fn main() {
   let field = mut input::new(value: "", placeholder: "Type here, then press Ctrl+C to quit")
 
-  retained::run(mut field).expect("run retained input")
+  cooper::run(mut field).expect("run Cooper input")
 }

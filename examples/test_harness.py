@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared PTY test harness for vaxis-ard example smoke tests."""
+"""Shared PTY test harness for Cooper example smoke tests."""
 
 import fcntl
 import os

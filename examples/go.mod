@@ -1,4 +1,4 @@
-module examples
+module cooper_examples
 
 go 1.26
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke test for the retained Input vertical slice."""
+"""Smoke test for Cooper's retained Input vertical slice."""
 
 import os
 import signal
@@ -8,11 +8,11 @@ import sys
 from test_harness import Screen, build, resize, send, spawn, wait_exit, wait_for
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BIN = os.path.join(ROOT, "retained_input")
+BIN = os.path.join(ROOT, "input")
 
 
 def main():
-    build("retained_input")
+    build("input")
     pid, fd = spawn(BIN, rows=8, cols=50)
     screen = Screen(8, 50)
     try:
@@ -37,10 +37,10 @@ def main():
         send(fd, "\x03")
         status = wait_exit(pid, fd, screen, timeout=2.0)
         if status is None:
-            raise AssertionError("retained input did not exit after Ctrl+C")
+            raise AssertionError("Cooper input did not exit after Ctrl+C")
         assert status == 0, f"exit status {status}"
 
-        print("✓ retained input smoke test passed")
+        print("✓ Cooper input smoke test passed")
     finally:
         cleanup(fd, pid)
 

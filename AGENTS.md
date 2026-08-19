@@ -1,20 +1,17 @@
-# vaxis-ard
+# Cooper
 
 An Ard-native retained-mode TUI framework using
 [Vaxis](https://github.com/rockorager/vaxis) as its terminal backend.
 
-## Status
-
-The retained framework is being developed on `experiment/retained-widgets`.
-The root `vaxis.ard`, `ui.ard`, `ffi/`, examples, and historical behavior docs
-belong to the previous binding implementation and do not compile with the
-current Ard toolchain. Do not preserve their API unless a retained-framework
-design independently calls for the same shape.
+## Architecture
 
 The accepted direction is documented in
 [`docs/architecture.md`](./docs/architecture.md). Read it before changing the
-framework model. Historical `vaxis/ui` investigations are indexed separately
-in [`docs/README.md`](./docs/README.md).
+framework model.
+
+Cooper is not a Vaxis binding. Ard owns widget state, layout, surfaces, event
+results, focus state, and application helpers. Direct Go interop with Vaxis is
+isolated to terminal-specific behavior.
 
 ## Widget contract
 
@@ -27,12 +24,9 @@ trait Widget {
 }
 ```
 
-The language behavior landed in
-[ard#417](https://github.com/akonwi/ard/pull/417):
-
-- calling a mutating trait method requires a mutable receiver reference;
-- a mutating implementation cannot satisfy a non-mutating contract;
-- a non-mutating implementation may satisfy a mutating contract.
+- Calling a mutating trait method requires a mutable receiver reference.
+- A mutating implementation cannot satisfy a non-mutating contract.
+- A non-mutating implementation may satisfy a mutating contract.
 
 Before adopting unfamiliar Ard syntax or interop behavior, use the
 `ard-expert` sub-agent and verify the smallest shape with the current compiler.
@@ -42,9 +36,8 @@ Before adopting unfamiliar Ard syntax or interop behavior, use the
 ### Ard owns framework behavior
 
 Implement widgets, surfaces, layout, cell buffers, event results, focus state,
-and application helpers in Ard. Call base Vaxis through direct Go interop.
-Add a Go companion only after a concrete capability is proven inexpressible in
-Ard.
+and application helpers in Ard. Call base Vaxis through direct Go interop. Add
+a Go companion only after a concrete capability is proven inexpressible in Ard.
 
 ### Widgets retain state
 
@@ -58,12 +51,16 @@ widget state.
 ### Surfaces are compositional
 
 Widgets return sized, pure Ard surfaces containing cells, positioned child
-surfaces, and optional cursor information. The runtime paints the completed
-surface tree into Vaxis. Vaxis handles terminal-cell diffing.
+layers, and optional cursor information. The runtime paints the completed
+surface into Vaxis. Vaxis handles terminal-cell diffing.
 
 Associate widget ownership with rendered children in parent/runtime helpers.
 Do not require a widget implementation to upcast its own `self` merely to
 construct a surface.
+
+A recursive `Surface -> [PositionedSurface] -> Surface` currently triggers Ard
+AIR lowering bug [ard#418](https://github.com/akonwi/ard/issues/418). Use
+flattened, non-recursive layers for composition until it is fixed.
 
 ### Layout is constraint-based
 
@@ -76,53 +73,53 @@ unbounded constraints explicitly; do not use a maximum integer sentinel. Use
 the frame's `RenderContext` measurer consistently for text layout, cells, and
 cursor positions; the live runtime delegates to Vaxis's terminal-aware width.
 
-### Keep the first runtime simple
+### Keep the runtime simple
 
-Initially redraw the complete logical surface tree after state changes and let
-Vaxis diff terminal cells. Add incremental layout only in response to measured
+Initially redraw the complete logical surface after state changes and let Vaxis
+diff terminal cells. Add incremental layout only in response to measured
 performance problems.
 
 Start event delivery at the root. Add focus paths and mouse hit testing from
-the latest rendered surface tree when composition lands. Do not preemptively
-copy the full capture/target/bubble system from `vaxis/ui`.
+the latest rendered layers when composition lands. Do not preemptively copy the
+full capture/target/bubble system from `vaxis/ui`.
 
 ## Implementation milestones
 
-1. Retained `Input` as the root widget: typing, backspace, cursor, resize,
-   redraw, and Ctrl+C.
-2. `Text`, `Column`, child surfaces, clipping, and two-pass flex allocation.
+1. Retained `Input` as the root widget: complete.
+2. `Text`, `Column`, child layers, clipping, and two-pass flex allocation.
 3. Multiple inputs with focus routing and Tab/Shift+Tab traversal.
 4. Mouse hit testing, scrolling, and asynchronous UI-thread synchronization.
 5. Broader widget APIs only after a representative application exercises the
    model.
 
-## Expected module direction
+## Module direction
 
 ```text
-vaxis.ard       public Widget contract and application runtime
-surface.ard     Size, Point, Constraints, CellBuffer, Surface
+cooper.ard      public Widget contract and application runtime
+surface.ard     Size, Point, Constraints, Cell, Surface
 event.ard       EventContext and EventResult
 text.ard        stateless Text widget
 input.ard       retained Input widget
 layout.ard      Column and flex layout
 ```
 
-Module boundaries may change as the vertical slice exposes better seams.
+Module boundaries may change as later milestones expose better seams.
 
 ## API design principles
 
-- Prefer one configurable function or widget over many single-purpose
-  variants.
-- Use Ard enums and structs in public APIs; convert Go-specific encodings at
-  the boundary.
-- Match upstream Vaxis behavior unless a deliberate TUI-specific choice is
+- Prefer one configurable function or widget over many single-purpose variants.
+- Use Ard enums and structs in public APIs; convert Go-specific encodings at the
+  backend boundary.
+- Match upstream Vaxis terminal behavior unless a deliberate Cooper choice is
   documented.
-- This rewrite is not compatibility constrained. Delete obsolete APIs rather
-  than adding aliases or deprecation layers.
-- Keep direct Go imports narrow and isolate terminal-specific operations from
+- Keep direct Go imports narrow and terminal-specific operations separate from
   headless framework behavior.
+- This project is not compatibility constrained yet. Prefer a clean API over
+  aliases and deprecation layers.
 
 ## Verification
+
+Run formatting and compiler validation on every changed Ard file.
 
 Prefer deterministic headless tests for:
 
@@ -138,14 +135,20 @@ Use PTY tests for terminal integration:
 - cursor placement;
 - clean quit.
 
-Run formatting and compiler validation on every changed Ard file. The old
-examples and smoke tests are historical until they are replaced; do not report
-them as retained-framework validation.
+Current validation entry points:
+
+```sh
+ard test test
+
+cd examples
+ard build input.ard --out input
+python3 test_input.py
+```
 
 ## References
 
 - Architecture: [`docs/architecture.md`](./docs/architecture.md)
 - Vaxis source: `../vaxis` or `go.rockorager.dev/vaxis`
-- VXFW layout prior art: `../vaxis/vxfw`
+- VXFW prior art: `../vaxis/vxfw`
 - Ard compiler source: `../ard`
 - Ard docs: <https://ard.run>

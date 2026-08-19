@@ -1,20 +1,12 @@
-# Retained-mode architecture
+# Cooper architecture
 
-Status: accepted for the `experiment/retained-widgets` branch.
+Status: accepted.
 
 ## Goal
 
-Build an Ard-native retained-mode TUI framework with Vaxis as the terminal
-backend. Application state lives in retained Ard widget structs. The framework
-owns terminal lifecycle, layout, rendering, event routing, focus, and redraws.
-
-The previous thin bindings for base Vaxis and `vaxis/ui` are the historical
-implementation, not the target architecture.
-
-The first vertical slice lives under `vaxis/retained` so it can be validated
-without immediately deleting the historical root module. Once the retained
-model is proven, that namespace becomes the package root and the old binding
-implementation is removed.
+Cooper is an Ard-native retained-mode TUI framework with Vaxis as its terminal
+backend. Application state lives in retained Ard widget structs. Cooper owns
+terminal lifecycle, layout, rendering, event routing, focus, and redraws.
 
 ## Decisions
 
@@ -47,18 +39,18 @@ This depends on mutating trait receiver contracts added to Ard in
 [ard#416](https://github.com/akonwi/ard/issues/416) and
 [ard#417](https://github.com/akonwi/ard/pull/417).
 
-### Rendering produces a surface tree
+### Rendering produces composable surfaces
 
 Widgets do not draw directly into terminal windows. A widget returns a pure
 Ard `Surface` containing:
 
 - its measured cell size;
 - its cell buffer;
-- positioned child surfaces;
+- flattened positioned child layers as composition lands;
 - optional cursor information.
 
-The runtime paints the completed surface tree into the Vaxis root window.
-Vaxis remains responsible for efficiently diffing terminal cells.
+The runtime paints the completed surface into the Vaxis root window. Vaxis
+remains responsible for efficiently diffing terminal cells.
 
 A surface does not need a widget to upcast its own `self`. Parents and the
 runtime already hold children as `mut Widget`; framework composition helpers
@@ -120,7 +112,7 @@ The application runtime owns:
 
 - the root `mut Widget`;
 - the Vaxis instance and event stream;
-- the latest rendered surface tree;
+- the latest rendered surface and child layers;
 - focus state;
 - redraw and quit requests.
 
@@ -128,7 +120,7 @@ At a high level it:
 
 1. opens Vaxis;
 2. renders the root under current terminal constraints;
-3. paints the surface tree and calls `Render`;
+3. paints the surface and calls `Render`;
 4. waits for an event;
 5. routes the event to the retained widget tree;
 6. renders again when requested;
@@ -136,15 +128,13 @@ At a high level it:
 
 Cleanup must remain explicit and reliable on both normal exit and errors.
 
-## Initial module shape
+## Module shape
 
-The module boundaries may evolve, but the first implementation should separate
-these responsibilities. During the isolated vertical slice, these files live
-under the `retained/` directory and `retained.ard` owns the runtime:
+The module boundaries may evolve, but Cooper separates these responsibilities:
 
 ```text
-vaxis.ard       public Widget contract and application runtime
-surface.ard     Size, Point, Constraints, CellBuffer, Surface
+cooper.ard      public Widget contract and application runtime
+surface.ard     Size, Point, Constraints, Cell, Surface
 event.ard       EventContext and EventResult
 text.ard        stateless Text widget
 input.ard       retained Input widget
@@ -176,8 +166,8 @@ Use PTY smoke tests for the integration boundary:
 
 ## Milestones
 
-1. **Single input:** a retained `Input` handles typing, backspace, cursor
-   movement, redraw, and Ctrl+C without a Go shim.
+1. **Single input — complete:** a retained `Input` handles typing, backspace,
+   cursor movement, redraw, resize, and Ctrl+C without a Go shim.
 2. **Composition:** `Text`, `Column`, positioned child surfaces, and flex
    allocation.
 3. **Focus:** multiple inputs, keyboard routing, cursor ownership, and focus
@@ -188,7 +178,6 @@ Use PTY smoke tests for the integration boundary:
 
 ## Non-goals for the first milestone
 
-- compatibility with the previous binding API;
 - wrapping `vaxis/ui` or VXFW wholesale;
 - a broad widget catalog;
 - capture/bubble event phases;

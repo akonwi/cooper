@@ -1,11 +1,4 @@
-ard-out
 ard-out/
-/main
 
 # example binaries
-/examples/counter
-/examples/demo
-/examples/todo
-/examples/tic_tac_toe
-/examples/retained_input
-/reconcile_bug
+/examples/input

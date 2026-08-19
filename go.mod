@@ -1,4 +1,4 @@
-module vaxis-ard
+module cooper
 
 go 1.26
 

@@ -1,6 +1,6 @@
+use cooper/event
+use cooper/surface
 use go:go.rockorager.dev/vaxis as raw
-use vaxis/retained/event
-use vaxis/retained/surface
 
 trait Widget {
   fn render(ctx: surface::RenderContext) surface::Surface

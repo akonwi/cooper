@@ -2,4 +2,4 @@ name = "examples"
 ard = ">= 0.23.0"
 
 [dependencies]
-vaxis = { path = ".." }
+cooper = { path = ".." }

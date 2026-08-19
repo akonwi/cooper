@@ -46,7 +46,7 @@ Ard `Surface` containing:
 
 - its measured cell size;
 - its cell buffer;
-- flattened positioned child layers as composition lands;
+- positioned child surfaces;
 - optional cursor information.
 
 The runtime paints the completed surface into the Vaxis root window. Vaxis
@@ -112,7 +112,7 @@ The application runtime owns:
 
 - the root `mut Widget`;
 - the Vaxis instance and event stream;
-- the latest rendered surface and child layers;
+- the latest rendered surface tree;
 - focus state;
 - redraw and quit requests.
 
@@ -140,12 +140,6 @@ text.ard        stateless Text widget
 input.ard       retained Input widget
 layout.ard      Column and flex layout
 ```
-
-The natural recursive shape `Surface -> [PositionedSurface] -> Surface`
-currently triggers an Ard AIR-lowering stack overflow tracked in
-[ard#418](https://github.com/akonwi/ard/issues/418). Until it is fixed,
-composition must flatten child surfaces into non-recursive layers before the
-runtime paints them.
 
 ## Verification strategy
 

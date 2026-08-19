@@ -51,16 +51,12 @@ widget state.
 ### Surfaces are compositional
 
 Widgets return sized, pure Ard surfaces containing cells, positioned child
-layers, and optional cursor information. The runtime paints the completed
-surface into Vaxis. Vaxis handles terminal-cell diffing.
+surfaces, and optional cursor information. The runtime paints the completed
+surface tree into Vaxis. Vaxis handles terminal-cell diffing.
 
 Associate widget ownership with rendered children in parent/runtime helpers.
 Do not require a widget implementation to upcast its own `self` merely to
 construct a surface.
-
-A recursive `Surface -> [PositionedSurface] -> Surface` currently triggers Ard
-AIR lowering bug [ard#418](https://github.com/akonwi/ard/issues/418). Use
-flattened, non-recursive layers for composition until it is fixed.
 
 ### Layout is constraint-based
 
@@ -80,13 +76,13 @@ diff terminal cells. Add incremental layout only in response to measured
 performance problems.
 
 Start event delivery at the root. Add focus paths and mouse hit testing from
-the latest rendered layers when composition lands. Do not preemptively copy the
-full capture/target/bubble system from `vaxis/ui`.
+the latest rendered surface tree when composition lands. Do not preemptively
+copy the full capture/target/bubble system from `vaxis/ui`.
 
 ## Implementation milestones
 
 1. Retained `Input` as the root widget: complete.
-2. `Text`, `Column`, child layers, clipping, and two-pass flex allocation.
+2. `Text`, `Column`, child surfaces, clipping, and two-pass flex allocation.
 3. Multiple inputs with focus routing and Tab/Shift+Tab traversal.
 4. Mouse hit testing, scrolling, and asynchronous UI-thread synchronization.
 5. Broader widget APIs only after a representative application exercises the

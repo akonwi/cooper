@@ -133,6 +133,26 @@ test fn add_child_snapshots_the_child_surface() Void!Str {
   )
 }
 
+test fn add_child_recursively_snapshots_descendant_surfaces() Void!Str {
+  let ctx = render_context(1, 1)
+  let child = mut surface::blank(1, 1)
+  child.write(ctx, 0, 0, "a")
+  let parent = mut surface::blank(1, 1)
+  parent.add_child(0, 0, child.@)
+  let root = mut surface::blank(1, 1)
+  root.add_child(0, 0, parent.@)
+
+  let attached = mut parent.children.at(0).expect("parent child")
+  attached.surface.write(ctx, 0, 0, "b")
+
+  let flattened = surface::flatten(root.@)
+
+  testing::assert(
+    flattened.cell(0, 0).expect("snapshotted descendant cell").grapheme == "a",
+    "Expected descendant surfaces not to change through retained aliases",
+  )
+}
+
 test fn later_children_clear_overlapped_wide_graphemes() Void!Str {
   let ctx = render_context(2, 1)
   let root = mut surface::blank(2, 1)

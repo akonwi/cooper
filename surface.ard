@@ -159,16 +159,10 @@ fn blank_cell() Cell {
 }
 
 private fn snapshot(surface: Surface) Surface {
-  let cells: mut [Cell] = mut []
-  for cell in surface.cells {
-    cells.push(cell)
-  }
-  let children: mut [PositionedSurface] = mut []
-  for positioned in surface.children {
-    children.push(
-      PositionedSurface{origin: positioned.origin, surface: snapshot(positioned.surface)},
-    )
-  }
+  let cells = mut List::map(surface.cells, fn(c) { c })
+  let children = mut List::map(surface.children, fn(c) {
+    PositionedSurface{origin: c.origin, surface: snapshot(c.surface)}
+  })
   Surface{
     size: surface.size,
     cells: cells.@,

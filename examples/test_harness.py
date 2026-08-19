@@ -136,6 +136,11 @@ def _set_winsize(fd, rows, cols):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
 
+def resize(fd, rows, cols):
+    """Resize a running PTY and notify its foreground process."""
+    _set_winsize(fd, rows, cols)
+
+
 def read_for(fd, screen, seconds=0.05):
     """Read available output, update screen, answer terminal queries."""
     data = b""

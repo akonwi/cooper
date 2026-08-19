@@ -1,10 +1,40 @@
-# vaxis
+# A retained mode TUI framework
 
-Ard bindings for the [Vaxis](https://github.com/rockorager/vaxis) terminal UI library.
+An Ard-native retained-mode framework using
+[Vaxis](https://github.com/rockorager/vaxis) as its terminal backend.
+Application state lives in retained Ard widget structs; the framework handles
+layout, surfaces, events, focus, and redraws.
 
-Two complementary APIs:
-- **`use vaxis`** — base terminal layer: `App`, `Window`, `Style`, `Color`, `Cell`, `Event`
-- **`use vaxis/ui`** — Flutter-style widget framework: `stateful()`, `text()`, `row()`, `column()`, `button()`, and ~40 more
+> [!IMPORTANT]
+> The retained framework is under active development on the
+> `experiment/retained-widgets` branch. The APIs documented below describe the
+> previous binding implementation and will be replaced.
+
+See [the retained-mode architecture](./docs/architecture.md) for the accepted
+direction and implementation milestones.
+
+## Retained input vertical slice
+
+The first retained widget owns its value and cursor directly. Events mutate the
+same long-lived Ard struct through `mut Widget`:
+
+```ard
+use vaxis/retained
+use vaxis/retained/input
+
+fn main() {
+  let field = mut input::new(
+    value: "",
+    placeholder: "Type here, then press Ctrl+C to quit",
+  )
+
+  retained::run(mut field).expect("run retained input")
+}
+```
+
+The experimental `vaxis/retained` namespace isolates this work from the
+previous bindings. It will become the package root after the retained model is
+validated.
 
 ## Install
 

@@ -1,0 +1,171 @@
+use ard/testing
+
+use go:go.rockorager.dev/vaxis as raw
+use vaxis/retained
+use vaxis/retained/event
+use vaxis/retained/input
+use vaxis/retained/surface
+
+fn send(widget: mut retained::Widget, received: raw::Event) event::EventContext {
+  let ctx = mut event::new_context()
+  let _ = widget.event(ctx, received)
+  ctx.@
+}
+
+test fn text_input_mutates_through_widget_trait() Void!Str {
+  let field = mut input::new(value: "", placeholder: "Type here")
+
+  let ctx = send(mut field, raw::Key{Text: "a"})
+
+  try testing::assert(field.value == "a", "Expected input to retain typed text")
+  try testing::assert(field.cursor == 1, "Expected cursor to follow inserted text")
+  testing::assert(ctx.redraw_requested(), "Expected text input to request a redraw")
+}
+
+test fn backspace_removes_one_grapheme() Void!Str {
+  let field = mut input::new(value: "a🙂", placeholder: "")
+
+  let _ = send(mut field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
+
+  try testing::assert(field.value == "a", "Expected backspace to remove the emoji grapheme")
+  testing::assert(field.cursor == 1, "Expected cursor to move back one grapheme")
+}
+
+test fn cursor_movement_controls_insertion_point() Void!Str {
+  let field = mut input::new(value: "ac", placeholder: "")
+
+  let _ = send(mut field, raw::Key{Keycode: raw::KeyLeft})
+  let _ = send(mut field, raw::Key{Text: "b"})
+
+  try testing::assert(field.value == "abc", "Expected insertion at the retained cursor position")
+  testing::assert(field.cursor == 2, "Expected cursor after the inserted grapheme")
+}
+
+test fn render_exposes_cells_and_cursor() Void!Str {
+  let field = input::new(value: "hello", placeholder: "")
+  let rendered = field.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 1)},
+  )
+
+  try testing::assert(rendered.size.width == 10, "Expected input to fill bounded width")
+  try testing::assert(rendered.size.height == 1, "Expected a single-line input surface")
+  try testing::assert(
+    rendered.cell(0, 0).expect("first cell").grapheme == "h",
+    "Expected rendered text in the surface buffer",
+  )
+  let cursor = rendered.cursor.expect("input cursor")
+  testing::assert(cursor.point.x == 5, "Expected cursor after rendered text")
+}
+
+test fn combining_input_keeps_cursor_on_a_grapheme_boundary() Void!Str {
+  let field = mut input::new(value: "", placeholder: "")
+
+  let _ = send(mut field, raw::Key{Text: "e"})
+  let _ = send(mut field, raw::Key{Text: "́"})
+
+  try testing::assert(field.value == "é", "Expected combining input to remain intact")
+  try testing::assert(
+    field.cursor == field.value.size(),
+    "Expected cursor at the combined grapheme boundary",
+  )
+
+  let _ = send(mut field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
+  testing::assert(field.value.is_empty(), "Expected one backspace to remove the combined grapheme")
+}
+
+test fn narrow_input_scrolls_to_keep_cursor_visible() Void!Str {
+  let field = input::new(value: "hello", placeholder: "")
+  let rendered = field.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 5, max_height: 1)},
+  )
+
+  try testing::assert(
+    rendered.cell(0, 0).expect("first visible cell").grapheme == "e",
+    "Expected the input viewport to scroll past the first grapheme",
+  )
+  try testing::assert(
+    rendered.cell(3, 0).expect("last text cell").grapheme == "o",
+    "Expected the end of the value to remain visible",
+  )
+  testing::assert(
+    rendered.cursor.expect("visible cursor").point.x == 4,
+    "Expected a blank cursor cell after the visible value",
+  )
+}
+
+test fn deletion_normalizes_a_newly_merged_grapheme_boundary() Void!Str {
+  let field = mut input::new(value: "🇦x🇧", placeholder: "")
+
+  let _ = send(mut field, raw::Key{Keycode: raw::KeyLeft})
+  let _ = send(mut field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
+
+  try testing::assert(field.value == "🇦🇧", "Expected deletion to merge the regional indicators")
+  try testing::assert(
+    field.cursor == field.value.size(),
+    "Expected cursor to normalize after grapheme re-segmentation",
+  )
+
+  let _ = send(mut field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
+  testing::assert(field.value.is_empty(), "Expected backspace to remove the complete merged flag")
+}
+
+test fn wide_grapheme_is_not_partially_rendered() Void!Str {
+  let field = mut input::new(value: "🙂a", placeholder: "")
+  let _ = send(mut field, raw::Key{Keycode: raw::KeyHome})
+  let rendered = field.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 1)},
+  )
+
+  testing::assert(
+    rendered.cell(0, 0).expect("only cell").grapheme == " ",
+    "Expected rendering to stop rather than skip a non-fitting wide grapheme",
+  )
+}
+
+test fn render_context_controls_terminal_specific_widths() Void!Str {
+  let field = mut input::new(value: "🙂", placeholder: "")
+  let _ = send(mut field, raw::Key{Keycode: raw::KeyHome})
+  let rendered = field.render(
+    surface::RenderContext{
+      constraints: surface::bounded(max_width: 3, max_height: 1),
+      width_measurer: surface::WidthMeasurer{
+        measure: fn(text: Str) Int {
+          match text == "🙂" {
+            true => 4,
+            false => surface::text_width(text),
+          }
+        },
+      },
+    },
+  )
+
+  testing::assert(
+    rendered.cell(0, 0).expect("first cell").grapheme == " ",
+    "Expected terminal-specific width to prevent partial rendering",
+  )
+}
+
+test fn pasted_ctrl_c_is_inserted_instead_of_quitting() Void!Str {
+  let field = mut input::new(value: "", placeholder: "")
+
+  let ctx = send(
+    mut field,
+    raw::Key{
+      Text: "c",
+      Keycode: Int32::from('c'),
+      Modifiers: raw::ModCtrl,
+      EventType: raw::EventPaste,
+    },
+  )
+
+  try testing::assert(field.value == "c", "Expected pasted text to be inserted")
+  testing::assert(not ctx.quit_requested(), "Expected pasted Ctrl+C not to quit")
+}
+
+test fn ctrl_c_requests_quit() Void!Str {
+  let field = mut input::new(value: "", placeholder: "")
+
+  let ctx = send(mut field, raw::Key{Keycode: Int32::from('c'), Modifiers: raw::ModCtrl})
+
+  testing::assert(ctx.quit_requested(), "Expected Ctrl+C to request application quit")
+}

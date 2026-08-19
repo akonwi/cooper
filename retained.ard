@@ -1,0 +1,100 @@
+use go:go.rockorager.dev/vaxis as raw
+use vaxis/retained/event
+use vaxis/retained/surface
+
+trait Widget {
+  fn render(ctx: surface::RenderContext) surface::Surface
+
+  fn mut event(ctx: mut event::EventContext, received: raw::Event) event::EventResult
+}
+
+private fn cursor_style(shape: surface::CursorShape) raw::CursorStyle {
+  match shape {
+    surface::CursorShape::default => raw::CursorStyle::from(raw::CursorDefault),
+    surface::CursorShape::block => raw::CursorStyle::from(raw::CursorBlock),
+    surface::CursorShape::underline => raw::CursorStyle::from(raw::CursorUnderline),
+    surface::CursorShape::beam => raw::CursorStyle::from(raw::CursorBeam),
+  }
+}
+
+private fn paint(root: mut Widget, app: mut raw::Vaxis) {
+  let window = app.Window()
+  let rendered = root.render(
+    surface::RenderContext{
+      constraints: surface::bounded(max_width: window.Width, max_height: window.Height),
+      width_measurer: surface::WidthMeasurer{measure: fn(text: Str) Int {
+        app.RenderedWidth(text)
+      }},
+    },
+  )
+
+  window.Clear()
+  app.HideCursor()
+
+  if rendered.size.width > 0 {
+    for cell, index in rendered.cells {
+      let x = index % rendered.size.width
+      let y = index / rendered.size.width
+      if x < window.Width and y < rendered.size.height and y < window.Height {
+        window.SetCell(
+          x,
+          y,
+          raw::Cell{Character: raw::Character{Grapheme: cell.grapheme, Width: cell.width}},
+        )
+      }
+    }
+  }
+
+  match rendered.cursor {
+    cursor => {
+      if cursor.point.x >= 0 and cursor.point.x < rendered.size.width and cursor.point.x < window.Width and cursor.point.y >= 0 and cursor.point.y < rendered.size.height and cursor.point.y < window.Height {
+        window.ShowCursor(cursor.point.x, cursor.point.y, cursor_style(cursor.shape))
+      }
+    },
+    _ => (),
+  }
+
+  app.Render()
+}
+
+fn run(root: mut Widget) Void!Error {
+  let app = try raw::New(raw::Options{})
+  defer app.Close()
+
+  paint(root, app)
+  let events = app.Events()
+  mut running = true
+
+  while running {
+    match events.recv() {
+      received => {
+        let ctx = mut event::new_context()
+        match received {
+          raw::SyncFunc(action) => {
+            action()
+            ctx.request_redraw()
+          },
+          raw::Resize(size) => {
+            app.Resize(size)
+            ctx.request_redraw()
+          },
+          raw::Redraw(_) => ctx.request_redraw(),
+          raw::QuitEvent(_) => ctx.request_quit(),
+          _ => {
+            let _ = root.event(ctx, received)
+          },
+        }
+
+        if ctx.redraw_requested() {
+          paint(root, app)
+        }
+        if ctx.quit_requested() {
+          running = false
+        }
+      },
+      _ => { running = false },
+    }
+  }
+
+  Result::ok(())
+}

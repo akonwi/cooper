@@ -7,4 +7,5 @@ ard-out/
 /examples/demo
 /examples/todo
 /examples/tic_tac_toe
+/examples/retained_input
 /reconcile_bug

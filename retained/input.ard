@@ -1,0 +1,248 @@
+use go:github.com/rockorager/go-uucode as unicode
+use go:go.rockorager.dev/vaxis as raw
+use vaxis/retained
+use vaxis/retained/event
+use vaxis/retained/surface
+
+struct Input {
+  value: Str,
+  placeholder: Str,
+  // UTF-8 byte offset kept on an extended-grapheme-cluster boundary.
+  cursor: Int,
+}
+
+private struct Glyph {
+  text: Str,
+  start: Int,
+  end: Int,
+}
+
+private struct InputView {
+  text: Str,
+  cursor_x: Int,
+}
+
+private fn glyphs(text: Str) [Glyph] {
+  let iterator = mut unicode::NewGraphemeIterator(text)
+  let output: mut [Glyph] = mut []
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      grapheme => {
+        output.push(
+          Glyph{
+            text: text.slice(start: grapheme.Start, end: grapheme.End).or(""),
+            start: grapheme.Start,
+            end: grapheme.End,
+          },
+        )
+      },
+      _ => { reading = false },
+    }
+  }
+  output.@
+}
+
+private fn previous_boundary(text: Str, cursor: Int) Int {
+  mut previous = 0
+  for glyph in glyphs(text) {
+    if glyph.end >= cursor {
+      previous = glyph.start
+      break
+    }
+    previous = glyph.end
+  }
+  previous
+}
+
+private fn next_boundary(text: Str, cursor: Int) Int {
+  mut next = text.size()
+  for glyph in glyphs(text) {
+    if glyph.end > cursor {
+      next = glyph.end
+      break
+    }
+  }
+  next
+}
+
+private fn normalize_boundary(text: Str, cursor: Int) Int {
+  mut normalized = cursor
+  if normalized < 0 {
+    normalized = 0
+  }
+  if normalized > text.size() {
+    normalized = text.size()
+  }
+  for glyph in glyphs(text) {
+    if normalized > glyph.start and normalized < glyph.end {
+      normalized = glyph.end
+      break
+    }
+  }
+  normalized
+}
+
+private fn remove_range(text: Str, start: Int, end: Int) Str {
+  let before = text.slice(end: start).or("")
+  let after = text.slice(start: end).or("")
+  "{before}{after}"
+}
+
+private fn insert_at(text: Str, index: Int, inserted_text: Str) Str {
+  let before = text.slice(end: index).or("")
+  let after = text.slice(start: index).or("")
+  "{before}{inserted_text}{after}"
+}
+
+private fn single_line(text: Str) Str {
+  text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", "    ")
+}
+
+private fn input_view(
+  value: Str,
+  placeholder: Str,
+  cursor: Int,
+  width: Int,
+  ctx: surface::RenderContext,
+) InputView {
+  if value.is_empty() {
+    InputView{text: placeholder, cursor_x: 0}
+  } else {
+    let value_glyphs = glyphs(value)
+    mut cursor_width = 0
+    for glyph in value_glyphs {
+      if glyph.end <= cursor {
+        cursor_width = cursor_width + ctx.measure_text(glyph.text)
+      }
+    }
+
+    mut start_index = 0
+    mut dropped_width = 0
+    if width > 0 {
+      for glyph, index in value_glyphs {
+        if cursor_width - dropped_width >= width {
+          dropped_width = dropped_width + ctx.measure_text(glyph.text)
+          start_index = index + 1
+        } else {
+          break
+        }
+      }
+    }
+
+    mut visible = ""
+    mut visible_width = 0
+    for glyph, index in value_glyphs {
+      if index >= start_index {
+        let glyph_width = ctx.measure_text(glyph.text)
+        if visible_width + glyph_width <= width {
+          visible = "{visible}{glyph.text}"
+          visible_width = visible_width + glyph_width
+        } else {
+          break
+        }
+      }
+    }
+
+    InputView{text: visible, cursor_x: cursor_width - dropped_width}
+  }
+}
+
+fn new(value: Str, placeholder: Str) Input {
+  Input{
+    value: single_line(value),
+    placeholder: single_line(placeholder),
+    cursor: single_line(value).size(),
+  }
+}
+
+impl Input {
+  private fn mut changed(ctx: mut event::EventContext) event::EventResult {
+    ctx.request_redraw()
+    event::EventResult::handled
+  }
+
+  private fn mut insert_text(ctx: mut event::EventContext, text: Str) event::EventResult {
+    let inserted = single_line(text)
+    if inserted.is_empty() {
+      event::EventResult::ignored
+    } else {
+      let desired_cursor = self.cursor + inserted.size()
+      self.value = insert_at(self.value, self.cursor, inserted)
+      self.cursor = normalize_boundary(self.value, desired_cursor)
+      self.changed(ctx)
+    }
+  }
+
+  private fn mut handle_key(ctx: mut event::EventContext, key: raw::Key) event::EventResult {
+    if key.EventType == raw::EventRelease {
+      event::EventResult::ignored
+    } else if key.EventType == raw::EventPaste {
+      self.insert_text(ctx, key.Text)
+    } else if key.MatchString("Ctrl+c") {
+      ctx.request_quit()
+      event::EventResult::handled
+    } else if key.MatchString("Left") {
+      self.cursor = previous_boundary(self.value, self.cursor)
+      self.changed(ctx)
+    } else if key.MatchString("Right") {
+      self.cursor = next_boundary(self.value, self.cursor)
+      self.changed(ctx)
+    } else if key.MatchString("Home") {
+      self.cursor = 0
+      self.changed(ctx)
+    } else if key.MatchString("End") {
+      self.cursor = self.value.size()
+      self.changed(ctx)
+    } else if key.MatchString("Backspace") {
+      if self.cursor > 0 {
+        let previous = previous_boundary(self.value, self.cursor)
+        self.value = remove_range(self.value, previous, self.cursor)
+        self.cursor = normalize_boundary(self.value, previous)
+      }
+      self.changed(ctx)
+    } else if key.MatchString("Delete") {
+      if self.cursor < self.value.size() {
+        let next = next_boundary(self.value, self.cursor)
+        self.value = remove_range(self.value, self.cursor, next)
+        self.cursor = normalize_boundary(self.value, self.cursor)
+      }
+      self.changed(ctx)
+    } else {
+      self.insert_text(ctx, key.Text)
+    }
+  }
+}
+
+impl retained::Widget for Input {
+  fn render(ctx: surface::RenderContext) surface::Surface {
+    let display = match self.value.is_empty() {
+      true => self.placeholder,
+      false => self.value,
+    }
+    let intrinsic_width = ctx.measure_text(display) + 1
+    let desired_width = ctx.constraints.max_width.or(intrinsic_width)
+    let width = ctx.constraints.constrain_width(desired_width)
+    let height = ctx.constraints.constrain_height(1)
+    let view = input_view(self.value, self.placeholder, self.cursor, width, ctx)
+    let rendered = mut surface::blank(width, height)
+    rendered.write(ctx, 0, 0, view.text)
+
+    if width > 0 and height > 0 {
+      rendered.show_cursor(surface::Point{x: view.cursor_x, y: 0}, surface::CursorShape::beam)
+    }
+
+    rendered.@
+  }
+
+  fn mut event(ctx: mut event::EventContext, received: raw::Event) event::EventResult {
+    match received {
+      raw::Key(key) => self.handle_key(ctx, key),
+      raw::Resize(_) => {
+        ctx.request_redraw()
+        event::EventResult::handled
+      },
+      _ => event::EventResult::ignored,
+    }
+  }
+}

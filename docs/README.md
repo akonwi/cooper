@@ -1,30 +1,28 @@
 # vaxis-ard docs
 
-In-depth notes on how the vaxis-ard bindings (and the upstream `vaxis/ui`
-runtime) actually behave. The cheat-sheet in `AGENTS.md` covers basic
-patterns; this directory is for the subtleties that you only find when
-something doesn't work.
+Design notes and investigations for the Ard-native retained-mode framework.
+The previous `vaxis/ui` binding notes remain as historical references while the
+new implementation is developed.
 
-## Index
+## Architecture
 
-- [events-and-focus.md](./events-and-focus.md) — event dispatch (capture
-  / target / bubble), `Shortcuts`, `Actions`, intent dispatch via
-  `ctx.Invoke`, focus widgets, app-level default shortcuts, and the
-  common pitfalls (e.g. why you can't rebind `Tab` from an inner
-  `Shortcuts`).
-- [widget-reconciliation.md](./widget-reconciliation.md) — how the
-  rebuild pump diffs widget trees, the **type-change pitfall** where
-  a stateful's build output silently fails to repaint when its outer
-  widget type changes between frames, and the workarounds we use
-  while the upstream behaviour is being investigated. Reproducer at
-  `examples/reconcile_bug.ard`.
+- [architecture.md](./architecture.md) — accepted retained-widget architecture,
+  layout and surface model, event-routing direction, runtime responsibilities,
+  verification strategy, and implementation milestones.
+
+## Historical binding notes
+
+- [events-and-focus.md](./events-and-focus.md) — upstream `vaxis/ui` event
+  dispatch, shortcuts, actions, focus widgets, and routing pitfalls.
+- [widget-reconciliation.md](./widget-reconciliation.md) — upstream `vaxis/ui`
+  reconciliation behavior and the type-change repaint pitfall.
+
+These historical notes describe the implementation being replaced. They are
+useful prior art, but they do not define behavior for the retained framework.
 
 ## Conventions
 
-- Each doc states what it covers and what upstream vaxis source files
-  it depends on.
-- When upstream behaviour changes, update the doc *and* link the
-  upstream commit.
-- Examples reference real binding code (`ui.ard`, `ffi/ui.go`) and real
-  apps (the `examples/` directory, or downstream tinear) so the docs
-  don't drift from runnable code.
+- State the decision or behavior being documented.
+- Link the relevant upstream Vaxis source or Ard language change.
+- Add focused headless or PTY coverage when a document records executable
+  behavior.

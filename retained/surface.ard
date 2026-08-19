@@ -1,0 +1,182 @@
+use go:go.rockorager.dev/vaxis as raw
+
+struct Size {
+  width: Int,
+  height: Int,
+}
+
+struct Point {
+  x: Int,
+  y: Int,
+}
+
+struct Constraints {
+  min_width: Int,
+  max_width: Int?,
+  min_height: Int,
+  max_height: Int?,
+}
+
+fn bounded(max_width: Int, max_height: Int) Constraints {
+  mut safe_width = max_width
+  mut safe_height = max_height
+  if safe_width < 0 {
+    safe_width = 0
+  }
+  if safe_height < 0 {
+    safe_height = 0
+  }
+  Constraints{
+    min_width: 0,
+    max_width: safe_width,
+    min_height: 0,
+    max_height: safe_height,
+  }
+}
+
+impl Constraints {
+  fn constrain_width(width: Int) Int {
+    mut constrained = width
+    if constrained < self.min_width {
+      constrained = self.min_width
+    }
+    match self.max_width {
+      maximum => {
+        if constrained > maximum {
+          constrained = maximum
+        }
+      },
+      _ => (),
+    }
+    if constrained < 0 {
+      constrained = 0
+    }
+    constrained
+  }
+
+  fn constrain_height(height: Int) Int {
+    mut constrained = height
+    if constrained < self.min_height {
+      constrained = self.min_height
+    }
+    match self.max_height {
+      maximum => {
+        if constrained > maximum {
+          constrained = maximum
+        }
+      },
+      _ => (),
+    }
+    if constrained < 0 {
+      constrained = 0
+    }
+    constrained
+  }
+}
+
+struct WidthMeasurer {
+  measure: fn(Str) Int,
+}
+
+struct RenderContext {
+  constraints: Constraints,
+  width_measurer: WidthMeasurer?,
+}
+
+struct Cell {
+  grapheme: Str,
+  // Zero marks a continuation cell reserved by a preceding wide grapheme.
+  width: Int,
+}
+
+enum CursorShape {
+  default,
+  block,
+  underline,
+  beam,
+}
+
+struct Cursor {
+  point: Point,
+  shape: CursorShape,
+}
+
+struct Surface {
+  size: Size,
+  cells: [Cell],
+  cursor: Cursor?,
+}
+
+fn blank(width: Int, height: Int) Surface {
+  mut safe_width = width
+  mut safe_height = height
+  if safe_width < 0 {
+    safe_width = 0
+  }
+  if safe_height < 0 {
+    safe_height = 0
+  }
+
+  let cells: mut [Cell] = mut []
+  mut index = 0
+  while index < safe_width * safe_height {
+    cells.push(Cell{grapheme: " ", width: 1})
+    index = index + 1
+  }
+
+  Surface{size: Size{width: safe_width, height: safe_height}, cells: cells.@}
+}
+
+fn text_width(text: Str) Int {
+  mut width = 0
+  for character in raw::Characters(text) {
+    width = width + character.Width
+  }
+  width
+}
+
+impl RenderContext {
+  fn measure_text(text: Str) Int {
+    match self.width_measurer {
+      measurer => measurer.measure(text),
+      _ => text_width(text),
+    }
+  }
+}
+
+impl Surface {
+  fn cell(x: Int, y: Int) Cell? {
+    if x >= 0 and x < self.size.width and y >= 0 and y < self.size.height {
+      self.cells.at(y * self.size.width + x)
+    } else {
+      Maybe::new<Cell>()
+    }
+  }
+
+  fn mut set_cell(x: Int, y: Int, cell: Cell) {
+    if x >= 0 and x < self.size.width and y >= 0 and y < self.size.height {
+      self.cells.set(y * self.size.width + x, cell)
+    }
+  }
+
+  fn mut write(ctx: RenderContext, x: Int, y: Int, text: Str) {
+    mut column = x
+    for character in raw::Characters(text) {
+      let width = ctx.measure_text(character.Grapheme)
+      let end = column + width
+      if width > 0 and column >= 0 and end <= self.size.width {
+        self.set_cell(column, y, Cell{grapheme: character.Grapheme, width: width})
+        mut continuation = column + 1
+        while continuation < end {
+          self.set_cell(continuation, y, Cell{grapheme: "", width: 0})
+          continuation = continuation + 1
+        }
+      }
+      column = end
+    }
+  }
+
+  fn mut show_cursor(point: Point, shape: CursorShape) {
+    self.cursor = Cursor{point: point, shape: shape}
+  }
+}

@@ -22,6 +22,11 @@ private struct MalformedProbe {
   height: Int,
 }
 
+private struct TightViolator {
+  inherent_height: Int,
+  tight_height: Int,
+}
+
 private fn probe(width: Int, height: Int, glyph: Str, handles: Bool) Probe {
   Probe{
     desired_width: width,
@@ -32,10 +37,32 @@ private fn probe(width: Int, height: Int, glyph: Str, handles: Bool) Probe {
   }
 }
 
+private fn fixed(widget: mut cooper::Widget) layout::FlexItem {
+  layout::flex_item(widget)
+}
+
 impl cooper::Widget for MalformedProbe {
   fn render(ctx: surface::RenderContext) surface::Surface {
     surface::Surface{
       size: surface::Size{width: self.width, height: self.height},
+      cells: [],
+      children: [],
+    }
+  }
+
+  fn event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
+    event::EventResult::ignored
+  }
+}
+
+impl cooper::Widget for TightViolator {
+  fn render(ctx: surface::RenderContext) surface::Surface {
+    let height = match ctx.constraints.max_height {
+      maximum => self.tight_height,
+      _ => self.inherent_height,
+    }
+    surface::Surface{
+      size: surface::Size{width: 1, height: height},
       cells: [],
       children: [],
     }
@@ -67,7 +94,7 @@ impl cooper::Widget for Probe {
 test fn column_positions_children_vertically() Void!Str {
   let first = mut probe(2, 1, "a", false)
   let second = mut probe(3, 2, "b", false)
-  let children: [mut cooper::Widget] = [first, second]
+  let children = [fixed(first), fixed(second)]
   let column = layout::column(children)
 
   let rendered = column.render(
@@ -96,7 +123,7 @@ test fn column_positions_children_vertically() Void!Str {
 
 test fn column_applies_parent_minimums_without_stretching_children() Void!Str {
   let child = mut probe(2, 1, "x", false)
-  let children: [mut cooper::Widget] = [child]
+  let children = [fixed(child)]
   let column = layout::column(children)
 
   let rendered = column.render(
@@ -120,7 +147,7 @@ test fn column_applies_parent_minimums_without_stretching_children() Void!Str {
 test fn column_clips_height_without_constraining_child_measurement() Void!Str {
   let first = mut probe(1, 2, "a", false)
   let second = mut probe(1, 2, "b", false)
-  let children: [mut cooper::Widget] = [first, second]
+  let children = [fixed(first), fixed(second)]
   let column = layout::column(children)
 
   let rendered = column.render(
@@ -143,7 +170,7 @@ test fn column_clips_height_without_constraining_child_measurement() Void!Str {
 test fn column_normalizes_negative_child_dimensions() Void!Str {
   let malformed = mut MalformedProbe{width: -2, height: -3}
   let valid = mut probe(1, 1, "x", false)
-  let children: [mut cooper::Widget] = [malformed, valid]
+  let children = [fixed(malformed), fixed(valid)]
   let column = layout::column(children)
 
   let rendered = column.render(
@@ -162,7 +189,7 @@ test fn column_normalizes_negative_child_dimensions() Void!Str {
 test fn column_saturates_large_child_origins() Void!Str {
   let first = mut MalformedProbe{width: 1, height: math::MaxInt}
   let second = mut MalformedProbe{width: 1, height: 1}
-  let children: [mut cooper::Widget] = [first, second]
+  let children = [fixed(first), fixed(second)]
   let column = layout::column(children)
 
   let rendered = column.render(
@@ -177,7 +204,7 @@ test fn column_saturates_large_child_origins() Void!Str {
 }
 
 test fn empty_column_uses_only_parent_minimums() Void!Str {
-  let children: [mut cooper::Widget] = []
+  let children: [layout::FlexItem] = []
   let column = layout::column(children)
 
   let intrinsic = column.render(
@@ -202,7 +229,7 @@ test fn empty_column_uses_only_parent_minimums() Void!Str {
 
 test fn column_preserves_unbounded_width_and_frame_measurement() Void!Str {
   let label = mut text::new(content: "🙂")
-  let children: [mut cooper::Widget] = [label]
+  let children = [fixed(label)]
   let column = layout::column(children)
 
   let rendered = column.render(
@@ -231,7 +258,7 @@ test fn column_preserves_unbounded_width_and_frame_measurement() Void!Str {
 
 test fn column_rerenders_retained_child_state() Void!Str {
   let child = mut probe(1, 1, "x", false)
-  let children: [mut cooper::Widget] = [child]
+  let children = [fixed(child)]
   let column = layout::column(children)
   let ctx = surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 10)}
 
@@ -246,10 +273,10 @@ test fn column_rerenders_retained_child_state() Void!Str {
 test fn column_owns_its_child_list_structure() Void!Str {
   let original = mut probe(1, 1, "a", false)
   let replacement = mut probe(1, 1, "b", false)
-  let children = mut List::new<mut cooper::Widget>()
-  children.push(original)
+  let children = mut List::new<layout::FlexItem>()
+  children.push(fixed(original))
   let column = layout::column(children.@)
-  children.set(0, replacement)
+  children.set(0, fixed(replacement))
 
   let rendered = column.render(
     surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 1)},
@@ -262,11 +289,214 @@ test fn column_owns_its_child_list_structure() Void!Str {
   )
 }
 
+test fn column_distributes_bounded_height_like_vxfw_flex_column() Void!Str {
+  let first = mut text::new(content: "abc")
+  let second = mut text::new(content: "def")
+  let third = mut text::new(content: "ghi")
+  let fourth = mut text::new(content: "jkl\nmno")
+  let column = layout::column(
+    [
+      layout::flex_item(first),
+      layout::flex_item(second, flex: 1),
+      layout::flex_item(third, flex: 1),
+      layout::flex_item(fourth, flex: 1),
+    ],
+  )
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 16, max_height: 16)},
+  )
+
+  try testing::assert(rendered.size.width == 3, "Expected the widest text line")
+  try testing::assert(rendered.size.height == 16, "Expected flex children to fill bounded height")
+  let expected_heights = [1, 4, 4, 7]
+  mut y = 0
+  for expected, index in expected_heights {
+    let child = rendered.children.at(index).expect("flex child")
+    try testing::assert(
+      child.surface.size.height == expected,
+      "Expected child {index} height {expected}, got {child.surface.size.height}",
+    )
+    try testing::assert(child.origin.y == y, "Expected child {index} origin {y}, got {child.origin.y}")
+    y = y + expected
+  }
+  Result::ok(())
+}
+
+test fn column_gives_rounding_remainder_to_last_flexible_child() Void!Str {
+  let first = mut probe(1, 1, "a", false)
+  let second = mut probe(1, 1, "b", false)
+  let fixed_last = mut probe(1, 1, "c", false)
+  let column = layout::column(
+    [
+      layout::flex_item(first, flex: 1),
+      layout::flex_item(second, flex: 1),
+      layout::flex_item(fixed_last),
+    ],
+  )
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 6)},
+  )
+
+  try testing::assert(
+    rendered.children.at(0).expect("first flexible child").surface.size.height == 2,
+    "Expected the first flexible child to receive one extra row",
+  )
+  try testing::assert(
+    rendered.children.at(1).expect("last flexible child").surface.size.height == 3,
+    "Expected the last flexible child to receive the rounding remainder",
+  )
+  testing::assert(
+    rendered.children.at(2).expect("fixed child").surface.size.height == 1,
+    "Expected the trailing fixed child to retain inherent height",
+  )
+}
+
+test fn column_distributes_height_by_flex_weight() Void!Str {
+  let first = mut probe(1, 1, "a", false)
+  let second = mut probe(1, 1, "b", false)
+  let column = layout::column(
+    [layout::flex_item(first, flex: 1), layout::flex_item(second, flex: 2)],
+  )
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 7)},
+  )
+
+  try testing::assert(
+    rendered.children.at(0).expect("one-unit child").surface.size.height == 2,
+    "Expected the floored one-third share of remaining height",
+  )
+  testing::assert(
+    rendered.children.at(1).expect("two-unit child").surface.size.height == 5,
+    "Expected two thirds of remaining height",
+  )
+}
+
+test fn column_does_not_shrink_overflowing_flex_children() Void!Str {
+  let fixed_child = mut probe(1, 2, "a", false)
+  let flexible_child = mut probe(1, 2, "b", false)
+  let column = layout::column(
+    [layout::flex_item(fixed_child), layout::flex_item(flexible_child, flex: 1)],
+  )
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 3)},
+  )
+
+  try testing::assert(rendered.size.height == 3, "Expected overflowing content to be clipped")
+  try testing::assert(
+    rendered.children.at(1).expect("flexible child").surface.size.height == 2,
+    "Expected the flexible child to keep its inherent height",
+  )
+  testing::assert(
+    rendered.children.at(1).expect("flexible child").origin.y == 2,
+    "Expected natural placement before clipping",
+  )
+}
+
+test fn unbounded_column_does_not_expand_flexible_children() Void!Str {
+  let child = mut probe(1, 2, "x", false)
+  let column = layout::column([layout::flex_item(child, flex: 1)])
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::Constraints{min_width: 0, min_height: 0}},
+  )
+
+  try testing::assert(rendered.size.height == 2, "Expected inherent unbounded height")
+  testing::assert(
+    rendered.children.at(0).expect("flexible child").surface.size.height == 2,
+    "Expected no expansion without a finite height",
+  )
+}
+
+test fn negative_flex_is_treated_as_fixed() Void!Str {
+  let child = mut probe(1, 1, "x", false)
+  let item = layout::flex_item(child, flex: -2)
+  try testing::assert(item.flex == 0, "Expected constructor flex normalization")
+  let column = layout::column([layout::FlexItem{widget: child, flex: -2}])
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 5)},
+  )
+
+  testing::assert(rendered.size.height == 1, "Expected direct negative flex to remain fixed")
+}
+
+test fn column_enforces_tight_flex_height_on_malformed_children() Void!Str {
+  let smaller = mut TightViolator{inherent_height: 1, tight_height: 0}
+  let larger = mut TightViolator{inherent_height: 1, tight_height: 9}
+  let column = layout::column(
+    [layout::flex_item(smaller, flex: 1), layout::flex_item(larger, flex: 1)],
+  )
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 8)},
+  )
+
+  try testing::assert(
+    rendered.children.at(0).expect("undersized child").surface.size.height == 4,
+    "Expected the undersized child to use its allocation",
+  )
+  try testing::assert(
+    rendered.children.at(1).expect("oversized child").surface.size.height == 4,
+    "Expected the oversized child to be clipped to its allocation",
+  )
+  testing::assert(rendered.size.height == 8, "Expected allocations to determine column height")
+}
+
+test fn proportional_flex_arithmetic_does_not_overflow() Void!Str {
+  let first = mut probe(1, 0, "", false)
+  let second = mut probe(1, 0, "", false)
+  let column = layout::column(
+    [layout::flex_item(first, flex: math::MaxInt - 1), layout::flex_item(second, flex: 1)],
+  )
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 2)},
+  )
+
+  try testing::assert(
+    rendered.children.at(0).expect("large-weight child").surface.size.height == 1,
+    "Expected a safe proportional share for the large weight",
+  )
+  testing::assert(
+    rendered.children.at(1).expect("small-weight child").surface.size.height == 1,
+    "Expected the last flexible child to receive the remaining row",
+  )
+}
+
+test fn column_scales_flex_totals_that_exceed_int() Void!Str {
+  let first = mut probe(1, 0, "", false)
+  let second = mut probe(1, 0, "", false)
+  let third = mut probe(1, 0, "", false)
+  let column = layout::column(
+    [
+      layout::flex_item(first, flex: math::MaxInt),
+      layout::flex_item(second, flex: math::MaxInt),
+      layout::flex_item(third, flex: math::MaxInt),
+    ],
+  )
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 3)},
+  )
+
+  for child, index in rendered.children {
+    try testing::assert(
+      child.surface.size.height == 1,
+      "Expected scaled child {index} to receive an equal row",
+    )
+  }
+  Result::ok(())
+}
+
 test fn column_forwards_events_until_a_child_handles_them() Void!Str {
   let first = mut probe(1, 1, "a", false)
   let second = mut probe(1, 1, "b", true)
   let third = mut probe(1, 1, "c", false)
-  let children: [mut cooper::Widget] = [first, second, third]
+  let children = [fixed(first), fixed(second), fixed(third)]
   let column = mut layout::column(children)
   let ctx = mut event::new_context()
 
@@ -281,7 +511,7 @@ test fn column_forwards_events_until_a_child_handles_them() Void!Str {
 test fn column_supports_heterogeneous_retained_widgets() Void!Str {
   let label = mut text::new(content: "Name")
   let field = mut input::new(value: "", placeholder: "Type here")
-  let children: [mut cooper::Widget] = [label, field]
+  let children = [fixed(label), fixed(field)]
   let column = mut layout::column(children)
 
   let rendered = column.render(

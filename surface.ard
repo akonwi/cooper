@@ -232,15 +232,10 @@ impl Surface {
     mut origin = x
     mut searching = true
     while origin > 0 and searching {
-      match self.cell(origin, y) {
-        cell => {
-          if cell.width == 0 {
-            origin = origin - 1
-          } else {
-            searching = false
-          }
-        },
-        _ => { searching = false },
+      let cell = try self.cell(origin, y) -> _ { origin }
+      match cell.width == 0 {
+        true => { origin =- 1 },
+        false => { searching = false }
       }
     }
     origin

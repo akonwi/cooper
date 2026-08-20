@@ -28,7 +28,8 @@ trait Widget {
 - A mutating implementation cannot satisfy a non-mutating contract.
 - A non-mutating implementation may satisfy a mutating contract.
 - `EventContext` carries one terminal event, focused-target geometry, or a
-  mount/unmount lifecycle signal. It also exposes direct UI-thread dispatch.
+  mount/unmount lifecycle signal. It also exposes direct UI-thread dispatch and
+  relative focus requests.
 - Containers broadcast lifecycle signals and route terminal/focus contexts
   through exact retained child indexes. Leaves ignore context kinds they do not
   use.
@@ -101,8 +102,9 @@ copy the full capture/target/bubble system from `vaxis/ui`.
 4. Mouse hit testing, Input click focus, retained vertical scrolling,
    focused-descendant reveal, lifecycle contexts, and asynchronous UI-thread
    dispatch: complete.
-5. Broader widget APIs only after a representative application exercises the
-   model.
+5. A representative asynchronous filesystem explorer now exercises responsive
+   horizontal composition, dynamic pane data, mouse input, and programmatic
+   focus. Promote broader widget APIs only from demonstrated repetition.
 
 ## Module direction
 
@@ -161,6 +163,7 @@ python3 test_input.py
 python3 test_form.py
 python3 test_scroll_form.py
 python3 test_async.py
+python3 test_explorer.py
 ```
 
 ## References

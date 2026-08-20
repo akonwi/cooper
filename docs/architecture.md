@@ -129,9 +129,11 @@ descendant, and no path means focus is outside the subtree. Initial or stale
 focus is reconciled after rendering and triggers one corrective render before
 painting. Focusability and route structure must not depend on focus state.
 
-The runtime handles Tab, Shift+Tab, and Ctrl+C before focused delivery. Route
-paths currently identify retained child slots; dynamic keyed collections will
-need stable occurrence keys to preserve semantic focus across reordering.
+The runtime handles Tab, Shift+Tab, and Ctrl+C before focused delivery.
+`EventContext.request_focus` lets a widget request a path relative to its
+current routed owner; the runtime validates it against the next rendered tree.
+Route paths currently identify retained child slots; dynamic keyed collections
+will need stable occurrence keys to preserve semantic focus across reordering.
 
 The runtime retains the final unflattened tree from the painted frame for mouse
 hit testing. Hit testing follows ancestor clipping, visits later-painted
@@ -228,6 +230,7 @@ Use PTY smoke tests for the integration boundary:
 - resize handling;
 - cursor placement;
 - asynchronous dispatch and lifecycle cleanup;
+- programmatic focus and representative filesystem navigation;
 - clean quit.
 
 ## Milestones
@@ -241,8 +244,10 @@ Use PTY smoke tests for the integration boundary:
 4. **Interaction — complete:** routed mouse hit testing, click focus, Input
    cursor placement, retained vertical scrolling, focused-descendant reveal,
    lifecycle contexts, and asynchronous UI dispatch.
-5. **Library surface:** refine naming and ergonomics only after the retained
-   model has been exercised by a representative application.
+5. **Library surface — in progress:** the asynchronous filesystem explorer
+   exercises responsive horizontal composition, dynamic pane data, mouse
+   selection, stale-safe loading, and programmatic focus. Promote reusable APIs
+   only after repeated app-level shapes make them clear.
 
 ## Non-goals for the first milestone
 

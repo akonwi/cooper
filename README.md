@@ -47,8 +47,9 @@ runtime owns Tab/Shift+Tab focus traversal and Ctrl+C shutdown.
 
 See [`examples/form.ard`](./examples/form.ard) for nested focusable inputs,
 [`examples/scroll_form.ard`](./examples/scroll_form.ard) for a wheel-scrollable
-form, and [`examples/async.ard`](./examples/async.ard) for mount-time background
-work returning through the UI thread.
+form, [`examples/async.ard`](./examples/async.ard) for mount-time background
+work, and [`examples/explorer.ard`](./examples/explorer.ard) for an asynchronous
+mouse-enabled Miller-column filesystem explorer.
 
 ## Widget model
 
@@ -64,7 +65,7 @@ trait Widget {
 
 `EventContext` contains a terminal event, focused-target geometry, or a
 mount/unmount lifecycle signal. Containers route or broadcast that context;
-widgets opt into only the cases they need.
+widgets opt into only the cases they need and may request relative focus paths.
 
 The current runtime redraws the complete logical surface after state changes
 and lets Vaxis efficiently diff terminal cells.
@@ -76,6 +77,18 @@ Background fibers perform slow work without touching widget state, then dispatch
 a short retained-state mutation back to Cooper's UI loop. Accepted actions are
 followed by a redraw; dispatch returns `stopped` after runtime shutdown. See the
 async example for startup and cleanup handling.
+
+## Filesystem explorer
+
+The representative explorer example reads the current directory asynchronously,
+opens selected directories in responsive detail panes, supports mouse and
+keyboard navigation, and uses `/` to move focus into a retained search `Input`.
+Run it with:
+
+```sh
+cd examples
+ard run explorer.ard
+```
 
 ## Scrolling
 
@@ -125,11 +138,12 @@ python3 test_input.py
 python3 test_form.py
 python3 test_scroll_form.py
 python3 test_async.py
+python3 test_explorer.py
 ```
 
 The PTY smoke tests cover terminal startup, editing, resize, nested keyboard
-and mouse focus, cursor placement, wheel scrolling, async dispatch, redraws,
-and clean exit.
+and mouse focus, cursor placement, wheel scrolling, async dispatch,
+programmatic focus, filesystem navigation, redraws, and clean exit.
 
 ## Design principles
 

@@ -38,6 +38,7 @@ struct EventContext {
   target_size: surface::Size?,
   width_measurer: (fn(Str) Int)?,
   terminal_event: vaxis::Event?,
+  requested_focus: [Int]?,
   dispatch: fn(fn()) Void!DispatchError,
 }
 
@@ -115,6 +116,7 @@ private fn context(
     target_size: resolved_target_size(target_size, route_sizes),
     width_measurer: width_measurer,
     terminal_event: terminal_event,
+    requested_focus: Maybe::new<[Int]>(),
     dispatch: dispatch.or(stopped_dispatch),
   }
 }
@@ -217,6 +219,29 @@ impl EventContext {
   fn mut localize_terminal(received: vaxis::Event) {
     self.kind = ContextKind::terminal
     self.terminal_event = Maybe::new<vaxis::Event>(received)
+  }
+
+  // Requests a focus path relative to the widget currently handling this context.
+  fn mut request_focus(relative: [Int]) {
+    let requested = mut List::new<Int>()
+    match self.route {
+      current => {
+        mut index = 0
+        while index < self.route_depth and index < current.size() {
+          requested.push(current.at(index).expect("focus request route prefix"))
+          index =+ 1
+        }
+      },
+      _ => (),
+    }
+    for part in relative {
+      requested.push(part)
+    }
+    self.requested_focus = Maybe::new<[Int]>(requested.@)
+  }
+
+  fn focus_requested() [Int]? {
+    copy_route(self.requested_focus)
   }
 
   fn current_route_size() surface::Size? {

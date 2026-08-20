@@ -16,13 +16,33 @@ Controls:
 - Backspace/Delete remove one grapheme;
 - Ctrl+C exits.
 
-## PTY smoke test
+## Filesystem explorer
 
-The smoke test builds the example, starts it under a pseudoterminal, edits text,
-resizes the terminal, and verifies a clean exit:
+`explorer.ard` is a responsive Miller-column browser rooted at the current
+working directory.
+
+```sh
+ard run explorer.ard
+```
+
+Controls:
+
+- Up/Down select entries;
+- Right/Enter opens a selected directory;
+- Left, Backspace, or `../` navigates upward;
+- `/` focuses search and Escape returns to the directory;
+- click selects and opens directories;
+- the mouse wheel scrolls a pane;
+- Ctrl+C exits.
+
+## PTY smoke tests
+
+The smoke tests build examples, start them under a pseudoterminal, exercise
+interaction, and verify a clean exit:
 
 ```sh
 python3 test_input.py
+python3 test_explorer.py
 ```
 
 Set `ARD` to select a compiler executable when needed.

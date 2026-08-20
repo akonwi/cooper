@@ -86,6 +86,7 @@ private fn paint(
   app: mut raw::Vaxis,
   focus_state: mut focus::FocusState,
   reconcile_focus: Bool,
+  requested_focus: [Int]?,
   dispatch: fn(fn()) Void!event::DispatchError,
 ) surface::Surface {
   mut rendered_tree = render_root(root, app, focus_state.current_path())
@@ -95,6 +96,17 @@ private fn paint(
     rendered_tree = render_root(root, app, focus_state.current_path())
     let _ = focus_state.reconcile(rendered_tree)
     should_reconcile_focus = true
+  }
+
+  match requested_focus {
+    requested => {
+      if focus_state.focus(requested) {
+        rendered_tree = render_root(root, app, focus_state.current_path())
+        let _ = focus_state.reconcile(rendered_tree)
+        should_reconcile_focus = true
+      }
+    },
+    _ => (),
   }
 
   mut remaining_focus_passes = 0
@@ -157,7 +169,7 @@ fn run(root: mut Widget) Void!Error {
   let _ = root.event(mount_ctx)
 
   let focus_state = mut focus::new_state()
-  mut rendered_tree = paint(root, app, focus_state, true, dispatch)
+  mut rendered_tree = paint(root, app, focus_state, true, Maybe::new<[Int]>(), dispatch)
   let events = app.Events()
   mut running = true
 
@@ -179,7 +191,7 @@ fn run(root: mut Widget) Void!Error {
         }
         updates.wake_if_pending()
         if changed {
-          rendered_tree = paint(root, app, focus_state, false, dispatch)
+          rendered_tree = paint(root, app, focus_state, false, Maybe::new<[Int]>(), dispatch)
         }
       },
       let posted = events.recv() => {
@@ -249,8 +261,20 @@ fn run(root: mut Widget) Void!Error {
               },
             }
 
+            let requested_focus = ctx.focus_requested()
+            if requested_focus.is_some() {
+              ctx.request_redraw()
+              reconcile_focus = true
+            }
             if ctx.redraw_requested() {
-              rendered_tree = paint(root, app, focus_state, reconcile_focus, dispatch)
+              rendered_tree = paint(
+                root,
+                app,
+                focus_state,
+                reconcile_focus,
+                requested_focus,
+                dispatch,
+              )
             }
             if ctx.quit_requested() {
               running = false

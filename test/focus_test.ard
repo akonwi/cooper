@@ -214,3 +214,16 @@ test fn nested_columns_route_render_focus_and_keyboard_to_one_input() Void!Str {
   try testing::assert(first.value.is_empty(), "Expected the first Input to remain unchanged")
   testing::assert(second.value == "x", "Expected only the focused Input to mutate")
 }
+
+test fn focus_requests_are_relative_to_the_current_routed_widget() Void!Str {
+  let ctx = mut event::terminal_context(vaxis::Key{Text: "x"}, route: [2, 3])
+  ctx.enter_child()
+
+  ctx.request_focus([4, 5])
+
+  let requested = ctx.focus_requested().expect("relative focus request")
+  try testing::assert(requested.size() == 3, "Expected current owner prefix plus relative path")
+  try testing::assert(requested.at(0).expect("owner path") == 2, "Expected current owner route")
+  try testing::assert(requested.at(1).expect("first relative part") == 4, "Expected relative focus path")
+  testing::assert(requested.at(2).expect("second relative part") == 5, "Expected full focus path")
+}

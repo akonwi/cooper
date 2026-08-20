@@ -6,7 +6,7 @@ use cooper/text
 fn main() {
   let title = mut text::new(content: "Cooper focus demo")
   let instructions = mut text::new(
-    content: "Tab: next field  Shift+Tab: previous field  Ctrl+C: quit",
+    content: "Click or Tab: choose field  Shift+Tab: previous  Ctrl+C: quit",
   )
 
   let identity_title = mut text::new(content: "Identity")

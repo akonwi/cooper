@@ -86,7 +86,8 @@ copy the full capture/target/bubble system from `vaxis/ui`.
 2. `Text`, `Column`, child surfaces, clipping, and two-pass flex allocation:
    complete.
 3. Multiple inputs with focus routing and Tab/Shift+Tab traversal: complete.
-4. Mouse hit testing, scrolling, and asynchronous UI-thread synchronization.
+4. Mouse hit testing and Input click focus: complete. Scrolling and
+   asynchronous UI-thread synchronization remain.
 5. Broader widget APIs only after a representative application exercises the
    model.
 
@@ -97,6 +98,7 @@ cooper.ard      public Widget contract and application runtime
 surface.ard     Size, Point, Constraints, Cell, Surface
 event.ard       EventContext, event routes, and EventResult
 focus.ard       focus path discovery and traversal state
+hit.ard         clipped routed Surface hit testing
 text.ard        stateless Text widget
 input.ard       retained Input widget
 layout.ard      Column and flex layout

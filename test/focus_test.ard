@@ -107,6 +107,17 @@ test fn focus_state_selects_first_and_wraps_in_both_directions() Void!Str {
   testing::assert(state.current_matches([3, 2]), "Expected reverse traversal to wrap")
 }
 
+test fn focus_state_accepts_a_known_mouse_target() Void!Str {
+  let state = mut focus::new_state()
+  let _ = state.reconcile(routed_focus_tree())
+
+  try testing::assert(state.focus([3, 2]), "Expected focus to move to a known target")
+  try testing::assert(state.current_matches([3, 2]), "Expected the selected mouse target")
+  try testing::assert(not state.focus([3, 2]), "Expected selecting the current target to be unchanged")
+  try testing::assert(not state.focus([9]), "Expected an unknown route to be rejected")
+  testing::assert(state.current_matches([3, 2]), "Expected rejected focus not to alter state")
+}
+
 test fn focus_state_falls_back_by_previous_ordinal() Void!Str {
   let state = mut focus::new_state()
   let _ = state.reconcile(routed_focus_tree())

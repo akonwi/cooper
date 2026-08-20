@@ -1,0 +1,170 @@
+use cooper/surface
+
+struct Hit {
+  // Deepest retained widget occurrence under the point.
+  route: [Int],
+  // Deepest focusable occurrence containing the point, if any.
+  focus_path: [Int]?,
+  // Point and size local to the routed widget occurrence.
+  local: surface::Point,
+  size: surface::Size,
+}
+
+private struct Rect {
+  left: Int,
+  top: Int,
+  right: Int,
+  bottom: Int,
+}
+
+impl Rect {
+  private fn contains(point: surface::Point) Bool {
+    point.x >= self.left and point.x < self.right and point.y >= self.top and point.y < self.bottom
+  }
+}
+
+private fn intersect(a: Rect, b: Rect) Rect {
+  mut left = a.left
+  mut top = a.top
+  mut right = a.right
+  mut bottom = a.bottom
+  if b.left > left {
+    left = b.left
+  }
+  if b.top > top {
+    top = b.top
+  }
+  if b.right < right {
+    right = b.right
+  }
+  if b.bottom < bottom {
+    bottom = b.bottom
+  }
+  Rect{
+    left: left,
+    top: top,
+    right: right,
+    bottom: bottom,
+  }
+}
+
+private fn copy_path(path: [Int]) [Int] {
+  let copied = mut List::new<Int>()
+  for part in path {
+    copied.push(part)
+  }
+  copied.@
+}
+
+private fn copy_optional_path(path: [Int]?) [Int]? {
+  match path {
+    current => Maybe::new<[Int]>(copy_path(current)),
+    _ => Maybe::new<[Int]>(),
+  }
+}
+
+private fn append_path(path: [Int], part: Int) [Int] {
+  let appended = mut List::new<Int>()
+  for current in path {
+    appended.push(current)
+  }
+  appended.push(part)
+  appended.@
+}
+
+private fn hit_surface(
+  tree: surface::Surface,
+  origin: surface::Point,
+  clip: Rect,
+  point: surface::Point,
+  route: [Int],
+  nearest_focus: [Int]?,
+  owner_origin: surface::Point,
+  owner_size: surface::Size,
+) Hit? {
+  if not clip.contains(point) {
+    Maybe::new<Hit>()
+  } else {
+    mut current_focus = copy_optional_path(nearest_focus)
+    if tree.focusable {
+      current_focus = Maybe::new<[Int]>(copy_path(route))
+    }
+
+    mut found = Maybe::new<Hit>()
+    mut child_index = tree.children.size()
+    while child_index > 0 and found.is_none() {
+      child_index =- 1
+      let positioned = tree.children.at(child_index).expect("reverse hit-test child index")
+      let child_origin = surface::Point{x: origin.x + positioned.origin.x, y: origin.y + positioned.origin.y}
+      let child_clip = intersect(
+        clip,
+        Rect{
+          left: child_origin.x,
+          top: child_origin.y,
+          right: child_origin.x + positioned.surface.size.width,
+          bottom: child_origin.y + positioned.surface.size.height,
+        },
+      )
+
+      if child_clip.contains(point) {
+        mut child_route = copy_path(route)
+        mut child_owner_origin = owner_origin
+        mut child_owner_size = owner_size
+        match positioned.route_index {
+          route_index => {
+            child_route = append_path(route, route_index)
+            child_owner_origin = child_origin
+            child_owner_size = positioned.surface.size
+          },
+          _ => (),
+        }
+        match hit_surface(
+          positioned.surface,
+          child_origin,
+          child_clip,
+          point,
+          child_route,
+          current_focus,
+          child_owner_origin,
+          child_owner_size,
+        ) {
+          child_hit => { found = Maybe::new<Hit>(child_hit) },
+          _ => (),
+        }
+      }
+    }
+
+    match found {
+      child_hit => Maybe::new<Hit>(child_hit),
+      _ => {
+        Maybe::new<Hit>(
+          Hit{
+            route: copy_path(route),
+            focus_path: copy_optional_path(current_focus),
+            local: surface::Point{x: point.x - owner_origin.x, y: point.y - owner_origin.y},
+            size: owner_size,
+          },
+        )
+      },
+    }
+  }
+}
+
+fn hit_test(tree: surface::Surface, point: surface::Point) Hit? {
+  let origin = surface::Point{x: 0, y: 0}
+  hit_surface(
+    tree,
+    origin,
+    Rect{
+      left: 0,
+      top: 0,
+      right: tree.size.width,
+      bottom: tree.size.height,
+    },
+    point,
+    [],
+    Maybe::new<[Int]>(),
+    origin,
+    tree.size,
+  )
+}

@@ -11,7 +11,7 @@ current state and returns composable cell surfaces.
 
 Cooper is under active development. The current vertical slice provides a
 direct Vaxis runtime, composable surfaces, Unicode text, retained single-line
-inputs, weighted column layout, and nested keyboard focus routing.
+inputs, weighted column layout, nested focus routing, and mouse interaction.
 
 See [the architecture](./docs/architecture.md) for the accepted design and
 implementation milestones.
@@ -40,8 +40,8 @@ fn main() {
 
 `Input` retains its value and cursor directly. It supports Unicode grapheme
 editing, Left/Right/Home/End movement, Backspace/Delete, horizontal scrolling,
-and paste. The application runtime owns Tab/Shift+Tab focus traversal and
-Ctrl+C shutdown.
+paste, click focus, and grapheme-aware mouse cursor placement. The application
+runtime owns Tab/Shift+Tab focus traversal and Ctrl+C shutdown.
 
 See [`examples/form.ard`](./examples/form.ard) for nested columns with multiple
 focusable inputs.
@@ -67,6 +67,7 @@ and lets Vaxis efficiently diff terminal cells.
 cooper.ard      Widget contract and application runtime
 event.ard       EventContext, event routes, and EventResult
 focus.ard       rendered focus paths and traversal state
+hit.ard         clipped routed Surface hit testing
 surface.ard     constraints, cells, surfaces, cursor, text measurement
 text.ard        Unicode-aware stateless Text widget
 input.ard       retained single-line Input widget
@@ -85,8 +86,8 @@ python3 test_input.py
 python3 test_form.py
 ```
 
-The PTY smoke tests cover terminal startup, editing, resize, nested focus
-traversal, cursor redraws, and clean exit.
+The PTY smoke tests cover terminal startup, editing, resize, nested keyboard
+and mouse focus, cursor placement and redraws, and clean exit.
 
 ## Design principles
 

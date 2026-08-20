@@ -148,6 +148,18 @@ impl FocusState {
     changed
   }
 
+  fn mut focus(path: [Int]) Bool {
+    let found = path_index(self.order, path)
+    if found < 0 {
+      false
+    } else {
+      let changed = not self.current_matches(path)
+      self.ordinal = found
+      self.current = Maybe::new<[Int]>(copy_path(self.order.at(found).expect("focus path index")))
+      changed
+    }
+  }
+
   fn mut next() Bool {
     if self.order.size() == 0 {
       false

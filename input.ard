@@ -20,6 +20,8 @@ private struct Glyph {
 private struct InputView {
   text: Str,
   cursor_x: Int,
+  // UTF-8 byte offset of the first visible grapheme.
+  start: Int,
 }
 
 private fn glyphs(text: Str) [Glyph] {
@@ -99,21 +101,32 @@ private fn single_line(text: Str) Str {
   text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", "    ")
 }
 
+private fn measured_width(text: Str, width_measurer: (fn(Str) Int)?) Int {
+  match width_measurer {
+    measurer => measurer(text),
+    _ => surface::text_width(text),
+  }
+}
+
 private fn input_view(
   value: Str,
   placeholder: Str,
   cursor: Int,
   width: Int,
-  ctx: surface::RenderContext,
+  width_measurer: (fn(Str) Int)?,
 ) InputView {
   if value.is_empty() {
-    InputView{text: placeholder, cursor_x: 0}
+    InputView{
+      text: placeholder,
+      cursor_x: 0,
+      start: 0,
+    }
   } else {
     let value_glyphs = glyphs(value)
     mut cursor_width = 0
     for glyph in value_glyphs {
       if glyph.end <= cursor {
-        cursor_width = cursor_width + ctx.measure_text(glyph.text)
+        cursor_width = cursor_width + measured_width(glyph.text, width_measurer)
       }
     }
 
@@ -122,7 +135,7 @@ private fn input_view(
     if width > 0 {
       for glyph, index in value_glyphs {
         if cursor_width - dropped_width >= width {
-          dropped_width = dropped_width + ctx.measure_text(glyph.text)
+          dropped_width = dropped_width + measured_width(glyph.text, width_measurer)
           start_index = index + 1
         } else {
           break
@@ -134,7 +147,7 @@ private fn input_view(
     mut visible_width = 0
     for glyph, index in value_glyphs {
       if index >= start_index {
-        let glyph_width = ctx.measure_text(glyph.text)
+        let glyph_width = measured_width(glyph.text, width_measurer)
         if visible_width + glyph_width <= width {
           visible = "{visible}{glyph.text}"
           visible_width = visible_width + glyph_width
@@ -144,8 +157,49 @@ private fn input_view(
       }
     }
 
-    InputView{text: visible, cursor_x: cursor_width - dropped_width}
+    let start = match value_glyphs.at(start_index) {
+      glyph => glyph.start,
+      _ => value.size(),
+    }
+    InputView{
+      text: visible,
+      cursor_x: cursor_width - dropped_width,
+      start: start,
+    }
   }
+}
+
+private fn cursor_for_column(
+  value: Str,
+  start: Int,
+  column: Int,
+  width: Int,
+  width_measurer: (fn(Str) Int)?,
+) Int {
+  mut cursor = start
+  mut x = 0
+  mut locating = true
+  for glyph in glyphs(value) {
+    if locating and glyph.start >= start {
+      let glyph_width = measured_width(glyph.text, width_measurer)
+      if glyph_width < 0 or x + glyph_width > width {
+        locating = false
+      } else if glyph_width == 0 {
+        cursor = glyph.end
+      } else if column < x + glyph_width {
+        if glyph_width > 1 and (column - x) * 2 >= glyph_width {
+          cursor = glyph.end
+        } else {
+          cursor = glyph.start
+        }
+        locating = false
+      } else {
+        x = x + glyph_width
+        cursor = glyph.end
+      }
+    }
+  }
+  cursor
 }
 
 fn new(value: Str, placeholder: Str) Input {
@@ -170,6 +224,26 @@ impl Input {
       let desired_cursor = self.cursor + inserted.size()
       self.value = insert_at(self.value, self.cursor, inserted)
       self.cursor = normalize_boundary(self.value, desired_cursor)
+      self.changed(ctx)
+    }
+  }
+
+  private fn mut handle_mouse(ctx: mut event::EventContext, mouse: vaxis::Mouse) event::EventResult {
+    if mouse.Button != vaxis::MouseLeftButton or mouse.EventType != vaxis::EventPress {
+      event::EventResult::ignored
+    } else {
+      let target_size = try ctx.target_size -> _ { event::EventResult::ignored }
+      let view = input_view(
+        self.value,
+        self.placeholder,
+        self.cursor,
+        target_size.width,
+        ctx.width_measurer,
+      )
+      self.cursor = normalize_boundary(
+        self.value,
+        cursor_for_column(self.value, view.start, mouse.Col, target_size.width, ctx.width_measurer),
+      )
       self.changed(ctx)
     }
   }
@@ -221,7 +295,7 @@ impl cooper::Widget for Input {
     let desired_width = ctx.constraints.max_width.or(intrinsic_width)
     let width = ctx.constraints.constrain_width(desired_width)
     let height = ctx.constraints.constrain_height(1)
-    let view = input_view(self.value, self.placeholder, self.cursor, width, ctx)
+    let view = input_view(self.value, self.placeholder, self.cursor, width, ctx.width_measurer)
     let rendered = mut surface::blank(width, height)
     rendered.accept_focus()
     rendered.write(ctx, 0, 0, view.text)
@@ -236,6 +310,7 @@ impl cooper::Widget for Input {
   fn mut event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
     match received {
       vaxis::Key(key) => self.handle_key(ctx, key),
+      vaxis::Mouse(mouse) => self.handle_mouse(ctx, mouse),
       _ => event::EventResult::ignored,
     }
   }

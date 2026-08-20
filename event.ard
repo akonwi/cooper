@@ -1,3 +1,5 @@
+use cooper/surface
+
 enum EventResult {
   ignored,
   handled,
@@ -8,10 +10,12 @@ struct EventContext {
   quit: Bool,
   route: [Int]?,
   route_depth: Int,
+  target_size: surface::Size?,
+  width_measurer: (fn(Str) Int)?,
 }
 
-fn new_context(route: [Int]?) EventContext {
-  let owned_route = match route {
+private fn copy_route(route: [Int]?) [Int]? {
+  match route {
     path => {
       let copied = mut List::new<Int>()
       for part in path {
@@ -21,11 +25,16 @@ fn new_context(route: [Int]?) EventContext {
     },
     _ => Maybe::new<[Int]>(),
   }
+}
+
+fn new_context(route: [Int]?, target_size: surface::Size?, width_measurer: (fn(Str) Int)?) EventContext {
   EventContext{
     redraw: false,
     quit: false,
-    route: owned_route,
+    route: copy_route(route),
     route_depth: 0,
+    target_size: target_size,
+    width_measurer: width_measurer,
   }
 }
 
@@ -44,6 +53,12 @@ impl EventContext {
 
   fn quit_requested() Bool {
     self.quit
+  }
+
+  fn mut retarget(route: [Int], target_size: surface::Size) {
+    self.route = copy_route(route)
+    self.route_depth = 0
+    self.target_size = target_size
   }
 
   fn next_route_index() Int? {

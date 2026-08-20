@@ -116,9 +116,18 @@ painting. Focusability and route structure must not depend on focus state.
 The runtime handles Tab, Shift+Tab, and Ctrl+C before focused delivery. Route
 paths currently identify retained child slots; dynamic keyed collections will
 need stable occurrence keys to preserve semantic focus across reordering.
-Mouse hit testing will reuse routed positioned surfaces. Capture and bubble
-phases are deferred until a concrete widget requires them. Asynchronous work
-returns to the UI thread through Vaxis synchronization.
+
+The runtime retains the final unflattened tree from the painted frame for mouse
+hit testing. Hit testing follows ancestor clipping, visits later-painted
+children first, and returns the deepest retained route with target-local cell
+coordinates. A left press focuses the deepest focusable occurrence under the
+point before delivering the localized mouse event. Decorative surfaces remain
+part of their routed owner.
+
+Capture and bubble phases are deferred until a concrete widget requires them.
+Pixel coordinates remain terminal-relative when cell coordinates are localized
+until terminal cell-pixel geometry is exposed. Asynchronous work returns to the
+UI thread through Vaxis synchronization.
 
 ## Runtime loop
 
@@ -151,6 +160,7 @@ cooper.ard      public Widget contract and application runtime
 surface.ard     Size, Point, Constraints, Cell, Surface
 event.ard       EventContext, routes, and EventResult
 focus.ard       focus path discovery, reconciliation, and traversal
+hit.ard         clipped routed Surface hit testing
 text.ard        stateless Text widget
 input.ard       retained Input widget
 layout.ard      Column and flex layout
@@ -181,7 +191,9 @@ Use PTY smoke tests for the integration boundary:
    weighted flex allocation.
 3. **Focus — complete:** multiple inputs, nested route paths, keyboard routing,
    cursor ownership, and wrapped focus traversal.
-4. **Interaction:** mouse hit testing, scrolling, and asynchronous updates.
+4. **Interaction — in progress:** routed mouse hit testing, click focus, and
+   Input cursor placement are complete; scrolling and asynchronous updates
+   remain.
 5. **Library surface:** refine naming and ergonomics only after the retained
    model has been exercised by a representative application.
 

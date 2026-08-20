@@ -160,6 +160,88 @@ test fn pasted_ctrl_c_is_inserted_instead_of_quitting() Void!Str {
   testing::assert(not ctx.quit_requested(), "Expected pasted Ctrl+C not to quit")
 }
 
+test fn mouse_press_moves_cursor_with_target_local_coordinates() Void!Str {
+  let field = mut input::new(value: "hello", placeholder: "")
+  let ctx = mut event::new_context(target_size: surface::Size{width: 10, height: 1})
+
+  let result = field.event(
+    ctx,
+    raw::Mouse{
+      Col: 1,
+      Button: raw::MouseLeftButton,
+      EventType: raw::EventPress,
+    },
+  )
+
+  try testing::assert(result == event::EventResult::handled, "Expected Input to handle a left press")
+  try testing::assert(field.cursor == 1, "Expected the cursor before the second grapheme")
+  let _ = field.event(ctx, raw::Key{Text: "X"})
+  testing::assert(field.value == "hXello", "Expected typing at the clicked position")
+}
+
+test fn mouse_press_uses_the_visible_scrolled_input_start() Void!Str {
+  let field = mut input::new(value: "hello", placeholder: "")
+  let ctx = mut event::new_context(target_size: surface::Size{width: 5, height: 1})
+
+  let _ = field.event(
+    ctx,
+    raw::Mouse{
+      Col: 0,
+      Button: raw::MouseLeftButton,
+      EventType: raw::EventPress,
+    },
+  )
+
+  testing::assert(
+    field.cursor == 1,
+    "Expected a click at the viewport start before the visible 'e'",
+  )
+}
+
+test fn mouse_press_skips_zero_width_graphemes() Void!Str {
+  let field = mut input::new(value: "ab", placeholder: "")
+  let ctx = mut event::new_context(
+    target_size: surface::Size{width: 2, height: 1},
+    width_measurer: fn(text: Str) Int {
+      if text == "a" {
+        0
+      } else {
+        1
+      }
+    },
+  )
+
+  let _ = field.event(
+    ctx,
+    raw::Mouse{
+      Col: 0,
+      Button: raw::MouseLeftButton,
+      EventType: raw::EventPress,
+    },
+  )
+
+  testing::assert(field.cursor == 1, "Expected zero-width text not to block the visible glyph")
+}
+
+test fn mouse_press_keeps_wide_grapheme_boundaries() Void!Str {
+  let field = mut input::new(value: "🙂a", placeholder: "")
+  let ctx = mut event::new_context(target_size: surface::Size{width: 4, height: 1})
+
+  let _ = field.event(
+    ctx,
+    raw::Mouse{
+      Col: 1,
+      Button: raw::MouseLeftButton,
+      EventType: raw::EventPress,
+    },
+  )
+
+  testing::assert(
+    field.cursor == "🙂".size(),
+    "Expected the second wide cell to select the trailing boundary",
+  )
+}
+
 test fn ctrl_c_is_not_input_widget_policy() Void!Str {
   let field = mut input::new(value: "", placeholder: "")
 

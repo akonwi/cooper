@@ -21,7 +21,8 @@ def main():
         send(fd, "Ada")
         wait_for(fd, screen, "Ada")
 
-        send(fd, "\t")
+        # Click the nested Email input (terminal mouse coordinates are 1-based).
+        click(fd, col=0, row=6)
         send(fd, "ada@example.com")
         wait_for(fd, screen, "ada@example.com")
 
@@ -29,10 +30,12 @@ def main():
         send(fd, "Paris")
         wait_for(fd, screen, "Paris")
 
-        # Forward traversal wraps from City to Name.
+        # Forward traversal wraps from City to Name. Clicking column zero then
+        # proves the Input receives target-local coordinates for cursor placement.
         send(fd, "\t")
+        click(fd, col=0, row=4)
         send(fd, "!")
-        wait_for(fd, screen, "Ada!")
+        wait_for(fd, screen, "!Ada")
 
         # Reverse traversal wraps from Name to City.
         send(fd, "\x1b[Z")
@@ -48,6 +51,10 @@ def main():
         print("✓ Cooper focus form smoke test passed")
     finally:
         cleanup(fd, pid)
+
+
+def click(fd, col, row):
+    send(fd, f"\x1b[<0;{col + 1};{row + 1}M")
 
 
 def cleanup(fd, pid):

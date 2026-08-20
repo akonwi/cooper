@@ -5,7 +5,7 @@ import os
 import signal
 import sys
 
-from test_harness import Screen, build, send, spawn, wait_exit, wait_for
+from test_harness import Screen, build, drain, resize, send, spawn, wait_exit, wait_for
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(ROOT, "scroll_form")
@@ -18,6 +18,36 @@ def main():
     try:
         wait_for(fd, screen, "Cooper scrolling form")
         wait_for(fd, screen, "Field 3")
+
+        # Tab to the first offscreen Input; the viewport should reveal it.
+        send(fd, "\t")
+        send(fd, "\t")
+        send(fd, "\t")
+        wait_for(fd, screen, "Field 4")
+        assert screen.line(6).startswith("Field 4"), screen.text()
+        assert screen.line(7).startswith("Value 4"), screen.text()
+
+        # A smaller viewport keeps the focused Input visible after resize.
+        resize(fd, rows=6, cols=60)
+        drain(fd, screen)
+        assert screen.line(4).startswith("Field 4"), screen.text()
+        assert screen.line(5).startswith("Value 4"), screen.text()
+        resize(fd, rows=8, cols=60)
+        drain(fd, screen)
+
+        # Reverse traversal reveals a focused target above the viewport.
+        send(fd, "\x1b[Z")
+        send(fd, "\x1b[Z")
+        send(fd, "\x1b[Z")
+        drain(fd, screen)
+        assert screen.line(3).startswith("Field 2"), screen.text()
+        send(fd, "one")
+        wait_for(fd, screen, "one")
+        assert screen.line(2).startswith("one"), screen.text()
+
+        # Restore the top before exercising routed wheel/click behavior.
+        wheel(fd, down=False, col=0, row=3)
+        wait_for(fd, screen, "Field 1")
 
         wheel(fd, down=True, col=0, row=3)
         wait_for(fd, screen, "Field 4")

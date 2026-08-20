@@ -3,6 +3,7 @@ use ard/testing
 use cooper/focus
 use cooper/hit
 use cooper/surface
+use go:math
 
 private fn assert_path(actual: [Int], expected: [Int], message: Str) Void!Str {
   testing::assert(focus::paths_equal(actual, expected), message)
@@ -31,6 +32,70 @@ test fn hit_test_returns_nested_route_focus_and_local_geometry() Void!Str {
   testing::assert(
     found.route_sizes.at(2).expect("field size").width == 4,
     "Expected field geometry",
+  )
+}
+
+test fn route_geometry_resolves_clipped_descendants_through_decorations() Void!Str {
+  let field = surface::blank(4, 1)
+  let section = mut surface::blank(6, 4)
+  section.add_widget_child(3, 1, 2, field)
+  let decoration = mut surface::blank(8, 8)
+  decoration.add_widget_child(2, 2, 3, section.@)
+  let root = mut surface::blank(10, 2)
+  root.add_child(0, -2, decoration.@)
+
+  let geometry = hit::route_geometry(root.@, [2, 3]).expect("offscreen route geometry")
+
+  try testing::assert(geometry.route_sizes.size() == 3, "Expected root and two route owners")
+  try testing::assert(geometry.route_origins.at(0).expect("root origin").y == 0, "Expected root origin")
+  try testing::assert(
+    geometry.route_origins.at(1).expect("section origin").y == 1,
+    "Expected decoration-transparent section origin",
+  )
+  try testing::assert(
+    geometry.route_origins.at(2).expect("field origin").y == 3,
+    "Expected clipped field origin",
+  )
+  testing::assert(
+    not hit::route_geometry(root.@, [2, 9]).is_some(),
+    "Expected an unknown route not to resolve",
+  )
+}
+
+test fn route_geometry_rejects_ambiguous_occurrences() Void!Str {
+  let first = surface::blank(1, 1)
+  let second = surface::blank(1, 1)
+  let root = mut surface::blank(2, 1)
+  root.add_widget_child(7, 0, 0, first)
+  root.add_widget_child(7, 1, 0, second)
+
+  testing::assert(
+    not hit::route_geometry(root.@, [7]).is_some(),
+    "Expected duplicate routed occurrences to be ambiguous",
+  )
+}
+
+test fn route_geometry_saturates_extreme_nested_origins() Void!Str {
+  let positive_target = surface::blank(1, 1)
+  let positive_decoration = mut surface::blank(1, 1)
+  positive_decoration.add_widget_child(1, 0, 1, positive_target)
+  let positive_root = mut surface::blank(1, 1)
+  positive_root.add_child(0, math::MaxInt, positive_decoration.@)
+  let positive = hit::route_geometry(positive_root.@, [1]).expect("positive geometry")
+  try testing::assert(
+    positive.route_origins.at(1).expect("positive target").y == math::MaxInt,
+    "Expected positive origin saturation",
+  )
+
+  let negative_target = surface::blank(1, 1)
+  let negative_decoration = mut surface::blank(1, 1)
+  negative_decoration.add_widget_child(2, 0, -1, negative_target)
+  let negative_root = mut surface::blank(1, 1)
+  negative_root.add_child(0, math::MinInt, negative_decoration.@)
+  let negative = hit::route_geometry(negative_root.@, [2]).expect("negative geometry")
+  testing::assert(
+    negative.route_origins.at(1).expect("negative target").y == math::MinInt,
+    "Expected negative origin saturation",
   )
 }
 

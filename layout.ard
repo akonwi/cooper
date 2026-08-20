@@ -281,4 +281,13 @@ impl cooper::Widget for Column {
     ctx.leave_child()
     result
   }
+
+  fn mut reveal(ctx: mut event::RevealContext) event::EventResult {
+    let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
+    let item = try self.children.at(route_index) -> _ { event::EventResult::ignored }
+    ctx.enter_child()
+    let result = item.widget.reveal(ctx)
+    ctx.leave_child()
+    result
+  }
 }

@@ -15,15 +15,25 @@ struct EventContext {
   width_measurer: (fn(Str) Int)?,
 }
 
+struct RevealContext {
+  route: [Int],
+  route_depth: Int,
+  route_sizes: [surface::Size],
+  route_origins: [surface::Point],
+  target_size: surface::Size?,
+}
+
+private fn copy_path(path: [Int]) [Int] {
+  let copied = mut List::new<Int>()
+  for part in path {
+    copied.push(part)
+  }
+  copied.@
+}
+
 private fn copy_route(route: [Int]?) [Int]? {
   match route {
-    path => {
-      let copied = mut List::new<Int>()
-      for part in path {
-        copied.push(part)
-      }
-      Maybe::new<[Int]>(copied.@)
-    },
+    path => Maybe::new<[Int]>(copy_path(path)),
     _ => Maybe::new<[Int]>(),
   }
 }
@@ -34,6 +44,19 @@ private fn copy_sizes(sizes: [surface::Size]?) [surface::Size] {
     values => {
       for size in values {
         copied.push(size)
+      }
+    },
+    _ => (),
+  }
+  copied.@
+}
+
+private fn copy_origins(origins: [surface::Point]?) [surface::Point] {
+  let copied = mut List::new<surface::Point>()
+  match origins {
+    values => {
+      for origin in values {
+        copied.push(origin)
       }
     },
     _ => (),
@@ -55,6 +78,19 @@ fn new_context(
     route_sizes: copy_sizes(route_sizes),
     target_size: target_size,
     width_measurer: width_measurer,
+  }
+}
+
+fn new_reveal_context(route: [Int], route_sizes: [surface::Size], route_origins: [surface::Point]) RevealContext {
+  RevealContext{
+    route: copy_path(route),
+    route_depth: 0,
+    route_sizes: copy_sizes(route_sizes),
+    route_origins: copy_origins(route_origins),
+    target_size: match route_sizes.at(route_sizes.size() - 1) {
+      size => Maybe::new<surface::Size>(size),
+      _ => Maybe::new<surface::Size>(),
+    },
   }
 }
 
@@ -98,6 +134,38 @@ impl EventContext {
       path => path.at(self.route_depth),
       _ => Maybe::new<Int>(),
     }
+  }
+
+  fn mut enter_child() {
+    self.route_depth =+ 1
+  }
+
+  fn mut leave_child() {
+    if self.route_depth > 0 {
+      self.route_depth =- 1
+    }
+  }
+}
+
+impl RevealContext {
+  fn current_route_size() surface::Size? {
+    self.route_sizes.at(self.route_depth)
+  }
+
+  fn next_route_size() surface::Size? {
+    self.route_sizes.at(self.route_depth + 1)
+  }
+
+  fn current_route_origin() surface::Point? {
+    self.route_origins.at(self.route_depth)
+  }
+
+  fn target_route_origin() surface::Point? {
+    self.route_origins.at(self.route_origins.size() - 1)
+  }
+
+  fn next_route_index() Int? {
+    self.route.at(self.route_depth)
   }
 
   fn mut enter_child() {

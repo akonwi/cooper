@@ -84,16 +84,27 @@ test fn focus_paths_are_copied_across_runtime_context_boundaries() Void!Str {
 
   let caller_route = mut [1, 2]
   let caller_sizes = mut [surface::Size{width: 10, height: 4}]
+  let caller_origins = mut [surface::Point{x: 3, y: 2}]
   let ctx = event::new_context(route: caller_route.@, route_sizes: caller_sizes.@)
+  let reveal = event::new_reveal_context(caller_route.@, caller_sizes.@, caller_origins.@)
   caller_route.set(0, 99)
   caller_sizes.set(0, surface::Size{width: 1, height: 1})
+  caller_origins.set(0, surface::Point{x: 0, y: 0})
   try testing::assert(
     ctx.next_route_index().expect("owned event route") == 1,
     "Expected EventContext to snapshot its route",
   )
-  testing::assert(
+  try testing::assert(
     ctx.current_route_size().expect("owned route size").width == 10,
     "Expected EventContext to snapshot route geometry",
+  )
+  try testing::assert(
+    reveal.next_route_index().expect("owned reveal route") == 1,
+    "Expected RevealContext to snapshot its route",
+  )
+  testing::assert(
+    reveal.current_route_origin().expect("owned route origin").x == 3,
+    "Expected RevealContext to snapshot route origins",
   )
 }
 

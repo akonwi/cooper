@@ -21,12 +21,15 @@ The framework depends on mutating trait receiver contracts:
 trait Widget {
   fn render(ctx: RenderContext) Surface
   fn mut event(ctx: mut EventContext, event: vaxis::Event) EventResult
+  fn mut reveal(ctx: mut RevealContext) EventResult
 }
 ```
 
 - Calling a mutating trait method requires a mutable receiver reference.
 - A mutating implementation cannot satisfy a non-mutating contract.
 - A non-mutating implementation may satisfy a mutating contract.
+- Containers route both events and reveal actions through exact retained child
+  indexes. Leaves normally ignore reveal actions.
 
 Before adopting unfamiliar Ard syntax or interop behavior, use the
 `ard-expert` sub-agent and verify the smallest shape with the current compiler.
@@ -56,8 +59,10 @@ surface tree into Vaxis. Vaxis handles terminal-cell diffing.
 
 Associate widget ownership with rendered children through routed positioned
 surface edges. Do not require a widget implementation to upcast its own `self`
-merely to construct a surface. The runtime derives focus order from the final
-unflattened tree; containers route events through their retained child indexes.
+merely to construct a surface. Routed child indexes must identify one occurrence
+per owner; ambiguous duplicate routes are not eligible for automatic reveal.
+The runtime derives focus order from the final unflattened tree; containers
+route events and reveal actions through their retained child indexes.
 
 ### Layout is constraint-based
 
@@ -89,8 +94,9 @@ copy the full capture/target/bubble system from `vaxis/ui`.
 2. `Text`, `Column`, child surfaces, clipping, and two-pass flex allocation:
    complete.
 3. Multiple inputs with focus routing and Tab/Shift+Tab traversal: complete.
-4. Mouse hit testing, Input click focus, and retained vertical scrolling:
-   complete. Focus reveal and asynchronous UI-thread synchronization remain.
+4. Mouse hit testing, Input click focus, retained vertical scrolling, and
+   focused-descendant reveal: complete. Asynchronous UI-thread synchronization
+   remains.
 5. Broader widget APIs only after a representative application exercises the
    model.
 
@@ -99,7 +105,7 @@ copy the full capture/target/bubble system from `vaxis/ui`.
 ```text
 cooper.ard      public Widget contract and application runtime
 surface.ard     Size, Point, Constraints, Cell, Surface
-event.ard       EventContext, event routes, and EventResult
+event.ard       event/reveal contexts, routes, and EventResult
 focus.ard       focus path discovery and traversal state
 hit.ard         clipped routed Surface hit testing
 scroll.ard      retained vertical ScrollView

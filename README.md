@@ -12,7 +12,7 @@ current state and returns composable cell surfaces.
 Cooper is under active development. The current vertical slice provides a
 direct Vaxis runtime, composable surfaces, Unicode text, retained single-line
 inputs, weighted column layout, nested focus routing, mouse interaction, and
-retained vertical scrolling.
+retained vertical scrolling with focused-descendant reveal.
 
 See [the architecture](./docs/architecture.md) for the accepted design and
 implementation milestones.
@@ -57,6 +57,7 @@ explicit mutable receiver contract:
 trait Widget {
   fn render(ctx: RenderContext) Surface
   fn mut event(ctx: mut EventContext, event: vaxis::Event) EventResult
+  fn mut reveal(ctx: mut RevealContext) EventResult
 }
 ```
 
@@ -65,9 +66,10 @@ and lets Vaxis efficiently diff terminal cells.
 
 ## Scrolling
 
-`ScrollView` retains a desired vertical offset and handles wheel events after
-its routed child declines them. Use tight flex when it should consume and clip
-to the remaining bounded height:
+`ScrollView` retains a desired vertical offset, handles wheel events after its
+routed child declines them, and reveals focused descendants after focus changes
+or resize. Use tight flex when it should consume and clip to the remaining
+bounded height:
 
 ```ard
 let viewport = mut scroll::new(content, wheel_step: 2)
@@ -87,7 +89,7 @@ let page = mut layout::column(
 
 ```text
 cooper.ard      Widget contract and application runtime
-event.ard       EventContext, event routes, and EventResult
+event.ard       event/reveal contexts, routes, and EventResult
 focus.ard       rendered focus paths and traversal state
 hit.ard         clipped routed Surface hit testing
 scroll.ard      retained vertical ScrollView

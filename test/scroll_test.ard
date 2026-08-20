@@ -9,8 +9,14 @@ use cooper/scroll
 use cooper/surface
 use cooper/text
 use go:go.rockorager.dev/vaxis
+use go:math
 
 private struct HeightProbe {
+  height: Int,
+}
+
+private struct FixedHeight {
+  child: mut cooper::Widget,
   height: Int,
 }
 
@@ -26,6 +32,58 @@ impl cooper::Widget for HeightProbe {
 
   fn event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
     event::EventResult::ignored
+  }
+
+  fn reveal(ctx: mut event::RevealContext) event::EventResult {
+    event::EventResult::ignored
+  }
+}
+
+impl cooper::Widget for FixedHeight {
+  fn render(ctx: surface::RenderContext) surface::Surface {
+    let child = self.child.render(
+      ctx.for_child(
+        0,
+        surface::Constraints{
+          min_width: 0,
+          max_width: ctx.constraints.max_width,
+          min_height: self.height,
+          max_height: self.height,
+        },
+      ),
+    )
+    let output = mut surface::Surface{
+      size: surface::Size{width: child.size.width, height: self.height},
+      cells: [],
+      children: [],
+      focusable: false,
+    }
+    output.add_widget_child(0, 0, 0, child)
+    output.@
+  }
+
+  fn mut event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
+    let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
+    if route_index != 0 {
+      event::EventResult::ignored
+    } else {
+      ctx.enter_child()
+      let result = self.child.event(ctx, received)
+      ctx.leave_child()
+      result
+    }
+  }
+
+  fn mut reveal(ctx: mut event::RevealContext) event::EventResult {
+    let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
+    if route_index != 0 {
+      event::EventResult::ignored
+    } else {
+      ctx.enter_child()
+      let result = self.child.reveal(ctx)
+      ctx.leave_child()
+      result
+    }
   }
 }
 
@@ -44,6 +102,12 @@ private fn wheel(view: mut scroll::ScrollView, tree: surface::Surface, button: v
   )
   let _ = view.event(ctx, vaxis::Mouse{Button: button, EventType: vaxis::EventPress})
   ctx.@
+}
+
+private fn reveal(view: mut cooper::Widget, tree: surface::Surface, route: [Int]) event::EventResult {
+  let geometry = hit::route_geometry(tree, route).expect("focus route geometry")
+  let ctx = mut event::new_reveal_context(route, geometry.route_sizes, geometry.route_origins)
+  view.reveal(ctx)
 }
 
 test fn scroll_view_clips_and_scrolls_its_unbounded_child() Void!Str {
@@ -175,6 +239,108 @@ test fn unbounded_scroll_view_uses_its_full_content_height() Void!Str {
   testing::assert(
     rendered.children.at(0).expect("unbounded content").origin.y == 0,
     "Expected an unbounded view not to scroll",
+  )
+}
+
+test fn scroll_view_reveals_focused_descendants_in_both_directions() Void!Str {
+  let first = mut input::new(value: "", placeholder: "First")
+  let second = mut input::new(value: "", placeholder: "Second")
+  let third = mut input::new(value: "", placeholder: "Third")
+  let content = mut layout::column(
+    [layout::flex_item(first), layout::flex_item(second), layout::flex_item(third)],
+  )
+  let view = mut scroll::new(content)
+
+  let initial = render(view.@, 2)
+  let down = reveal(view, initial, [0, 2])
+  try testing::assert(
+    down == event::EventResult::handled,
+    "Expected the offscreen target to request redraw",
+  )
+  try testing::assert(view.requested_offset == 1, "Expected the third Input revealed at the bottom")
+
+  let scrolled = render(view.@, 2)
+  let stable = reveal(view, scrolled, [0, 1])
+  try testing::assert(stable == event::EventResult::ignored, "Expected no movement for a visible target")
+  try testing::assert(view.requested_offset == 1, "Expected the visible target to preserve offset")
+
+  let up = reveal(view, scrolled, [0, 0])
+  try testing::assert(
+    up == event::EventResult::handled,
+    "Expected the clipped target above to request redraw",
+  )
+  testing::assert(view.requested_offset == 0, "Expected the first Input revealed at the top")
+}
+
+test fn reveal_saturates_extreme_target_origin_differences() Void!Str {
+  let child = mut HeightProbe{height: 10}
+  let view = mut scroll::new(child)
+  let down_ctx = mut event::new_reveal_context(
+    [0],
+    [surface::Size{width: 1, height: 2}, surface::Size{width: 1, height: 10}],
+    [surface::Point{x: 0, y: math::MinInt}, surface::Point{x: 0, y: math::MaxInt}],
+  )
+  let down = view.reveal(down_ctx)
+  try testing::assert(down == event::EventResult::handled, "Expected an extreme target below to scroll")
+  try testing::assert(view.requested_offset == 8, "Expected the maximum bounded offset")
+
+  let up_ctx = mut event::new_reveal_context(
+    [0],
+    [surface::Size{width: 1, height: 2}, surface::Size{width: 1, height: 10}],
+    [surface::Point{x: 0, y: math::MaxInt}, surface::Point{x: 0, y: math::MinInt}],
+  )
+  let up = view.reveal(up_ctx)
+  try testing::assert(up == event::EventResult::handled, "Expected an extreme target above to scroll")
+  testing::assert(view.requested_offset == 0, "Expected the minimum bounded offset")
+}
+
+test fn repeated_reveal_geometry_settles_nested_scroll_views() Void!Str {
+  let field_0 = mut input::new(value: "", placeholder: "0")
+  let field_1 = mut input::new(value: "", placeholder: "1")
+  let field_2 = mut input::new(value: "", placeholder: "2")
+  let field_3 = mut input::new(value: "", placeholder: "3")
+  let field_4 = mut input::new(value: "", placeholder: "4")
+  let field_5 = mut input::new(value: "", placeholder: "5")
+  let inner_content = mut layout::column(
+    [
+      layout::flex_item(field_0),
+      layout::flex_item(field_1),
+      layout::flex_item(field_2),
+      layout::flex_item(field_3),
+      layout::flex_item(field_4),
+      layout::flex_item(field_5),
+    ],
+  )
+  let inner = mut scroll::new(inner_content)
+  let inner_viewport = mut FixedHeight{child: inner, height: 2}
+  let top = mut HeightProbe{height: 1}
+  let bottom = mut HeightProbe{height: 5}
+  let outer_content = mut layout::column(
+    [layout::flex_item(top), layout::flex_item(inner_viewport), layout::flex_item(bottom)],
+  )
+  let outer = mut scroll::new(outer_content)
+  let target_route = [0, 1, 0, 0, 5]
+
+  let initial = render(outer.@, 3)
+  let first = reveal(outer, initial, target_route)
+  try testing::assert(first == event::EventResult::handled, "Expected nested viewports to move")
+  try testing::assert(inner.requested_offset == 4, "Expected the inner viewport to reveal its target")
+  try testing::assert(outer.requested_offset == 4, "Expected the outer viewport's first adjustment")
+
+  let once = render(outer.@, 3)
+  let second = reveal(outer, once, target_route)
+  try testing::assert(
+    second == event::EventResult::handled,
+    "Expected geometry to correct the outer viewport",
+  )
+  try testing::assert(inner.requested_offset == 4, "Expected the settled inner offset")
+  try testing::assert(outer.requested_offset == 2, "Expected the target aligned in the outer viewport")
+
+  let twice = render(outer.@, 3)
+  let settled = reveal(outer, twice, target_route)
+  testing::assert(
+    settled == event::EventResult::ignored,
+    "Expected nested reveal geometry to settle",
   )
 }
 

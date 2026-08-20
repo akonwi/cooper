@@ -1,4 +1,11 @@
 use cooper/surface
+use go:math
+
+struct RouteGeometry {
+  // Root geometry followed by one owner for every routed edge.
+  route_sizes: [surface::Size],
+  route_origins: [surface::Point],
+}
 
 struct Hit {
   // Deepest retained widget occurrence under the point.
@@ -50,6 +57,16 @@ private fn intersect(a: Rect, b: Rect) Rect {
   }
 }
 
+private fn saturating_add(left: Int, right: Int) Int {
+  if right > 0 and left > math::MaxInt - right {
+    math::MaxInt
+  } else if right < 0 and left < math::MinInt - right {
+    math::MinInt
+  } else {
+    left + right
+  }
+}
+
 private fn copy_path(path: [Int]) [Int] {
   let copied = mut List::new<Int>()
   for part in path {
@@ -91,6 +108,80 @@ private fn append_size(sizes: [surface::Size], size: surface::Size) [surface::Si
   appended.@
 }
 
+private fn copy_points(points: [surface::Point]) [surface::Point] {
+  let copied = mut List::new<surface::Point>()
+  for point in points {
+    copied.push(point)
+  }
+  copied.@
+}
+
+private fn append_point(points: [surface::Point], point: surface::Point) [surface::Point] {
+  let appended = mut List::new<surface::Point>()
+  for current in points {
+    appended.push(current)
+  }
+  appended.push(point)
+  appended.@
+}
+
+private fn collect_route_geometry(
+  tree: surface::Surface,
+  origin: surface::Point,
+  desired: [Int],
+  depth: Int,
+  route_sizes: [surface::Size],
+  route_origins: [surface::Point],
+) [RouteGeometry] {
+  let found = mut List::new<RouteGeometry>()
+  if depth == desired.size() {
+    found.push(
+      RouteGeometry{route_sizes: copy_sizes(route_sizes), route_origins: copy_points(route_origins)},
+    )
+  } else {
+    let desired_index = desired.at(depth).expect("unresolved route segment")
+    for positioned in tree.children {
+      let child_origin = surface::Point{
+        x: saturating_add(origin.x, positioned.origin.x),
+        y: saturating_add(origin.y, positioned.origin.y),
+      }
+      match positioned.route_index {
+        route_index => {
+          if route_index == desired_index {
+            for geometry in collect_route_geometry(
+              positioned.surface,
+              child_origin,
+              desired,
+              depth + 1,
+              append_size(route_sizes, positioned.surface.size),
+              append_point(route_origins, child_origin),
+            ) {
+              found.push(geometry)
+            }
+          }
+        },
+        _ => {
+          for geometry in collect_route_geometry(positioned.surface, child_origin, desired, depth, route_sizes, route_origins) {
+            found.push(geometry)
+          }
+        },
+      }
+    }
+  }
+  found.@
+}
+
+fn route_geometry(tree: surface::Surface, route: [Int]) RouteGeometry? {
+  let origin = surface::Point{x: 0, y: 0}
+  let found = collect_route_geometry(tree, origin, route, 0, [tree.size], [origin])
+  if found.size() == 1 {
+    found.at(0)
+  } else {
+    // Repeated routed indexes do not identify one authoritative occurrence.
+    Maybe::new<RouteGeometry>()
+  }
+}
+
 private fn hit_surface(
   tree: surface::Surface,
   origin: surface::Point,
@@ -115,7 +206,10 @@ private fn hit_surface(
     while child_index > 0 and found.is_none() {
       child_index =- 1
       let positioned = tree.children.at(child_index).expect("reverse hit-test child index")
-      let child_origin = surface::Point{x: origin.x + positioned.origin.x, y: origin.y + positioned.origin.y}
+      let child_origin = surface::Point{
+        x: saturating_add(origin.x, positioned.origin.x),
+        y: saturating_add(origin.y, positioned.origin.y),
+      }
       let child_clip = intersect(
         clip,
         Rect{

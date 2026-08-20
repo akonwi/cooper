@@ -27,13 +27,17 @@ A widget is a long-lived Ard struct that owns its state:
 trait Widget {
   fn render(ctx: RenderContext) Surface
   fn mut event(ctx: mut EventContext, event: vaxis::Event) EventResult
+  fn mut reveal(ctx: mut RevealContext) EventResult
 }
 ```
 
 `render` observes state and produces a surface. It does not mutate widget
 state. `event` may mutate the retained widget and therefore requires
-`mut Widget` access. Stateless implementations may satisfy the mutating
-contract with a non-mutating method.
+`mut Widget` access. `reveal` is a dedicated framework action: containers route
+it toward one retained target, scrollable ancestors may adjust state, and leaf
+widgets normally ignore it. Keeping it separate prevents internal layout
+reconciliation from masquerading as a terminal event. Stateless implementations
+may satisfy mutating contracts with non-mutating methods.
 
 This depends on mutating trait receiver contracts added to Ard in
 [ard#416](https://github.com/akonwi/ard/issues/416) and
@@ -56,7 +60,9 @@ remains responsible for efficiently diffing terminal cells.
 A surface does not need a widget to upcast its own `self`. Parents associate
 positioned child surfaces with indexes in their retained child lists. These
 routed edges form structural widget paths for focus and event delivery while
-decorative surface edges remain transparent.
+decorative surface edges remain transparent. A routed index must identify one
+child occurrence per owner and frame; ambiguous duplicate occurrences are not
+eligible for automatic geometry resolution.
 
 A focusable widget marks its root surface as focusable. `RenderContext` carries
 an optional focus path relative to the current widget, so rendering can observe
@@ -129,18 +135,23 @@ coordinates. A left press focuses the deepest focusable occurrence under the
 point before delivering the localized mouse event. Decorative surfaces remain
 part of their routed owner.
 
-Hit results also retain the size of each routed occurrence. `EventContext`
-indexes those frame-local sizes at its current route depth, allowing retained
-containers such as `ScrollView` to react using the exact geometry that was
-painted without mutating state during rendering.
+Hit results retain the size of each routed occurrence. Offscreen route
+resolution additionally returns saturating global origins for one unambiguous
+structural path. `EventContext` exposes hit-local sizes, while the dedicated
+`RevealContext` exposes focused-route sizes and origins. This lets retained
+containers react using the exact geometry that was rendered without mutating
+state during rendering.
 
 `ScrollView` renders one child with unbounded vertical space, positions it at a
 negative retained offset, and relies on Surface clipping for its viewport.
 Wheel events route to the deepest child first, then scroll the nearest ancestor
-that can move. Its requested offset is a desired position: rendering clamps it to
-current bounds without discarding it, so temporarily shrunken content restores
-the requested position if it grows again. Tight column flex supplies adaptive
-bounded viewport height.
+that can move. After focus changes, fallback, initial discovery, or resize, the
+runtime routes a reveal action and rerenders until nested viewports settle. A
+normal wheel redraw does not reveal focus, so users may scroll away from the
+focused widget. The requested offset is a desired position: rendering clamps it
+to current bounds without discarding it, so temporarily shrunken content
+restores the requested position if it grows again. Tight column flex supplies
+adaptive bounded viewport height.
 
 Capture and bubble phases are otherwise deferred until a concrete widget
 requires them. Pixel coordinates remain terminal-relative when cell coordinates
@@ -176,7 +187,7 @@ The module boundaries may evolve, but Cooper separates these responsibilities:
 ```text
 cooper.ard      public Widget contract and application runtime
 surface.ard     Size, Point, Constraints, Cell, Surface
-event.ard       EventContext, routes, and EventResult
+event.ard       event/reveal contexts, routes, and EventResult
 focus.ard       focus path discovery, reconciliation, and traversal
 hit.ard         clipped routed Surface hit testing
 scroll.ard      retained vertical ScrollView
@@ -211,8 +222,8 @@ Use PTY smoke tests for the integration boundary:
 3. **Focus — complete:** multiple inputs, nested route paths, keyboard routing,
    cursor ownership, and wrapped focus traversal.
 4. **Interaction — in progress:** routed mouse hit testing, click focus, Input
-   cursor placement, and retained vertical scrolling are complete; focus reveal
-   and asynchronous updates remain.
+   cursor placement, retained vertical scrolling, and focused-descendant reveal
+   are complete; asynchronous updates remain.
 5. **Library surface:** refine naming and ergonomics only after the retained
    model has been exercised by a representative application.
 

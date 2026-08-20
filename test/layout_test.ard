@@ -54,6 +54,10 @@ impl cooper::Widget for MalformedProbe {
   fn event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
     event::EventResult::ignored
   }
+
+  fn reveal(ctx: mut event::RevealContext) event::EventResult {
+    event::EventResult::ignored
+  }
 }
 
 impl cooper::Widget for TightViolator {
@@ -73,6 +77,10 @@ impl cooper::Widget for TightViolator {
   fn event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
     event::EventResult::ignored
   }
+
+  fn reveal(ctx: mut event::RevealContext) event::EventResult {
+    event::EventResult::ignored
+  }
 }
 
 impl cooper::Widget for Probe {
@@ -90,6 +98,10 @@ impl cooper::Widget for Probe {
       true => event::EventResult::handled,
       false => event::EventResult::ignored,
     }
+  }
+
+  fn reveal(ctx: mut event::RevealContext) event::EventResult {
+    event::EventResult::ignored
   }
 }
 

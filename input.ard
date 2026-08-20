@@ -314,4 +314,8 @@ impl cooper::Widget for Input {
       _ => event::EventResult::ignored,
     }
   }
+
+  fn reveal(ctx: mut event::RevealContext) event::EventResult {
+    event::EventResult::ignored
+  }
 }

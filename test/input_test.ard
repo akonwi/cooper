@@ -44,7 +44,7 @@ test fn cursor_movement_controls_insertion_point() Void!Str {
 test fn render_exposes_cells_and_cursor() Void!Str {
   let field = input::new(value: "hello", placeholder: "")
   let rendered = field.render(
-    surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 1)},
+    surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 1), focus_path: []},
   )
 
   try testing::assert(rendered.size.width == 10, "Expected input to fill bounded width")
@@ -76,7 +76,7 @@ test fn combining_input_keeps_cursor_on_a_grapheme_boundary() Void!Str {
 test fn narrow_input_scrolls_to_keep_cursor_visible() Void!Str {
   let field = input::new(value: "hello", placeholder: "")
   let rendered = field.render(
-    surface::RenderContext{constraints: surface::bounded(max_width: 5, max_height: 1)},
+    surface::RenderContext{constraints: surface::bounded(max_width: 5, max_height: 1), focus_path: []},
   )
 
   try testing::assert(
@@ -160,10 +160,20 @@ test fn pasted_ctrl_c_is_inserted_instead_of_quitting() Void!Str {
   testing::assert(not ctx.quit_requested(), "Expected pasted Ctrl+C not to quit")
 }
 
-test fn ctrl_c_requests_quit() Void!Str {
+test fn ctrl_c_is_not_input_widget_policy() Void!Str {
   let field = mut input::new(value: "", placeholder: "")
 
   let ctx = send(mut field, raw::Key{Keycode: Int32::from('c'), Modifiers: raw::ModCtrl})
 
-  testing::assert(ctx.quit_requested(), "Expected Ctrl+C to request application quit")
+  testing::assert(not ctx.quit_requested(), "Expected the application runtime to own Ctrl+C")
+}
+
+test fn unfocused_input_is_focusable_without_exposing_a_cursor() Void!Str {
+  let field = input::new(value: "hello", placeholder: "")
+  let rendered = field.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 1)},
+  )
+
+  try testing::assert(rendered.focusable, "Expected Input to participate in focus traversal")
+  testing::assert(not rendered.cursor.is_some(), "Expected an unfocused Input to hide its cursor")
 }

@@ -6,10 +6,27 @@ enum EventResult {
 struct EventContext {
   redraw: Bool,
   quit: Bool,
+  route: [Int]?,
+  route_depth: Int,
 }
 
-fn new_context() EventContext {
-  EventContext{redraw: false, quit: false}
+fn new_context(route: [Int]?) EventContext {
+  let owned_route = match route {
+    path => {
+      let copied = mut List::new<Int>()
+      for part in path {
+        copied.push(part)
+      }
+      Maybe::new<[Int]>(copied.@)
+    },
+    _ => Maybe::new<[Int]>(),
+  }
+  EventContext{
+    redraw: false,
+    quit: false,
+    route: owned_route,
+    route_depth: 0,
+  }
 }
 
 impl EventContext {
@@ -27,5 +44,22 @@ impl EventContext {
 
   fn quit_requested() Bool {
     self.quit
+  }
+
+  fn next_route_index() Int? {
+    match self.route {
+      path => path.at(self.route_depth),
+      _ => Maybe::new<Int>(),
+    }
+  }
+
+  fn mut enter_child() {
+    self.route_depth =+ 1
+  }
+
+  fn mut leave_child() {
+    if self.route_depth > 0 {
+      self.route_depth =- 1
+    }
   }
 }

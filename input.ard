@@ -179,9 +179,6 @@ impl Input {
       event::EventResult::ignored
     } else if key.EventType == vaxis::EventPaste {
       self.insert_text(ctx, key.Text)
-    } else if key.MatchString("Ctrl+c") {
-      ctx.request_quit()
-      event::EventResult::handled
     } else if key.MatchString("Left") {
       self.cursor = previous_boundary(self.value, self.cursor)
       self.changed(ctx)
@@ -226,9 +223,10 @@ impl cooper::Widget for Input {
     let height = ctx.constraints.constrain_height(1)
     let view = input_view(self.value, self.placeholder, self.cursor, width, ctx)
     let rendered = mut surface::blank(width, height)
+    rendered.accept_focus()
     rendered.write(ctx, 0, 0, view.text)
 
-    if width > 0 and height > 0 {
+    if ctx.is_focused() and width > 0 and height > 0 {
       rendered.show_cursor(surface::Point{x: view.cursor_x, y: 0}, surface::CursorShape::beam)
     }
 
@@ -238,10 +236,6 @@ impl cooper::Widget for Input {
   fn mut event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
     match received {
       vaxis::Key(key) => self.handle_key(ctx, key),
-      vaxis::Resize(_) => {
-        ctx.request_redraw()
-        event::EventResult::handled
-      },
       _ => event::EventResult::ignored,
     }
   }

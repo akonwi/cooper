@@ -9,8 +9,9 @@ current state and returns composable cell surfaces.
 
 ## Status
 
-Cooper is under active development. The first vertical slice provides a direct
-Vaxis runtime, headless surface model, and retained single-line `Input`.
+Cooper is under active development. The current vertical slice provides a
+direct Vaxis runtime, composable surfaces, Unicode text, retained single-line
+inputs, weighted column layout, and nested keyboard focus routing.
 
 See [the architecture](./docs/architecture.md) for the accepted design and
 implementation milestones.
@@ -39,7 +40,11 @@ fn main() {
 
 `Input` retains its value and cursor directly. It supports Unicode grapheme
 editing, Left/Right/Home/End movement, Backspace/Delete, horizontal scrolling,
-paste, resize, and Ctrl+C.
+and paste. The application runtime owns Tab/Shift+Tab focus traversal and
+Ctrl+C shutdown.
+
+See [`examples/form.ard`](./examples/form.ard) for nested columns with multiple
+focusable inputs.
 
 ## Widget model
 
@@ -60,9 +65,12 @@ and lets Vaxis efficiently diff terminal cells.
 
 ```text
 cooper.ard      Widget contract and application runtime
-event.ard       EventContext and EventResult
+event.ard       EventContext, event routes, and EventResult
+focus.ard       rendered focus paths and traversal state
 surface.ard     constraints, cells, surfaces, cursor, text measurement
+text.ard        Unicode-aware stateless Text widget
 input.ard       retained single-line Input widget
+layout.ard      retained Column and weighted flex layout
 test/           deterministic headless tests
 examples/       runnable PTY-tested examples
 ```
@@ -73,12 +81,12 @@ examples/       runnable PTY-tested examples
 ard test test
 
 cd examples
-ard build input.ard --out input
 python3 test_input.py
+python3 test_form.py
 ```
 
-The PTY smoke test covers terminal startup, editing, resize, cursor redraws,
-and clean exit.
+The PTY smoke tests cover terminal startup, editing, resize, nested focus
+traversal, cursor redraws, and clean exit.
 
 ## Design principles
 

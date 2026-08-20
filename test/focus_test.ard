@@ -1,0 +1,189 @@
+use ard/testing
+
+use cooper/event
+use cooper/focus
+use cooper/input
+use cooper/layout
+use cooper/surface
+use cooper/text
+use go:go.rockorager.dev/vaxis
+
+private fn routed_focus_tree() surface::Surface {
+  let name = mut surface::blank(1, 1)
+  name.accept_focus()
+  let email = mut surface::blank(1, 1)
+  email.accept_focus()
+  let identity = mut surface::blank(1, 2)
+  identity.add_widget_child(2, 0, 0, name.@)
+  identity.add_widget_child(4, 0, 1, email.@)
+
+  let city = mut surface::blank(1, 1)
+  city.accept_focus()
+  let location = mut surface::blank(1, 1)
+  location.add_widget_child(2, 0, 0, city.@)
+
+  let root = mut surface::blank(1, 3)
+  root.add_widget_child(2, 0, 0, identity.@)
+  root.add_widget_child(3, 0, 2, location.@)
+  root.@
+}
+
+private fn two_target_tree() surface::Surface {
+  let first = mut surface::blank(1, 1)
+  first.accept_focus()
+  let second = mut surface::blank(1, 1)
+  second.accept_focus()
+  let root = mut surface::blank(1, 2)
+  root.add_widget_child(2, 0, 0, first.@)
+  root.add_widget_child(4, 0, 1, second.@)
+  root.@
+}
+
+test fn focus_paths_follow_routed_widget_edges() Void!Str {
+  let paths = focus::focusable_paths(routed_focus_tree())
+
+  try testing::assert(paths.size() == 3, "Expected three focus targets")
+  try testing::assert(
+    focus::paths_equal(paths.at(0).expect("name path"), [2, 2]),
+    "Expected nested name route",
+  )
+  try testing::assert(
+    focus::paths_equal(paths.at(1).expect("email path"), [2, 4]),
+    "Expected nested email route",
+  )
+  testing::assert(
+    focus::paths_equal(paths.at(2).expect("city path"), [3, 2]),
+    "Expected nested city route",
+  )
+}
+
+test fn focus_paths_deduplicate_markers_for_one_routed_occurrence() Void!Str {
+  let decoration = mut surface::blank(1, 1)
+  decoration.accept_focus()
+  let target = mut surface::blank(1, 1)
+  target.accept_focus()
+  target.add_child(0, 0, decoration.@)
+  let root = mut surface::blank(1, 1)
+  root.add_widget_child(4, 0, 0, target.@)
+
+  let paths = focus::focusable_paths(root.@)
+
+  try testing::assert(paths.size() == 1, "Expected one traversal entry per route")
+  testing::assert(
+    focus::paths_equal(paths.at(0).expect("deduplicated path"), [4]),
+    "Expected the routed path",
+  )
+}
+
+test fn focus_paths_are_copied_across_runtime_context_boundaries() Void!Str {
+  let state = mut focus::new_state()
+  let _ = state.reconcile(routed_focus_tree())
+  let exposed = mut state.current_path().expect("copied current path")
+  exposed.set(0, 99)
+  try testing::assert(state.current_matches([2, 2]), "Expected FocusState to retain its owned path")
+
+  let caller_route = mut [1, 2]
+  let ctx = event::new_context(route: caller_route.@)
+  caller_route.set(0, 99)
+  testing::assert(
+    ctx.next_route_index().expect("owned event route") == 1,
+    "Expected EventContext to snapshot its route",
+  )
+}
+
+test fn focus_state_selects_first_and_wraps_in_both_directions() Void!Str {
+  let state = mut focus::new_state()
+  let changed = state.reconcile(routed_focus_tree())
+
+  try testing::assert(changed, "Expected initial focus discovery")
+  try testing::assert(state.current_matches([2, 2]), "Expected the first target initially")
+  try testing::assert(state.next(), "Expected focus to move forward")
+  try testing::assert(state.current_matches([2, 4]), "Expected the second target")
+  let _ = state.next()
+  try testing::assert(state.current_matches([3, 2]), "Expected the third target")
+  let _ = state.next()
+  try testing::assert(state.current_matches([2, 2]), "Expected forward traversal to wrap")
+  let _ = state.previous()
+  testing::assert(state.current_matches([3, 2]), "Expected reverse traversal to wrap")
+}
+
+test fn focus_state_falls_back_by_previous_ordinal() Void!Str {
+  let state = mut focus::new_state()
+  let _ = state.reconcile(routed_focus_tree())
+  let _ = state.next()
+  let _ = state.next()
+  try testing::assert(state.current_matches([3, 2]), "Expected city to be focused")
+
+  let changed = state.reconcile(two_target_tree())
+
+  try testing::assert(changed, "Expected a missing path to choose a fallback")
+  testing::assert(state.current_matches([4]), "Expected the old ordinal clamped to the last target")
+}
+
+test fn focus_state_clears_when_no_targets_remain() Void!Str {
+  let state = mut focus::new_state()
+  let _ = state.reconcile(routed_focus_tree())
+
+  let changed = state.reconcile(surface::blank(1, 1))
+
+  try testing::assert(changed, "Expected focus to change when targets disappear")
+  testing::assert(not state.current_path().is_some(), "Expected no focused path")
+}
+
+test fn focused_flatten_keeps_only_the_selected_route_cursor() Void!Str {
+  let first = mut surface::blank(2, 1)
+  first.accept_focus()
+  first.show_cursor(surface::Point{x: 0, y: 0}, surface::CursorShape::beam)
+  let second = mut surface::blank(2, 1)
+  second.accept_focus()
+  second.show_cursor(surface::Point{x: 1, y: 0}, surface::CursorShape::beam)
+  let root = mut surface::blank(4, 1)
+  root.add_widget_child(0, 0, 0, first.@)
+  root.add_widget_child(1, 2, 0, second.@)
+
+  let first_focused = surface::flatten_focused(root.@, [0])
+  try testing::assert(
+    first_focused.cursor.expect("first cursor").point.x == 0,
+    "Expected only the first route cursor",
+  )
+  let second_focused = surface::flatten_focused(root.@, [1])
+  try testing::assert(
+    second_focused.cursor.expect("second cursor").point.x == 3,
+    "Expected only the second route cursor",
+  )
+  let none_focused = surface::flatten_focused(root.@, Maybe::new<[Int]>())
+  testing::assert(not none_focused.cursor.is_some(), "Expected no cursor without focus")
+}
+
+test fn nested_columns_route_render_focus_and_keyboard_to_one_input() Void!Str {
+  let heading = mut text::new(content: "Fields")
+  let first = mut input::new(value: "", placeholder: "First")
+  let second = mut input::new(value: "", placeholder: "Second")
+  let fields = mut layout::column([layout::flex_item(first), layout::flex_item(second)])
+  let root = mut layout::column([layout::flex_item(heading), layout::flex_item(fields)])
+
+  let rendered = root.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 20, max_height: 3), focus_path: [1, 1]},
+  )
+  let paths = focus::focusable_paths(rendered)
+  try testing::assert(paths.size() == 2, "Expected both retained Inputs in focus order")
+  try testing::assert(
+    focus::paths_equal(paths.at(0).expect("first Input"), [1, 0]),
+    "Expected first nested route",
+  )
+  try testing::assert(
+    focus::paths_equal(paths.at(1).expect("second Input"), [1, 1]),
+    "Expected second nested route",
+  )
+  let flattened = surface::flatten_focused(rendered, [1, 1])
+  try testing::assert(
+    flattened.cursor.expect("focused Input cursor").point.y == 2,
+    "Expected the second nested Input to own the cursor",
+  )
+
+  let ctx = mut event::new_context(route: [1, 1])
+  let result = root.event(ctx, vaxis::Key{Text: "x"})
+  try testing::assert(result == event::EventResult::handled, "Expected routed typing to be handled")
+  try testing::assert(first.value.is_empty(), "Expected the first Input to remain unchanged")
+  testing::assert(second.value == "x", "Expected only the focused Input to mutate")
+}

@@ -46,16 +46,22 @@ Ard `Surface` containing:
 
 - its measured cell size;
 - its cell buffer;
-- positioned child surfaces;
-- optional cursor information.
+- positioned child surfaces with optional retained-child route indexes;
+- optional cursor information;
+- whether the current surface is a focus target.
 
 The runtime paints the completed surface into the Vaxis root window. Vaxis
 remains responsible for efficiently diffing terminal cells.
 
-A surface does not need a widget to upcast its own `self`. Parents and the
-runtime already hold children as `mut Widget`; framework composition helpers
-associate those retained references with rendered surfaces for focus and event
-routing.
+A surface does not need a widget to upcast its own `self`. Parents associate
+positioned child surfaces with indexes in their retained child lists. These
+routed edges form structural widget paths for focus and event delivery while
+decorative surface edges remain transparent.
+
+A focusable widget marks its root surface as focusable. `RenderContext` carries
+an optional focus path relative to the current widget, so rendering can observe
+whether the current occurrence is focused without mutating or duplicating
+focus state in the widget. The runtime retains the authoritative path.
 
 ### Layout is constraint-based
 
@@ -94,17 +100,25 @@ Incremental layout is considered only after profiling demonstrates a need.
 
 ### Event routing grows from the rendered tree
 
-The first vertical slice sends events directly to the root widget. Composition
-then adds:
+The final unflattened surface tree is the authoritative frame snapshot. The
+runtime collects focusable routed paths in depth-first order and retains one
+optional current path. Tab and Shift+Tab move through that order with wrapping.
+A routed `EventContext` starts at the root; each retained container consumes
+one path segment and delivers the event to exactly one child. It never probes
+siblings for the first handler.
 
-1. retained child references associated with child surfaces;
-2. a focus path derived from the latest rendered tree;
-3. keyboard delivery to the focused widget;
-4. Tab and Shift+Tab traversal;
-5. mouse hit testing from positioned and clipped surfaces.
+`RenderContext` carries the same relative path during rendering. An empty path
+means the current widget is focused, a non-empty path identifies a focused
+descendant, and no path means focus is outside the subtree. Initial or stale
+focus is reconciled after rendering and triggers one corrective render before
+painting. Focusability and route structure must not depend on focus state.
 
-Capture and bubble phases are deferred until a concrete widget requires them.
-Asynchronous work returns to the UI thread through Vaxis synchronization.
+The runtime handles Tab, Shift+Tab, and Ctrl+C before focused delivery. Route
+paths currently identify retained child slots; dynamic keyed collections will
+need stable occurrence keys to preserve semantic focus across reordering.
+Mouse hit testing will reuse routed positioned surfaces. Capture and bubble
+phases are deferred until a concrete widget requires them. Asynchronous work
+returns to the UI thread through Vaxis synchronization.
 
 ## Runtime loop
 
@@ -135,7 +149,8 @@ The module boundaries may evolve, but Cooper separates these responsibilities:
 ```text
 cooper.ard      public Widget contract and application runtime
 surface.ard     Size, Point, Constraints, Cell, Surface
-event.ard       EventContext and EventResult
+event.ard       EventContext, routes, and EventResult
+focus.ard       focus path discovery, reconciliation, and traversal
 text.ard        stateless Text widget
 input.ard       retained Input widget
 layout.ard      Column and flex layout
@@ -161,11 +176,11 @@ Use PTY smoke tests for the integration boundary:
 ## Milestones
 
 1. **Single input — complete:** a retained `Input` handles typing, backspace,
-   cursor movement, redraw, resize, and Ctrl+C without a Go shim.
-2. **Composition:** `Text`, `Column`, positioned child surfaces, and flex
-   allocation.
-3. **Focus:** multiple inputs, keyboard routing, cursor ownership, and focus
-   traversal.
+   cursor movement, redraw, and resize without a Go shim.
+2. **Composition — complete:** `Text`, `Column`, positioned child surfaces, and
+   weighted flex allocation.
+3. **Focus — complete:** multiple inputs, nested route paths, keyboard routing,
+   cursor ownership, and wrapped focus traversal.
 4. **Interaction:** mouse hit testing, scrolling, and asynchronous updates.
 5. **Library surface:** refine naming and ergonomics only after the retained
    model has been exercised by a representative application.

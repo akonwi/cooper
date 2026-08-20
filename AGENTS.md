@@ -54,9 +54,10 @@ Widgets return sized, pure Ard surfaces containing cells, positioned child
 surfaces, and optional cursor information. The runtime paints the completed
 surface tree into Vaxis. Vaxis handles terminal-cell diffing.
 
-Associate widget ownership with rendered children in parent/runtime helpers.
-Do not require a widget implementation to upcast its own `self` merely to
-construct a surface.
+Associate widget ownership with rendered children through routed positioned
+surface edges. Do not require a widget implementation to upcast its own `self`
+merely to construct a surface. The runtime derives focus order from the final
+unflattened tree; containers route events through their retained child indexes.
 
 ### Layout is constraint-based
 
@@ -82,8 +83,9 @@ copy the full capture/target/bubble system from `vaxis/ui`.
 ## Implementation milestones
 
 1. Retained `Input` as the root widget: complete.
-2. `Text`, `Column`, child surfaces, clipping, and two-pass flex allocation.
-3. Multiple inputs with focus routing and Tab/Shift+Tab traversal.
+2. `Text`, `Column`, child surfaces, clipping, and two-pass flex allocation:
+   complete.
+3. Multiple inputs with focus routing and Tab/Shift+Tab traversal: complete.
 4. Mouse hit testing, scrolling, and asynchronous UI-thread synchronization.
 5. Broader widget APIs only after a representative application exercises the
    model.
@@ -93,7 +95,8 @@ copy the full capture/target/bubble system from `vaxis/ui`.
 ```text
 cooper.ard      public Widget contract and application runtime
 surface.ard     Size, Point, Constraints, Cell, Surface
-event.ard       EventContext and EventResult
+event.ard       EventContext, event routes, and EventResult
+focus.ard       focus path discovery and traversal state
 text.ard        stateless Text widget
 input.ard       retained Input widget
 layout.ard      Column and flex layout
@@ -137,8 +140,8 @@ Current validation entry points:
 ard test test
 
 cd examples
-ard build input.ard --out input
 python3 test_input.py
+python3 test_form.py
 ```
 
 ## References

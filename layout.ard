@@ -133,27 +133,27 @@ private fn proportional_share(value: Int, weight: Int, total: Int) Int {
   }
 }
 
-private fn child_context(ctx: surface::RenderContext) surface::RenderContext {
-  surface::RenderContext{
-    constraints: surface::Constraints{
+private fn child_context(ctx: surface::RenderContext, route_index: Int) surface::RenderContext {
+  ctx.for_child(
+    route_index,
+    surface::Constraints{
       min_width: 0,
       max_width: ctx.constraints.max_width,
       min_height: 0,
     },
-    width_measurer: ctx.width_measurer,
-  }
+  )
 }
 
-private fn tight_child_context(ctx: surface::RenderContext, height: Int) surface::RenderContext {
-  surface::RenderContext{
-    constraints: surface::Constraints{
+private fn tight_child_context(ctx: surface::RenderContext, route_index: Int, height: Int) surface::RenderContext {
+  ctx.for_child(
+    route_index,
+    surface::Constraints{
       min_width: 0,
       max_width: ctx.constraints.max_width,
       min_height: height,
       max_height: height,
     },
-    width_measurer: ctx.width_measurer,
-  }
+  )
 }
 
 private fn normalize(rendered: surface::Surface) surface::Surface {
@@ -173,7 +173,7 @@ impl cooper::Widget for Column {
     mut last_flexible = -1
 
     for item, index in self.children {
-      let first = normalize(item.widget.render(child_context(ctx)))
+      let first = normalize(item.widget.render(child_context(ctx, index)))
       let weight = scaled_flex(item.flex, scale)
       measured.push(MeasuredItem{surface: first, flex: weight})
       inherent_height = saturating_add(inherent_height, first.size.height, height_limit)
@@ -212,7 +212,7 @@ impl cooper::Widget for Column {
         distributed = saturating_add(distributed, extra, remaining)
         let allocated_height = saturating_add(first.surface.size.height, extra, math::MaxInt)
         let rerendered = mut normalize(
-          item.widget.render(tight_child_context(ctx, allocated_height)),
+          item.widget.render(tight_child_context(ctx, index, allocated_height)),
         )
         // Enforce the allocation when a malformed child ignores tight constraints.
         rerendered.size.height = allocated_height
@@ -237,23 +237,22 @@ impl cooper::Widget for Column {
       size: surface::Size{width: width, height: height},
       cells: [],
       children: [],
+      focusable: false,
     }
     mut y = 0
-    for rendered in rendered_children {
-      output.add_child(0, y, rendered)
+    for rendered, index in rendered_children {
+      output.add_widget_child(index, 0, y, rendered)
       y = saturating_add(y, rendered.size.height, math::MaxInt)
     }
     output.@
   }
 
   fn mut event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
-    mut result = event::EventResult::ignored
-    for item in self.children {
-      result = item.widget.event(ctx, received)
-      if result == event::EventResult::handled {
-        break
-      }
-    }
+    let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
+    let item = try self.children.at(route_index) -> _ { event::EventResult::ignored }
+    ctx.enter_child()
+    let result = item.widget.event(ctx, received)
+    ctx.leave_child()
     result
   }
 }

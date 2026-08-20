@@ -1,0 +1,187 @@
+use cooper/surface
+
+struct FocusState {
+  current: [Int]?,
+  order: [[Int]],
+  ordinal: Int,
+}
+
+fn new_state() FocusState {
+  FocusState{order: [], ordinal: 0}
+}
+
+private fn copy_path(path: [Int]) [Int] {
+  let copied = mut List::new<Int>()
+  for part in path {
+    copied.push(part)
+  }
+  copied.@
+}
+
+private fn append_path(path: [Int], part: Int) [Int] {
+  let appended = mut List::new<Int>()
+  for current in path {
+    appended.push(current)
+  }
+  appended.push(part)
+  appended.@
+}
+
+fn paths_equal(left: [Int], right: [Int]) Bool {
+  if left.size() != right.size() {
+    false
+  } else {
+    mut equal = true
+    for part, index in left {
+      if part != right.at(index).expect("matching focus path length") {
+        equal = false
+        break
+      }
+    }
+    equal
+  }
+}
+
+private fn collect_paths(tree: surface::Surface, path: [Int]) [[Int]] {
+  let collected = mut List::new<[Int]>()
+  if tree.focusable {
+    collected.push(copy_path(path))
+  }
+
+  for positioned in tree.children {
+    let child_path = match positioned.route_index {
+      route_index => append_path(path, route_index),
+      _ => copy_path(path),
+    }
+    for found in collect_paths(positioned.surface, child_path) {
+      collected.push(found)
+    }
+  }
+  collected.@
+}
+
+fn focusable_paths(tree: surface::Surface) [[Int]] {
+  let unique = mut List::new<[Int]>()
+  for path in collect_paths(tree, []) {
+    mut already_found = false
+    for existing in unique {
+      if paths_equal(existing, path) {
+        already_found = true
+        break
+      }
+    }
+    if not already_found {
+      unique.push(path)
+    }
+  }
+  unique.@
+}
+
+private fn path_index(paths: [[Int]], desired: [Int]) Int {
+  mut found = -1
+  for path, index in paths {
+    if paths_equal(path, desired) {
+      found = index
+      break
+    }
+  }
+  found
+}
+
+impl FocusState {
+  fn current_path() [Int]? {
+    match self.current {
+      current => Maybe::new<[Int]>(copy_path(current)),
+      _ => Maybe::new<[Int]>(),
+    }
+  }
+
+  fn current_matches(path: [Int]) Bool {
+    match self.current {
+      current => paths_equal(current, path),
+      _ => false,
+    }
+  }
+
+  // Updates tree order and chooses a valid target. Returns true when focus changed.
+  fn mut reconcile(tree: surface::Surface) Bool {
+    let next_order = focusable_paths(tree)
+    mut changed = false
+
+    if next_order.size() == 0 {
+      if self.current.is_some() {
+        changed = true
+      }
+      self.current = Maybe::new<[Int]>()
+      self.ordinal = 0
+    } else {
+      match self.current {
+        current => {
+          let found = path_index(next_order, current)
+          if found >= 0 {
+            self.ordinal = found
+            self.current = Maybe::new<[Int]>(copy_path(next_order.at(found).expect("focused path")))
+          } else {
+            mut fallback = self.ordinal
+            if fallback < 0 {
+              fallback = 0
+            }
+            if fallback >= next_order.size() {
+              fallback = next_order.size() - 1
+            }
+            self.ordinal = fallback
+            self.current = Maybe::new<[Int]>(
+              copy_path(next_order.at(fallback).expect("focus fallback")),
+            )
+            changed = true
+          }
+        },
+        _ => {
+          self.ordinal = 0
+          self.current = Maybe::new<[Int]>(copy_path(next_order.at(0).expect("initial focus")))
+          changed = true
+        },
+      }
+    }
+
+    self.order = next_order
+    changed
+  }
+
+  fn mut next() Bool {
+    if self.order.size() == 0 {
+      false
+    } else {
+      let next_ordinal = match self.current {
+        current => (self.ordinal + 1) % self.order.size(),
+        _ => 0,
+      }
+      let changed = not self.current_matches(self.order.at(next_ordinal).expect("next focus target"))
+      self.ordinal = next_ordinal
+      self.current = Maybe::new<[Int]>(
+        copy_path(self.order.at(next_ordinal).expect("next focus target")),
+      )
+      changed
+    }
+  }
+
+  fn mut previous() Bool {
+    if self.order.size() == 0 {
+      false
+    } else {
+      mut previous_ordinal = match self.current {
+        current => self.ordinal - 1,
+        _ => self.order.size() - 1,
+      }
+      if previous_ordinal < 0 {
+        previous_ordinal = self.order.size() - 1
+      }
+      let changed = not self.current_matches(self.order.at(previous_ordinal).expect("previous focus target"))
+      self.ordinal = previous_ordinal
+      self.current = Maybe::new<[Int]>(
+        copy_path(self.order.at(previous_ordinal).expect("previous focus target")),
+      )
+      changed
+    }
+  }
+}

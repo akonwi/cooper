@@ -1,0 +1,48 @@
+use cooper
+use cooper/input
+use cooper/layout
+use cooper/text
+
+fn main() {
+  let title = mut text::new(content: "Cooper focus demo")
+  let instructions = mut text::new(
+    content: "Tab: next field  Shift+Tab: previous field  Ctrl+C: quit",
+  )
+
+  let identity_title = mut text::new(content: "Identity")
+  let name_label = mut text::new(content: "Name")
+  let name = mut input::new(value: "", placeholder: "Ada Lovelace")
+  let email_label = mut text::new(content: "Email")
+  let email = mut input::new(value: "", placeholder: "ada@example.com")
+  let identity = mut layout::column(
+    [
+      layout::flex_item(identity_title),
+      layout::flex_item(name_label),
+      layout::flex_item(name),
+      layout::flex_item(email_label),
+      layout::flex_item(email),
+    ],
+  )
+
+  let location_title = mut text::new(content: "Location")
+  let city_label = mut text::new(content: "City")
+  let city = mut input::new(value: "", placeholder: "London")
+  let location = mut layout::column(
+    [layout::flex_item(location_title), layout::flex_item(city_label), layout::flex_item(city)],
+  )
+
+  let footer = mut text::new(
+    content: "Only the focused field receives input and displays a cursor.",
+  )
+  let form = mut layout::column(
+    [
+      layout::flex_item(title),
+      layout::flex_item(instructions),
+      layout::flex_item(identity),
+      layout::flex_item(location),
+      layout::flex_item(footer),
+    ],
+  )
+
+  cooper::run(mut form).expect("run Cooper focus demo")
+}

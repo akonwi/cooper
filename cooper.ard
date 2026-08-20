@@ -1,4 +1,5 @@
 use cooper/event
+use cooper/focus
 use cooper/surface
 use go:go.rockorager.dev/vaxis as raw
 
@@ -17,18 +18,21 @@ private fn cursor_style(shape: surface::CursorShape) raw::CursorStyle {
   }
 }
 
-private fn paint(root: mut Widget, app: mut raw::Vaxis) {
+private fn render_root(root: mut Widget, app: mut raw::Vaxis, focused_path: [Int]?) surface::Surface {
   let window = app.Window()
-  let rendered_tree = root.render(
+  root.render(
     surface::RenderContext{
       constraints: surface::bounded(max_width: window.Width, max_height: window.Height),
       width_measurer: fn(text: Str) Int {
         app.RenderedWidth(text)
       },
+      focus_path: focused_path,
     },
   )
-  let rendered = surface::flatten(rendered_tree)
+}
 
+private fn paint_surface(rendered: surface::Surface, app: mut raw::Vaxis) {
+  let window = app.Window()
   window.Clear()
   app.HideCursor()
 
@@ -58,18 +62,35 @@ private fn paint(root: mut Widget, app: mut raw::Vaxis) {
   app.Render()
 }
 
+private fn paint(root: mut Widget, app: mut raw::Vaxis, focus_state: mut focus::FocusState) {
+  mut rendered_tree = render_root(root, app, focus_state.current_path())
+  if focus_state.reconcile(rendered_tree) {
+    // Focus discovery and stale-path fallback must be visible in the frame being painted.
+    rendered_tree = render_root(root, app, focus_state.current_path())
+    let _ = focus_state.reconcile(rendered_tree)
+  }
+
+  let rendered = surface::flatten_focused(rendered_tree, focus_state.current_path())
+  paint_surface(rendered, app)
+}
+
+private fn is_global_key(key: raw::Key) Bool {
+  key.EventType != raw::EventRelease and key.EventType != raw::EventPaste
+}
+
 fn run(root: mut Widget) Void!Error {
   let app = try raw::New(raw::Options{})
   defer app.Close()
 
-  paint(root, app)
+  let focus_state = mut focus::new_state()
+  paint(root, app, focus_state)
   let events = app.Events()
   mut running = true
 
   while running {
     match events.recv() {
       received => {
-        let ctx = mut event::new_context()
+        let ctx = mut event::new_context(route: focus_state.current_path())
         match received {
           raw::SyncFunc(action) => {
             action()
@@ -81,13 +102,28 @@ fn run(root: mut Widget) Void!Error {
           },
           raw::Redraw(_) => ctx.request_redraw(),
           raw::QuitEvent(_) => ctx.request_quit(),
+          raw::Key(key) => {
+            if is_global_key(key) and key.MatchString("Shift+Tab") {
+              if focus_state.previous() {
+                ctx.request_redraw()
+              }
+            } else if is_global_key(key) and key.MatchString("Tab") {
+              if focus_state.next() {
+                ctx.request_redraw()
+              }
+            } else if is_global_key(key) and key.MatchString("Ctrl+c") {
+              ctx.request_quit()
+            } else {
+              let _ = root.event(ctx, key)
+            }
+          },
           _ => {
             let _ = root.event(ctx, received)
           },
         }
 
         if ctx.redraw_requested() {
-          paint(root, app)
+          paint(root, app, focus_state)
         }
         if ctx.quit_requested() {
           running = false

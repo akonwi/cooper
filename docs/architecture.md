@@ -77,6 +77,11 @@ The initial flex layout follows VXFW's two-pass shape:
 3. render flexible children again with their allocated main-axis size;
 4. position children sequentially and use the largest cross-axis extent.
 
+Loose flex children preserve their inherent main-axis size and add their share
+of remaining space. Tight flex children contribute no inherent main-axis size
+under bounded layout and use only their allocated share, allowing viewports to
+shrink while preserving the established non-shrinking default.
+
 The Ard implementation uses `Int` for dimensions, coordinates, buffer indexes,
 and layout arithmetic. Base Vaxis also uses `int`; signed arithmetic supports
 clipping and scrolling and avoids unsigned underflow when content exceeds its
@@ -124,10 +129,23 @@ coordinates. A left press focuses the deepest focusable occurrence under the
 point before delivering the localized mouse event. Decorative surfaces remain
 part of their routed owner.
 
-Capture and bubble phases are deferred until a concrete widget requires them.
-Pixel coordinates remain terminal-relative when cell coordinates are localized
-until terminal cell-pixel geometry is exposed. Asynchronous work returns to the
-UI thread through Vaxis synchronization.
+Hit results also retain the size of each routed occurrence. `EventContext`
+indexes those frame-local sizes at its current route depth, allowing retained
+containers such as `ScrollView` to react using the exact geometry that was
+painted without mutating state during rendering.
+
+`ScrollView` renders one child with unbounded vertical space, positions it at a
+negative retained offset, and relies on Surface clipping for its viewport.
+Wheel events route to the deepest child first, then scroll the nearest ancestor
+that can move. Its requested offset is a desired position: rendering clamps it to
+current bounds without discarding it, so temporarily shrunken content restores
+the requested position if it grows again. Tight column flex supplies adaptive
+bounded viewport height.
+
+Capture and bubble phases are otherwise deferred until a concrete widget
+requires them. Pixel coordinates remain terminal-relative when cell coordinates
+are localized until terminal cell-pixel geometry is exposed. Asynchronous work
+returns to the UI thread through Vaxis synchronization.
 
 ## Runtime loop
 
@@ -161,6 +179,7 @@ surface.ard     Size, Point, Constraints, Cell, Surface
 event.ard       EventContext, routes, and EventResult
 focus.ard       focus path discovery, reconciliation, and traversal
 hit.ard         clipped routed Surface hit testing
+scroll.ard      retained vertical ScrollView
 text.ard        stateless Text widget
 input.ard       retained Input widget
 layout.ard      Column and flex layout
@@ -191,9 +210,9 @@ Use PTY smoke tests for the integration boundary:
    weighted flex allocation.
 3. **Focus — complete:** multiple inputs, nested route paths, keyboard routing,
    cursor ownership, and wrapped focus traversal.
-4. **Interaction — in progress:** routed mouse hit testing, click focus, and
-   Input cursor placement are complete; scrolling and asynchronous updates
-   remain.
+4. **Interaction — in progress:** routed mouse hit testing, click focus, Input
+   cursor placement, and retained vertical scrolling are complete; focus reveal
+   and asynchronous updates remain.
 5. **Library surface:** refine naming and ergonomics only after the retained
    model has been exercised by a representative application.
 

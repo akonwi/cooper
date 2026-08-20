@@ -398,6 +398,27 @@ test fn column_does_not_shrink_overflowing_flex_children() Void!Str {
   )
 }
 
+test fn tight_flex_child_uses_only_its_bounded_allocation() Void!Str {
+  let fixed_child = mut probe(1, 1, "a", false)
+  let flexible_child = mut probe(1, 5, "b", false)
+  let column = layout::column(
+    [
+      layout::flex_item(fixed_child),
+      layout::flex_item(flexible_child, flex: 1, fit: layout::FlexFit::tight),
+    ],
+  )
+
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 3)},
+  )
+
+  try testing::assert(rendered.size.height == 3, "Expected the tight flex child to fit")
+  testing::assert(
+    rendered.children.at(1).expect("tight flex child").surface.size.height == 2,
+    "Expected only the remaining bounded height",
+  )
+}
+
 test fn unbounded_column_does_not_expand_flexible_children() Void!Str {
   let child = mut probe(1, 2, "x", false)
   let column = layout::column([layout::flex_item(child, flex: 1)])
@@ -417,7 +438,15 @@ test fn negative_flex_is_treated_as_fixed() Void!Str {
   let child = mut probe(1, 1, "x", false)
   let item = layout::flex_item(child, flex: -2)
   try testing::assert(item.flex == 0, "Expected constructor flex normalization")
-  let column = layout::column([layout::FlexItem{widget: child, flex: -2}])
+  let column = layout::column(
+    [
+      layout::FlexItem{
+        widget: child,
+        flex: -2,
+        fit: layout::FlexFit::loose,
+      },
+    ],
+  )
 
   let rendered = column.render(
     surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 5)},

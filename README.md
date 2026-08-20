@@ -11,7 +11,8 @@ current state and returns composable cell surfaces.
 
 Cooper is under active development. The current vertical slice provides a
 direct Vaxis runtime, composable surfaces, Unicode text, retained single-line
-inputs, weighted column layout, nested focus routing, and mouse interaction.
+inputs, weighted column layout, nested focus routing, mouse interaction, and
+retained vertical scrolling.
 
 See [the architecture](./docs/architecture.md) for the accepted design and
 implementation milestones.
@@ -43,8 +44,9 @@ editing, Left/Right/Home/End movement, Backspace/Delete, horizontal scrolling,
 paste, click focus, and grapheme-aware mouse cursor placement. The application
 runtime owns Tab/Shift+Tab focus traversal and Ctrl+C shutdown.
 
-See [`examples/form.ard`](./examples/form.ard) for nested columns with multiple
-focusable inputs.
+See [`examples/form.ard`](./examples/form.ard) for nested focusable inputs and
+[`examples/scroll_form.ard`](./examples/scroll_form.ard) for a wheel-scrollable
+form with click focus after scrolling.
 
 ## Widget model
 
@@ -61,6 +63,26 @@ trait Widget {
 The current runtime redraws the complete logical surface after state changes
 and lets Vaxis efficiently diff terminal cells.
 
+## Scrolling
+
+`ScrollView` retains a desired vertical offset and handles wheel events after
+its routed child declines them. Use tight flex when it should consume and clip
+to the remaining bounded height:
+
+```ard
+let viewport = mut scroll::new(content, wheel_step: 2)
+let page = mut layout::column(
+  [
+    layout::flex_item(heading),
+    layout::flex_item(
+      viewport,
+      flex: 1,
+      fit: layout::FlexFit::tight,
+    ),
+  ],
+)
+```
+
 ## Project structure
 
 ```text
@@ -68,6 +90,7 @@ cooper.ard      Widget contract and application runtime
 event.ard       EventContext, event routes, and EventResult
 focus.ard       rendered focus paths and traversal state
 hit.ard         clipped routed Surface hit testing
+scroll.ard      retained vertical ScrollView
 surface.ard     constraints, cells, surfaces, cursor, text measurement
 text.ard        Unicode-aware stateless Text widget
 input.ard       retained single-line Input widget
@@ -84,10 +107,11 @@ ard test test
 cd examples
 python3 test_input.py
 python3 test_form.py
+python3 test_scroll_form.py
 ```
 
 The PTY smoke tests cover terminal startup, editing, resize, nested keyboard
-and mouse focus, cursor placement and redraws, and clean exit.
+and mouse focus, cursor placement, wheel scrolling, redraws, and clean exit.
 
 ## Design principles
 

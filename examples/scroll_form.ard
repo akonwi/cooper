@@ -1,0 +1,33 @@
+use cooper
+use cooper/input
+use cooper/layout
+use cooper/scroll
+use cooper/text
+
+fn main() {
+  let title = mut text::new(content: "Cooper scrolling form")
+  let instructions = mut text::new(
+    content: "Wheel: scroll  Click: focus and place cursor  Ctrl+C: quit",
+  )
+  let items = mut List::new<layout::FlexItem>()
+
+  mut index = 1
+  while index <= 12 {
+    let label = mut text::new(content: "Field {index}")
+    let field = mut input::new(value: "", placeholder: "Value {index}")
+    items.push(layout::flex_item(label))
+    items.push(layout::flex_item(field))
+    index =+ 1
+  }
+
+  let form = mut layout::column(items.@)
+  let viewport = mut scroll::new(form, wheel_step: 2)
+  let page = mut layout::column(
+    [
+      layout::flex_item(title),
+      layout::flex_item(instructions),
+      layout::flex_item(viewport, flex: 1, fit: layout::FlexFit::tight),
+    ],
+  )
+  cooper::run(mut page).expect("run Cooper scrolling form")
+}

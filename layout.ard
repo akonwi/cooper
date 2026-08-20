@@ -4,10 +4,18 @@ use cooper/surface
 use go:go.rockorager.dev/vaxis
 use go:math
 
+// Loose fit preserves inherent height and adds remaining space. Tight fit uses
+// only the allocated share and may shrink below inherent height.
+enum FlexFit {
+  loose,
+  tight,
+}
+
 struct FlexItem {
   widget: mut cooper::Widget,
   // Zero keeps the widget at its inherent height. Positive values share bounded remaining height.
   flex: Int,
+  fit: FlexFit,
 }
 
 struct Column {
@@ -17,10 +25,15 @@ struct Column {
 private struct MeasuredItem {
   surface: surface::Surface,
   flex: Int,
+  fit: FlexFit,
 }
 
-fn flex_item(widget: mut cooper::Widget, flex: Int?) FlexItem {
-  FlexItem{widget: widget, flex: nonnegative(flex.or(0))}
+fn flex_item(widget: mut cooper::Widget, flex: Int?, fit: FlexFit?) FlexItem {
+  FlexItem{
+    widget: widget,
+    flex: nonnegative(flex.or(0)),
+    fit: fit.or(FlexFit::loose),
+  }
 }
 
 fn column(children: [FlexItem]) Column {
@@ -175,8 +188,18 @@ impl cooper::Widget for Column {
     for item, index in self.children {
       let first = normalize(item.widget.render(child_context(ctx, index)))
       let weight = scaled_flex(item.flex, scale)
-      measured.push(MeasuredItem{surface: first, flex: weight})
-      inherent_height = saturating_add(inherent_height, first.size.height, height_limit)
+      measured.push(
+        MeasuredItem{
+          surface: first,
+          flex: weight,
+          fit: item.fit,
+        },
+      )
+      mut base_height = first.size.height
+      if weight > 0 and item.fit == FlexFit::tight {
+        base_height = 0
+      }
+      inherent_height = saturating_add(inherent_height, base_height, height_limit)
       total_flex = saturating_add(total_flex, weight, math::MaxInt)
       if weight > 0 {
         last_flexible = index
@@ -210,7 +233,10 @@ impl cooper::Widget for Column {
           extra = proportional_share(remaining, first.flex, total_flex)
         }
         distributed = saturating_add(distributed, extra, remaining)
-        let allocated_height = saturating_add(first.surface.size.height, extra, math::MaxInt)
+        mut allocated_height = saturating_add(first.surface.size.height, extra, math::MaxInt)
+        if first.fit == FlexFit::tight {
+          allocated_height = extra
+        }
         let rerendered = mut normalize(
           item.widget.render(tight_child_context(ctx, index, allocated_height)),
         )

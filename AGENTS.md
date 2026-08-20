@@ -64,6 +64,9 @@ unflattened tree; containers route events through their retained child indexes.
 Parents derive child constraints, render children, and position the resulting
 surfaces. Use VXFW as prior art, not as an API that must be wrapped.
 
+Loose flex children preserve inherent height; `FlexFit::tight` children use
+only their bounded allocation and may shrink. Use tight flex for viewports.
+
 Use Ard `Int` for dimensions, coordinates, list indexes, and layout arithmetic.
 Validate non-negative sizes at constructors and boundaries. Represent
 unbounded constraints explicitly; do not use a maximum integer sentinel. Use
@@ -86,8 +89,8 @@ copy the full capture/target/bubble system from `vaxis/ui`.
 2. `Text`, `Column`, child surfaces, clipping, and two-pass flex allocation:
    complete.
 3. Multiple inputs with focus routing and Tab/Shift+Tab traversal: complete.
-4. Mouse hit testing and Input click focus: complete. Scrolling and
-   asynchronous UI-thread synchronization remain.
+4. Mouse hit testing, Input click focus, and retained vertical scrolling:
+   complete. Focus reveal and asynchronous UI-thread synchronization remain.
 5. Broader widget APIs only after a representative application exercises the
    model.
 
@@ -99,6 +102,7 @@ surface.ard     Size, Point, Constraints, Cell, Surface
 event.ard       EventContext, event routes, and EventResult
 focus.ard       focus path discovery and traversal state
 hit.ard         clipped routed Surface hit testing
+scroll.ard      retained vertical ScrollView
 text.ard        stateless Text widget
 input.ard       retained Input widget
 layout.ard      Column and flex layout
@@ -144,6 +148,7 @@ ard test test
 cd examples
 python3 test_input.py
 python3 test_form.py
+python3 test_scroll_form.py
 ```
 
 ## References

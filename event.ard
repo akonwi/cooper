@@ -10,6 +10,7 @@ struct EventContext {
   quit: Bool,
   route: [Int]?,
   route_depth: Int,
+  route_sizes: [surface::Size],
   target_size: surface::Size?,
   width_measurer: (fn(Str) Int)?,
 }
@@ -27,12 +28,31 @@ private fn copy_route(route: [Int]?) [Int]? {
   }
 }
 
-fn new_context(route: [Int]?, target_size: surface::Size?, width_measurer: (fn(Str) Int)?) EventContext {
+private fn copy_sizes(sizes: [surface::Size]?) [surface::Size] {
+  let copied = mut List::new<surface::Size>()
+  match sizes {
+    values => {
+      for size in values {
+        copied.push(size)
+      }
+    },
+    _ => (),
+  }
+  copied.@
+}
+
+fn new_context(
+  route: [Int]?,
+  route_sizes: [surface::Size]?,
+  target_size: surface::Size?,
+  width_measurer: (fn(Str) Int)?,
+) EventContext {
   EventContext{
     redraw: false,
     quit: false,
     route: copy_route(route),
     route_depth: 0,
+    route_sizes: copy_sizes(route_sizes),
     target_size: target_size,
     width_measurer: width_measurer,
   }
@@ -55,10 +75,22 @@ impl EventContext {
     self.quit
   }
 
-  fn mut retarget(route: [Int], target_size: surface::Size) {
+  fn mut retarget(route: [Int], route_sizes: [surface::Size]) {
     self.route = copy_route(route)
     self.route_depth = 0
-    self.target_size = target_size
+    self.route_sizes = copy_sizes(route_sizes)
+    self.target_size = match route_sizes.at(route_sizes.size() - 1) {
+      size => Maybe::new<surface::Size>(size),
+      _ => Maybe::new<surface::Size>(),
+    }
+  }
+
+  fn current_route_size() surface::Size? {
+    self.route_sizes.at(self.route_depth)
+  }
+
+  fn next_route_size() surface::Size? {
+    self.route_sizes.at(self.route_depth + 1)
   }
 
   fn next_route_index() Int? {

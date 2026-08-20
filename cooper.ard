@@ -136,7 +136,7 @@ fn run(root: mut Widget) Void!Error {
                     _ => (),
                   }
                 }
-                ctx.retarget(target.route, target.size)
+                ctx.retarget(target.route, target.route_sizes)
                 let _ = root.event(ctx, local_mouse(mouse, target.local))
               },
               _ => (),

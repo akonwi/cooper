@@ -83,11 +83,17 @@ test fn focus_paths_are_copied_across_runtime_context_boundaries() Void!Str {
   try testing::assert(state.current_matches([2, 2]), "Expected FocusState to retain its owned path")
 
   let caller_route = mut [1, 2]
-  let ctx = event::new_context(route: caller_route.@)
+  let caller_sizes = mut [surface::Size{width: 10, height: 4}]
+  let ctx = event::new_context(route: caller_route.@, route_sizes: caller_sizes.@)
   caller_route.set(0, 99)
-  testing::assert(
+  caller_sizes.set(0, surface::Size{width: 1, height: 1})
+  try testing::assert(
     ctx.next_route_index().expect("owned event route") == 1,
     "Expected EventContext to snapshot its route",
+  )
+  testing::assert(
+    ctx.current_route_size().expect("owned route size").width == 10,
+    "Expected EventContext to snapshot route geometry",
   )
 }
 

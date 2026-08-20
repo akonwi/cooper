@@ -8,6 +8,8 @@ struct Hit {
   // Point and size local to the routed widget occurrence.
   local: surface::Point,
   size: surface::Size,
+  // Root size followed by one owner size for every routed edge.
+  route_sizes: [surface::Size],
 }
 
 private struct Rect {
@@ -72,6 +74,23 @@ private fn append_path(path: [Int], part: Int) [Int] {
   appended.@
 }
 
+private fn copy_sizes(sizes: [surface::Size]) [surface::Size] {
+  let copied = mut List::new<surface::Size>()
+  for size in sizes {
+    copied.push(size)
+  }
+  copied.@
+}
+
+private fn append_size(sizes: [surface::Size], size: surface::Size) [surface::Size] {
+  let appended = mut List::new<surface::Size>()
+  for current in sizes {
+    appended.push(current)
+  }
+  appended.push(size)
+  appended.@
+}
+
 private fn hit_surface(
   tree: surface::Surface,
   origin: surface::Point,
@@ -81,6 +100,7 @@ private fn hit_surface(
   nearest_focus: [Int]?,
   owner_origin: surface::Point,
   owner_size: surface::Size,
+  route_sizes: [surface::Size],
 ) Hit? {
   if not clip.contains(point) {
     Maybe::new<Hit>()
@@ -110,11 +130,13 @@ private fn hit_surface(
         mut child_route = copy_path(route)
         mut child_owner_origin = owner_origin
         mut child_owner_size = owner_size
+        mut child_route_sizes = copy_sizes(route_sizes)
         match positioned.route_index {
           route_index => {
             child_route = append_path(route, route_index)
             child_owner_origin = child_origin
             child_owner_size = positioned.surface.size
+            child_route_sizes = append_size(route_sizes, positioned.surface.size)
           },
           _ => (),
         }
@@ -127,6 +149,7 @@ private fn hit_surface(
           current_focus,
           child_owner_origin,
           child_owner_size,
+          child_route_sizes,
         ) {
           child_hit => { found = Maybe::new<Hit>(child_hit) },
           _ => (),
@@ -143,6 +166,7 @@ private fn hit_surface(
             focus_path: copy_optional_path(current_focus),
             local: surface::Point{x: point.x - owner_origin.x, y: point.y - owner_origin.y},
             size: owner_size,
+            route_sizes: copy_sizes(route_sizes),
           },
         )
       },
@@ -166,5 +190,6 @@ fn hit_test(tree: surface::Surface, point: surface::Point) Hit? {
     Maybe::new<[Int]>(),
     origin,
     tree.size,
+    [tree.size],
   )
 }

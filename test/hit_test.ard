@@ -21,7 +21,17 @@ test fn hit_test_returns_nested_route_focus_and_local_geometry() Void!Str {
   try assert_path(found.route, [2, 3], "Expected the deepest routed occurrence")
   try assert_path(found.focus_path.expect("focus path"), [2, 3], "Expected the field focus route")
   try testing::assert(found.local.x == 1 and found.local.y == 0, "Expected field-local coordinates")
-  testing::assert(found.size.width == 4 and found.size.height == 1, "Expected routed field size")
+  try testing::assert(found.size.width == 4 and found.size.height == 1, "Expected routed field size")
+  try testing::assert(found.route_sizes.size() == 3, "Expected root and routed owner sizes")
+  try testing::assert(found.route_sizes.at(0).expect("root size").width == 10, "Expected root geometry")
+  try testing::assert(
+    found.route_sizes.at(1).expect("section size").width == 6,
+    "Expected section geometry",
+  )
+  testing::assert(
+    found.route_sizes.at(2).expect("field size").width == 4,
+    "Expected field geometry",
+  )
 }
 
 test fn hit_test_visits_later_painted_children_first() Void!Str {

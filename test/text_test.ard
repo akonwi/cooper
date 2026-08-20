@@ -333,9 +333,9 @@ test fn empty_text_has_no_intrinsic_rows() Void!Str {
 
 test fn text_ignores_events() Void!Str {
   let label = mut text::new(content: "status")
-  let ctx = mut event::new_context()
+  let ctx = mut event::terminal_context(vaxis::Key{Text: "x"})
 
-  let result = label.event(ctx, vaxis::Key{Text: "x"})
+  let result = label.event(ctx)
 
   testing::assert(result == event::EventResult::ignored, "Expected stateless text to ignore events")
 }

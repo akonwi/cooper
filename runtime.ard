@@ -1,0 +1,100 @@
+use go:sync
+
+private fn no_op() {}
+
+struct DispatchQueue {
+  mutex: mut sync::Mutex,
+  pending: [fn()],
+  head: Int,
+  wake: Chan<Bool>,
+  stopped: Bool,
+}
+
+fn new_dispatch_queue() DispatchQueue {
+  let mutex = mut sync::Mutex{}
+  DispatchQueue{
+    mutex: mutex,
+    pending: [],
+    head: 0,
+    wake: Chan::new<Bool>(1),
+    stopped: false,
+  }
+}
+
+impl DispatchQueue {
+  fn mut post(action: fn()) Bool {
+    self.mutex.Lock()
+    mut accepted = false
+    if not self.stopped {
+      self.pending.push(action)
+      accepted = true
+    }
+    self.mutex.Unlock()
+
+    if accepted {
+      select {
+        self.wake.send(true) => (),
+        _ => (),
+      }
+    }
+    accepted
+  }
+
+  fn events() Receiver<Bool> {
+    self.wake.receiver()
+  }
+
+  fn mut pop() fn()? {
+    self.mutex.Lock()
+    mut pending = Maybe::new<fn()>()
+    match self.pending.at(self.head) {
+      action => {
+        pending = Maybe::new<fn()>(action)
+        self.pending.set(self.head, no_op)
+        self.head =+ 1
+        if self.head == self.pending.size() {
+          self.pending = []
+          self.head = 0
+        } else if self.head >= 64 and self.head >= self.pending.size() - self.head {
+          let remaining = mut List::new<fn()>()
+          mut index = self.head
+          while index < self.pending.size() {
+            remaining.push(self.pending.at(index).expect("remaining dispatch action"))
+            index =+ 1
+          }
+          self.pending = remaining.@
+          self.head = 0
+        }
+      },
+      _ => (),
+    }
+    self.mutex.Unlock()
+    pending
+  }
+
+  fn mut wake_if_pending() {
+    self.mutex.Lock()
+    let has_pending = self.head < self.pending.size()
+    self.mutex.Unlock()
+
+    if has_pending {
+      select {
+        self.wake.send(true) => (),
+        _ => (),
+      }
+    }
+  }
+
+  fn mut stop() {
+    self.mutex.Lock()
+    self.stopped = true
+    self.pending = []
+    self.head = 0
+    self.mutex.Unlock()
+
+    select {
+      self.wake.send(true) => (),
+      _ => (),
+    }
+  }
+}

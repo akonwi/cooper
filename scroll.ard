@@ -112,31 +112,19 @@ private fn content_wrapper(child: surface::Surface, width: Int) surface::Surface
 }
 
 impl ScrollView {
-  private fn mut route_child(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
+  private fn mut route_child(ctx: mut event::EventContext) event::EventResult {
     let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
     if route_index != 0 {
       event::EventResult::ignored
     } else {
       ctx.enter_child()
-      let result = self.child.event(ctx, received)
+      let result = self.child.event(ctx)
       ctx.leave_child()
       result
     }
   }
 
-  private fn mut route_reveal(ctx: mut event::RevealContext) event::EventResult {
-    let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
-    if route_index != 0 {
-      event::EventResult::ignored
-    } else {
-      ctx.enter_child()
-      let result = self.child.reveal(ctx)
-      ctx.leave_child()
-      result
-    }
-  }
-
-  private fn mut reveal_target(ctx: mut event::RevealContext) event::EventResult {
+  private fn mut ensure_focused_target_visible(ctx: mut event::EventContext) event::EventResult {
     let viewport = try ctx.current_route_size() -> _ { event::EventResult::ignored }
     let content = try ctx.next_route_size() -> _ { event::EventResult::ignored }
     let viewport_origin = try ctx.current_route_origin() -> _ { event::EventResult::ignored }
@@ -234,27 +222,40 @@ impl cooper::Widget for ScrollView {
     viewport.@
   }
 
-  fn mut event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
-    match received {
-      vaxis::Mouse(mouse) => {
-        let child_result = self.route_child(ctx, received)
-        if child_result == event::EventResult::handled {
-          child_result
+  fn mut event(ctx: mut event::EventContext) event::EventResult {
+    match ctx.kind {
+      event::ContextKind::mount => {
+        let _ = self.child.event(ctx)
+        event::EventResult::ignored
+      },
+      event::ContextKind::unmount => {
+        let _ = self.child.event(ctx)
+        event::EventResult::ignored
+      },
+      _ => {
+        if ctx.kind == event::ContextKind::focus_target {
+          let child_result = self.route_child(ctx)
+          let visibility_result = self.ensure_focused_target_visible(ctx)
+          if child_result == event::EventResult::handled or visibility_result == event::EventResult::handled {
+            event::EventResult::handled
+          } else {
+            event::EventResult::ignored
+          }
         } else {
-          self.scroll_wheel(ctx, mouse)
+          let received = try ctx.terminal_event -> _ { event::EventResult::ignored }
+          match received {
+            vaxis::Mouse(mouse) => {
+              let child_result = self.route_child(ctx)
+              if child_result == event::EventResult::handled {
+                child_result
+              } else {
+                self.scroll_wheel(ctx, mouse)
+              }
+            },
+            _ => self.route_child(ctx),
+          }
         }
       },
-      _ => self.route_child(ctx, received),
-    }
-  }
-
-  fn mut reveal(ctx: mut event::RevealContext) event::EventResult {
-    let child_result = self.route_reveal(ctx)
-    let reveal_result = self.reveal_target(ctx)
-    if child_result == event::EventResult::handled or reveal_result == event::EventResult::handled {
-      event::EventResult::handled
-    } else {
-      event::EventResult::ignored
     }
   }
 }

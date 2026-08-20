@@ -1,26 +1,44 @@
 use cooper/surface
+use go:go.rockorager.dev/vaxis
 
 enum EventResult {
   ignored,
   handled,
 }
 
+enum LifecycleEvent {
+  mount,
+  unmount,
+}
+
+enum ContextKind {
+  idle,
+  terminal,
+  focus_target,
+  mount,
+  unmount,
+}
+
+enum DispatchError {
+  stopped,
+}
+
+private fn stopped_dispatch(action: fn()) Void!DispatchError {
+  Result::err(DispatchError::stopped)
+}
+
 struct EventContext {
+  kind: ContextKind,
   redraw: Bool,
   quit: Bool,
   route: [Int]?,
   route_depth: Int,
   route_sizes: [surface::Size],
-  target_size: surface::Size?,
-  width_measurer: (fn(Str) Int)?,
-}
-
-struct RevealContext {
-  route: [Int],
-  route_depth: Int,
-  route_sizes: [surface::Size],
   route_origins: [surface::Point],
   target_size: surface::Size?,
+  width_measurer: (fn(Str) Int)?,
+  terminal_event: vaxis::Event?,
+  dispatch: fn(fn()) Void!DispatchError,
 }
 
 private fn copy_path(path: [Int]) [Int] {
@@ -64,34 +82,109 @@ private fn copy_origins(origins: [surface::Point]?) [surface::Point] {
   copied.@
 }
 
-fn new_context(
+private fn resolved_target_size(explicit: surface::Size?, route_sizes: [surface::Size]?) surface::Size? {
+  match explicit {
+    size => Maybe::new<surface::Size>(size),
+    _ => {
+      match route_sizes {
+        sizes => sizes.at(sizes.size() - 1),
+        _ => Maybe::new<surface::Size>(),
+      }
+    },
+  }
+}
+
+private fn context(
+  kind: ContextKind,
   route: [Int]?,
   route_sizes: [surface::Size]?,
+  route_origins: [surface::Point]?,
   target_size: surface::Size?,
   width_measurer: (fn(Str) Int)?,
+  terminal_event: vaxis::Event?,
+  dispatch: (fn(fn()) Void!DispatchError)?,
 ) EventContext {
   EventContext{
+    kind: kind,
     redraw: false,
     quit: false,
     route: copy_route(route),
     route_depth: 0,
     route_sizes: copy_sizes(route_sizes),
-    target_size: target_size,
+    route_origins: copy_origins(route_origins),
+    target_size: resolved_target_size(target_size, route_sizes),
     width_measurer: width_measurer,
+    terminal_event: terminal_event,
+    dispatch: dispatch.or(stopped_dispatch),
   }
 }
 
-fn new_reveal_context(route: [Int], route_sizes: [surface::Size], route_origins: [surface::Point]) RevealContext {
-  RevealContext{
-    route: copy_path(route),
-    route_depth: 0,
-    route_sizes: copy_sizes(route_sizes),
-    route_origins: copy_origins(route_origins),
-    target_size: match route_sizes.at(route_sizes.size() - 1) {
-      size => Maybe::new<surface::Size>(size),
-      _ => Maybe::new<surface::Size>(),
-    },
+fn new_context(dispatch: (fn(fn()) Void!DispatchError)?) EventContext {
+  context(
+    ContextKind::idle,
+    Maybe::new<[Int]>(),
+    Maybe::new<[surface::Size]>(),
+    Maybe::new<[surface::Point]>(),
+    Maybe::new<surface::Size>(),
+    Maybe::new<fn(Str) Int>(),
+    Maybe::new<vaxis::Event>(),
+    dispatch,
+  )
+}
+
+fn terminal_context(
+  received: vaxis::Event,
+  route: [Int]?,
+  route_sizes: [surface::Size]?,
+  target_size: surface::Size?,
+  width_measurer: (fn(Str) Int)?,
+  dispatch: (fn(fn()) Void!DispatchError)?,
+) EventContext {
+  context(
+    ContextKind::terminal,
+    route,
+    route_sizes,
+    Maybe::new<[surface::Point]>(),
+    target_size,
+    width_measurer,
+    Maybe::new<vaxis::Event>(received),
+    dispatch,
+  )
+}
+
+fn focus_context(
+  route: [Int],
+  route_sizes: [surface::Size],
+  route_origins: [surface::Point],
+  dispatch: (fn(fn()) Void!DispatchError)?,
+) EventContext {
+  context(
+    ContextKind::focus_target,
+    route,
+    route_sizes,
+    route_origins,
+    Maybe::new<surface::Size>(),
+    Maybe::new<fn(Str) Int>(),
+    Maybe::new<vaxis::Event>(),
+    dispatch,
+  )
+}
+
+fn lifecycle_context(lifecycle: LifecycleEvent, dispatch: (fn(fn()) Void!DispatchError)?) EventContext {
+  let kind = match lifecycle {
+    LifecycleEvent::mount => ContextKind::mount,
+    LifecycleEvent::unmount => ContextKind::unmount,
   }
+  context(
+    kind,
+    Maybe::new<[Int]>(),
+    Maybe::new<[surface::Size]>(),
+    Maybe::new<[surface::Point]>(),
+    Maybe::new<surface::Size>(),
+    Maybe::new<fn(Str) Int>(),
+    Maybe::new<vaxis::Event>(),
+    dispatch,
+  )
 }
 
 impl EventContext {
@@ -121,33 +214,11 @@ impl EventContext {
     }
   }
 
-  fn current_route_size() surface::Size? {
-    self.route_sizes.at(self.route_depth)
+  fn mut localize_terminal(received: vaxis::Event) {
+    self.kind = ContextKind::terminal
+    self.terminal_event = Maybe::new<vaxis::Event>(received)
   }
 
-  fn next_route_size() surface::Size? {
-    self.route_sizes.at(self.route_depth + 1)
-  }
-
-  fn next_route_index() Int? {
-    match self.route {
-      path => path.at(self.route_depth),
-      _ => Maybe::new<Int>(),
-    }
-  }
-
-  fn mut enter_child() {
-    self.route_depth =+ 1
-  }
-
-  fn mut leave_child() {
-    if self.route_depth > 0 {
-      self.route_depth =- 1
-    }
-  }
-}
-
-impl RevealContext {
   fn current_route_size() surface::Size? {
     self.route_sizes.at(self.route_depth)
   }
@@ -165,7 +236,10 @@ impl RevealContext {
   }
 
   fn next_route_index() Int? {
-    self.route.at(self.route_depth)
+    match self.route {
+      path => path.at(self.route_depth),
+      _ => Maybe::new<Int>(),
+    }
   }
 
   fn mut enter_child() {

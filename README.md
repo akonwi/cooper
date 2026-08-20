@@ -11,8 +11,9 @@ current state and returns composable cell surfaces.
 
 Cooper is under active development. The current vertical slice provides a
 direct Vaxis runtime, composable surfaces, Unicode text, retained single-line
-inputs, weighted column layout, nested focus routing, mouse interaction, and
-retained vertical scrolling with focused-descendant reveal.
+inputs, weighted column layout, nested focus routing, mouse interaction,
+retained vertical scrolling with focused-descendant reveal, and contextual
+asynchronous UI dispatch.
 
 See [the architecture](./docs/architecture.md) for the accepted design and
 implementation milestones.
@@ -44,9 +45,10 @@ editing, Left/Right/Home/End movement, Backspace/Delete, horizontal scrolling,
 paste, click focus, and grapheme-aware mouse cursor placement. The application
 runtime owns Tab/Shift+Tab focus traversal and Ctrl+C shutdown.
 
-See [`examples/form.ard`](./examples/form.ard) for nested focusable inputs and
+See [`examples/form.ard`](./examples/form.ard) for nested focusable inputs,
 [`examples/scroll_form.ard`](./examples/scroll_form.ard) for a wheel-scrollable
-form with click focus after scrolling.
+form, and [`examples/async.ard`](./examples/async.ard) for mount-time background
+work returning through the UI thread.
 
 ## Widget model
 
@@ -56,13 +58,24 @@ explicit mutable receiver contract:
 ```ard
 trait Widget {
   fn render(ctx: RenderContext) Surface
-  fn mut event(ctx: mut EventContext, event: vaxis::Event) EventResult
-  fn mut reveal(ctx: mut RevealContext) EventResult
+  fn mut event(ctx: mut EventContext) EventResult
 }
 ```
 
+`EventContext` contains a terminal event, focused-target geometry, or a
+mount/unmount lifecycle signal. Containers route or broadcast that context;
+widgets opt into only the cases they need.
+
 The current runtime redraws the complete logical surface after state changes
 and lets Vaxis efficiently diff terminal cells.
+
+## Asynchronous updates
+
+Every live `EventContext` exposes `dispatch` directly as a function field.
+Background fibers perform slow work without touching widget state, then dispatch
+a short retained-state mutation back to Cooper's UI loop. Accepted actions are
+followed by a redraw; dispatch returns `stopped` after runtime shutdown. See the
+async example for startup and cleanup handling.
 
 ## Scrolling
 
@@ -89,9 +102,10 @@ let page = mut layout::column(
 
 ```text
 cooper.ard      Widget contract and application runtime
-event.ard       event/reveal contexts, routes, and EventResult
+event.ard       unified context, lifecycle, dispatch, and EventResult
 focus.ard       rendered focus paths and traversal state
 hit.ard         clipped routed Surface hit testing
+runtime.ard     reentrant UI-dispatch queue
 scroll.ard      retained vertical ScrollView
 surface.ard     constraints, cells, surfaces, cursor, text measurement
 text.ard        Unicode-aware stateless Text widget
@@ -110,10 +124,12 @@ cd examples
 python3 test_input.py
 python3 test_form.py
 python3 test_scroll_form.py
+python3 test_async.py
 ```
 
 The PTY smoke tests cover terminal startup, editing, resize, nested keyboard
-and mouse focus, cursor placement, wheel scrolling, redraws, and clean exit.
+and mouse focus, cursor placement, wheel scrolling, async dispatch, redraws,
+and clean exit.
 
 ## Design principles
 

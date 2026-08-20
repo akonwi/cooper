@@ -85,8 +85,7 @@ test fn focus_paths_are_copied_across_runtime_context_boundaries() Void!Str {
   let caller_route = mut [1, 2]
   let caller_sizes = mut [surface::Size{width: 10, height: 4}]
   let caller_origins = mut [surface::Point{x: 3, y: 2}]
-  let ctx = event::new_context(route: caller_route.@, route_sizes: caller_sizes.@)
-  let reveal = event::new_reveal_context(caller_route.@, caller_sizes.@, caller_origins.@)
+  let ctx = event::focus_context(caller_route.@, caller_sizes.@, caller_origins.@)
   caller_route.set(0, 99)
   caller_sizes.set(0, surface::Size{width: 1, height: 1})
   caller_origins.set(0, surface::Point{x: 0, y: 0})
@@ -99,12 +98,12 @@ test fn focus_paths_are_copied_across_runtime_context_boundaries() Void!Str {
     "Expected EventContext to snapshot route geometry",
   )
   try testing::assert(
-    reveal.next_route_index().expect("owned reveal route") == 1,
-    "Expected RevealContext to snapshot its route",
+    ctx.next_route_index().expect("owned focus route") == 1,
+    "Expected focused EventContext to snapshot its route",
   )
   testing::assert(
-    reveal.current_route_origin().expect("owned route origin").x == 3,
-    "Expected RevealContext to snapshot route origins",
+    ctx.current_route_origin().expect("owned route origin").x == 3,
+    "Expected focused EventContext to snapshot route origins",
   )
 }
 
@@ -209,8 +208,8 @@ test fn nested_columns_route_render_focus_and_keyboard_to_one_input() Void!Str {
     "Expected the second nested Input to own the cursor",
   )
 
-  let ctx = mut event::new_context(route: [1, 1])
-  let result = root.event(ctx, vaxis::Key{Text: "x"})
+  let ctx = mut event::terminal_context(vaxis::Key{Text: "x"}, route: [1, 1])
+  let result = root.event(ctx)
   try testing::assert(result == event::EventResult::handled, "Expected routed typing to be handled")
   try testing::assert(first.value.is_empty(), "Expected the first Input to remain unchanged")
   testing::assert(second.value == "x", "Expected only the focused Input to mutate")

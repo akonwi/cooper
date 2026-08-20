@@ -307,15 +307,12 @@ impl cooper::Widget for Input {
     rendered.@
   }
 
-  fn mut event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
+  fn mut event(ctx: mut event::EventContext) event::EventResult {
+    let received = try ctx.terminal_event -> _ { event::EventResult::ignored }
     match received {
       vaxis::Key(key) => self.handle_key(ctx, key),
       vaxis::Mouse(mouse) => self.handle_mouse(ctx, mouse),
       _ => event::EventResult::ignored,
     }
-  }
-
-  fn reveal(ctx: mut event::RevealContext) event::EventResult {
-    event::EventResult::ignored
   }
 }

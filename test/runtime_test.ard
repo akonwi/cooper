@@ -1,0 +1,110 @@
+use ard/testing
+
+use cooper/cooper
+use cooper/event
+use cooper/layout
+use cooper/runtime
+use cooper/surface
+use go:go.rockorager.dev/vaxis
+
+private struct LifecycleProbe {
+  mounts: Int,
+  unmounts: Int,
+}
+
+impl cooper::Widget for LifecycleProbe {
+  fn render(ctx: surface::RenderContext) surface::Surface {
+    surface::blank(1, 1)
+  }
+
+  fn mut event(ctx: mut event::EventContext) event::EventResult {
+    match ctx.kind {
+      event::ContextKind::mount => { self.mounts =+ 1 },
+      event::ContextKind::unmount => { self.unmounts =+ 1 },
+      _ => (),
+    }
+    event::EventResult::ignored
+  }
+}
+
+test fn event_context_exposes_dispatch_as_a_function_field() Void!Str {
+  mut called = false
+  let ctx = event::new_context(dispatch: fn(action: fn()) Void!event::DispatchError {
+    action()
+    Result::ok(())
+  })
+
+  let result = ctx.dispatch(fn() {
+    called = true
+  })
+
+  try testing::assert(result.is_ok(), "Expected the injected dispatch to accept work")
+  testing::assert(called, "Expected direct context dispatch")
+}
+
+test fn headless_context_rejects_dispatch_without_a_runtime() Void!Str {
+  let ctx = event::new_context()
+
+  let result = ctx.dispatch(fn() {})
+
+  testing::assert(result.is_err(), "Expected a stopped default dispatcher")
+}
+
+test fn context_constructors_select_one_context_kind() Void!Str {
+  let terminal = event::terminal_context(vaxis::Key{Text: "x"})
+  let focus = event::focus_context(
+    [],
+    [surface::Size{width: 1, height: 1}],
+    [surface::Point{x: 0, y: 0}],
+  )
+  let mount = event::lifecycle_context(event::LifecycleEvent::mount)
+
+  try testing::assert(terminal.kind == event::ContextKind::terminal, "Expected terminal context")
+  try testing::assert(focus.kind == event::ContextKind::focus_target, "Expected focus context")
+  testing::assert(mount.kind == event::ContextKind::mount, "Expected lifecycle context")
+}
+
+test fn dispatch_queue_accepts_reentrant_actions_without_blocking() Void!Str {
+  let queue = mut runtime::new_dispatch_queue()
+  mut first_called = false
+  mut second_called = false
+
+  let accepted = queue.post(fn() {
+    first_called = true
+    let _ = queue.post(fn() {
+      second_called = true
+    })
+  })
+  let first = queue.pop().expect("first queued action")
+  first()
+  let second = queue.pop().expect("reentrant queued action")
+  second()
+
+  try testing::assert(accepted, "Expected the first action to be accepted")
+  try testing::assert(first_called and second_called, "Expected both actions to execute")
+  testing::assert(not queue.pop().is_some(), "Expected the queue to drain")
+}
+
+test fn stopped_dispatch_queue_rejects_and_discards_work() Void!Str {
+  let queue = mut runtime::new_dispatch_queue()
+  let _ = queue.post(fn() {})
+
+  queue.stop()
+
+  try testing::assert(not queue.post(fn() {}), "Expected stopped dispatch rejection")
+  testing::assert(not queue.pop().is_some(), "Expected shutdown to discard queued actions")
+}
+
+test fn column_broadcasts_lifecycle_to_retained_children() Void!Str {
+  let first = mut LifecycleProbe{mounts: 0, unmounts: 0}
+  let second = mut LifecycleProbe{mounts: 0, unmounts: 0}
+  let column = mut layout::column([layout::flex_item(first), layout::flex_item(second)])
+  let mount_ctx = mut event::lifecycle_context(event::LifecycleEvent::mount)
+  let unmount_ctx = mut event::lifecycle_context(event::LifecycleEvent::unmount)
+
+  let _ = column.event(mount_ctx)
+  let _ = column.event(unmount_ctx)
+
+  try testing::assert(first.mounts == 1 and second.mounts == 1, "Expected one mount per child")
+  testing::assert(first.unmounts == 1 and second.unmounts == 1, "Expected one unmount per child")
+}

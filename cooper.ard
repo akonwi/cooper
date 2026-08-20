@@ -1,15 +1,14 @@
 use cooper/event
 use cooper/focus
 use cooper/hit
+use cooper/runtime
 use cooper/surface
 use go:go.rockorager.dev/vaxis as raw
 
 trait Widget {
   fn render(ctx: surface::RenderContext) surface::Surface
 
-  fn mut event(ctx: mut event::EventContext, received: raw::Event) event::EventResult
-
-  fn mut reveal(ctx: mut event::RevealContext) event::EventResult
+  fn mut event(ctx: mut event::EventContext) event::EventResult
 }
 
 private fn cursor_style(shape: surface::CursorShape) raw::CursorStyle {
@@ -65,52 +64,55 @@ private fn paint_surface(rendered: surface::Surface, app: mut raw::Vaxis) {
   app.Render()
 }
 
-private fn reveal_focused_target(
+private fn reconcile_focused_target(
   root: mut Widget,
   focus_state: focus::FocusState,
   rendered_tree: surface::Surface,
+  dispatch: fn(fn()) Void!event::DispatchError,
 ) Bool {
   let focused_path = try focus_state.current_path() -> _ { false }
   let geometry = try hit::route_geometry(rendered_tree, focused_path) -> _ { false }
-  let ctx = mut event::new_reveal_context(
+  let ctx = mut event::focus_context(
     focused_path,
     geometry.route_sizes,
     geometry.route_origins,
+    dispatch: dispatch,
   )
-  root.reveal(ctx) == event::EventResult::handled
+  root.event(ctx) == event::EventResult::handled
 }
 
 private fn paint(
   root: mut Widget,
   app: mut raw::Vaxis,
   focus_state: mut focus::FocusState,
-  reveal_focus: Bool,
+  reconcile_focus: Bool,
+  dispatch: fn(fn()) Void!event::DispatchError,
 ) surface::Surface {
   mut rendered_tree = render_root(root, app, focus_state.current_path())
-  mut should_reveal = reveal_focus
+  mut should_reconcile_focus = reconcile_focus
   if focus_state.reconcile(rendered_tree) {
     // Focus discovery and stale-path fallback must be visible in the frame being painted.
     rendered_tree = render_root(root, app, focus_state.current_path())
     let _ = focus_state.reconcile(rendered_tree)
-    should_reveal = true
+    should_reconcile_focus = true
   }
 
-  mut remaining_reveals = 0
-  if should_reveal {
+  mut remaining_focus_passes = 0
+  if should_reconcile_focus {
     match focus_state.current_path() {
-      focused_path => { remaining_reveals = focused_path.size() + 1 },
+      focused_path => { remaining_focus_passes = focused_path.size() + 1 },
       _ => (),
     }
   }
-  while remaining_reveals > 0 {
-    if reveal_focused_target(root, focus_state.@, rendered_tree) {
+  while remaining_focus_passes > 0 {
+    if reconcile_focused_target(root, focus_state.@, rendered_tree, dispatch) {
       rendered_tree = render_root(root, app, focus_state.current_path())
       if focus_state.reconcile(rendered_tree) {
         rendered_tree = render_root(root, app, focus_state.current_path())
       }
-      remaining_reveals =- 1
+      remaining_focus_passes =- 1
     } else {
-      remaining_reveals = 0
+      remaining_focus_passes = 0
     }
   }
 
@@ -141,85 +143,128 @@ fn run(root: mut Widget) Void!Error {
   let app = try raw::New(raw::Options{})
   defer app.Close()
 
+  let updates = mut runtime::new_dispatch_queue()
+  let update_events = updates.events()
+  let dispatch = fn(action: fn()) Void!event::DispatchError {
+    if updates.post(action) {
+      Result::ok(())
+    } else {
+      Result::err(event::DispatchError::stopped)
+    }
+  }
+
+  let mount_ctx = mut event::lifecycle_context(event::LifecycleEvent::mount, dispatch: dispatch)
+  let _ = root.event(mount_ctx)
+
   let focus_state = mut focus::new_state()
-  mut rendered_tree = paint(root, app, focus_state, true)
+  mut rendered_tree = paint(root, app, focus_state, true, dispatch)
   let events = app.Events()
   mut running = true
 
   while running {
-    match events.recv() {
-      received => {
-        let ctx = mut event::new_context(
-          route: focus_state.current_path(),
-          width_measurer: fn(text: Str) Int {
-            app.RenderedWidth(text)
-          },
-        )
-        mut reveal_focus = false
-        match received {
-          raw::SyncFunc(action) => {
-            action()
-            ctx.request_redraw()
-          },
-          raw::Resize(size) => {
-            app.Resize(size)
-            ctx.request_redraw()
-            reveal_focus = true
-          },
-          raw::Redraw(_) => ctx.request_redraw(),
-          raw::QuitEvent(_) => ctx.request_quit(),
-          raw::Mouse(mouse) => {
-            match hit::hit_test(rendered_tree, surface::Point{x: mouse.Col, y: mouse.Row}) {
-              target => {
-                if mouse.Button == raw::MouseLeftButton and mouse.EventType == raw::EventPress {
-                  match target.focus_path {
-                    focus_path => {
-                      if focus_state.focus(focus_path) {
-                        ctx.request_redraw()
-                        reveal_focus = true
-                      }
-                    },
-                    _ => (),
-                  }
-                }
-                ctx.retarget(target.route, target.route_sizes)
-                let _ = root.event(ctx, local_mouse(mouse, target.local))
-              },
-              _ => (),
-            }
-          },
-          raw::Key(key) => {
-            if is_global_key(key) and key.MatchString("Shift+Tab") {
-              if focus_state.previous() {
-                ctx.request_redraw()
-                reveal_focus = true
-              }
-            } else if is_global_key(key) and key.MatchString("Tab") {
-              if focus_state.next() {
-                ctx.request_redraw()
-                reveal_focus = true
-              }
-            } else if is_global_key(key) and key.MatchString("Ctrl+c") {
-              ctx.request_quit()
-            } else {
-              let _ = root.event(ctx, key)
-            }
-          },
-          _ => {
-            let _ = root.event(ctx, received)
-          },
+    select {
+      update_events.recv() => {
+        mut changed = false
+        mut drained = 0
+        mut draining = true
+        while draining and drained < 64 {
+          match updates.pop() {
+            action => {
+              action()
+              changed = true
+              drained =+ 1
+            },
+            _ => { draining = false },
+          }
         }
-
-        if ctx.redraw_requested() {
-          rendered_tree = paint(root, app, focus_state, reveal_focus)
-        }
-        if ctx.quit_requested() {
-          running = false
+        updates.wake_if_pending()
+        if changed {
+          rendered_tree = paint(root, app, focus_state, false, dispatch)
         }
       },
-      _ => { running = false },
+      let posted = events.recv() => {
+        match posted {
+          received => {
+            let ctx = mut event::terminal_context(
+              received,
+              route: focus_state.current_path(),
+              dispatch: dispatch,
+              width_measurer: fn(text: Str) Int {
+                app.RenderedWidth(text)
+              },
+            )
+            mut reconcile_focus = false
+            match received {
+              raw::SyncFunc(action) => {
+                action()
+                ctx.request_redraw()
+              },
+              raw::Resize(size) => {
+                app.Resize(size)
+                ctx.request_redraw()
+                reconcile_focus = true
+              },
+              raw::Redraw(_) => ctx.request_redraw(),
+              raw::QuitEvent(_) => ctx.request_quit(),
+              raw::Mouse(mouse) => {
+                match hit::hit_test(rendered_tree, surface::Point{x: mouse.Col, y: mouse.Row}) {
+                  target => {
+                    if mouse.Button == raw::MouseLeftButton and mouse.EventType == raw::EventPress {
+                      match target.focus_path {
+                        focus_path => {
+                          if focus_state.focus(focus_path) {
+                            ctx.request_redraw()
+                            reconcile_focus = true
+                          }
+                        },
+                        _ => (),
+                      }
+                    }
+                    ctx.retarget(target.route, target.route_sizes)
+                    ctx.localize_terminal(local_mouse(mouse, target.local))
+                    let _ = root.event(ctx)
+                  },
+                  _ => (),
+                }
+              },
+              raw::Key(key) => {
+                if is_global_key(key) and key.MatchString("Shift+Tab") {
+                  if focus_state.previous() {
+                    ctx.request_redraw()
+                    reconcile_focus = true
+                  }
+                } else if is_global_key(key) and key.MatchString("Tab") {
+                  if focus_state.next() {
+                    ctx.request_redraw()
+                    reconcile_focus = true
+                  }
+                } else if is_global_key(key) and key.MatchString("Ctrl+c") {
+                  ctx.request_quit()
+                } else {
+                  let _ = root.event(ctx)
+                }
+              },
+              _ => {
+                let _ = root.event(ctx)
+              },
+            }
+
+            if ctx.redraw_requested() {
+              rendered_tree = paint(root, app, focus_state, reconcile_focus, dispatch)
+            }
+            if ctx.quit_requested() {
+              running = false
+            }
+          },
+          _ => { running = false },
+        }
+      },
     }
   }
+
+  updates.stop()
+  let unmount_ctx = mut event::lifecycle_context(event::LifecycleEvent::unmount, dispatch: dispatch)
+  let _ = root.event(unmount_ctx)
 
   Result::ok(())
 }

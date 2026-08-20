@@ -1,7 +1,6 @@
 use cooper/cooper
 use cooper/event
 use cooper/surface
-use go:go.rockorager.dev/vaxis
 use go:math
 
 // Loose fit preserves inherent height and adds remaining space. Tight fit uses
@@ -273,21 +272,31 @@ impl cooper::Widget for Column {
     output.@
   }
 
-  fn mut event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
-    let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
-    let item = try self.children.at(route_index) -> _ { event::EventResult::ignored }
-    ctx.enter_child()
-    let result = item.widget.event(ctx, received)
-    ctx.leave_child()
-    result
-  }
-
-  fn mut reveal(ctx: mut event::RevealContext) event::EventResult {
-    let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
-    let item = try self.children.at(route_index) -> _ { event::EventResult::ignored }
-    ctx.enter_child()
-    let result = item.widget.reveal(ctx)
-    ctx.leave_child()
-    result
+  fn mut event(ctx: mut event::EventContext) event::EventResult {
+    match ctx.kind {
+      event::ContextKind::mount => {
+        for item in self.children {
+          let _ = item.widget.event(ctx)
+        }
+        event::EventResult::ignored
+      },
+      event::ContextKind::unmount => {
+        mut index = self.children.size()
+        while index > 0 {
+          index =- 1
+          let item = self.children.at(index).expect("reverse lifecycle child")
+          let _ = item.widget.event(ctx)
+        }
+        event::EventResult::ignored
+      },
+      _ => {
+        let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
+        let item = try self.children.at(route_index) -> _ { event::EventResult::ignored }
+        ctx.enter_child()
+        let result = item.widget.event(ctx)
+        ctx.leave_child()
+        result
+      },
+    }
   }
 }

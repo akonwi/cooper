@@ -202,11 +202,7 @@ impl cooper::Widget for Text {
     rendered.@
   }
 
-  fn event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
-    event::EventResult::ignored
-  }
-
-  fn reveal(ctx: mut event::RevealContext) event::EventResult {
+  fn event(ctx: mut event::EventContext) event::EventResult {
     event::EventResult::ignored
   }
 }

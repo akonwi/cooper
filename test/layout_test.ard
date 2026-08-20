@@ -51,11 +51,7 @@ impl cooper::Widget for MalformedProbe {
     }
   }
 
-  fn event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
-    event::EventResult::ignored
-  }
-
-  fn reveal(ctx: mut event::RevealContext) event::EventResult {
+  fn event(ctx: mut event::EventContext) event::EventResult {
     event::EventResult::ignored
   }
 }
@@ -74,11 +70,7 @@ impl cooper::Widget for TightViolator {
     }
   }
 
-  fn event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
-    event::EventResult::ignored
-  }
-
-  fn reveal(ctx: mut event::RevealContext) event::EventResult {
+  fn event(ctx: mut event::EventContext) event::EventResult {
     event::EventResult::ignored
   }
 }
@@ -92,16 +84,12 @@ impl cooper::Widget for Probe {
     rendered.@
   }
 
-  fn mut event(ctx: mut event::EventContext, received: vaxis::Event) event::EventResult {
+  fn mut event(ctx: mut event::EventContext) event::EventResult {
     self.events =+ 1
     match self.handles {
       true => event::EventResult::handled,
       false => event::EventResult::ignored,
     }
-  }
-
-  fn reveal(ctx: mut event::RevealContext) event::EventResult {
-    event::EventResult::ignored
   }
 }
 
@@ -541,9 +529,9 @@ test fn column_routes_events_to_one_selected_child() Void!Str {
   let third = mut probe(1, 1, "c", false)
   let children = [fixed(first), fixed(second), fixed(third)]
   let column = mut layout::column(children)
-  let ctx = mut event::new_context(route: [1])
+  let ctx = mut event::terminal_context(vaxis::Key{Text: "x"}, route: [1])
 
-  let result = column.event(ctx, vaxis::Key{Text: "x"})
+  let result = column.event(ctx)
 
   try testing::assert(result == event::EventResult::handled, "Expected a handled event")
   try testing::assert(first.events == 0, "Expected the first sibling not to receive the event")
@@ -563,8 +551,8 @@ test fn column_supports_heterogeneous_retained_widgets() Void!Str {
   try testing::assert(rendered.size.width == 10, "Expected the input to fill available width")
   try testing::assert(rendered.size.height == 2, "Expected text above the input")
 
-  let ctx = mut event::new_context(route: [1])
-  let result = column.event(ctx, vaxis::Key{Text: "x"})
+  let ctx = mut event::terminal_context(vaxis::Key{Text: "x"}, route: [1])
+  let result = column.event(ctx)
   try testing::assert(result == event::EventResult::handled, "Expected the input to handle typing")
   testing::assert(field.value == "x", "Expected the retained input to mutate")
 }

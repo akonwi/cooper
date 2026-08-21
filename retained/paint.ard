@@ -14,10 +14,16 @@ private fn continuation() Cell {
   Cell{grapheme: "", width: 0}
 }
 
+struct Cursor {
+  x: Int,
+  y: Int,
+}
+
 struct Buffer {
   width: Int,
   height: Int,
   cells: [Cell],
+  cursor: Cursor?,
 }
 
 fn new_buffer(width: Int, height: Int) mut Buffer {
@@ -34,6 +40,7 @@ fn new_buffer(width: Int, height: Int) mut Buffer {
     width: width,
     height: height,
     cells: cells.@,
+    cursor: Maybe::new<Cursor>(),
   })
 }
 
@@ -85,6 +92,14 @@ impl Buffer {
     if span < 1 {
       span = 1
     }
+    match self.cursor {
+      cursor => {
+        if cursor.y == y and cursor.x >= start and cursor.x < start + span {
+          self.cursor = Maybe::new<Cursor>()
+        }
+      },
+      _ => (),
+    }
     mut part = 0
     while part < span {
       self.put(start + part, y, blank_cell())
@@ -107,6 +122,7 @@ impl Buffer {
   }
 
   fn mut clear() {
+    self.cursor = Maybe::new<Cursor>()
     mut index = 0
     while index < self.cells.size() {
       self.cells.set(index, blank_cell())
@@ -122,6 +138,14 @@ struct Context {
 }
 
 impl Context {
+  fn mut show_cursor(x: Int, y: Int) {
+    let target_x = self.bounds.x + x
+    let target_y = self.bounds.y + y
+    if geometry::contains(self.clip, target_x, target_y) {
+      self.buffer.cursor = Maybe::new<Cursor>(Cursor{x: target_x, y: target_y})
+    }
+  }
+
   fn mut write(x: Int, y: Int, text: Str) {
     self.write_measured(x, y, text, fn(grapheme: Str) Int {
       mut width = 0

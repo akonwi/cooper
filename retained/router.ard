@@ -1,0 +1,192 @@
+use cooper/event as framework_event
+use cooper/retained/event as retained_event
+use cooper/retained/focus
+use cooper/retained/node
+use go:go.rockorager.dev/vaxis
+
+struct Pointer {
+  x: Int,
+  y: Int,
+}
+
+struct Outcome {
+  handled: Bool,
+  redraw: Bool,
+  quit: Bool,
+}
+
+private fn path(root: mut node::Node, target: mut node::Node) [mut node::Node]? {
+  let ascending = mut List::new<mut node::Node>()
+  mut current = Maybe::new<mut node::Node>(target)
+  mut found = false
+  mut scanning = true
+  while scanning {
+    match current {
+      retained => {
+        ascending.push(retained)
+        if retained == root {
+          found = true
+          scanning = false
+        } else {
+          current = retained.parent
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+
+  if not found {
+    Maybe::new<[mut node::Node]>()
+  } else {
+    let routed = mut List::new<mut node::Node>()
+    mut index = ascending.size()
+    while index > 0 {
+      index =- 1
+      routed.push(ascending.at(index).expect("retained routed ancestor"))
+    }
+    Maybe::new<[mut node::Node]>(routed.@)
+  }
+}
+
+private fn attached_to(root: mut node::Node, current: mut node::Node) Bool {
+  mut candidate = Maybe::new<mut node::Node>(current)
+  mut attached = false
+  mut scanning = true
+  while scanning {
+    match candidate {
+      retained => {
+        if retained == root {
+          attached = true
+          scanning = false
+        } else {
+          candidate = retained.parent
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+  attached
+}
+
+private fn deliver(
+  root: mut node::Renderable,
+  current: mut node::Node,
+  phase: framework_event::EventPhase,
+  received: vaxis::Event,
+  pointer: Pointer?,
+  focused: mut focus::State,
+  state: mut retained_event::State,
+  dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
+) {
+  if current.can_receive_events() and attached_to(root.node(), current) {
+    mut local_x = Maybe::new<Int>()
+    mut local_y = Maybe::new<Int>()
+    match pointer {
+      position => {
+        let bounds = current.layout().screen
+        local_x = Maybe::new<Int>(position.x - bounds.x)
+        local_y = Maybe::new<Int>(position.y - bounds.y)
+      },
+      _ => (),
+    }
+    let ctx = retained_event::context(
+      phase,
+      received,
+      local_x,
+      local_y,
+      focused.is_focused(current),
+      state,
+      focus_request: fn() Bool {
+        focused.focus(root, current)
+      },
+      dispatch: dispatch,
+    )
+    let result = current.owner_as_renderable().event(ctx)
+    if result == framework_event::EventResult::handled {
+      state.handled = true
+    }
+  }
+}
+
+private fn dispatch_path(
+  root: mut node::Renderable,
+  target: mut node::Node,
+  received: vaxis::Event,
+  pointer: Pointer?,
+  focused: mut focus::State,
+  ui_dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
+  routed: [mut node::Node],
+) Outcome {
+  let state = retained_event::new_state()
+
+  mut index = 0
+  while index + 1 < routed.size() and not state.propagation_stopped {
+    deliver(
+      root,
+      routed.at(index).expect("retained capture owner"),
+      framework_event::EventPhase::capture,
+      received,
+      pointer,
+      focused,
+      state,
+      ui_dispatch,
+    )
+    index =+ 1
+  }
+
+  if not state.propagation_stopped {
+    deliver(
+      root,
+      target,
+      framework_event::EventPhase::target,
+      received,
+      pointer,
+      focused,
+      state,
+      ui_dispatch,
+    )
+  }
+
+  if routed.size() > 1 {
+    index = routed.size() - 1
+    while index > 0 and not state.propagation_stopped {
+      index =- 1
+      deliver(
+        root,
+        routed.at(index).expect("retained bubble owner"),
+        framework_event::EventPhase::bubble,
+        received,
+        pointer,
+        focused,
+        state,
+        ui_dispatch,
+      )
+    }
+  }
+
+  Outcome{
+    handled: state.handled,
+    redraw: state.redraw,
+    quit: state.quit,
+  }
+}
+
+fn dispatch(
+  root: mut node::Renderable,
+  target: mut node::Node,
+  received: vaxis::Event,
+  pointer: Pointer?,
+  focused: mut focus::State,
+  ui_dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
+) Outcome {
+  match path(root.node(), target) {
+    routed => dispatch_path(root, target, received, pointer, focused, ui_dispatch, routed),
+    _ => {
+      Outcome{
+        handled: false,
+        redraw: false,
+        quit: false,
+      }
+    },
+  }
+}

@@ -2,6 +2,7 @@ use ard/async
 
 use cooper/retained/app
 use cooper/retained/box
+use cooper/retained/input
 use cooper/retained/style
 use cooper/retained/text
 use go:time
@@ -18,7 +19,13 @@ fn main() {
     ),
   )
   let message = text::new(ctx, content: "Loading retained Cooper...")
+  let field = input::new(
+    ctx,
+    placeholder: "Type here",
+    initial_style: style::new(width: style::cells(24), height: style::cells(1)),
+  )
   root.add(message)
+  root.add(field)
 
   async::start(fn() {
     time::After(100 * time::Millisecond).recv()

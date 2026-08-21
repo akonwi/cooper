@@ -1,15 +1,23 @@
 use cooper/event
 use cooper/retained/context
+use cooper/retained/focus
+use cooper/retained/hit
 use cooper/retained/node
 use cooper/retained/paint
+use cooper/retained/router
 use cooper/runtime
 use go:go.rockorager.dev/vaxis as raw
+
+private fn is_global_key(key: raw::Key) Bool {
+  key.EventType != raw::EventRelease and key.EventType != raw::EventPaste
+}
 
 struct App {
   terminal: mut raw::Vaxis,
   ctx: mut context::Context,
   wake: Chan<Bool>,
   updates: mut runtime::DispatchQueue,
+  focused: mut focus::State,
   destroyed: Bool,
 }
 
@@ -41,6 +49,7 @@ fn new() (mut App)!Error {
     ctx: ctx,
     wake: wake,
     updates: updates,
+    focused: focus::new(),
     destroyed: false,
   }
   Result::ok(app)
@@ -51,9 +60,29 @@ impl App {
     self.ctx
   }
 
+  private fn take_redraw_request() Bool {
+    let pending = self.wake.receiver()
+    select {
+      pending.recv() => true,
+      _ => false,
+    }
+  }
+
+  private fn drain_redraw_requests() {
+    let pending = self.wake.receiver()
+    mut draining = true
+    while draining {
+      select {
+        pending.recv() => (),
+        _ => { draining = false },
+      }
+    }
+  }
+
   private fn mut paint(root: mut node::Renderable) {
     let window = self.terminal.Window()
     self.ctx.compute_layout(root, window.Width, window.Height)
+    self.focused.reconcile(root)
     let buffer = paint::new_buffer(window.Width, window.Height)
     root.node().paint(buffer)
 
@@ -72,7 +101,30 @@ impl App {
         }
       }
     }
+    match buffer.cursor {
+      cursor => {
+        match buffer.cell_at(cursor.x, cursor.y) {
+          cell => {
+            if cell.width > 0 {
+              window.ShowCursor(cursor.x, cursor.y, raw::CursorStyle::from(raw::CursorBeam))
+            }
+          },
+          _ => (),
+        }
+      },
+      _ => (),
+    }
     self.terminal.Render()
+    self.drain_redraw_requests()
+  }
+
+  private fn mut route(
+    root: mut node::Renderable,
+    target: mut node::Node,
+    received: raw::Event,
+    pointer: router::Pointer?,
+  ) router::Outcome {
+    router::dispatch(root, target, received, pointer, self.focused, ui_dispatch: self.ctx.dispatch)
   }
 
   fn mut run(root: mut node::Renderable) Void!Error {
@@ -80,6 +132,10 @@ impl App {
       panic("cannot run a destroyed retained App")
     }
     defer self.destroy()
+    self.ctx.begin_run()
+    defer self.ctx.end_run()
+    root.node().mount_root()
+    defer root.node().unmount_root()
 
     self.paint(root)
     let events = self.terminal.Events()
@@ -111,6 +167,11 @@ impl App {
         let posted = events.recv() => {
           match posted {
             received => {
+              if self.take_redraw_request() {
+                self.paint(root)
+              } else {
+                self.focused.reconcile(root)
+              }
               match received {
                 raw::Resize(size) => {
                   self.terminal.Resize(size)
@@ -122,12 +183,59 @@ impl App {
                   self.paint(root)
                 },
                 raw::QuitEvent(_) => { running = false },
+                raw::Mouse(mouse) => {
+                  match hit::test(root, mouse.Col, mouse.Row) {
+                    target => {
+                      mut redraw = false
+                      if mouse.Button == raw::MouseLeftButton and mouse.EventType == raw::EventPress {
+                        redraw = self.focused.focus(root, target.target)
+                      }
+                      let outcome = self.route(
+                        root,
+                        target.target,
+                        received,
+                        Maybe::new<router::Pointer>(router::Pointer{x: mouse.Col, y: mouse.Row}),
+                      )
+                      if redraw or outcome.redraw {
+                        self.paint(root)
+                      }
+                      if outcome.quit {
+                        running = false
+                      }
+                    },
+                    _ => (),
+                  }
+                },
                 raw::Key(key) => {
-                  if key.MatchString("Ctrl+c") {
+                  if is_global_key(key) and key.MatchString("Shift+Tab") {
+                    self.focused.next(root, reverse: true)
+                    self.paint(root)
+                  } else if is_global_key(key) and key.MatchString("Tab") {
+                    self.focused.next(root)
+                    self.paint(root)
+                  } else if is_global_key(key) and key.MatchString("Ctrl+c") {
+                    running = false
+                  } else {
+                    let target = self.focused.focused().or(root.node())
+                    let outcome = self.route(root, target, received, Maybe::new<router::Pointer>())
+                    if outcome.redraw {
+                      self.paint(root)
+                    }
+                    if outcome.quit {
+                      running = false
+                    }
+                  }
+                },
+                _ => {
+                  let target = self.focused.focused().or(root.node())
+                  let outcome = self.route(root, target, received, Maybe::new<router::Pointer>())
+                  if outcome.redraw {
+                    self.paint(root)
+                  }
+                  if outcome.quit {
                     running = false
                   }
                 },
-                _ => (),
               }
             },
             _ => { running = false },
@@ -139,6 +247,9 @@ impl App {
   }
 
   fn mut destroy() {
+    if self.ctx.running {
+      panic("cannot destroy a running retained App")
+    }
     if not self.destroyed {
       self.destroyed = true
       self.updates.stop()

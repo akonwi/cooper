@@ -1,4 +1,6 @@
+use cooper/event as framework_event
 use cooper/retained/context
+use cooper/retained/event as retained_event
 use cooper/retained/geometry
 use cooper/retained/node
 use cooper/retained/paint
@@ -55,6 +57,10 @@ impl node::Renderable for Text {
 
   fn paint(ctx: mut paint::Context) {
     ctx.write_measured(0, 0, self.content, self.width_measurer)
+  }
+
+  fn event(ctx: mut retained_event::Context) framework_event::EventResult {
+    framework_event::EventResult::ignored
   }
 }
 

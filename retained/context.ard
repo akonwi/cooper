@@ -22,6 +22,7 @@ struct Context {
   context_token: mut node::ContextToken,
   nodes: [mut node::Node],
   destroyed: Bool,
+  running: Bool,
   request_render: fn(),
   width_measurer: fn(Str) Int,
   dispatch: fn(fn()) Void!event::DispatchError,
@@ -37,6 +38,7 @@ fn new(
     context_token: node::new_context_token(),
     nodes: [],
     destroyed: false,
+    running: false,
     request_render: request_render.or(no_op),
     width_measurer: width_measurer.or(default_width),
     dispatch: dispatch.or(stopped_dispatch),
@@ -80,6 +82,17 @@ impl Context {
     self.destroyed
   }
 
+  fn mut begin_run() {
+    if self.destroyed or self.running {
+      panic("retained Context is not available to run")
+    }
+    self.running = true
+  }
+
+  fn mut end_run() {
+    self.running = false
+  }
+
   fn measure_text(text: Str) Int {
     self.width_measurer(text)
   }
@@ -98,6 +111,9 @@ impl Context {
   }
 
   fn mut destroy() {
+    if self.running {
+      panic("cannot destroy a running retained Context")
+    }
     if not self.destroyed {
       self.destroyed = true
       let owned = self.nodes

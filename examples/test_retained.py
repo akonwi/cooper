@@ -18,7 +18,10 @@ def main():
     pid, fd = spawn(BIN, rows=8, cols=60)
     screen = Screen(8, 60)
     try:
+        wait_for(fd, screen, "Type here")
         wait_for(fd, screen, "Hello from retained Cooper")
+        send(fd, "hello")
+        wait_for(fd, screen, "hello")
         send(fd, "\x03")
         status = wait_exit(pid, fd, screen, timeout=2.0)
         if status is None:

@@ -1,4 +1,6 @@
+use cooper/event as framework_event
 use cooper/retained/context
+use cooper/retained/event as retained_event
 use cooper/retained/geometry
 use cooper/retained/node
 use cooper/retained/paint
@@ -21,6 +23,10 @@ impl node::Renderable for Box {
   }
 
   fn paint(ctx: mut paint::Context) {}
+
+  fn event(ctx: mut retained_event::Context) framework_event::EventResult {
+    framework_event::EventResult::ignored
+  }
 }
 
 impl Box {
@@ -34,6 +40,14 @@ impl Box {
 
   fn mut set_style(next: style::Style) {
     self.node_ref.apply_style(next)
+  }
+
+  fn mut set_focusable(value: Bool) {
+    self.node_ref.set_focusable(value)
+  }
+
+  fn mut set_pointer_enabled(value: Bool) {
+    self.node_ref.set_pointer_enabled(value)
   }
 
   fn layout() geometry::Geometry {

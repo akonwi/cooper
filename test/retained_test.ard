@@ -11,6 +11,7 @@ use cooper/retained/input
 use cooper/retained/node
 use cooper/retained/paint
 use cooper/retained/router
+use cooper/retained/scroll
 use cooper/retained/style
 use cooper/retained/text
 use go:go.rockorager.dev/vaxis
@@ -699,6 +700,160 @@ test fn retained_later_wide_paint_invalidates_cursor_on_continuation() Void!Str 
   ctx.write(0, 0, "界")
 
   testing::assert(not buffer.cursor.is_some(), "Expected continuation cursor invalidation")
+}
+
+test fn retained_scroll_translates_clips_paint_and_hit_geometry() Void!Str {
+  let ctx = context::new()
+  let content = box::new(
+    ctx,
+    initial_style: style::new(
+      width: style::cells(3),
+      height: style::cells(5),
+      shrink: 0.0,
+      align_items: style::Align::start,
+    ),
+  )
+  let labels = mut List::new<mut text::Text>()
+  for value in ["0", "1", "2", "3", "4"] {
+    let label = text::new(ctx, content: value)
+    labels.push(label)
+    content.add(label)
+  }
+  let view = scroll::new(ctx, content, initial_style: fixed(3, 2), wheel_step: 1)
+  ctx.compute_layout(view, 3, 2)
+
+  let before = paint::new_buffer(3, 2)
+  view.node().paint(before)
+  try testing::assert(
+    before.cell_at(0, 0).expect("first scroll row").grapheme == "0",
+    "Expected initial scroll row",
+  )
+  try testing::assert(
+    before.cell_at(0, 1).expect("second scroll row").grapheme == "1",
+    "Expected second initial row",
+  )
+
+  try testing::assert(view.set_offset(2), "Expected retained scroll movement")
+  let after = paint::new_buffer(3, 2)
+  view.node().paint(after)
+  try testing::assert(
+    after.cell_at(0, 0).expect("translated scroll row").grapheme == "2",
+    "Expected translated paint",
+  )
+  try testing::assert(
+    after.cell_at(0, 1).expect("translated second row").grapheme == "3",
+    "Expected clipped translated paint",
+  )
+  try testing::assert(
+    labels.at(2).expect("third label").layout().screen.y == 0,
+    "Expected translated cached geometry",
+  )
+
+  let target = hit::test(view, 0, 0).expect("scroll pointer target")
+  try testing::assert(
+    target.target == view.node(),
+    "Expected blank descendant hit to resolve to ScrollView",
+  )
+
+  ctx.destroy()
+  testing::assert(content.node().is_destroyed(), "Expected retained scroll cleanup")
+}
+
+test fn retained_scroll_preserves_requested_offset_across_layout_changes() Void!Str {
+  let ctx = context::new()
+  let content = box::new(
+    ctx,
+    initial_style: style::new(width: style::cells(2), height: style::cells(5)),
+  )
+  let view = scroll::new(ctx, content, initial_style: fixed(2, 2))
+
+  try testing::assert(not view.set_offset(3), "Expected pre-layout scroll request without movement")
+  ctx.compute_layout(view, 2, 2)
+  try testing::assert(view.offset() == 3, "Expected deferred retained scroll request")
+
+  content.set_style(style::new(width: style::cells(2), height: style::cells(1)))
+  ctx.compute_layout(view, 2, 2)
+  try testing::assert(view.offset() == 0, "Expected temporary effective scroll clamp")
+  try testing::assert(view.requested_offset() == 3, "Expected retained desired scroll position")
+
+  content.set_style(style::new(width: style::cells(2), height: style::cells(5)))
+  ctx.compute_layout(view, 2, 2)
+  try testing::assert(view.offset() == 3, "Expected restored retained scroll position")
+
+  ctx.destroy()
+  testing::assert(content.node().is_destroyed(), "Expected requested scroll cleanup")
+}
+
+test fn retained_scroll_wheel_bubbles_and_stops_at_boundaries() Void!Str {
+  let ctx = context::new()
+  let content = box::new(ctx, initial_style: fixed(2, 5))
+  let view = scroll::new(ctx, content, initial_style: fixed(2, 2), wheel_step: 2)
+  ctx.compute_layout(view, 2, 2)
+  let focused = focus::new()
+  let wheel = vaxis::Mouse{
+    Col: 0,
+    Row: 0,
+    Button: vaxis::MouseWheelDown,
+    EventType: vaxis::EventPress,
+  }
+
+  let first = router::dispatch(
+    view,
+    view.node(),
+    wheel,
+    Maybe::new<router::Pointer>(router::Pointer{x: 0, y: 0}),
+    focused,
+  )
+  try testing::assert(first.handled and view.offset() == 2, "Expected wheel scroll handling")
+
+  let second = router::dispatch(
+    view,
+    view.node(),
+    wheel,
+    Maybe::new<router::Pointer>(router::Pointer{x: 0, y: 0}),
+    focused,
+  )
+  try testing::assert(second.handled and view.offset() == 3, "Expected wheel clamp at maximum")
+
+  let boundary = router::dispatch(
+    view,
+    view.node(),
+    wheel,
+    Maybe::new<router::Pointer>(router::Pointer{x: 0, y: 0}),
+    focused,
+  )
+  try testing::assert(not boundary.handled, "Expected ignored wheel at boundary")
+
+  ctx.destroy()
+  testing::assert(content.node().is_destroyed(), "Expected wheel scroll cleanup")
+}
+
+test fn retained_focus_reveal_scrolls_direct_descendant_identity() Void!Str {
+  let ctx = context::new()
+  let content = box::new(ctx, initial_style: fixed(2, 5))
+  let rows = mut List::new<mut box::Box>()
+  for _index in 0..5 {
+    let row = box::new(ctx, initial_style: fixed(2, 1))
+    row.set_focusable(true)
+    rows.push(row)
+    content.add(row)
+  }
+  let view = scroll::new(ctx, content, initial_style: fixed(2, 2))
+  ctx.compute_layout(view, 2, 2)
+  let focused = focus::new()
+  focused.reconcile(view)
+  let _ = focused.take_reveal_request()
+  let last = rows.at(4).expect("fifth row").node()
+  try testing::assert(focused.focus(view, last), "Expected direct retained focus request")
+  let target = focused.focused().expect("last retained focus row")
+
+  try testing::assert(focus::reveal(view, target), "Expected retained focus reveal movement")
+  try testing::assert(view.offset() == 3, "Expected focused row reveal offset")
+  try testing::assert(target == last, "Expected persistent focus identity")
+  try testing::assert(target.layout().screen.y == 1, "Expected revealed focused geometry")
+
+  ctx.destroy()
+  testing::assert(content.node().is_destroyed(), "Expected focus reveal cleanup")
 }
 
 test fn retained_destroy_releases_the_owned_tree() Void!Str {

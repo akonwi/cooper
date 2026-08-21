@@ -6,6 +6,7 @@ use cooper/retained/event as retained_event
 use cooper/retained/geometry
 use cooper/retained/paint
 use cooper/retained/style
+use go:math
 
 enum MeasureMode {
   undefined,
@@ -57,8 +58,20 @@ struct Node {
   pointer_enabled: Bool,
   focused: Bool,
   mounted_root: Bool,
+  requested_scroll_y: Int,
+  children_offset_y: Int,
   request_render: fn(),
   on_destroy: fn(Int),
+}
+
+private fn saturating_add(left: Int, right: Int) Int {
+  if right > 0 and left > math::MaxInt - right {
+    math::MaxInt
+  } else if right < 0 and left < math::MinInt - right {
+    math::MinInt
+  } else {
+    left + right
+  }
 }
 
 private fn measure_mode(code: Int) MeasureMode {
@@ -211,6 +224,8 @@ fn create(
     pointer_enabled: false,
     focused: false,
     mounted_root: false,
+    requested_scroll_y: 0,
+    children_offset_y: 0,
     request_render: request_render,
     on_destroy: on_destroy,
   }
@@ -307,6 +322,66 @@ impl Node {
     self.viewport
   }
 
+  fn scroll_y() Int {
+    0 - self.children_offset_y
+  }
+
+  fn requested_scroll_y() Int {
+    self.requested_scroll_y
+  }
+
+  fn max_scroll_y() Int {
+    mut content_height = 0
+    for child in self.children {
+      let local = child.layout().local
+      let extent = saturating_add(local.y, local.height)
+      if extent > content_height {
+        content_height = extent
+      }
+    }
+    if content_height > self.geometry.screen.height {
+      content_height - self.geometry.screen.height
+    } else {
+      0
+    }
+  }
+
+  fn mut set_scroll_y(requested: Int) Bool {
+    if self.destroyed {
+      panic("cannot scroll a destroyed retained Node")
+    }
+    self.requested_scroll_y = requested
+    if self.requested_scroll_y < 0 {
+      self.requested_scroll_y = 0
+    }
+    mut effective = self.requested_scroll_y
+    let maximum = self.max_scroll_y()
+    if effective > maximum {
+      effective = maximum
+    }
+    let translated = 0 - effective
+    let moved = translated != self.children_offset_y
+    if moved {
+      self.children_offset_y = translated
+      self.sync_children_geometry()
+      self.request_redraw()
+    }
+    moved
+  }
+
+  fn mut scroll_by(delta: Int) Bool {
+    let current = self.scroll_y()
+    mut requested = current
+    if delta > 0 and current > math::MaxInt - delta {
+      requested = math::MaxInt
+    } else if delta < 0 and current < math::MinInt - delta {
+      requested = math::MinInt
+    } else {
+      requested = current + delta
+    }
+    self.set_scroll_y(requested)
+  }
+
   fn is_destroyed() Bool {
     self.destroyed
   }
@@ -315,12 +390,32 @@ impl Node {
     self.current_style
   }
 
+  private fn mut apply_backend_style(next: style::Style) {
+    let effective = mut next
+    match self.parent {
+      parent => {
+        if parent.current_style.overflow == style::Overflow::scroll {
+          effective.shrink = 0.0
+        }
+      },
+      _ => (),
+    }
+    self.yoga.Apply(to_backend_style(effective.@))
+  }
+
   fn mut apply_style(next: style::Style) {
     if self.destroyed {
       panic("cannot style a destroyed retained Node")
     }
-    self.yoga.Apply(to_backend_style(next))
+    self.apply_backend_style(next)
     self.current_style = next
+    if next.overflow != style::Overflow::scroll {
+      self.requested_scroll_y = 0
+      self.children_offset_y = 0
+    }
+    for child in self.children {
+      child.apply_backend_style(child.current_style)
+    }
     self.request_render()
   }
 
@@ -361,6 +456,7 @@ impl Node {
     }
 
     child.parent = Maybe::new<mut Node>(self)
+    child.apply_backend_style(child.current_style)
     self.children.push(child)
     self.yoga.AppendChild(child.yoga)
     self.request_render()
@@ -384,6 +480,7 @@ impl Node {
       self.children = retained.@
       self.yoga.RemoveChild(child.yoga)
       child.parent = Maybe::new<mut Node>()
+      child.apply_backend_style(child.current_style)
       self.request_render()
     }
     removed
@@ -452,9 +549,31 @@ impl Node {
       height: local.height,
     }
     self.geometry = geometry::Geometry{local: local, screen: screen}
+    self.sync_children_geometry()
 
+    if self.current_style.overflow == style::Overflow::scroll {
+      mut effective = self.requested_scroll_y
+      let maximum = self.max_scroll_y()
+      if effective > maximum {
+        effective = maximum
+      }
+      let translated = 0 - effective
+      if translated != self.children_offset_y {
+        self.children_offset_y = translated
+        self.sync_children_geometry()
+      }
+    } else if self.children_offset_y != 0 or self.requested_scroll_y != 0 {
+      self.requested_scroll_y = 0
+      self.children_offset_y = 0
+      self.sync_children_geometry()
+    }
+  }
+
+  private fn mut sync_children_geometry() {
+    let screen = self.geometry.screen
+    let translated_y = saturating_add(screen.y, self.children_offset_y)
     for child in self.children {
-      child.sync_geometry(screen.x, screen.y)
+      child.sync_geometry(screen.x, translated_y)
     }
   }
 

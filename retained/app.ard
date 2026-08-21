@@ -18,6 +18,7 @@ struct App {
   wake: Chan<Bool>,
   updates: mut runtime::DispatchQueue,
   focused: mut focus::State,
+  suppress_focus_reveal: Bool,
   destroyed: Bool,
 }
 
@@ -50,6 +51,7 @@ fn new() (mut App)!Error {
     wake: wake,
     updates: updates,
     focused: focus::new(),
+    suppress_focus_reveal: false,
     destroyed: false,
   }
   Result::ok(app)
@@ -83,6 +85,16 @@ impl App {
     let window = self.terminal.Window()
     self.ctx.compute_layout(root, window.Width, window.Height)
     self.focused.reconcile(root)
+    let focus_changed = self.focused.take_reveal_request()
+    if focus_changed or not self.suppress_focus_reveal {
+      match self.focused.focused() {
+        target => {
+          let _ = focus::reveal(root, target)
+        },
+        _ => (),
+      }
+    }
+    self.suppress_focus_reveal = false
     let buffer = paint::new_buffer(window.Width, window.Height)
     root.node().paint(buffer)
 
@@ -124,7 +136,18 @@ impl App {
     received: raw::Event,
     pointer: router::Pointer?,
   ) router::Outcome {
-    router::dispatch(root, target, received, pointer, self.focused, ui_dispatch: self.ctx.dispatch)
+    let outcome = router::dispatch(
+      root,
+      target,
+      received,
+      pointer,
+      self.focused,
+      ui_dispatch: self.ctx.dispatch,
+    )
+    if outcome.preserve_focus_scroll {
+      self.suppress_focus_reveal = true
+    }
+    outcome
   }
 
   fn mut run(root: mut node::Renderable) Void!Error {

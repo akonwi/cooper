@@ -13,6 +13,7 @@ struct Outcome {
   handled: Bool,
   redraw: Bool,
   quit: Bool,
+  preserve_focus_scroll: Bool,
 }
 
 private fn path(root: mut node::Node, target: mut node::Node) [mut node::Node]? {
@@ -168,6 +169,7 @@ private fn dispatch_path(
     handled: state.handled,
     redraw: state.redraw,
     quit: state.quit,
+    preserve_focus_scroll: state.preserve_focus_scroll,
   }
 }
 
@@ -186,6 +188,7 @@ fn dispatch(
         handled: false,
         redraw: false,
         quit: false,
+        preserve_focus_scroll: false,
       }
     },
   }

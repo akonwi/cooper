@@ -1,5 +1,6 @@
 use cooper/retained/node
 use cooper/retained/style
+use go:math
 
 private fn collect_node(current: mut node::Node, targets: mut [mut node::Node]) {
   if (not current.is_destroyed()) and current.style().display != style::Display::none {
@@ -23,13 +24,85 @@ fn targets(root: mut node::Renderable) [mut node::Node] {
   found.@
 }
 
+private fn saturating_add(left: Int, right: Int) Int {
+  if right > 0 and left > math::MaxInt - right {
+    math::MaxInt
+  } else if right < 0 and left < math::MinInt - right {
+    math::MinInt
+  } else {
+    left + right
+  }
+}
+
+private fn saturating_subtract(left: Int, right: Int) Int {
+  if right > 0 and left < math::MinInt + right {
+    math::MinInt
+  } else if right < 0 and left > math::MaxInt + right {
+    math::MaxInt
+  } else {
+    left - right
+  }
+}
+
+fn reveal(root: mut node::Renderable, target: mut node::Node) Bool {
+  let root_node = root.node()
+  mut ancestor = target.parent
+  mut moved = false
+  mut scanning = true
+  while scanning {
+    match ancestor {
+      current => {
+        if current.style().overflow == style::Overflow::scroll {
+          let viewport = current.layout().screen
+          let target_bounds = target.layout().screen
+          if viewport.height > 0 {
+            mut requested = current.scroll_y()
+            if target_bounds.y < viewport.y {
+              let distance = saturating_subtract(viewport.y, target_bounds.y)
+              requested = saturating_subtract(requested, distance)
+            } else if target_bounds.height >= viewport.height {
+              if target_bounds.y > viewport.y {
+                let distance = saturating_subtract(target_bounds.y, viewport.y)
+                requested = saturating_add(requested, distance)
+              }
+            } else {
+              let target_bottom = saturating_add(target_bounds.y, target_bounds.height)
+              let viewport_bottom = saturating_add(viewport.y, viewport.height)
+              if target_bottom > viewport_bottom {
+                let distance = saturating_subtract(target_bottom, viewport_bottom)
+                requested = saturating_add(requested, distance)
+              }
+            }
+            if current.set_scroll_y(requested) {
+              moved = true
+            }
+          }
+        }
+
+        if current == root_node {
+          scanning = false
+        } else {
+          ancestor = current.parent
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+  moved
+}
+
 struct State {
   focused_node: (mut node::Node)?,
   focused_ordinal: Int,
+  reveal_requested: Bool,
 }
 
 fn new() mut State {
-  (mut State{focused_node: Maybe::new<mut node::Node>(), focused_ordinal: 0})
+  (mut State{
+    focused_node: Maybe::new<mut node::Node>(),
+    focused_ordinal: 0,
+    reveal_requested: false,
+  })
 }
 
 impl State {
@@ -62,6 +135,7 @@ impl State {
 
     self.focused_ordinal = ordinal
     if changed {
+      self.reveal_requested = true
       match self.focused_node {
         previous => previous.set_focused(false),
         _ => (),
@@ -87,6 +161,7 @@ impl State {
     }
     if accepted_index >= 0 {
       self.change(Maybe::new<mut node::Node>(target), accepted_index)
+      self.reveal_requested = true
       true
     } else {
       false
@@ -124,6 +199,12 @@ impl State {
         fallback,
       )
     }
+  }
+
+  fn mut take_reveal_request() Bool {
+    let requested = self.reveal_requested
+    self.reveal_requested = false
+    requested
   }
 
   fn mut next(root: mut node::Renderable, reverse: Bool?) {

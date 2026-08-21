@@ -124,8 +124,8 @@ def spawn(binary, rows=24, cols=80):
     """Fork a PTY and exec the binary. Returns (pid, fd)."""
     pid, fd = pty.fork()
     if pid == 0:
-        os.environ.setdefault("TERM", "xterm-256color")
-        os.environ.setdefault("VAXIS_LOG_LEVEL", "error")
+        os.environ["TERM"] = "xterm-256color"
+        os.environ["VAXIS_LOG_LEVEL"] = "error"
         os.execv(binary, [binary])
         sys.exit(1)
     _set_winsize(fd, rows, cols)

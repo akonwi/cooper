@@ -1,147 +1,427 @@
 # Application API proposal
 
-Status: proposed for review. This is not yet a compatibility guarantee.
+Status: proposed for final review. This is not yet a compatibility guarantee.
 
-## Scope
+## Model
 
-This proposal covers Cooper's imperative application API. It deliberately does
-not define a supported custom `Renderable` API yet. Cooper's own primitives and
-runtime will exercise that protocol until the core is stable enough to extract
-a smaller public authoring contract.
+Cooper follows OpenTUI core's imperative retained model: create one terminal
+runtime, pass its Context to control constructors, build one persistent tree,
+and mutate existing controls directly. Cooper owns layout, drawing, input, and
+terminal output.
 
-The model follows OpenTUI's imperative
-[`@opentui/core`](https://opentui.com/docs/core-concepts/renderer) API rather
-than its React or Solid bindings.
+The application-facing core is defined here. `Renderable` remains a
+language-visible implementation protocol under `core/`, not a supported custom
+extension API yet.
 
-## Proposed application shape
+## App, Context, and Root
 
 ```ard
-use cooper/app
-use cooper/box
-use cooper/text
-
-fn main() {
-  let application = app::new().expect("create Cooper app")
-  let root = box::new(application.context)
-  root.add(text::new(application.context, content: "Hello"))
-  application.run(root).expect("run Cooper app")
-}
+let application = app::new().expect("create Cooper app")
+let panel = box::new(application.context)
+panel.add(text::new(application.context, content: "Hello"))
+application.root.add(panel)
+application.run().expect("run Cooper app")
 ```
-
-`App` is a one-shot handle value:
 
 ```ard
 struct App {
   context: mut context::Context,
+  root: mut root::Root,
 }
 
-fn new() App!Error
+fn new(
+  exit_on_ctrl_c: Bool?,
+  auto_focus: Bool?,
+  use_mouse: Bool?,
+) App!Error
 
 impl App {
-  fn run(root: mut node::Renderable) Void!Error
-  fn close()
+  fn run() Void!Error
+  fn destroy()
+
+  fn on_key(handler: fn(mut event::KeyEvent)) fn()
+  fn on_paste(handler: fn(mut event::PasteEvent)) fn()
 }
 ```
 
-- `context` is a field, not a getter. Applications pass it to Cooper
-  constructors.
-- `run` owns the terminal event loop and blocks until shutdown.
-- `run` always restores the terminal and closes the App before returning,
-  including on error.
-- `close` is idempotent and supports abandoning an App before `run`.
-- Calling `run` after closure is a programmer error.
-- Cooper constructors create persistent mutable controls. Updating a control
-  requests another frame without rebuilding the tree.
+All three options default to `true`; `auto_focus` means focus on mouse-down.
+App is a copyable facade over shared runtime state held through Context and
+Root. Copies observe the same one-shot lifecycle.
 
-The initial application-facing controls remain `Box`, `Text`, `Input`, and
-`ScrollView`. Their exact mutation and callback APIs will be reviewed
-separately.
+`run` blocks, performs the initial frame, and always tears down before
+returning. `destroy` is idempotent: before `run` it abandons the App, during
+`run` it requests shutdown at a safe event-loop boundary, and after `run` it is
+a no-op. Running twice or after destruction panics. After destruction,
+listener registration, Root mutation, and construction through the closed
+Context also panic; dispatch is the exception and returns `DispatchError`.
 
-## Relationship to OpenTUI
+Root is permanently terminal-sized, uses column layout, and stretches children.
+It cannot be styled, focused, reparented, or directly destroyed.
 
-OpenTUI's core API is an imperative retained tree:
+```ard
+use cooper/core/node
 
-```ts
-const renderer = await createCliRenderer()
-const panel = new BoxRenderable(renderer, {})
-panel.add(new TextRenderable(renderer, { content: "Hello" }))
-renderer.root.add(panel)
+impl Root {
+  fn mut add(child: mut node::Renderable, index: Int?)
+  fn mut remove(child: mut node::Renderable) Bool
+  fn child_count() Int
+}
 ```
 
-Cooper adopts the same underlying shape:
+Context is passed to constructors and exposes App-lifetime background-work
+capabilities:
+
+```ard
+let _ = application.context.dispatch(fn() {
+  status.set_content("Loaded")
+})
+
+application.context.cancellation.recv()
+```
+
+Dispatch queues an action on the UI thread. It may queue before `run`; dispatch
+after destruction is rejected, and queued actions are suppressed by
+destruction. Cancellation closes during destruction. Cooper does not own or
+forcibly terminate application fibers.
+
+## Tree lifetime
+
+Tree placement and destruction ownership are separate:
+
+- `add(child)` appends and reparents;
+- `add(child, index)` inserts or moves at a zero-based index;
+- the index is interpreted after removing that child from its old position and
+  may range from zero through the remaining child count;
+- an invalid index panics;
+- moving within one parent preserves attachment;
+- moving between parents detaches and reattaches with a fresh scope;
+- `remove` detaches a direct child without destroying it;
+- `destroy` destroys one control and detaches its children;
+- `destroy_recursively` destroys descendants first, then the control;
+- App teardown destroys all remaining Context-owned controls.
+
+Child order controls layout, drawing, and hit testing. Applications retain
+direct control references; public IDs and string tree lookup are omitted.
+
+## Common control API
+
+Every visual control exposes:
+
+```ard
+fn style() style::Style
+fn mut set_style(value: style::Style)
+fn layout() geometry::Geometry
+fn mut destroy()
+fn mut destroy_recursively()
+```
+
+Interactive controls additionally expose:
+
+```ard
+fn mut focus() Bool
+fn mut blur()
+fn is_focused() Bool
+fn mut on_key(handler: fn(mut event::KeyEvent)) fn()
+fn mut on_paste(handler: fn(mut event::PasteEvent)) fn()
+fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn()
+fn mut on_focus(handler: fn()) fn()
+fn mut on_blur(handler: fn()) fn()
+```
+
+Control constructors return mutable references so the tree and application
+share one persistent identity. Effective setter changes request a frame.
+
+## Style and geometry
+
+Style is open value data. It has the standard Flexbox/OpenTUI vocabulary:
+
+```ard
+struct Style {
+  display: Display,
+  position: Position,
+  overflow: Overflow,
+  flex_direction: FlexDirection,
+  flex_wrap: FlexWrap,
+  flex_basis: Length,
+  flex_grow: Float32,
+  flex_shrink: Float32,
+  align_items: Align,
+  align_self: Align,
+  justify_content: Justify,
+  width: Length,
+  height: Length,
+  min_width: Length,
+  min_height: Length,
+  max_width: Length,
+  max_height: Length,
+  top: Length,
+  right: Length,
+  bottom: Length,
+  left: Length,
+  padding: Edges,
+  margin: Edges,
+  gap: Length,
+}
+```
+
+`style::new` accepts every field as a named optional parameter. Length helpers
+are `cells`, `percent`, `auto`, `undefined`, `max_content`, `fit_content`, and
+`stretch`. `set_style` validates the complete value. Absolute positioning is
+exposed only with working edge offsets.
+
+```ard
+struct Rect {
+  x: Int,
+  y: Int,
+  width: Int,
+  height: Int,
+}
+
+struct Geometry {
+  local: Rect,
+  screen: Rect,
+}
+```
+
+Local geometry is relative to the parent's unscrolled content origin; screen
+geometry includes ancestor layout and scrolling. Geometry is zero before the
+first frame and may remain stale until the next scheduled frame.
+
+## Color
+
+```ard
+struct Color {
+  red: Uint8,
+  green: Uint8,
+  blue: Uint8,
+}
+
+fn rgb(red: Int, green: Int, blue: Int) Color
+```
+
+Components outside `0...255` panic. `Color?` represents terminal default or no
+fill according to the property. Alpha, named colors, palette indexes, and theme
+references are deferred.
+
+## Text
+
+`TextStyle` and `Text` both live in `text.ard`.
+
+```ard
+enum TextWrap {
+  none,
+  character,
+  word,
+}
+
+struct TextStyle {
+  foreground: color::Color?,
+  background: color::Color?,
+  bold: Bool,
+  dim: Bool,
+  italic: Bool,
+  underline: Bool,
+  blink: Bool,
+  reverse: Bool,
+  strike: Bool,
+}
+```
+
+```ard
+text::new(
+  application.context,
+  content: "Important",
+  wrap: text::TextWrap::word,
+  style: style::new(width: style::cells(30)),
+  text_style: text::style(bold: true),
+)
+```
+
+Text exposes content, wrapping, TextStyle, corresponding setters, and the common
+control API. It supports explicit newlines and terminal-width-aware word or
+grapheme wrapping. Graphemes are never split. Rich spans, selection, links,
+truncation, Markdown, and Code are deferred.
+
+## Box
+
+```ard
+enum Border {
+  none,
+  single,
+  double,
+  rounded,
+  heavy,
+}
+```
+
+Box exposes indexed `add`, `remove`, `child_count`, the common control API, and
+getters/setters for background, border, border color, and title. A border uses
+one terminal cell and reduces the child content area through layout.
+
+Box is not focusable by default. `set_focusable(true)` enables explicit focus
+and keyboard listeners. Registering its first mouse listener enables hit
+testing; removing its last mouse listener disables hit testing. Pointer
+enablement is not public.
+
+Partial/custom borders, bottom titles, and separate title styling are deferred.
+
+## Input
+
+```ard
+input::new(
+  application.context,
+  value: "",
+  placeholder: "Name",
+  min_length: 1,
+  max_length: 80,
+  style: style::new(width: style::cells(30)),
+  text_style: text::style(),
+  placeholder_style: text::style(dim: true),
+)
+```
+
+Input exposes getters/setters for value, placeholder, minimum/maximum grapheme
+length, TextStyle, and placeholder TextStyle, plus:
+
+```ard
+fn mut submit() Bool
+fn mut on_input(handler: fn(Str)) fn()
+fn mut on_change(handler: fn(Str)) fn()
+fn mut on_submit(handler: fn(Str)) fn()
+```
+
+Editing and changed `set_value` calls emit input. Focus records a commit
+baseline. Blur emits change only when the value changed. Successful submit emits
+a pending change, updates the baseline, and then emits submit, so a following
+blur does not duplicate change. Submit returns false below `min_length`.
+
+Input removes newlines, applies `max_length`, and keeps cursor movement and
+editing grapheme-safe. `set_value` moves the cursor to the end. A TextStyle
+background fills the complete Input bounds. Cursor appearance remains runtime
+policy.
+
+## ScrollBox
+
+ScrollBox is a vertical container with the Box tree operations and common
+control API:
+
+```ard
+fn scroll_top() Int
+fn requested_scroll_top() Int
+fn maximum_scroll_top() Int
+fn scroll_height() Int
+fn mut scroll_to(y: Int) Bool
+fn mut scroll_by(delta: Int) Bool
+fn mut scroll_child_into_view(child: mut node::Renderable) Bool
+```
+
+The requested offset persists across layout changes; the effective offset is
+clamped. Wheel input stops bubbling only when scrolling moves, allowing nested
+fallback. ScrollBox is focusable and handles arrows, Page Up/Down, Home, and
+End.
+
+Horizontal/sticky scrolling, scrollbars, acceleration, and viewport culling are
+deferred.
+
+## Events, listeners, and focus
+
+Cooper converts Vaxis input to backend-independent values. Key events contain a
+canonical string name, text, press/repeat/release type, and Shift/Ctrl/Alt/Super
+modifiers. Paste is separate. Mouse events contain typed down/up/move/drag/drop/
+over/out/scroll kinds, button, global and local coordinates, modifiers, and
+scroll deltas.
+
+Event listeners receive one shared mutable event reference. Events provide:
+
+```ard
+fn mut stop_propagation()
+fn mut prevent_default()
+fn is_propagation_stopped() Bool
+fn is_default_prevented() Bool
+```
+
+Mouse input targets the hit control and bubbles through parents; there is no
+capture phase. At each control, listeners run before that control's built-in
+mouse behavior. Preventing default suppresses that behavior, including
+ScrollBox wheel movement, while stopping propagation ends later delivery. Mouse
+autofocus happens after bubbling and may also be prevented.
+
+Keyboard input runs through App listeners and then the focused control.
+Stopping propagation stops later delivery. Preventing default allows later App
+listeners but suppresses focused-control built-in behavior.
+
+`on_*` methods register listeners in order and return idempotent removal
+functions. Destroying a control removes its listeners. Control key listeners
+run before built-in behavior. The initial general mouse listener receives a
+MouseEvent; event-specific helpers are deferred.
+
+App starts with no focus. Focus is explicit or caused by mouse autofocus. Blur,
+hide, detach, or destruction clears focus without selecting a fallback.
+Successful focus reveals through ancestor ScrollBoxes. Cooper has no implicit
+Tab traversal.
+
+## Frame scheduling
+
+Cooper is demand-driven. Initial run, tree changes, effective setters, focus,
+and resize request frames. Internal requests coalesce before layout and complete
+logical-buffer drawing; Vaxis diffs terminal cells.
+
+Dispatch itself does not force a frame; setters called by a dispatched action
+do. Manual redraw, continuous rendering, frame-rate controls, and animation are
+deferred.
+
+## Testing
+
+```ard
+let test_app = testing::new(width: 40, height: 10)
+let message = text::new(test_app.context, content: "Hello")
+test_app.root.add(message)
+test_app.render()
+testing::assert_contains(test_app.frame().text(), "Hello")
+test_app.destroy()
+```
+
+TestApp is an App-style value facade with Context and Root. Its non-mutating
+methods operate on shared test-runtime state. It provides explicit render,
+bounded flush, resize, key/paste/mouse/scroll input, read-only frame and cell
+snapshots, and idempotent destruction. It never initializes the host terminal.
+PTY tests retain responsibility for Vaxis parsing and terminal restoration.
+
+## Errors
+
+- Recoverable terminal creation/execution and rejected dispatch use Result.
+- Invalid arguments, tree invariants, destroyed-control use, and repeated run
+  panic.
+- Expected conditional outcomes such as remove, submit, focus, and
+  scroll-at-boundary use Bool.
+- App, control, TestApp, and listener cleanup are idempotent.
+
+## Modules
+
+Documented application modules are:
+
+```text
+app  box  color  context  event  geometry
+input  root  scroll_box  style  testing  text
+```
+
+There is no public `cell_style`. Node, paint, focus, routing, scheduling,
+layout, and backend implementation modules are nested under `core/`. Ard does
+not enforce package-private imports, so that path communicates the support
+boundary rather than enforcing it.
+
+## OpenTUI correspondence
 
 | OpenTUI core | Cooper |
 | --- | --- |
 | `createCliRenderer()` | `app::new()` |
-| `CliRenderer` owns the terminal, scheduling, input, and root | `App` owns the terminal, event loop, scheduling, and Context |
-| Renderer implements `RenderContext` | `App.context` is the constructor capability |
-| `new BoxRenderable(renderer, options)` | `box::new(application.context, ...)` |
-| `new TextRenderable(renderer, options)` | `text::new(application.context, ...)` |
-| `parent.add(child)` | `parent.add(child)` |
-| Mutable renderable properties schedule rendering | Primitive setters mutate retained state and request rendering |
-| Each renderable owns Yoga layout state | Each Cooper renderable owns a persistent Node with internal Yoga state |
-| `renderSelf()` draws after layout | The internal `draw()` callback draws after layout |
-| Renderer destruction restores the terminal | App shutdown restores the terminal and destroys its Context-owned tree |
+| renderer root | `App.root` |
+| renderer as RenderContext | narrow `App.context` capability |
+| imperative renderable constructors | retained control constructors |
+| indexed `add` and direct mutation | indexed `add` and setters |
+| `renderSelf()` | internal `draw()` |
+| renderer destruction | `App.destroy()` plus guaranteed run teardown |
+| test renderer | `TestApp` |
 
-The important inspiration is not TypeScript syntax. It is the ownership model:
-
-1. create one terminal runtime;
-2. pass its render context to retained control constructors;
-3. build one persistent mutable tree;
-4. mutate existing controls directly;
-5. let the runtime own layout, drawing, input routing, and terminal output.
-
-Cooper keeps this model Ard-native. Concrete Ard structs own control state while
-a persistent Node owns hierarchy, layout, geometry, focus, and attachment
-state. Tess/Yoga and Vaxis remain implementation details.
-
-## Intentional differences from OpenTUI
-
-### App and context are separate
-
-OpenTUI passes its renderer directly to renderable constructors because
-`CliRenderer` implements `RenderContext`. Cooper exposes the narrower
-`App.context` capability instead of passing terminal ownership and runtime
-services into every constructor.
-
-### The root is passed to `run`
-
-OpenTUI exposes `renderer.root` and applications attach their tree to it. Cooper
-currently accepts one detached root in `application.run(root)`. This makes the
-single running tree and its ownership explicit.
-
-### Lifecycle is one-shot
-
-OpenTUI starts demand-driven rendering after renderer creation and requires the
-owner to call `renderer.destroy()`. Cooper's `run` is a blocking one-shot
-operation that performs teardown before returning. `close` only covers an App
-that will not be run.
-
-### Custom renderables are deferred
-
-OpenTUI supports subclassing `Renderable` and exposes Yoga measurement and
-buffer drawing as an advanced API. Cooper is not committing to an equivalent
-extension API yet. Its internal protocol currently has this general shape:
-
-```ard
-trait Renderable {
-  fn node() mut Node
-  fn mut mount(ctx: MountContext)
-  fn draw(ctx: mut paint::Context)
-  fn mut event(ctx: mut event::Context) event::EventResult
-}
-```
-
-This remains implementation-facing. Core usage will determine which Node,
-mount, draw, event, and measurement capabilities are eventually safe and useful
-to publish.
-
-## Deferred reviews
-
-- primitive setters, callbacks, and focus controls;
-- child insertion, removal, and reordering;
-- Style construction and mutation;
-- App configuration and global key policies;
-- Cooper-owned event values;
-- testing APIs;
-- a first-class custom `Renderable` API.
+Cooper intentionally differs by separating App from Context, using a blocking
+one-shot run, and deferring supported custom-renderable authoring.

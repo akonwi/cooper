@@ -17,6 +17,7 @@ BENCHMARKS = {
     "tess_retained": ROOT / "benchmarks" / "retained_layout.ard",
     "ard_surface": ROOT / "benchmarks" / "surface_layout.ard",
     "tess_virtual": ROOT / "benchmarks" / "retained_virtual_list.ard",
+    "tess_stress": ROOT / "benchmarks" / "retained_stress.ard",
 }
 
 
@@ -107,6 +108,19 @@ def print_summary(
         print(
             f"{metric:<24} {int(virtual[metric]):>6}"
             f" ({int(virtual[f'{metric}_p95']):>6})"
+        )
+
+    stress = results["tess_stress"]
+    print("\nRetained mutation and depth stress")
+    for metric in (
+        "attach_detach_layout_1000_us",
+        "deep_layout_us",
+        "deep_hit_10000_us",
+        "deep_paint_1000_us",
+    ):
+        print(
+            f"{metric:<24} {int(stress[metric]):>6}"
+            f" ({int(stress[f'{metric}_p95']):>6})"
         )
 
 

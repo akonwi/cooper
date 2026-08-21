@@ -18,6 +18,8 @@ the nearest-rank tail value as `max` instead.
 - `retained_virtual_list.ard`: 10,000 logical string rows represented by a
   reusable 64-row retained window, two spacers, content, and viewport (68
   retained nodes total).
+- `retained_stress.ard`: 1,000 detach/re-attach/layout cycles plus 100-level
+  clipped trees exercised by repeated hit tests and direct paints.
 
 The Tess and Ard Surface numbers are directional, not an isolated layout-engine
 shootout. The Surface path includes fresh Surface/list allocation on every
@@ -30,3 +32,8 @@ The virtual-list benchmark measures initial layout, a jump to row 5,000, one
 visible-row update, 100 one-row window shifts, resize, and direct clipped paint.
 It intentionally remains benchmark-local until another application confirms a
 public virtualization API.
+
+The stress benchmark reports total microseconds for 1,000
+detach/re-attach/layout cycles, 10,000 deep hit tests, and 1,000 deep paints.
+It panics unless every hit and the final painted cell reach the leaf, so traversal
+work cannot be optimized away or silently terminate early.

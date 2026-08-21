@@ -1,0 +1,56 @@
+struct Color {
+  red: Uint8,
+  green: Uint8,
+  blue: Uint8,
+}
+
+struct Style {
+  foreground: Color?,
+  background: Color?,
+  bold: Bool,
+  dim: Bool,
+  italic: Bool,
+  underline: Bool,
+  blink: Bool,
+  reverse: Bool,
+  strike: Bool,
+}
+
+private fn channel(value: Int) Uint8 {
+  if value < 0 or value > 255 {
+    panic("color component must be between 0 and 255")
+  }
+  Uint8::from(value)
+}
+
+fn rgb(red: Int, green: Int, blue: Int) Color {
+  Color{
+    red: channel(red),
+    green: channel(green),
+    blue: channel(blue),
+  }
+}
+
+fn new(
+  foreground: Color?,
+  background: Color?,
+  bold: Bool?,
+  dim: Bool?,
+  italic: Bool?,
+  underline: Bool?,
+  blink: Bool?,
+  reverse: Bool?,
+  strike: Bool?,
+) Style {
+  Style{
+    foreground: foreground,
+    background: background,
+    bold: bold.or(false),
+    dim: dim.or(false),
+    italic: italic.or(false),
+    underline: underline.or(false),
+    blink: blink.or(false),
+    reverse: reverse.or(false),
+    strike: strike.or(false),
+  }
+}

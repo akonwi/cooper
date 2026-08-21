@@ -1,3 +1,4 @@
+use cooper/cell_style
 use cooper/cooper
 use cooper/event
 use cooper/surface
@@ -15,6 +16,7 @@ enum WrapMode {
 struct Text {
   content: Str,
   wrap_mode: WrapMode,
+  text_style: cell_style::Style,
 }
 
 private struct SegmentParts {
@@ -22,8 +24,12 @@ private struct SegmentParts {
   trailing: Str,
 }
 
-fn new(content: Str, wrap_mode: WrapMode?) Text {
-  Text{content: content, wrap_mode: wrap_mode.or(WrapMode::word)}
+fn new(content: Str, wrap_mode: WrapMode?, text_style: cell_style::Style?) Text {
+  Text{
+    content: content,
+    wrap_mode: wrap_mode.or(WrapMode::word),
+    text_style: text_style.or(cell_style::new()),
+  }
 }
 
 private fn measured_width(ctx: surface::RenderContext, content: Str) Int {
@@ -198,7 +204,7 @@ impl cooper::Widget for Text {
     let rendered = mut surface::blank(width, height)
     for line, row in lines {
       if row < height {
-        rendered.write(ctx, 0, row, line)
+        rendered.write(ctx, 0, row, line, text_style: self.text_style)
       }
     }
     rendered.@

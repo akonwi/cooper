@@ -1,3 +1,4 @@
+use cooper/cell_style
 use go:go.rockorager.dev/vaxis
 
 struct Size {
@@ -85,6 +86,7 @@ struct Cell {
   grapheme: Str,
   // Zero marks a continuation cell reserved by a preceding wide grapheme.
   width: Int,
+  style: cell_style::Style,
 }
 
 enum CursorShape {
@@ -188,7 +190,11 @@ impl RenderContext {
 }
 
 fn blank_cell() Cell {
-  Cell{grapheme: " ", width: 1}
+  Cell{
+    grapheme: " ",
+    width: 1,
+    style: cell_style::new(),
+  }
 }
 
 private fn snapshot(surface: Surface) Surface {
@@ -316,17 +322,34 @@ impl Surface {
       self.set_raw(x, y, cell)
       column = x + 1
       while column < end {
-        self.set_raw(column, y, Cell{grapheme: "", width: 0})
+        self.set_raw(
+          column,
+          y,
+          Cell{
+            grapheme: "",
+            width: 0,
+            style: cell.style,
+          },
+        )
         column = column + 1
       }
     }
   }
 
-  fn mut write(ctx: RenderContext, x: Int, y: Int, text: Str) {
+  fn mut write(ctx: RenderContext, x: Int, y: Int, text: Str, text_style: cell_style::Style?) {
+    let applied_style = text_style.or(cell_style::new())
     mut column = x
     for character in vaxis::Characters(text) {
       let width = ctx.measure_text(character.Grapheme)
-      self.set_cell(column, y, Cell{grapheme: character.Grapheme, width: width})
+      self.set_cell(
+        column,
+        y,
+        Cell{
+          grapheme: character.Grapheme,
+          width: width,
+          style: applied_style,
+        },
+      )
       column = column + width
     }
   }

@@ -1,3 +1,4 @@
+use cooper/cell_style
 use cooper/event
 use cooper/retained/context
 use cooper/retained/focus
@@ -7,6 +8,52 @@ use cooper/retained/paint
 use cooper/retained/router
 use cooper/runtime
 use go:go.rockorager.dev/vaxis as raw
+
+private fn vaxis_color(value: cell_style::Color?) raw::Color {
+  match value {
+    color => {
+      let packed = Uint32::from(color.red) * 65536 + Uint32::from(color.green) * 256 + Uint32::from(color.blue)
+      raw::HexColor(packed)
+    },
+    _ => raw::ColorDefault,
+  }
+}
+
+private fn vaxis_attributes(style: cell_style::Style) raw::AttributeMask {
+  mut attributes = raw::AttributeMask::from(0)
+  if style.bold {
+    attributes = attributes + raw::AttrBold
+  }
+  if style.dim {
+    attributes = attributes + raw::AttrDim
+  }
+  if style.italic {
+    attributes = attributes + raw::AttrItalic
+  }
+  if style.blink {
+    attributes = attributes + raw::AttrBlink
+  }
+  if style.reverse {
+    attributes = attributes + raw::AttrReverse
+  }
+  if style.strike {
+    attributes = attributes + raw::AttrStrikethrough
+  }
+  attributes
+}
+
+private fn vaxis_style(style: cell_style::Style) raw::Style {
+  mut underline: raw::UnderlineStyle = raw::UnderlineOff
+  if style.underline {
+    underline = raw::UnderlineSingle
+  }
+  raw::Style{
+    Foreground: vaxis_color(style.foreground),
+    Background: vaxis_color(style.background),
+    UnderlineStyle: underline,
+    Attribute: vaxis_attributes(style),
+  }
+}
 
 private fn is_global_key(key: raw::Key) Bool {
   key.EventType != raw::EventRelease and key.EventType != raw::EventPaste
@@ -108,7 +155,10 @@ impl App {
           window.SetCell(
             x,
             y,
-            raw::Cell{Character: raw::Character{Grapheme: cell.grapheme, Width: cell.width}},
+            raw::Cell{
+              Character: raw::Character{Grapheme: cell.grapheme, Width: cell.width},
+              Style: vaxis_style(cell.style),
+            },
           )
         }
       }

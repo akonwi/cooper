@@ -1,17 +1,27 @@
+use cooper/cell_style
 use cooper/retained/geometry
 use go:go.rockorager.dev/vaxis
 
 struct Cell {
   grapheme: Str,
   width: Int,
+  style: cell_style::Style,
 }
 
 private fn blank_cell() Cell {
-  Cell{grapheme: " ", width: 1}
+  Cell{
+    grapheme: " ",
+    width: 1,
+    style: cell_style::new(),
+  }
 }
 
-private fn continuation() Cell {
-  Cell{grapheme: "", width: 0}
+private fn continuation(style: cell_style::Style) Cell {
+  Cell{
+    grapheme: "",
+    width: 0,
+    style: style,
+  }
 }
 
 struct Cursor {
@@ -107,16 +117,24 @@ impl Buffer {
     }
   }
 
-  private fn mut write_grapheme(x: Int, y: Int, grapheme: Str, width: Int) {
+  private fn mut write_grapheme(x: Int, y: Int, grapheme: Str, width: Int, style: cell_style::Style) {
     mut part = 0
     while part < width {
       self.clear_span_at(x + part, y)
       part =+ 1
     }
-    self.put(x, y, Cell{grapheme: grapheme, width: width})
+    self.put(
+      x,
+      y,
+      Cell{
+        grapheme: grapheme,
+        width: width,
+        style: style,
+      },
+    )
     part = 1
     while part < width {
-      self.put(x + part, y, continuation())
+      self.put(x + part, y, continuation(style))
       part =+ 1
     }
   }
@@ -146,17 +164,30 @@ impl Context {
     }
   }
 
-  fn mut write(x: Int, y: Int, text: Str) {
-    self.write_measured(x, y, text, fn(grapheme: Str) Int {
-      mut width = 0
-      for character in vaxis::Characters(grapheme) {
-        width = width + character.Width
-      }
-      width
-    })
+  fn mut write(x: Int, y: Int, text: Str, text_style: cell_style::Style?) {
+    self.write_measured(
+      x,
+      y,
+      text,
+      fn(grapheme: Str) Int {
+        mut width = 0
+        for character in vaxis::Characters(grapheme) {
+          width = width + character.Width
+        }
+        width
+      },
+      text_style: text_style,
+    )
   }
 
-  fn mut write_measured(x: Int, y: Int, text: Str, measure_width: fn(Str) Int) {
+  fn mut write_measured(
+    x: Int,
+    y: Int,
+    text: Str,
+    measure_width: fn(Str) Int,
+    text_style: cell_style::Style?,
+  ) {
+    let applied_style = text_style.or(cell_style::new())
     let target_y = self.bounds.y + y
     mut target_x = self.bounds.x + x
     for character in vaxis::Characters(text) {
@@ -171,7 +202,7 @@ impl Context {
       }
 
       if visible {
-        self.buffer.write_grapheme(target_x, target_y, character.Grapheme, width)
+        self.buffer.write_grapheme(target_x, target_y, character.Grapheme, width, applied_style)
       } else {
         part = 0
         while part < width {

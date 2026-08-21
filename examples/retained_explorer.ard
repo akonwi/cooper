@@ -1,5 +1,6 @@
 use ard/async
 
+use cooper/cell_style
 use cooper/event as framework_event
 use cooper/retained/app
 use cooper/retained/box
@@ -44,10 +45,12 @@ impl node::Renderable for EntryRow {
 
   fn paint(ctx: mut paint::Context) {
     mut marker = " "
+    mut row_style = cell_style::new()
     if self.node_ref.is_focused() {
       marker = ">"
+      row_style = cell_style::new(bold: true, reverse: true)
     }
-    ctx.write(0, 0, "{marker} {self.label}")
+    ctx.write(0, 0, "{marker} {self.label}", text_style: row_style)
   }
 
   fn mut event(ctx: mut retained_event::Context) framework_event::EventResult {
@@ -118,6 +121,7 @@ fn main() {
     ctx,
     content: "Retained Explorer — {cwd}",
     initial_style: style::new(height: style::cells(1), shrink: 0.0),
+    text_style: cell_style::new(foreground: cell_style::rgb(90, 170, 255), bold: true),
   )
   let search = input::new(
     ctx,
@@ -158,7 +162,11 @@ fn main() {
   )
   details_style.overflow = style::Overflow::hidden
   let details = box::new(ctx, initial_style: details_style.@)
-  let details_title = text::new(ctx, content: "Details")
+  let details_title = text::new(
+    ctx,
+    content: "Details",
+    text_style: cell_style::new(bold: true, underline: true),
+  )
   let selection = text::new(ctx, content: "Select an entry with Enter or the mouse.")
   details.add(details_title)
   details.add(selection)

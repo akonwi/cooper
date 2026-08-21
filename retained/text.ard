@@ -1,3 +1,4 @@
+use cooper/cell_style
 use cooper/event as framework_event
 use cooper/retained/context
 use cooper/retained/event as retained_event
@@ -10,6 +11,7 @@ use go:go.rockorager.dev/vaxis
 struct Text {
   node_ref: mut node::Node,
   content: Str,
+  text_style: cell_style::Style,
   width_measurer: fn(Str) Int,
 }
 
@@ -27,11 +29,17 @@ private fn constrained(value: Float32, available: Float32, mode: node::MeasureMo
   }
 }
 
-fn new(ctx: mut context::Context, content: Str, initial_style: style::Style?) mut Text {
+fn new(
+  ctx: mut context::Context,
+  content: Str,
+  initial_style: style::Style?,
+  text_style: cell_style::Style?,
+) mut Text {
   let retained = ctx.create_node(initial_style.or(style::new()))
   let text = mut Text{
     node_ref: retained,
     content: content,
+    text_style: text_style.or(cell_style::new()),
     width_measurer: ctx.width_measurer,
   }
   retained.bind(text)
@@ -56,7 +64,7 @@ impl node::Renderable for Text {
   }
 
   fn paint(ctx: mut paint::Context) {
-    ctx.write_measured(0, 0, self.content, self.width_measurer)
+    ctx.write_measured(0, 0, self.content, self.width_measurer, text_style: self.text_style)
   }
 
   fn event(ctx: mut retained_event::Context) framework_event::EventResult {
@@ -70,6 +78,11 @@ impl Text {
       self.content = content
       self.node_ref.mark_measure_dirty()
     }
+  }
+
+  fn mut set_text_style(next: cell_style::Style) {
+    self.text_style = next
+    self.node_ref.request_redraw()
   }
 
   fn layout() geometry::Geometry {

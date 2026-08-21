@@ -8,14 +8,18 @@ private fn item_style(width: Int) style::Style {
   style::new(width: style::cells(width), height: style::cells(1), shrink: 0.0)
 }
 
+private fn responsive_item_style() style::Style {
+  style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0)
+}
+
 fn main() {
   let ctx = context::new()
   let root = box::new(
     ctx,
     initial_style: style::new(
       flex_direction: style::Direction::column,
-      width: style::cells(80),
-      height: style::cells(1000),
+      width: style::percent(100.0),
+      height: style::percent(100.0),
       align_items: style::Align::start,
     ),
   )
@@ -24,7 +28,7 @@ fn main() {
   let construction_started = time::Now()
   mut index = 0
   while index < 1000 {
-    let child = box::new(ctx, initial_style: item_style(80))
+    let child = box::new(ctx, initial_style: responsive_item_style())
     root.add(child)
     children.push(child)
     index =+ 1
@@ -42,15 +46,16 @@ fn main() {
   let single_update = time::Since(update_started)
 
   let resize_started = time::Now()
-  ctx.compute_layout(root, 100, 1000)
+  ctx.compute_layout(root, 40, 800)
   let resize = time::Since(resize_started)
 
   fmt::Printf(
-    "retained_nodes=1001 construct_ms=%d initial_layout_us=%d single_update_us=%d resize_us=%d\n",
-    construction.Milliseconds(),
+    "backend=tess_retained nodes=1001 construct_us=%d initial_layout_us=%d single_update_us=%d resize_us=%d observed=%d\n",
+    construction.Microseconds(),
     initial_layout.Microseconds(),
     single_update.Microseconds(),
     resize.Microseconds(),
+    root.layout().screen.width + root.layout().screen.height + target.layout().screen.width,
   )
 
   root.destroy()

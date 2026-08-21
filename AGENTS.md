@@ -178,6 +178,8 @@ python3 test_form.py
 python3 test_scroll_form.py
 python3 test_async.py
 python3 test_explorer.py
+python3 test_retained.py
+python3 test_retained_explorer.py
 ```
 
 ## References

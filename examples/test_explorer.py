@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
-"""Smoke test for the asynchronous Miller-column filesystem explorer."""
+"""Smoke test for the retained filesystem explorer vertical slice."""
 
 import os
 import signal
 import sys
 
-from test_harness import Screen, build, read_for, send, spawn, wait_exit, wait_for
+os.environ.setdefault("ARD", "ard-dev")
+
+from test_harness import (
+    Screen,
+    build,
+    read_for,
+    resize,
+    send,
+    spawn,
+    wait_exit,
+    wait_for,
+)
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(ROOT, "explorer")
@@ -15,55 +26,52 @@ def click(fd, col, row):
     send(fd, f"\x1b[<0;{col + 1};{row + 1}M")
 
 
+def wheel_down(fd, col, row):
+    send(fd, f"\x1b[<65;{col + 1};{row + 1}M")
+
+
 def main():
+    os.chdir(ROOT)
     build("explorer")
-    pid, fd = spawn(BIN, rows=12, cols=80)
-    screen = Screen(12, 80)
+    pid, fd = spawn(BIN, rows=8, cols=90)
+    screen = Screen(8, 90)
     try:
-        wait_for(fd, screen, "ard-out/")
+        wait_for(fd, screen, "Retained Explorer")
+        wait_for(fd, screen, "ard.toml")
 
-        # Enter on an empty filtered list must not open the stale selection.
-        send(fd, "/")
-        send(fd, "no-such-entry")
-        wait_for(fd, screen, "no matches")
+        # Initial focus belongs to Input; Tab traverses to the first persistent row.
+        send(fd, "\t")
         send(fd, "\r")
-        wait_for(fd, screen, "/ no-such-entry")
-        send(fd, "\x1b")
-        wait_for(fd, screen, "/ search")
+        wait_for(fd, screen, "Selected: ard-out/")
 
-        # Slash moves focus into the retained Input and filters the active pane.
-        send(fd, "/")
-        send(fd, "scroll")
-        wait_for(fd, screen, "> scroll_form")
-        wait_for(fd, screen, "/ scroll")
-        read_for(fd, screen, 0.1)
-        assert (screen.row, screen.col) == (11, 8), "search Input did not receive focus"
+        # Mouse targeting uses the retained row geometry directly.
+        click(fd, col=2, row=5)
+        wait_for(fd, screen, "Selected: ard.toml")
 
-        # Escape restores list focus and the unfiltered directory.
-        send(fd, "\x1b")
-        wait_for(fd, screen, "/ search")
-        wait_for(fd, screen, "ard-out/")
+        wide_details = screen.line(4).find("Details")
+        assert wide_details >= 40, "details pane was not horizontally positioned"
+        resize(fd, rows=8, cols=60)
+        for _ in range(5):
+            read_for(fd, screen, 0.1)
+        narrow_details = screen.line(4).find("Details")
+        assert 25 <= narrow_details < wide_details, "panes did not respond to terminal resize"
 
-        # A mouse press selects the directory and opens its detail column.
-        click(fd, col=0, row=2)
-        wait_for(fd, screen, "go/")
-        wait_for(fd, screen, "│")
-
-        # Left closes the detail column and restores the parent selection.
-        send(fd, "\x1b[D")
-        wait_for(fd, screen, "> ard-out/")
-
-        # Keyboard navigation can open the directory again.
-        send(fd, "\x1b[C")
-        wait_for(fd, screen, "go/")
+        # Wheel translation changes both paint and hit coordinates. Activate the
+        # row now occupying the second visible list line.
+        wheel_down(fd, col=2, row=4)
+        for _ in range(5):
+            read_for(fd, screen, 0.1)
+        visible_label = screen.line(5)[:narrow_details].lstrip("> ").rstrip()
+        assert visible_label, "scroll did not expose another retained row"
+        click(fd, col=2, row=5)
+        wait_for(fd, screen, f"Selected: {visible_label}")
 
         send(fd, "\x03")
         status = wait_exit(pid, fd, screen, timeout=2.0)
         if status is None:
-            raise AssertionError("Cooper explorer did not exit after Ctrl+C")
+            raise AssertionError("explorer did not exit after Ctrl+C")
         assert status == 0, f"exit status {status}"
-
-        print("✓ Cooper filesystem explorer smoke test passed")
+        print("✓ Cooper explorer smoke test passed")
     finally:
         cleanup(fd, pid)
 

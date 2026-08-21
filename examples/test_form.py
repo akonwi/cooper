@@ -22,7 +22,7 @@ def main():
         wait_for(fd, screen, "Ada")
 
         # Click the nested Email input (terminal mouse coordinates are 1-based).
-        click(fd, col=0, row=6)
+        click(fd, col=0, row=4)
         send(fd, "ada@example.com")
         wait_for(fd, screen, "ada@example.com")
 
@@ -33,7 +33,7 @@ def main():
         # Forward traversal wraps from City to Name. Clicking column zero then
         # proves the Input receives target-local coordinates for cursor placement.
         send(fd, "\t")
-        click(fd, col=0, row=4)
+        click(fd, col=0, row=2)
         send(fd, "!")
         wait_for(fd, screen, "!Ada")
 

@@ -1,807 +1,255 @@
 use ard/async
 
-use cooper
-use cooper/event
+use cooper/app
+use cooper/box
+use cooper/cell_style
+use cooper/context
+use cooper/event as framework_event
 use cooper/input
-use cooper/surface
-use go:go.rockorager.dev/vaxis as raw
+use cooper/node
+use cooper/paint
+use cooper/scroll
+use cooper/style
+use cooper/text
+use go:go.rockorager.dev/vaxis
 use go:os
 use go:path/filepath
 use go:strings
 
-enum EntryKind {
-  parent,
-  directory,
-  file,
+private struct EntryRow {
+  node_ref: mut node::Node,
+  label: Str,
+  activate: fn(Str),
 }
 
-struct Entry {
-  name: Str,
-  path: Str,
-  kind: EntryKind,
-}
-
-struct Pane {
-  path: Str,
-  entries: [Entry],
-  selected: Int,
-  offset: Int,
-  loading: Bool,
-  error: Str,
-}
-
-struct PaneLayout {
-  index: Int,
-  x: Int,
-  width: Int,
-}
-
-struct LoadRequest {
-  generation: Int,
-  index: Int,
-  path: Str,
-  dispatch: fn(fn()) Void!event::DispatchError,
-}
-
-struct Explorer {
-  panes: [mut Pane],
-  active: Int,
-  search: mut input::Input,
-  searching: Bool,
-  search_selection: Int,
-  search_offset: Int,
-  generation: Int,
-  requests: Chan<LoadRequest>,
-}
-
-private fn loading_pane(path: Str) Pane {
-  Pane{
-    path: path,
-    entries: [],
-    selected: 0,
-    offset: 0,
-    loading: true,
-    error: "",
-  }
-}
-
-private fn directory_kind(kind: EntryKind) Bool {
-  kind != EntryKind::file
-}
-
-private fn entries_first(left: Entry, right: Entry) Bool {
-  if left.kind == EntryKind::parent {
-    true
-  } else if right.kind == EntryKind::parent {
-    false
-  } else if directory_kind(left.kind) != directory_kind(right.kind) {
-    directory_kind(left.kind)
-  } else {
-    let left_folded = strings::ToLower(left.name)
-    let right_folded = strings::ToLower(right.name)
-    if left_folded == right_folded {
-      strings::Compare(left.name, right.name) < 0
-    } else {
-      strings::Compare(left_folded, right_folded) < 0
-    }
-  }
-}
-
-private fn read_entries(path: Str) [Entry]!Error {
-  let absolute = try filepath::Abs(path)
-  let raw = try os::ReadDir(absolute)
-  let entries = mut List::new<Entry>()
-  let parent = filepath::Dir(absolute)
-  if parent != absolute {
-    entries.push(
-      Entry{
-        name: "..",
-        path: parent,
-        kind: EntryKind::parent,
-      },
-    )
-  }
-  for item in raw {
-    let name = item.Name()
-    let item_path = filepath::Join(absolute, name)
-    let is_dir = match item.IsDir() {
-      true => true,
-      false => {
-        match os::Stat(item_path) {
-          ok(info) => info.IsDir(),
-          err(_) => false,
-        }
-      },
-    }
-    entries.push(
-      Entry{
-        name: name,
-        path: item_path,
-        kind: match is_dir {
-          true => EntryKind::directory,
-          false => EntryKind::file,
-        },
-      },
-    )
-  }
-  entries.sort(entries_first)
-  Result::ok(entries.@)
-}
-
-private fn visible_entries(pane: Pane, query: Str) [Int] {
-  let visible = mut List::new<Int>()
-  let folded = strings::ToLower(query)
-  for entry, index in pane.entries {
-    if folded.is_empty() or strings::Contains(strings::ToLower(entry.name), folded) {
-      visible.push(index)
-    }
-  }
-  visible.@
-}
-
-private fn position_of(values: [Int], desired: Int) Int {
-  mut found = -1
-  for value, index in values {
-    if value == desired {
-      found = index
-      break
-    }
-  }
-  found
-}
-
-private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
-  if value < minimum {
-    minimum
-  } else if value > maximum {
-    maximum
-  } else {
-    value
-  }
-}
-
-private fn clamped_offset(pane: Pane, visible_count: Int, height: Int) Int {
-  mut maximum = visible_count - height
-  if maximum < 0 {
-    maximum = 0
-  }
-  clamp(pane.offset, 0, maximum)
-}
-
-private fn pane_layouts(count: Int, active: Int, width: Int) [PaneLayout] {
-  if count <= 0 or width <= 0 {
-    []
-  } else {
-    mut capacity = (width + 1) / 17
-    if capacity < 1 {
-      capacity = 1
-    }
-    mut visible_count = count
-    if visible_count > capacity {
-      visible_count = capacity
-    }
-    mut start = active - visible_count + 1
-    if start < 0 {
-      start = 0
-    }
-    if start + visible_count > count {
-      start = count - visible_count
-    }
-
-    let separators = visible_count - 1
-    mut content_width = width - separators
-    if content_width < 0 {
-      content_width = 0
-    }
-    let base = content_width / visible_count
-    let remainder = content_width % visible_count
-    let layouts = mut List::new<PaneLayout>()
-    mut x = 0
-    mut visible_index = 0
-    while visible_index < visible_count {
-      mut pane_width = base
-      if visible_index >= visible_count - remainder {
-        pane_width =+ 1
-      }
-      layouts.push(
-        PaneLayout{
-          index: start + visible_index,
-          x: x,
-          width: pane_width,
-        },
-      )
-      x = x + pane_width + 1
-      visible_index =+ 1
-    }
-    layouts.@
-  }
-}
-
-private fn row_label(entry: Entry, marker: Str) Str {
-  let suffix = match entry.kind {
-    EntryKind::file => "",
-    _ => "/",
-  }
-  "{marker} {entry.name}{suffix}"
-}
-
-private fn search_query(explorer: Explorer) Str {
-  if explorer.searching {
-    explorer.search.value
-  } else {
-    ""
-  }
-}
-
-fn new() Explorer!Error {
-  let cwd = try filepath::Abs(try os::Getwd())
-  let search = mut input::new(value: "", placeholder: "search current directory")
-  let initial = mut loading_pane(cwd)
-  Result::ok(
-    Explorer{
-      panes: [initial],
-      active: 0,
-      search: search,
-      searching: false,
-      search_selection: 0,
-      search_offset: 0,
-      generation: 0,
-      requests: Chan::new<LoadRequest>(1),
-    },
+private fn entry_row(ctx: mut context::Context, label: Str, activate: fn(Str)) mut EntryRow {
+  let retained = ctx.create_node(
+    style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0),
   )
+  let row = mut EntryRow{
+    node_ref: retained,
+    label: label,
+    activate: activate,
+  }
+  retained.bind(row)
+  retained.set_focusable(true)
+  retained.set_pointer_enabled(true)
+  row
 }
 
-impl Explorer {
-  private fn event_size(ctx: event::EventContext) surface::Size {
-    ctx.current_route_size().or(ctx.target_size.or(surface::Size{width: 1, height: 3}))
+impl node::Renderable for EntryRow {
+  fn node() mut node::Node {
+    self.node_ref
   }
 
-  private fn mut truncate(keep: Int) {
-    let safe_keep = clamp(keep, 0, self.panes.size())
-    if safe_keep < self.panes.size() {
-      self.panes = self.panes.slice(end: safe_keep).expect("clamped pane prefix").to_list()
-      self.generation =+ 1
+  fn mount(ctx: node::MountContext) {}
+
+  fn paint(ctx: mut paint::Context) {
+    mut marker = " "
+    mut row_style = cell_style::new()
+    if self.node_ref.is_focused() {
+      marker = ">"
+      row_style = cell_style::new(bold: true, reverse: true)
     }
-    if self.active >= self.panes.size() {
-      self.active = self.panes.size() - 1
-    }
-    if self.active < 0 {
-      self.active = 0
-    }
+    ctx.write(0, 0, "{marker} {self.label}", text_style: row_style)
   }
 
-  private fn mut start_loader(cancellation: Receiver<Void>) {
-    let requests = self.requests
-    async::start(fn() {
-      mut running = true
-      while running {
-        select {
-          cancellation.recv() => { running = false },
-          let received = requests.recv() => {
-            match received {
-              request => {
-                mut stopped = false
-                select {
-                  cancellation.recv() => { stopped = true },
-                  _ => (),
-                }
-                if not stopped {
-                  let loaded = read_entries(request.path)
-                  let _ = request.dispatch(fn() {
-                    self.finish_load(request.generation, request.index, loaded)
-                  })
-                }
-              },
-              _ => { running = false },
-            }
-          },
-        }
-      }
-    })
-  }
-
-  private fn mut start(dispatch: fn(fn()) Void!event::DispatchError, cancellation: Receiver<Void>) {
-    self.start_loader(cancellation)
-    let path = self.panes.at(0).expect("initial pane").path
-    self.begin_load_with(dispatch, 0, path)
-  }
-
-  private fn mut finish_load(generation: Int, index: Int, loaded: [Entry]!Error) {
-    if self.generation == generation and index < self.panes.size() {
-      let pane = self.panes.at(index).expect("current loading pane")
-      pane.loading = false
-      match loaded {
-        ok(entries) => {
-          pane.entries = entries
-          pane.error = ""
-          pane.selected = 0
-          pane.offset = 0
-          if self.searching and self.active == index {
-            let visible = visible_entries(pane.@, self.search.value)
-            match visible.at(0) {
-              first => { pane.selected = first },
-              _ => { pane.selected = -1 },
-            }
-          }
-        },
-        err(reason) => {
-          pane.entries = []
-          pane.error = "{reason}"
-        },
-      }
-    }
-  }
-
-  private fn mut enqueue_load(request: LoadRequest) {
-    select {
-      self.requests.send(request) => (),
-      _ => {
-        select {
-          self.requests.recv() => (),
-          _ => (),
-        }
-        self.requests.send(request)
-      },
-    }
-  }
-
-  private fn mut begin_load_with(dispatch: fn(fn()) Void!event::DispatchError, index: Int, path: Str) {
-    let prefix_count = clamp(index, 0, self.panes.size())
-    let next = mut self.panes.slice(end: prefix_count).expect("clamped load prefix").to_list()
-    let loading = mut loading_pane(path)
-    next.push(loading)
-    self.panes = next.@
-    self.active = index
-    self.generation =+ 1
-    self.enqueue_load(
-      LoadRequest{
-        generation: self.generation,
-        index: index,
-        path: path,
-        dispatch: dispatch,
-      },
-    )
-  }
-
-  private fn mut begin_load(ctx: mut event::EventContext, index: Int, path: Str) {
-    self.begin_load_with(ctx.dispatch, index, path)
-    ctx.request_redraw()
-  }
-
-  private fn mut reveal_selection(height: Int) {
-    if self.active >= 0 and self.active < self.panes.size() {
-      let pane = self.panes.at(self.active).expect("active pane")
-      let visible = visible_entries(pane.@, search_query(self.@))
-      let selected_position = position_of(visible, pane.selected)
-      if selected_position < 0 {
-        pane.offset = 0
-      } else {
-        mut viewport = height
-        if viewport < 1 {
-          viewport = 1
-        }
-        if selected_position < pane.offset {
-          pane.offset = selected_position
-        } else if selected_position >= pane.offset + viewport {
-          pane.offset = selected_position - viewport + 1
-        }
-        pane.offset = clamped_offset(pane.@, visible.size(), viewport)
-      }
-    }
-  }
-
-  private fn mut move_selection(ctx: mut event::EventContext, delta: Int) event::EventResult {
-    let pane = try self.panes.at(self.active) -> _ { event::EventResult::ignored }
-    let visible = visible_entries(pane.@, search_query(self.@))
-    if visible.size() == 0 {
-      event::EventResult::ignored
+  fn mut event(ctx: mut framework_event::Context) framework_event::EventResult {
+    if ctx.phase != framework_event::EventPhase::target {
+      framework_event::EventResult::ignored
     } else {
-      mut position = position_of(visible, pane.selected)
-      if position < 0 {
-        position = 0
-      }
-      position = clamp(position + delta, 0, visible.size() - 1)
-      pane.selected = visible.at(position).expect("selected visible entry")
-      let target = self.event_size(ctx.@)
-      self.reveal_selection(target.height - 2)
-      ctx.request_redraw()
-      event::EventResult::handled
-    }
-  }
-
-  private fn mut leave_search(restore: Bool) {
-    if restore {
-      match self.panes.at(self.active) {
-        pane => {
-          if self.search_selection >= 0 and self.search_selection < pane.entries.size() {
-            pane.selected = self.search_selection
+      mut activated = false
+      match ctx.terminal_event {
+        vaxis::Mouse(mouse) => {
+          if mouse.Button == vaxis::MouseLeftButton and mouse.EventType == vaxis::EventPress {
+            let _ = ctx.request_focus()
+            activated = true
           }
-          pane.offset = self.search_offset
+        },
+        vaxis::Key(key) => {
+          if key.EventType != vaxis::EventRelease and key.MatchString("Enter") {
+            activated = true
+          }
         },
         _ => (),
       }
-    }
-    self.searching = false
-    self.search.value = ""
-    self.search.cursor = 0
-  }
-
-  private fn mut enter_search(ctx: mut event::EventContext) event::EventResult {
-    match self.panes.at(self.active) {
-      pane => {
-        self.search_selection = pane.selected
-        self.search_offset = pane.offset
-      },
-      _ => {
-        self.search_selection = 0
-        self.search_offset = 0
-      },
-    }
-    self.searching = true
-    self.search.value = ""
-    self.search.cursor = 0
-    ctx.request_focus([0])
-    ctx.request_redraw()
-    event::EventResult::handled
-  }
-
-  private fn mut reconcile_search_selection(ctx: mut event::EventContext) {
-    match self.panes.at(self.active) {
-      pane => {
-        let visible = visible_entries(pane.@, self.search.value)
-        if position_of(visible, pane.selected) < 0 {
-          match visible.at(0) {
-            first => { pane.selected = first },
-            _ => { pane.selected = -1 },
-          }
-        }
-        pane.offset = 0
-      },
-      _ => (),
-    }
-    ctx.request_redraw()
-  }
-
-  private fn mut go_up(ctx: mut event::EventContext) event::EventResult {
-    if self.active > 0 {
-      self.truncate(self.active)
-      ctx.request_redraw()
-      event::EventResult::handled
-    } else {
-      let pane = try self.panes.at(0) -> _ { event::EventResult::ignored }
-      let parent = filepath::Dir(pane.path)
-      if parent == pane.path {
-        event::EventResult::ignored
+      if activated {
+        self.activate(self.label)
+        ctx.request_redraw()
+        framework_event::EventResult::handled
       } else {
-        self.begin_load(ctx, 0, parent)
-        event::EventResult::handled
+        framework_event::EventResult::ignored
       }
-    }
-  }
-
-  private fn mut open_selected(ctx: mut event::EventContext) event::EventResult {
-    let pane = try self.panes.at(self.active) -> _ { event::EventResult::ignored }
-    let entry = try pane.entries.at(pane.selected) -> _ { event::EventResult::ignored }
-    match entry.kind {
-      EntryKind::file => event::EventResult::ignored,
-      EntryKind::parent => self.go_up(ctx),
-      EntryKind::directory => {
-        self.begin_load(ctx, self.active + 1, entry.path)
-        event::EventResult::handled
-      },
-    }
-  }
-
-  private fn search_has_selection() Bool {
-    match self.panes.at(self.active) {
-      pane => {
-        let visible = visible_entries(pane.@, self.search.value)
-        position_of(visible, pane.selected) >= 0
-      },
-      _ => false,
-    }
-  }
-
-  private fn mut handle_search_key(ctx: mut event::EventContext, key: raw::Key) event::EventResult {
-    if key.EventType == raw::EventRelease {
-      event::EventResult::ignored
-    } else if key.EventType != raw::EventPaste and key.MatchString("Escape") {
-      self.leave_search(true)
-      ctx.request_focus([])
-      ctx.request_redraw()
-      event::EventResult::handled
-    } else if key.EventType != raw::EventPaste and key.MatchString("Enter") {
-      if not self.search_has_selection() {
-        event::EventResult::handled
-      } else {
-        self.leave_search(false)
-        ctx.request_focus([])
-        let target = self.event_size(ctx.@)
-        self.reveal_selection(target.height - 2)
-        let opened = self.open_selected(ctx)
-        if opened == event::EventResult::ignored {
-          ctx.request_redraw()
-          event::EventResult::handled
-        } else {
-          opened
-        }
-      }
-    } else if key.EventType != raw::EventPaste and key.MatchString("Up") {
-      self.move_selection(ctx, -1)
-    } else if key.EventType != raw::EventPaste and key.MatchString("Down") {
-      self.move_selection(ctx, 1)
-    } else {
-      // Ordinary editing is delivered directly to the focused Input. Explorer
-      // observes query-changing keys during bubble after the Input mutates.
-      event::EventResult::ignored
-    }
-  }
-
-  private fn search_key_changes_query(key: raw::Key) Bool {
-    key.EventType == raw::EventPaste or key.MatchString("Backspace") or key.MatchString("Delete") or (not key.Text.is_empty())
-  }
-
-  private fn mut handle_key(ctx: mut event::EventContext, key: raw::Key) event::EventResult {
-    if self.searching {
-      self.handle_search_key(ctx, key)
-    } else if key.EventType == raw::EventRelease or key.EventType == raw::EventPaste {
-      event::EventResult::ignored
-    } else if key.Text == "/" {
-      self.enter_search(ctx)
-    } else if key.MatchString("Up") {
-      self.move_selection(ctx, -1)
-    } else if key.MatchString("Down") {
-      self.move_selection(ctx, 1)
-    } else if key.MatchString("Left") or key.MatchString("Backspace") {
-      self.go_up(ctx)
-    } else if key.MatchString("Right") or key.MatchString("Enter") {
-      self.open_selected(ctx)
-    } else {
-      event::EventResult::ignored
-    }
-  }
-
-  private fn pane_at_column(width: Int, column: Int, count: Int, active: Int) PaneLayout? {
-    mut found = Maybe::new<PaneLayout>()
-    for layout in pane_layouts(count, active, width) {
-      if column >= layout.x and column < layout.x + layout.width {
-        found = Maybe::new<PaneLayout>(layout)
-        break
-      }
-    }
-    found
-  }
-
-  private fn mut scroll_pane(ctx: mut event::EventContext, layout: PaneLayout, delta: Int) event::EventResult {
-    let pane = try self.panes.at(layout.index) -> _ { event::EventResult::ignored }
-    let target = self.event_size(ctx.@)
-    let viewport = target.height - 2
-    let query = match layout.index == self.active {
-      true => search_query(self.@),
-      false => "",
-    }
-    let visible = visible_entries(pane.@, query)
-    pane.offset = clamped_offset(pane.@, visible.size(), viewport) + delta
-    pane.offset = clamped_offset(pane.@, visible.size(), viewport)
-    ctx.request_redraw()
-    event::EventResult::handled
-  }
-
-  private fn mut click_row(ctx: mut event::EventContext, layout: PaneLayout, row: Int) event::EventResult {
-    let pane = try self.panes.at(layout.index) -> _ { event::EventResult::ignored }
-    let query = match layout.index == self.active {
-      true => search_query(self.@),
-      false => "",
-    }
-    let visible = visible_entries(pane.@, query)
-    let target = self.event_size(ctx.@)
-    let offset = clamped_offset(pane.@, visible.size(), target.height - 2)
-    let entry_index = try visible.at(offset + row) -> _ { event::EventResult::ignored }
-
-    pane.selected = entry_index
-    self.active = layout.index
-    self.truncate(self.active + 1)
-    if self.searching {
-      self.leave_search(false)
-      ctx.request_focus([])
-      self.reveal_selection(target.height - 2)
-    }
-    ctx.request_redraw()
-    self.open_selected(ctx)
-    event::EventResult::handled
-  }
-
-  private fn mut handle_mouse(ctx: mut event::EventContext, mouse: raw::Mouse) event::EventResult {
-    if mouse.EventType != raw::EventPress {
-      event::EventResult::ignored
-    } else {
-      let target = self.event_size(ctx.@)
-      if mouse.Row == target.height - 1 and mouse.Button == raw::MouseLeftButton {
-        if not self.searching {
-          self.enter_search(ctx)
-        } else {
-          ctx.request_focus([0])
-          event::EventResult::handled
-        }
-      } else if mouse.Row <= 0 or mouse.Row >= target.height - 1 {
-        event::EventResult::ignored
-      } else {
-        let layout = try self.pane_at_column(target.width, mouse.Col, self.panes.size(), self.active) -> _ {
-          event::EventResult::ignored
-        }
-        if mouse.Button == raw::MouseWheelUp {
-          self.scroll_pane(ctx, layout, -3)
-        } else if mouse.Button == raw::MouseWheelDown {
-          self.scroll_pane(ctx, layout, 3)
-        } else if mouse.Button == raw::MouseLeftButton {
-          self.click_row(ctx, layout, mouse.Row - 1)
-        } else {
-          event::EventResult::ignored
-        }
-      }
-    }
-  }
-
-  private fn render_header(ctx: surface::RenderContext, output: mut surface::Surface, width: Int) {
-    let path = match self.panes.at(self.active) {
-      pane => pane.path,
-      _ => "",
-    }
-    output.write(ctx, 0, 0, path)
-  }
-
-  private fn render_pane(
-    ctx: surface::RenderContext,
-    output: mut surface::Surface,
-    layout: PaneLayout,
-    height: Int,
-  ) {
-    match self.panes.at(layout.index) {
-      pane => {
-        if layout.width > 0 and height > 0 {
-          let rendered = mut surface::blank(layout.width, height)
-          if pane.loading {
-            rendered.write(ctx, 0, 0, "… loading")
-          } else if not pane.error.is_empty() {
-            rendered.write(ctx, 0, 0, "! {pane.error}")
-          } else {
-            let query = match layout.index == self.active {
-              true => search_query(self),
-              false => "",
-            }
-            let visible = visible_entries(pane.@, query)
-            let offset = clamped_offset(pane.@, visible.size(), height)
-            if visible.size() == 0 {
-              rendered.write(ctx, 0, 0, "  no matches")
-            } else {
-              mut row = 0
-              while row < height {
-                match visible.at(offset + row) {
-                  entry_index => {
-                    let entry = pane.entries.at(entry_index).expect("visible pane entry")
-                    let marker = match entry_index == pane.selected {
-                      true => {
-                        match layout.index == self.active {
-                          true => ">",
-                          false => "·",
-                        }
-                      },
-                      false => " ",
-                    }
-                    rendered.write(ctx, 0, row, row_label(entry, marker))
-                  },
-                  _ => (),
-                }
-                row =+ 1
-              }
-            }
-          }
-          output.add_child(layout.x, 1, rendered.@)
-        }
-      },
-      _ => (),
-    }
-  }
-
-  private fn render_footer(
-    ctx: surface::RenderContext,
-    output: mut surface::Surface,
-    width: Int,
-    row: Int,
-  ) {
-    if self.searching {
-      output.write(ctx, 0, row, "/ ")
-      if width > 2 {
-        let input_ctx = ctx.for_child(0, surface::bounded(max_width: width - 2, max_height: 1))
-        let search = self.search.render(input_ctx)
-        output.add_widget_child(self.search, 0, 2, row, search)
-      }
-    } else {
-      output.write(ctx, 0, row, "/ search   ↑↓ select   ← up   →/Enter open")
     }
   }
 }
 
-impl cooper::Widget for Explorer {
-  fn mut init(ctx: cooper::InitContext) {
-    self.start(ctx.dispatch, ctx.cancellation)
+private struct DirectoryLoader {
+  node_ref: mut node::Node,
+  ctx: mut context::Context,
+  path: Str,
+  loading: mut text::Text,
+  selection: mut text::Text,
+  loaded: Bool,
+}
+
+private fn directory_loader(ctx: mut context::Context, path: Str, selection: mut text::Text) mut DirectoryLoader {
+  let retained = ctx.create_node(
+    style::new(width: style::percent(100.0), align_items: style::Align::stretch),
+  )
+  let loading = text::new(ctx, content: "Loading directory…")
+  let loader = mut DirectoryLoader{
+    node_ref: retained,
+    ctx: ctx,
+    path: path,
+    loading: loading,
+    selection: selection,
+    loaded: false,
+  }
+  retained.bind(loader)
+  retained.add(loading.node())
+  loader
+}
+
+impl node::Renderable for DirectoryLoader {
+  fn node() mut node::Node {
+    self.node_ref
   }
 
-  fn render(ctx: surface::RenderContext) surface::Surface {
-    let width = ctx.constraints.constrain_width(ctx.constraints.max_width.or(80))
-    let height = ctx.constraints.constrain_height(ctx.constraints.max_height.or(24))
-    let output = mut surface::blank(width, height)
-    output.accept_focus()
-    if height > 0 {
-      self.render_header(ctx, output, width)
-    }
-    if height > 2 {
-      let pane_height = height - 2
-      let layouts = pane_layouts(self.panes.size(), self.active, width)
-      for layout, index in layouts {
-        self.render_pane(ctx, output, layout, pane_height)
-        if index < layouts.size() - 1 {
-          output.write(ctx, layout.x + layout.width, 1, "│")
-          mut row = 2
-          while row < height - 1 {
-            output.write(ctx, layout.x + layout.width, row, "│")
-            row =+ 1
+  fn mut mount(ctx: node::MountContext) {
+    if not self.loaded {
+      let path = self.path
+      let cancellation = ctx.cancellation
+      let dispatch = ctx.dispatch
+      async::start(fn() {
+        let cancelled_before = select {
+          cancellation.recv() => true,
+          _ => false,
+        }
+        if not cancelled_before {
+          let loaded = read_names(path)
+          let cancelled_after = select {
+            cancellation.recv() => true,
+            _ => false,
+          }
+          if not cancelled_after {
+            let _ = dispatch(fn() {
+              let _ = self.node_ref.remove(self.loading.node())
+              self.loading.destroy()
+              let activate = fn(name: Str) {
+                self.selection.set_content("Selected: {name}")
+              }
+              match loaded {
+                ok(names) => {
+                  for name in names {
+                    self.node_ref.add(entry_row(self.ctx, name, activate).node())
+                  }
+                },
+                err(_) => self.node_ref.add(text::new(self.ctx, content: "Unable to read directory").node()),
+              }
+              self.loaded = true
+            })
           }
         }
-      }
-      self.render_footer(ctx, output, width, height - 1)
-    } else if height > 1 {
-      self.render_footer(ctx, output, width, height - 1)
+      })
     }
-    output.@
   }
 
-  fn mut event(ctx: mut event::EventContext) event::EventResult {
-    if ctx.kind != event::ContextKind::terminal {
-      event::EventResult::ignored
-    } else {
-      let received = try ctx.terminal_event -> _ { event::EventResult::ignored }
-      match ctx.next_route_index() {
-        route_index => {
-          if route_index != 0 {
-            event::EventResult::ignored
-          } else {
-            match received {
-              raw::Key(key) => {
-                if ctx.phase == event::EventPhase::capture {
-                  let result = self.handle_search_key(ctx, key)
-                  if result == event::EventResult::handled {
-                    ctx.stop_propagation()
-                  }
-                  result
-                } else if ctx.phase == event::EventPhase::bubble and ctx.was_handled() and self.search_key_changes_query(key) {
-                  self.reconcile_search_selection(ctx)
-                  event::EventResult::handled
-                } else {
-                  event::EventResult::ignored
-                }
-              },
-              _ => event::EventResult::ignored,
-            }
-          }
-        },
-        _ => {
-          if ctx.phase != event::EventPhase::target {
-            event::EventResult::ignored
-          } else {
-            match received {
-              raw::Key(key) => self.handle_key(ctx, key),
-              raw::Mouse(mouse) => self.handle_mouse(ctx, mouse),
-              _ => event::EventResult::ignored,
-            }
-          }
-        },
-      }
-    }
+  fn paint(ctx: mut paint::Context) {}
+
+  fn event(ctx: mut framework_event::Context) framework_event::EventResult {
+    framework_event::EventResult::ignored
   }
+}
+
+private fn alphabetic(left: Str, right: Str) Bool {
+  strings::Compare(strings::ToLower(left), strings::ToLower(right)) < 0
+}
+
+private fn read_names(path: Str) [Str]!Error {
+  let entries = try os::ReadDir(path)
+  let names = mut List::new<Str>()
+  for entry in entries {
+    mut suffix = ""
+    if entry.IsDir() {
+      suffix = "/"
+    }
+    names.push("{entry.Name()}{suffix}")
+  }
+  names.sort(alphabetic)
+  Result::ok(names.@)
 }
 
 fn main() {
-  let explorer = mut new().expect("create filesystem explorer")
-  cooper::run(explorer).expect("run filesystem explorer")
+  let application = app::new().expect("create retained explorer app")
+  let ctx = application.context()
+  let cwd = filepath::Abs(
+    os::Getwd().expect("read current directory"),
+  ).expect("resolve current directory")
+
+  let root = box::new(
+    ctx,
+    initial_style: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      align_items: style::Align::stretch,
+      gap: style::cells(1),
+    ),
+  )
+  let title = text::new(
+    ctx,
+    content: "Retained Explorer — {cwd}",
+    initial_style: style::new(height: style::cells(1), shrink: 0.0),
+    text_style: cell_style::new(foreground: cell_style::rgb(90, 170, 255), bold: true),
+  )
+  let search = input::new(
+    ctx,
+    placeholder: "Filter (retained input demo)",
+    initial_style: style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0),
+  )
+  let panes = box::new(
+    ctx,
+    initial_style: style::new(
+      flex_direction: style::Direction::row,
+      width: style::percent(100.0),
+      height: style::cells(1),
+      grow: 1.0,
+      align_items: style::Align::stretch,
+      gap: style::cells(2),
+    ),
+  )
+  let details_style = mut style::new(
+    width: style::percent(50.0),
+    height: style::percent(100.0),
+    grow: 1.0,
+    align_items: style::Align::start,
+  )
+  details_style.overflow = style::Overflow::hidden
+  let details = box::new(ctx, initial_style: details_style.@)
+  let details_title = text::new(
+    ctx,
+    content: "Details",
+    text_style: cell_style::new(bold: true, underline: true),
+  )
+  let selection = text::new(ctx, content: "Select an entry with Enter or the mouse.")
+  details.add(details_title)
+  details.add(selection)
+
+  let entries = directory_loader(ctx, cwd, selection)
+  let listing = scroll::new(
+    ctx,
+    entries,
+    initial_style: style::new(
+      width: style::percent(50.0),
+      height: style::percent(100.0),
+      grow: 1.0,
+    ),
+  )
+  panes.add(listing)
+  panes.add(details)
+  root.add(title)
+  root.add(search)
+  root.add(panes)
+
+  application.run(root).expect("run retained explorer app")
 }

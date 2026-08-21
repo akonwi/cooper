@@ -1,13 +1,8 @@
-use cooper/event
-use cooper/retained/node
-use cooper/retained/style
+use cooper/node
+use cooper/style
 use go:go.rockorager.dev/vaxis
 
 private fn no_op() {}
-
-private fn stopped_dispatch(action: fn()) Void!event::DispatchError {
-  Result::err(event::DispatchError::stopped)
-}
 
 private fn default_width(text: Str) Int {
   mut width = 0
@@ -25,14 +20,9 @@ struct Context {
   running: Bool,
   request_render: fn(),
   width_measurer: fn(Str) Int,
-  dispatch: fn(fn()) Void!event::DispatchError,
 }
 
-fn new(
-  request_render: fn()?,
-  width_measurer: (fn(Str) Int)?,
-  dispatch: (fn(fn()) Void!event::DispatchError)?,
-) mut Context {
+fn new(request_render: fn()?, width_measurer: (fn(Str) Int)?) mut Context {
   (mut Context{
     next_id: 1,
     context_token: node::new_context_token(),
@@ -41,7 +31,6 @@ fn new(
     running: false,
     request_render: request_render.or(no_op),
     width_measurer: width_measurer.or(default_width),
-    dispatch: dispatch.or(stopped_dispatch),
   })
 }
 

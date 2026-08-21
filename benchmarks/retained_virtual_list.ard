@@ -1,9 +1,9 @@
-use cooper/retained/box
-use cooper/retained/context
-use cooper/retained/paint
-use cooper/retained/scroll
-use cooper/retained/style
-use cooper/retained/text
+use cooper/box
+use cooper/context
+use cooper/paint
+use cooper/scroll
+use cooper/style
+use cooper/text
 use go:fmt
 use go:time
 

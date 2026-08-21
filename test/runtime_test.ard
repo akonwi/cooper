@@ -1,65 +1,7 @@
 use ard/testing
-use ard/unsafe
 
-use cooper/cooper
 use cooper/event
-use cooper/layout
 use cooper/runtime
-use cooper/surface
-use go:go.rockorager.dev/vaxis
-
-private struct EventProbe {
-  calls: Int,
-}
-
-impl cooper::Widget for EventProbe {
-  fn init(ctx: cooper::InitContext) {}
-
-  fn render(ctx: surface::RenderContext) surface::Surface {
-    surface::blank(1, 1)
-  }
-
-  fn mut event(ctx: mut event::EventContext) event::EventResult {
-    self.calls =+ 1
-    event::EventResult::handled
-  }
-}
-
-test fn event_context_exposes_dispatch_as_a_function_field() Void!Str {
-  mut called = false
-  let ctx = event::new_context(dispatch: fn(action: fn()) Void!event::DispatchError {
-    action()
-    Result::ok(())
-  })
-
-  let result = ctx.dispatch(fn() {
-    called = true
-  })
-
-  try testing::assert(result.is_ok(), "Expected the injected dispatch to accept work")
-  testing::assert(called, "Expected direct context dispatch")
-}
-
-test fn headless_context_rejects_dispatch_without_a_runtime() Void!Str {
-  let ctx = event::new_context()
-
-  let result = ctx.dispatch(fn() {})
-
-  testing::assert(result.is_err(), "Expected a stopped default dispatcher")
-}
-
-test fn context_constructors_select_one_context_kind() Void!Str {
-  let terminal = event::terminal_context(vaxis::Key{Text: "x"})
-  let focus = event::focus_context(
-    [],
-    [surface::Size{width: 1, height: 1}],
-    [surface::Point{x: 0, y: 0}],
-  )
-
-  try testing::assert(terminal.kind == event::ContextKind::terminal, "Expected terminal context")
-  try testing::assert(focus.kind == event::ContextKind::focus_target, "Expected focus context")
-  testing::assert(terminal.phase == event::EventPhase::idle, "Expected delivery to assign a phase")
-}
 
 test fn dispatch_queue_accepts_reentrant_actions_without_blocking() Void!Str {
   let queue = mut runtime::new_dispatch_queue()
@@ -72,14 +14,12 @@ test fn dispatch_queue_accepts_reentrant_actions_without_blocking() Void!Str {
       second_called = true
     })
   })
-  let first = queue.pop().expect("first queued action")
-  first()
-  let second = queue.pop().expect("reentrant queued action")
-  second()
+  (queue.pop().expect("first queued action"))()
+  (queue.pop().expect("reentrant queued action"))()
 
-  try testing::assert(accepted, "Expected the first action to be accepted")
-  try testing::assert(first_called and second_called, "Expected both actions to execute")
-  testing::assert(not queue.pop().is_some(), "Expected the queue to drain")
+  try testing::assert(accepted, "Expected first dispatch acceptance")
+  try testing::assert(first_called and second_called, "Expected reentrant actions")
+  testing::assert(not queue.pop().is_some(), "Expected drained dispatch queue")
 }
 
 test fn stopped_dispatch_queue_rejects_and_discards_work() Void!Str {
@@ -89,7 +29,7 @@ test fn stopped_dispatch_queue_rejects_and_discards_work() Void!Str {
   queue.stop()
 
   try testing::assert(not queue.post(fn() {}), "Expected stopped dispatch rejection")
-  testing::assert(not queue.pop().is_some(), "Expected shutdown to discard queued actions")
+  testing::assert(not queue.pop().is_some(), "Expected stopped queue to discard work")
 }
 
 test fn mount_scope_rejects_and_suppresses_stale_dispatch() Void!Str {
@@ -114,25 +54,8 @@ test fn mount_scope_rejects_and_suppresses_stale_dispatch() Void!Str {
     called = true
   })
 
-  try testing::assert(accepted.is_ok(), "Expected dispatch while mounted")
-  try testing::assert(scope.is_cancelled(), "Expected stopped mount cancellation")
-  try testing::assert(rejected.is_err(), "Expected dispatch rejection after unmount")
-  testing::assert(not called, "Expected unmount to suppress queued retained-state mutation")
-}
-
-test fn routed_surface_retains_opaque_mutable_widget_owner() Void!Str {
-  let probe = mut EventProbe{calls: 0}
-  let column = mut layout::column([layout::flex_item(probe)])
-  let rendered = column.render(
-    surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 10)},
-  )
-  let child = rendered.children.at(0).expect("rendered child")
-  let opaque = child.surface.owner.expect("opaque child owner")
-  let recovered = unsafe::cast<mut cooper::Widget>(opaque).expect("mutable Widget owner")
-  let ctx = mut event::terminal_context(vaxis::Key{Text: "x"})
-
-  let result = recovered.event(ctx)
-
-  try testing::assert(result == event::EventResult::handled, "Expected direct owner invocation")
-  testing::assert(probe.calls == 1, "Expected mutation through retained opaque owner")
+  try testing::assert(accepted.is_ok(), "Expected mounted dispatch acceptance")
+  try testing::assert(scope.is_cancelled(), "Expected cancellation signal")
+  try testing::assert(rejected.is_err(), "Expected stale dispatch rejection")
+  testing::assert(not called, "Expected stale queued action suppression")
 }

@@ -1,153 +1,122 @@
 use ard/testing
 
-use cooper/cooper as framework
+use cooper/context
 use cooper/event
 use cooper/input
-use cooper/surface
+use cooper/paint
+use cooper/style
 use go:go.rockorager.dev/vaxis as raw
 
-fn send(widget: mut framework::Widget, received: raw::Event) event::EventContext {
-  let ctx = mut event::terminal_context(received)
-  let _ = widget.event(ctx)
-  ctx.@
+private fn fixed(width: Int) style::Style {
+  style::new(width: style::cells(width), height: style::cells(1), shrink: 0.0)
 }
 
-test fn text_input_mutates_through_widget_trait() Void!Str {
-  let field = mut input::new(value: "", placeholder: "Type here")
-
-  let ctx = send(mut field, raw::Key{Text: "a"})
-
-  try testing::assert(field.value == "a", "Expected input to retain typed text")
-  try testing::assert(field.cursor == 1, "Expected cursor to follow inserted text")
-  testing::assert(ctx.redraw_requested(), "Expected text input to request a redraw")
-}
-
-test fn backspace_removes_one_grapheme() Void!Str {
-  let field = mut input::new(value: "a🙂", placeholder: "")
-
-  let _ = send(mut field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
-
-  try testing::assert(field.value == "a", "Expected backspace to remove the emoji grapheme")
-  testing::assert(field.cursor == 1, "Expected cursor to move back one grapheme")
-}
-
-test fn cursor_movement_controls_insertion_point() Void!Str {
-  let field = mut input::new(value: "ac", placeholder: "")
-
-  let _ = send(mut field, raw::Key{Keycode: raw::KeyLeft})
-  let _ = send(mut field, raw::Key{Text: "b"})
-
-  try testing::assert(field.value == "abc", "Expected insertion at the retained cursor position")
-  testing::assert(field.cursor == 2, "Expected cursor after the inserted grapheme")
-}
-
-test fn render_exposes_cells_and_cursor() Void!Str {
-  let field = input::new(value: "hello", placeholder: "")
-  let rendered = field.render(
-    surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 1), focus_path: []},
+private fn send(field: mut input::Input, received: raw::Event, local_x: Int?) event::EventResult {
+  let state = event::new_state()
+  let ctx = event::context(
+    event::EventPhase::target,
+    received,
+    local_x,
+    Maybe::new<Int>(0),
+    true,
+    state,
   )
-
-  try testing::assert(rendered.size.width == 10, "Expected input to fill bounded width")
-  try testing::assert(rendered.size.height == 1, "Expected a single-line input surface")
-  try testing::assert(
-    rendered.cell(0, 0).expect("first cell").grapheme == "h",
-    "Expected rendered text in the surface buffer",
-  )
-  let cursor = rendered.cursor.expect("input cursor")
-  testing::assert(cursor.point.x == 5, "Expected cursor after rendered text")
+  field.event(ctx)
 }
 
-test fn combining_input_keeps_cursor_on_a_grapheme_boundary() Void!Str {
-  let field = mut input::new(value: "", placeholder: "")
+test fn input_inserts_moves_and_deletes_graphemes() Void!Str {
+  let ctx = context::new()
+  let field = input::new(ctx, value: "ac", initial_style: fixed(10))
 
-  let _ = send(mut field, raw::Key{Text: "e"})
-  let _ = send(mut field, raw::Key{Text: "́"})
+  let _ = send(field, raw::Key{Keycode: raw::KeyLeft})
+  let _ = send(field, raw::Key{Text: "b"})
+  try testing::assert(field.value() == "abc", "Expected insertion at retained cursor")
+  try testing::assert(field.cursor_index() == 2, "Expected cursor after insertion")
 
-  try testing::assert(field.value == "é", "Expected combining input to remain intact")
-  try testing::assert(
-    field.cursor == field.value.size(),
-    "Expected cursor at the combined grapheme boundary",
-  )
-
-  let _ = send(mut field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
-  testing::assert(field.value.is_empty(), "Expected one backspace to remove the combined grapheme")
+  field.set_value("a🙂")
+  let _ = send(field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
+  try testing::assert(field.value() == "a", "Expected one grapheme backspace")
+  testing::assert(field.cursor_index() == 1, "Expected grapheme cursor movement")
 }
 
-test fn narrow_input_scrolls_to_keep_cursor_visible() Void!Str {
-  let field = input::new(value: "hello", placeholder: "")
-  let rendered = field.render(
-    surface::RenderContext{constraints: surface::bounded(max_width: 5, max_height: 1), focus_path: []},
-  )
+test fn input_normalizes_combining_and_merged_grapheme_boundaries() Void!Str {
+  let ctx = context::new()
+  let field = input::new(ctx, initial_style: fixed(10))
+
+  let _ = send(field, raw::Key{Text: "e"})
+  let _ = send(field, raw::Key{Text: "́"})
+  try testing::assert(field.value() == "é", "Expected combining input")
+  let _ = send(field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
+  try testing::assert(field.value().is_empty(), "Expected combined grapheme removal")
+
+  field.set_value("🇦x🇧")
+  let _ = send(field, raw::Key{Keycode: raw::KeyLeft})
+  let _ = send(field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
+  try testing::assert(field.value() == "🇦🇧", "Expected regional-indicator merge")
+  try testing::assert(field.cursor_index() == field.value().size(), "Expected normalized cursor")
+  let _ = send(field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
+  testing::assert(field.value().is_empty(), "Expected merged flag removal")
+}
+
+test fn input_paints_and_scrolls_cursor_into_narrow_viewport() Void!Str {
+  let ctx = context::new()
+  let field = input::new(ctx, value: "hello", initial_style: fixed(5))
+  ctx.compute_layout(field, 5, 1)
+  field.node().set_focused(true)
+  let buffer = paint::new_buffer(5, 1)
+  field.node().paint(buffer)
 
   try testing::assert(
-    rendered.cell(0, 0).expect("first visible cell").grapheme == "e",
-    "Expected the input viewport to scroll past the first grapheme",
+    buffer.cell_at(0, 0).expect("first visible cell").grapheme == "e",
+    "Expected horizontal input scroll",
   )
   try testing::assert(
-    rendered.cell(3, 0).expect("last text cell").grapheme == "o",
-    "Expected the end of the value to remain visible",
+    buffer.cell_at(3, 0).expect("last visible text").grapheme == "o",
+    "Expected visible value suffix",
   )
-  testing::assert(
-    rendered.cursor.expect("visible cursor").point.x == 4,
-    "Expected a blank cursor cell after the visible value",
-  )
+  testing::assert(buffer.cursor.expect("input cursor").x == 4, "Expected visible trailing cursor")
 }
 
-test fn deletion_normalizes_a_newly_merged_grapheme_boundary() Void!Str {
-  let field = mut input::new(value: "🇦x🇧", placeholder: "")
-
-  let _ = send(mut field, raw::Key{Keycode: raw::KeyLeft})
-  let _ = send(mut field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
-
-  try testing::assert(field.value == "🇦🇧", "Expected deletion to merge the regional indicators")
-  try testing::assert(
-    field.cursor == field.value.size(),
-    "Expected cursor to normalize after grapheme re-segmentation",
-  )
-
-  let _ = send(mut field, raw::Key{Keycode: Int32::from(raw::KeyBackspace)})
-  testing::assert(field.value.is_empty(), "Expected backspace to remove the complete merged flag")
-}
-
-test fn wide_grapheme_is_not_partially_rendered() Void!Str {
-  let field = mut input::new(value: "🙂a", placeholder: "")
-  let _ = send(mut field, raw::Key{Keycode: raw::KeyHome})
-  let rendered = field.render(
-    surface::RenderContext{constraints: surface::bounded(max_width: 1, max_height: 1)},
-  )
+test fn input_does_not_paint_partial_wide_grapheme() Void!Str {
+  let ctx = context::new()
+  let field = input::new(ctx, value: "🙂a", initial_style: fixed(1))
+  let _ = send(field, raw::Key{Keycode: raw::KeyHome})
+  ctx.compute_layout(field, 1, 1)
+  let buffer = paint::new_buffer(1, 1)
+  field.node().paint(buffer)
 
   testing::assert(
-    rendered.cell(0, 0).expect("only cell").grapheme == " ",
-    "Expected rendering to stop rather than skip a non-fitting wide grapheme",
+    buffer.cell_at(0, 0).expect("only cell").grapheme == " ",
+    "Expected wide grapheme clipping",
   )
 }
 
-test fn render_context_controls_terminal_specific_widths() Void!Str {
-  let field = mut input::new(value: "🙂", placeholder: "")
-  let _ = send(mut field, raw::Key{Keycode: raw::KeyHome})
-  let rendered = field.render(
-    surface::RenderContext{
-      constraints: surface::bounded(max_width: 3, max_height: 1),
-      width_measurer: fn(text: Str) Int {
-        match text == "🙂" {
-          true => 4,
-          false => surface::text_width(text),
-        }
-      },
-    },
-  )
+test fn input_uses_context_terminal_width_measurement() Void!Str {
+  let ctx = context::new(width_measurer: fn(text: Str) Int {
+    if text == "🙂" {
+      4
+    } else {
+      1
+    }
+  })
+  let field = input::new(ctx, value: "🙂", initial_style: fixed(3))
+  let _ = send(field, raw::Key{Keycode: raw::KeyHome})
+  ctx.compute_layout(field, 3, 1)
+  let buffer = paint::new_buffer(3, 1)
+  field.node().paint(buffer)
 
   testing::assert(
-    rendered.cell(0, 0).expect("first cell").grapheme == " ",
-    "Expected terminal-specific width to prevent partial rendering",
+    buffer.cell_at(0, 0).expect("first cell").grapheme == " ",
+    "Expected terminal-aware clipping",
   )
 }
 
-test fn pasted_ctrl_c_is_inserted_instead_of_quitting() Void!Str {
-  let field = mut input::new(value: "", placeholder: "")
+test fn input_inserts_pasted_ctrl_c_as_text() Void!Str {
+  let ctx = context::new()
+  let field = input::new(ctx, initial_style: fixed(5))
 
-  let ctx = send(
-    mut field,
+  let result = send(
+    field,
     raw::Key{
       Text: "c",
       Keycode: Int32::from('c'),
@@ -156,105 +125,40 @@ test fn pasted_ctrl_c_is_inserted_instead_of_quitting() Void!Str {
     },
   )
 
-  try testing::assert(field.value == "c", "Expected pasted text to be inserted")
-  testing::assert(not ctx.quit_requested(), "Expected pasted Ctrl+C not to quit")
+  try testing::assert(result == event::EventResult::handled, "Expected paste handling")
+  testing::assert(field.value() == "c", "Expected pasted Ctrl+C text")
 }
 
-test fn mouse_press_moves_cursor_with_target_local_coordinates() Void!Str {
-  let field = mut input::new(value: "hello", placeholder: "")
-  let ctx = mut event::terminal_context(
-    raw::Mouse{
-      Col: 1,
-      Button: raw::MouseLeftButton,
-      EventType: raw::EventPress,
-    },
-    target_size: surface::Size{width: 10, height: 1},
-  )
+test fn input_mouse_uses_target_local_coordinates_and_visible_start() Void!Str {
+  let ctx = context::new()
+  let field = input::new(ctx, value: "hello", initial_style: fixed(5))
+  ctx.compute_layout(field, 5, 1)
+  let mouse = raw::Mouse{Button: raw::MouseLeftButton, EventType: raw::EventPress}
 
-  let result = field.event(ctx)
-
-  try testing::assert(result == event::EventResult::handled, "Expected Input to handle a left press")
-  try testing::assert(field.cursor == 1, "Expected the cursor before the second grapheme")
-  ctx.localize_terminal(raw::Key{Text: "X"})
-  let _ = field.event(ctx)
-  testing::assert(field.value == "hXello", "Expected typing at the clicked position")
+  let _ = send(field, mouse, local_x: 0)
+  try testing::assert(field.cursor_index() == 1, "Expected click at scrolled viewport start")
+  let _ = send(field, raw::Key{Text: "X"})
+  testing::assert(field.value() == "hXello", "Expected typing at clicked cursor")
 }
 
-test fn mouse_press_uses_the_visible_scrolled_input_start() Void!Str {
-  let field = mut input::new(value: "hello", placeholder: "")
-  let ctx = mut event::terminal_context(
-    raw::Mouse{
-      Col: 0,
-      Button: raw::MouseLeftButton,
-      EventType: raw::EventPress,
-    },
-    target_size: surface::Size{width: 5, height: 1},
-  )
+test fn input_mouse_preserves_wide_grapheme_boundaries() Void!Str {
+  let ctx = context::new()
+  let field = input::new(ctx, value: "🙂a", initial_style: fixed(4))
+  ctx.compute_layout(field, 4, 1)
+  let mouse = raw::Mouse{Button: raw::MouseLeftButton, EventType: raw::EventPress}
 
-  let _ = field.event(ctx)
+  let _ = send(field, mouse, local_x: 1)
 
-  testing::assert(
-    field.cursor == 1,
-    "Expected a click at the viewport start before the visible 'e'",
-  )
+  testing::assert(field.cursor_index() == "🙂".size(), "Expected trailing wide boundary")
 }
 
-test fn mouse_press_skips_zero_width_graphemes() Void!Str {
-  let field = mut input::new(value: "ab", placeholder: "")
-  let ctx = mut event::terminal_context(
-    raw::Mouse{
-      Col: 0,
-      Button: raw::MouseLeftButton,
-      EventType: raw::EventPress,
-    },
-    target_size: surface::Size{width: 2, height: 1},
-    width_measurer: fn(text: Str) Int {
-      if text == "a" {
-        0
-      } else {
-        1
-      }
-    },
-  )
+test fn unfocused_input_is_focusable_without_hardware_cursor() Void!Str {
+  let ctx = context::new()
+  let field = input::new(ctx, value: "hello", initial_style: fixed(10))
+  ctx.compute_layout(field, 10, 1)
+  let buffer = paint::new_buffer(10, 1)
+  field.node().paint(buffer)
 
-  let _ = field.event(ctx)
-
-  testing::assert(field.cursor == 1, "Expected zero-width text not to block the visible glyph")
-}
-
-test fn mouse_press_keeps_wide_grapheme_boundaries() Void!Str {
-  let field = mut input::new(value: "🙂a", placeholder: "")
-  let ctx = mut event::terminal_context(
-    raw::Mouse{
-      Col: 1,
-      Button: raw::MouseLeftButton,
-      EventType: raw::EventPress,
-    },
-    target_size: surface::Size{width: 4, height: 1},
-  )
-
-  let _ = field.event(ctx)
-
-  testing::assert(
-    field.cursor == "🙂".size(),
-    "Expected the second wide cell to select the trailing boundary",
-  )
-}
-
-test fn ctrl_c_is_not_input_widget_policy() Void!Str {
-  let field = mut input::new(value: "", placeholder: "")
-
-  let ctx = send(mut field, raw::Key{Keycode: Int32::from('c'), Modifiers: raw::ModCtrl})
-
-  testing::assert(not ctx.quit_requested(), "Expected the application runtime to own Ctrl+C")
-}
-
-test fn unfocused_input_is_focusable_without_exposing_a_cursor() Void!Str {
-  let field = input::new(value: "hello", placeholder: "")
-  let rendered = field.render(
-    surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 1)},
-  )
-
-  try testing::assert(rendered.focusable, "Expected Input to participate in focus traversal")
-  testing::assert(not rendered.cursor.is_some(), "Expected an unfocused Input to hide its cursor")
+  try testing::assert(field.node().is_focusable(), "Expected Input focus participation")
+  testing::assert(not buffer.cursor.is_some(), "Expected hidden unfocused cursor")
 }

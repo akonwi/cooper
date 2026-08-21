@@ -1,20 +1,20 @@
 use ard/testing
 
+use cooper/box
+use cooper/context
 use cooper/event as framework_event
-use cooper/retained/box
-use cooper/retained/context
-use cooper/retained/event as retained_event
-use cooper/retained/focus
-use cooper/retained/geometry
-use cooper/retained/hit
-use cooper/retained/input
-use cooper/retained/node
-use cooper/retained/paint
-use cooper/retained/router
-use cooper/retained/scroll
-use cooper/retained/style
-use cooper/retained/text
+use cooper/event as retained_event
+use cooper/focus
+use cooper/geometry
+use cooper/hit
+use cooper/input
+use cooper/node
+use cooper/paint
+use cooper/router
 use cooper/runtime
+use cooper/scroll
+use cooper/style
+use cooper/text
 use go:go.rockorager.dev/vaxis
 
 private fn immediate_dispatch(action: fn()) Void!framework_event::DispatchError {
@@ -38,6 +38,7 @@ private struct EventProbe {
   mounts: Int,
   mounted_dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
   cancellation: Receiver<Void>?,
+  add_on_first_mount: (mut node::Node)?,
 }
 
 private fn event_probe(
@@ -59,6 +60,7 @@ private fn event_probe(
     mounts: 0,
     mounted_dispatch: Maybe::new<fn(fn()) Void!framework_event::DispatchError>(),
     cancellation: Maybe::new<Receiver<Void>>(),
+    add_on_first_mount: Maybe::new<mut node::Node>(),
   }
   retained.bind(probe)
   probe
@@ -73,6 +75,12 @@ impl node::Renderable for EventProbe {
     self.mounts =+ 1
     self.mounted_dispatch = Maybe::new<fn(fn()) Void!framework_event::DispatchError>(ctx.dispatch)
     self.cancellation = Maybe::new<Receiver<Void>>(ctx.cancellation)
+    if self.mounts == 1 {
+      match self.add_on_first_mount {
+        child => self.node_ref.add(child),
+        _ => (),
+      }
+    }
   }
 
   fn paint(ctx: mut paint::Context) {}
@@ -502,6 +510,26 @@ test fn retained_hit_testing_obeys_ancestor_clipping() Void!Str {
   testing::assert(child.node().is_destroyed(), "Expected clipped hit tree cleanup")
 }
 
+test fn retained_hit_testing_visits_later_overlapping_children_first() Void!Str {
+  let ctx = context::new()
+  let root = box::new(ctx, initial_style: fixed(2, 1))
+  let overlay_style = mut fixed(2, 1)
+  overlay_style.position = style::Position::absolute
+  let first = box::new(ctx, initial_style: overlay_style.@)
+  let second = box::new(ctx, initial_style: overlay_style.@)
+  first.set_pointer_enabled(true)
+  second.set_pointer_enabled(true)
+  root.add(first)
+  root.add(second)
+  ctx.compute_layout(root, 2, 1)
+
+  let found = hit::test(root, 0, 0).expect("overlapping retained hit")
+
+  try testing::assert(found.target == second.node(), "Expected later painted child target")
+  ctx.destroy()
+  testing::assert(second.node().is_destroyed(), "Expected overlapping hit cleanup")
+}
+
 test fn retained_focus_traverses_zero_sized_visible_overflow_ancestors() Void!Str {
   let ctx = context::new()
   let root = box::new(
@@ -570,6 +598,23 @@ test fn retained_focus_traversal_uses_persistent_node_identity() Void!Str {
 
   ctx.destroy()
   testing::assert(first.node().is_destroyed(), "Expected focus tree cleanup")
+}
+
+test fn mount_callback_can_attach_child_without_double_mounting() Void!Str {
+  let ctx = context::new()
+  let root = event_probe(ctx, fixed(2, 1))
+  let child = event_probe(ctx, fixed(2, 1))
+  root.add_on_first_mount = Maybe::new<mut node::Node>(child.node())
+
+  root.node().mount_root(immediate_dispatch)
+
+  try testing::assert(root.mounts == 1, "Expected one root mount")
+  try testing::assert(child.mounts == 1, "Expected one dynamically attached child mount")
+  try testing::assert(root.node().child_count() == 1, "Expected mount-time child attachment")
+
+  root.node().unmount_root()
+  ctx.destroy()
+  testing::assert(child.node().is_destroyed(), "Expected mount-time child cleanup")
 }
 
 test fn retained_attachment_scopes_cancel_and_refresh_on_reattach() Void!Str {
@@ -977,6 +1022,35 @@ test fn retained_focus_reveal_scrolls_direct_descendant_identity() Void!Str {
 
   ctx.destroy()
   testing::assert(content.node().is_destroyed(), "Expected focus reveal cleanup")
+}
+
+test fn retained_nested_scroll_reveal_settles_inside_out() Void!Str {
+  let ctx = context::new()
+  let inner_content = box::new(ctx, initial_style: fixed(2, 5))
+  let rows = mut List::new<mut box::Box>()
+  for _index in 0..5 {
+    let row = box::new(ctx, initial_style: fixed(2, 1))
+    rows.push(row)
+    inner_content.add(row)
+  }
+  let target = rows.at(4).expect("nested reveal target")
+  target.set_focusable(true)
+  let inner = scroll::new(ctx, inner_content, initial_style: fixed(2, 2))
+
+  let outer_content = box::new(ctx, initial_style: fixed(2, 8))
+  outer_content.add(box::new(ctx, initial_style: fixed(2, 3)))
+  outer_content.add(inner)
+  outer_content.add(box::new(ctx, initial_style: fixed(2, 3)))
+  let outer = scroll::new(ctx, outer_content, initial_style: fixed(2, 2))
+  ctx.compute_layout(outer, 2, 2)
+
+  try testing::assert(focus::reveal(outer, target.node()), "Expected nested reveal movement")
+  try testing::assert(inner.offset() == 3, "Expected inner focused reveal")
+  try testing::assert(outer.offset() == 3, "Expected outer focused reveal")
+  try testing::assert(target.layout().screen.y == 1, "Expected settled target geometry")
+
+  ctx.destroy()
+  testing::assert(target.node().is_destroyed(), "Expected nested reveal cleanup")
 }
 
 test fn retained_destroy_releases_the_owned_tree() Void!Str {

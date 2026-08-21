@@ -1,15 +1,12 @@
-use cooper/cooper
-use cooper/event
-use cooper/surface
+use cooper/context
+use cooper/event as framework_event
+use cooper/event as retained_event
+use cooper/geometry
+use cooper/node
+use cooper/paint
+use cooper/style
 use go:github.com/rockorager/go-uucode as unicode
 use go:go.rockorager.dev/vaxis
-
-struct Input {
-  value: Str,
-  placeholder: Str,
-  // UTF-8 byte offset kept on an extended-grapheme-cluster boundary.
-  cursor: Int,
-}
 
 private struct Glyph {
   text: Str,
@@ -17,11 +14,18 @@ private struct Glyph {
   end: Int,
 }
 
-private struct InputView {
+private struct View {
   text: Str,
   cursor_x: Int,
-  // UTF-8 byte offset of the first visible grapheme.
   start: Int,
+}
+
+struct Input {
+  node_ref: mut node::Node,
+  value_text: Str,
+  placeholder: Str,
+  cursor: Int,
+  width_measurer: fn(Str) Int,
 }
 
 private fn glyphs(text: Str) [Glyph] {
@@ -101,23 +105,43 @@ private fn single_line(text: Str) Str {
   text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", "    ")
 }
 
-private fn measured_width(text: Str, width_measurer: (fn(Str) Int)?) Int {
-  match width_measurer {
-    measurer => measurer(text),
-    _ => surface::text_width(text),
+private fn constrained(value: Float32, available: Float32, mode: node::MeasureMode) Float32 {
+  match mode {
+    node::MeasureMode::exactly => available,
+    node::MeasureMode::at_most => {
+      if value > available {
+        available
+      } else {
+        value
+      }
+    },
+    node::MeasureMode::undefined => value,
   }
 }
 
-private fn input_view(
-  value: Str,
-  placeholder: Str,
-  cursor: Int,
-  width: Int,
-  width_measurer: (fn(Str) Int)?,
-) InputView {
+private fn measured_width(text: Str, measure: fn(Str) Int) Int {
+  mut width = 0
+  for glyph in glyphs(text) {
+    width = width + measure(glyph.text)
+  }
+  width
+}
+
+private fn input_view(value: Str, placeholder: Str, cursor: Int, width: Int, measure: fn(Str) Int) View {
   if value.is_empty() {
-    InputView{
-      text: placeholder,
+    mut visible = ""
+    mut visible_width = 0
+    for glyph in glyphs(placeholder) {
+      let glyph_width = measure(glyph.text)
+      if visible_width + glyph_width <= width {
+        visible = "{visible}{glyph.text}"
+        visible_width = visible_width + glyph_width
+      } else {
+        break
+      }
+    }
+    View{
+      text: visible,
       cursor_x: 0,
       start: 0,
     }
@@ -126,7 +150,7 @@ private fn input_view(
     mut cursor_width = 0
     for glyph in value_glyphs {
       if glyph.end <= cursor {
-        cursor_width = cursor_width + measured_width(glyph.text, width_measurer)
+        cursor_width = cursor_width + measure(glyph.text)
       }
     }
 
@@ -135,7 +159,7 @@ private fn input_view(
     if width > 0 {
       for glyph, index in value_glyphs {
         if cursor_width - dropped_width >= width {
-          dropped_width = dropped_width + measured_width(glyph.text, width_measurer)
+          dropped_width = dropped_width + measure(glyph.text)
           start_index = index + 1
         } else {
           break
@@ -147,7 +171,7 @@ private fn input_view(
     mut visible_width = 0
     for glyph, index in value_glyphs {
       if index >= start_index {
-        let glyph_width = measured_width(glyph.text, width_measurer)
+        let glyph_width = measure(glyph.text)
         if visible_width + glyph_width <= width {
           visible = "{visible}{glyph.text}"
           visible_width = visible_width + glyph_width
@@ -161,7 +185,7 @@ private fn input_view(
       glyph => glyph.start,
       _ => value.size(),
     }
-    InputView{
+    View{
       text: visible,
       cursor_x: cursor_width - dropped_width,
       start: start,
@@ -169,19 +193,13 @@ private fn input_view(
   }
 }
 
-private fn cursor_for_column(
-  value: Str,
-  start: Int,
-  column: Int,
-  width: Int,
-  width_measurer: (fn(Str) Int)?,
-) Int {
+private fn cursor_for_column(value: Str, start: Int, column: Int, width: Int, measure: fn(Str) Int) Int {
   mut cursor = start
   mut x = 0
   mut locating = true
   for glyph in glyphs(value) {
     if locating and glyph.start >= start {
-      let glyph_width = measured_width(glyph.text, width_measurer)
+      let glyph_width = measure(glyph.text)
       if glyph_width < 0 or x + glyph_width > width {
         locating = false
       } else if glyph_width == 0 {
@@ -202,119 +220,175 @@ private fn cursor_for_column(
   cursor
 }
 
-fn new(value: Str, placeholder: Str) Input {
-  Input{
-    value: single_line(value),
-    placeholder: single_line(placeholder),
-    cursor: single_line(value).size(),
+fn new(ctx: mut context::Context, value: Str?, placeholder: Str?, initial_style: style::Style?) mut Input {
+  let initial_value = single_line(value.or(""))
+  let retained = ctx.create_node(initial_style.or(style::new(height: style::cells(1))))
+  let input = mut Input{
+    node_ref: retained,
+    value_text: initial_value,
+    placeholder: single_line(placeholder.or("")),
+    cursor: initial_value.size(),
+    width_measurer: ctx.width_measurer,
+  }
+  retained.bind(input)
+  retained.set_focusable(true)
+  retained.set_pointer_enabled(true)
+  retained.set_measure(fn(measurement: node::MeasureInput) node::MeasureSize {
+    mut display = input.value_text
+    if display.is_empty() {
+      display = input.placeholder
+    }
+    let desired_width = Float32::from(measured_width(display, input.width_measurer) + 1)
+    let desired_height: Float32 = 1.0
+    node::MeasureSize{
+      width: constrained(desired_width, measurement.width, measurement.width_mode),
+      height: constrained(desired_height, measurement.height, measurement.height_mode),
+    }
+  })
+  input
+}
+
+impl node::Renderable for Input {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn mount(ctx: node::MountContext) {}
+
+  fn paint(ctx: mut paint::Context) {
+    let width = self.node_ref.layout().screen.width
+    let view = input_view(
+      self.value_text,
+      self.placeholder,
+      self.cursor,
+      width,
+      self.width_measurer,
+    )
+    ctx.write_measured(0, 0, view.text, self.width_measurer)
+    if self.node_ref.is_focused() and width > 0 {
+      ctx.show_cursor(view.cursor_x, 0)
+    }
+  }
+
+  fn mut event(ctx: mut retained_event::Context) framework_event::EventResult {
+    if ctx.phase != framework_event::EventPhase::target {
+      framework_event::EventResult::ignored
+    } else {
+      match ctx.terminal_event {
+        vaxis::Mouse(mouse) => self.handle_mouse(ctx, mouse),
+        vaxis::Key(key) => {
+          if ctx.focused {
+            self.handle_key(ctx, key)
+          } else {
+            framework_event::EventResult::ignored
+          }
+        },
+        _ => framework_event::EventResult::ignored,
+      }
+    }
   }
 }
 
 impl Input {
-  private fn mut changed(ctx: mut event::EventContext) event::EventResult {
-    ctx.request_redraw()
-    event::EventResult::handled
+  fn value() Str {
+    self.value_text
   }
 
-  private fn mut insert_text(ctx: mut event::EventContext, text: Str) event::EventResult {
+  fn cursor_index() Int {
+    self.cursor
+  }
+
+  fn mut set_value(value: Str) {
+    self.value_text = single_line(value)
+    self.cursor = self.value_text.size()
+    self.node_ref.mark_measure_dirty()
+  }
+
+  fn layout() geometry::Geometry {
+    self.node_ref.layout()
+  }
+
+  private fn mut changed(ctx: mut retained_event::Context, text_changed: Bool) framework_event::EventResult {
+    if text_changed {
+      self.node_ref.mark_measure_dirty()
+    } else {
+      self.node_ref.request_redraw()
+    }
+    ctx.request_redraw()
+    framework_event::EventResult::handled
+  }
+
+  private fn mut insert_text(ctx: mut retained_event::Context, text: Str) framework_event::EventResult {
     let inserted = single_line(text)
     if inserted.is_empty() {
-      event::EventResult::ignored
+      framework_event::EventResult::ignored
     } else {
       let desired_cursor = self.cursor + inserted.size()
-      self.value = insert_at(self.value, self.cursor, inserted)
-      self.cursor = normalize_boundary(self.value, desired_cursor)
-      self.changed(ctx)
+      self.value_text = insert_at(self.value_text, self.cursor, inserted)
+      self.cursor = normalize_boundary(self.value_text, desired_cursor)
+      self.changed(ctx, true)
     }
   }
 
-  private fn mut handle_mouse(ctx: mut event::EventContext, mouse: vaxis::Mouse) event::EventResult {
+  private fn mut handle_mouse(ctx: mut retained_event::Context, mouse: vaxis::Mouse) framework_event::EventResult {
     if mouse.Button != vaxis::MouseLeftButton or mouse.EventType != vaxis::EventPress {
-      event::EventResult::ignored
+      framework_event::EventResult::ignored
     } else {
-      let target_size = try ctx.target_size -> _ { event::EventResult::ignored }
+      let column = try ctx.local_x -> _ { framework_event::EventResult::ignored }
+      let width = self.node_ref.layout().screen.width
       let view = input_view(
-        self.value,
+        self.value_text,
         self.placeholder,
         self.cursor,
-        target_size.width,
-        ctx.width_measurer,
+        width,
+        self.width_measurer,
       )
       self.cursor = normalize_boundary(
-        self.value,
-        cursor_for_column(self.value, view.start, mouse.Col, target_size.width, ctx.width_measurer),
+        self.value_text,
+        cursor_for_column(self.value_text, view.start, column, width, self.width_measurer),
       )
-      self.changed(ctx)
+      let _ = ctx.request_focus()
+      self.changed(ctx, false)
     }
   }
 
-  private fn mut handle_key(ctx: mut event::EventContext, key: vaxis::Key) event::EventResult {
+  private fn mut handle_key(ctx: mut retained_event::Context, key: vaxis::Key) framework_event::EventResult {
     if key.EventType == vaxis::EventRelease {
-      event::EventResult::ignored
+      framework_event::EventResult::ignored
     } else if key.EventType == vaxis::EventPaste {
       self.insert_text(ctx, key.Text)
     } else if key.MatchString("Left") {
-      self.cursor = previous_boundary(self.value, self.cursor)
-      self.changed(ctx)
+      self.cursor = previous_boundary(self.value_text, self.cursor)
+      self.changed(ctx, false)
     } else if key.MatchString("Right") {
-      self.cursor = next_boundary(self.value, self.cursor)
-      self.changed(ctx)
+      self.cursor = next_boundary(self.value_text, self.cursor)
+      self.changed(ctx, false)
     } else if key.MatchString("Home") {
       self.cursor = 0
-      self.changed(ctx)
+      self.changed(ctx, false)
     } else if key.MatchString("End") {
-      self.cursor = self.value.size()
-      self.changed(ctx)
+      self.cursor = self.value_text.size()
+      self.changed(ctx, false)
     } else if key.MatchString("Backspace") {
       if self.cursor > 0 {
-        let previous = previous_boundary(self.value, self.cursor)
-        self.value = remove_range(self.value, previous, self.cursor)
-        self.cursor = normalize_boundary(self.value, previous)
+        let previous = previous_boundary(self.value_text, self.cursor)
+        self.value_text = remove_range(self.value_text, previous, self.cursor)
+        self.cursor = normalize_boundary(self.value_text, previous)
       }
-      self.changed(ctx)
+      self.changed(ctx, true)
     } else if key.MatchString("Delete") {
-      if self.cursor < self.value.size() {
-        let next = next_boundary(self.value, self.cursor)
-        self.value = remove_range(self.value, self.cursor, next)
-        self.cursor = normalize_boundary(self.value, self.cursor)
+      if self.cursor < self.value_text.size() {
+        let next = next_boundary(self.value_text, self.cursor)
+        self.value_text = remove_range(self.value_text, self.cursor, next)
+        self.cursor = normalize_boundary(self.value_text, self.cursor)
       }
-      self.changed(ctx)
+      self.changed(ctx, true)
     } else {
       self.insert_text(ctx, key.Text)
     }
   }
-}
 
-impl cooper::Widget for Input {
-  fn init(ctx: cooper::InitContext) {}
-
-  fn render(ctx: surface::RenderContext) surface::Surface {
-    let display = match self.value.is_empty() {
-      true => self.placeholder,
-      false => self.value,
-    }
-    let intrinsic_width = ctx.measure_text(display) + 1
-    let desired_width = ctx.constraints.max_width.or(intrinsic_width)
-    let width = ctx.constraints.constrain_width(desired_width)
-    let height = ctx.constraints.constrain_height(1)
-    let view = input_view(self.value, self.placeholder, self.cursor, width, ctx.width_measurer)
-    let rendered = mut surface::blank(width, height)
-    rendered.accept_focus()
-    rendered.write(ctx, 0, 0, view.text)
-
-    if ctx.is_focused() and width > 0 and height > 0 {
-      rendered.show_cursor(surface::Point{x: view.cursor_x, y: 0}, surface::CursorShape::beam)
-    }
-
-    rendered.@
-  }
-
-  fn mut event(ctx: mut event::EventContext) event::EventResult {
-    let received = try ctx.terminal_event -> _ { event::EventResult::ignored }
-    match received {
-      vaxis::Key(key) => self.handle_key(ctx, key),
-      vaxis::Mouse(mouse) => self.handle_mouse(ctx, mouse),
-      _ => event::EventResult::ignored,
-    }
+  fn mut destroy() {
+    self.node_ref.destroy()
   }
 }

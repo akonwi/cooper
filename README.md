@@ -1,170 +1,221 @@
 # Cooper
 
-**A retained mode TUI framework** for [Ard](https://ard.run), powered by
+**An Ard-native retained-mode TUI framework** powered by
 [Vaxis](https://github.com/rockorager/vaxis).
 
-Cooper keeps application state directly in long-lived Ard widget structs.
-Events mutate those widgets through `mut Widget`; rendering observes their
-current state and returns composable cell surfaces.
+Cooper keeps application state, hierarchy, layout geometry, focus, and event
+targets in persistent Ard renderables. Layout updates attached Nodes in place,
+and painting writes directly into one root cell buffer for Vaxis to diff.
 
 ## Status
 
-Cooper is under active development. The current vertical slice provides a
-direct Vaxis runtime, composable surfaces, Unicode text, retained single-line
-inputs, weighted column layout, nested focus routing, mouse interaction,
-retained vertical scrolling with focused-descendant reveal, and contextual
-asynchronous UI dispatch.
+Cooper is under active development and currently requires `ard-dev` from Ard
+main (the promoted retained API depends on changes newer than v0.37.0; the
+manifest targets the upcoming v0.38.0 release). The retained vertical slice
+includes:
 
-See [the architecture](./docs/architecture.md) for the accepted design and
-implementation milestones.
+- persistent `Node` identity and explicit hierarchy mutation;
+- row/column flex layout through Ard-native `Style`;
+- retained `Box`, `Text`, `Input`, and `ScrollView` primitives;
+- RGB cell styling and terminal attributes;
+- direct capture/target/bubble event routing;
+- direct focus identity, mouse hit testing, and focused-descendant reveal;
+- attachment-scoped asynchronous dispatch and cancellation;
+- deterministic headless tests and PTY-tested applications.
+
+The earlier Surface-tree experiment has been removed. See
+[the architecture](./docs/architecture.md) for the accepted clean-break design.
 
 ## Install
 
 ```sh
-ard add github.com/akonwi/cooper@latest
+ard-dev add github.com/akonwi/cooper@latest
 ```
 
 ## Quick start
 
 ```ard
-use cooper
+use cooper/app
 use cooper/input
+use cooper/style
 
 fn main() {
-  let field = mut input::new(
-    value: "",
+  let application = app::new().expect("create Cooper app")
+  let field = input::new(
+    application.context(),
     placeholder: "Type here, then press Ctrl+C to quit",
+    initial_style: style::new(
+      width: style::percent(100.0),
+      height: style::cells(1),
+    ),
   )
 
-  cooper::run(mut field).expect("run Cooper")
+  application.run(field).expect("run Cooper")
 }
 ```
 
-`Input` retains its value and cursor directly. It supports Unicode grapheme
-editing, Left/Right/Home/End movement, Backspace/Delete, horizontal scrolling,
-paste, click focus, and grapheme-aware mouse cursor placement. The application
-runtime owns Tab/Shift+Tab focus traversal and Ctrl+C shutdown.
+`Input` retains its value and cursor. It supports grapheme-aware editing,
+Left/Right/Home/End, Backspace/Delete, paste, horizontal cursor visibility,
+click focus, and mouse cursor placement. App owns Tab/Shift+Tab traversal and
+Ctrl+C shutdown.
 
-See [`examples/form.ard`](./examples/form.ard) for nested focusable inputs,
-[`examples/scroll_form.ard`](./examples/scroll_form.ard) for a wheel-scrollable
-form, [`examples/async.ard`](./examples/async.ard) for initialization-started background
-work, and [`examples/explorer.ard`](./examples/explorer.ard) for an asynchronous
-mouse-enabled Miller-column filesystem explorer.
+## Renderable model
 
-## Widget model
-
-Widgets render without mutating themselves and handle events through an
-explicit mutable receiver contract:
+Every renderable owns one persistent Node:
 
 ```ard
-trait Widget {
-  fn mut init(ctx: InitContext)
-  fn render(ctx: RenderContext) Surface
+trait Renderable {
+  fn node() mut Node
+  fn mut mount(ctx: MountContext)
+  fn paint(ctx: mut PaintContext)
   fn mut event(ctx: mut EventContext) EventResult
 }
 ```
 
-The runtime discovers opaque widget owners from an unpainted surface tree and
-calls `init` once per mount before painting. It repeats discovery on later
-renders, mounting newly introduced owners and unmounting owners absent from the
-converged tree. Reintroducing the same retained widget calls `init` again.
+Constructors create detached renderables. Parent/child relationships change
+through `add`, `remove`, reparenting, and `destroy`. Removal permits reuse;
+reattachment receives a fresh mount scope; destruction recursively releases the
+subtree.
 
-Each routed child surface retains its widget owner opaquely as `Any`. The
-runtime recovers those references and delivers `EventContext` directly in
-capture, target, and bubble phases; containers do not forward events. Contexts
-contain a terminal event or focused-target geometry, expose UI-thread dispatch,
-and may request relative focus paths or explicitly stop propagation.
+`paint` observes retained state and writes directly into the root Ard cell
+buffer. It does not rebuild a Surface or child description tree.
 
-The current runtime redraws the complete logical surface after state changes
-and lets Vaxis efficiently diff terminal cells.
+## Asynchronous effects
 
-## Asynchronous updates
+`mount` runs once for each structural attachment to a running root.
+`MountContext` provides an attachment-scoped dispatch function and cancellation
+receiver:
 
-`InitContext` and every owner-delivered `EventContext` expose mount-scoped
-`dispatch` directly as a function field. Widgets start asynchronous effects
-from `init`. An init context also exposes its mount's cancellation receiver. On
-unmount, cancellation becomes ready, later dispatch returns `stopped`, and
-queued scoped actions that have not executed are suppressed. Background fibers
-must observe cancellation cooperatively, perform slow work without touching
-widget state, then dispatch a short retained-state mutation back to Cooper's UI
-loop. Accepted actions are followed by a redraw.
+```ard
+fn mut mount(ctx: node::MountContext) {
+  async::start(fn() {
+    select {
+      ctx.cancellation.recv() => (),
+      let result = load_data() => {
+        let _ = ctx.dispatch(fn() {
+          self.apply(result)
+        })
+      },
+    }
+  })
+}
+```
 
-## Filesystem explorer
+Detach or destroy closes cancellation, rejects future calls through the old
+dispatch function, and suppresses queued stale actions. Reattachment creates a
+new scope. Background work must only inspect or mutate retained state inside a
+dispatched UI-thread closure.
 
-The representative explorer example reads the current directory asynchronously,
-opens selected directories in responsive detail panes, supports mouse and
-keyboard navigation, and uses `/` to move focus into a retained search `Input`.
-Run it with:
+See [`examples/async.ard`](./examples/async.ard).
+
+## Layout and scrolling
+
+`Box` is the configurable flex primitive. Public `Style` supports horizontal
+and vertical direction, grow/shrink, alignment, gap, cell and percentage
+lengths, display, position, and overflow. Tess/Yoga is currently an internal,
+replaceable layout backend.
+
+```ard
+let content = box::new(ctx)
+// Add persistent children.
+
+let viewport = scroll::new(
+  ctx,
+  content,
+  initial_style: style::new(
+    width: style::percent(100.0),
+    height: style::cells(1),
+    grow: 1.0,
+  ),
+)
+```
+
+`ScrollView` retains requested and effective offsets separately, clips and
+translates descendant geometry, bubbles wheel fallback, and reveals focused
+Nodes after traversal or resize without snapping ordinary wheel movement back
+to focus.
+
+## Events and focus
+
+Events target direct Node references and route capture → target → bubble.
+`EventResult::handled` records handling without stopping traversal;
+`ctx.stop_propagation()` stops it explicitly. Route attachment generations are
+revalidated because capture handlers may mutate the tree.
+
+Focus stores direct Node identity. Hit testing uses the same translated and
+clipped screen geometry as painting and cursor placement.
+
+## Examples
 
 ```sh
 cd examples
-ard run explorer.ard
+ard-dev run input.ard
+ard-dev run form.ard
+ard-dev run scroll_form.ard
+ard-dev run async.ard
+ard-dev run explorer.ard
 ```
 
-## Scrolling
-
-`ScrollView` retains a desired vertical offset, handles wheel events during
-bubble when no deeper target handled them, and reveals focused descendants
-after focus changes or resize. Use tight flex when it should consume and clip to
-the remaining bounded height:
-
-```ard
-let viewport = mut scroll::new(content, wheel_step: 2)
-let page = mut layout::column(
-  [
-    layout::flex_item(heading),
-    layout::flex_item(
-      viewport,
-      flex: 1,
-      fit: layout::FlexFit::tight,
-    ),
-  ],
-)
-```
+The explorer is an app-local asynchronous filesystem listing with responsive
+listing/detail panes, keyboard activation, mouse targeting, resize handling,
+and retained scrolling.
 
 ## Project structure
 
 ```text
-cooper.ard      Widget contract and application runtime
-event.ard       phased context, dispatch, propagation, and EventResult
-focus.ard       rendered focus paths and traversal state
-hit.ard         clipped hit testing, geometry, and opaque owner paths
-runtime.ard     reentrant UI-dispatch queue
-scroll.ard      retained vertical ScrollView
-surface.ard     constraints, cells, surfaces, cursor, text measurement
-text.ard        Unicode-aware stateless Text widget
-input.ard       retained single-line Input widget
-layout.ard      retained Column and weighted flex layout
-test/           deterministic headless tests
-examples/       runnable PTY-tested examples
+app.ard          application runtime and Vaxis boundary
+box.ard          generic retained flex container
+cell_style.ard   backend-independent colors and attributes
+context.ard      Node allocation, measurement, and cleanup ownership
+event.ard        phased context, propagation, and dispatch result types
+focus.ard        direct focus identity, traversal, and reveal
+geometry.ard     rectangles and cached geometry
+hit.ard          clipped direct-Node hit testing
+input.ard        retained single-line Input
+node.ard         Renderable, Node, hierarchy, mount, and destruction
+paint.ard        root cell buffer and localized PaintContext
+router.ard       capture/target/bubble delivery
+runtime.ard      dispatch queue and cancellation scopes
+scroll.ard       retained vertical ScrollView
+style.ard        Ard-native layout vocabulary
+text.ard         measured retained Text
+ffi/             internal Tess/Yoga boundary
+test/            deterministic headless tests
+examples/        runnable PTY-tested applications
+benchmarks/      retained layout and stress workloads
 ```
 
 ## Development
 
 ```sh
-ard test test
+ard-dev test test
+
+git diff --check
+
+go test ./...
 
 cd examples
-python3 test_input.py
-python3 test_form.py
-python3 test_scroll_form.py
-python3 test_async.py
-python3 test_explorer.py
-```
+ARD=ard-dev python3 test_input.py
+ARD=ard-dev python3 test_form.py
+ARD=ard-dev python3 test_scroll_form.py
+ARD=ard-dev python3 test_async.py
+ARD=ard-dev python3 test_explorer.py
 
-The PTY smoke tests cover terminal startup, editing, resize, nested keyboard
-and mouse focus, cursor placement, wheel scrolling, async dispatch,
-programmatic focus, filesystem navigation, redraws, and clean exit.
+cd ..
+ARD=ard-dev python3 benchmarks/run.py
+```
 
 ## Design principles
 
-- Ard owns widget state, layout, event behavior, and surfaces.
-- Vaxis is a narrow terminal backend rather than Cooper's public model.
-- Rendering observes state; events mutate retained widgets.
-- Layout uses signed `Int` dimensions and explicit unbounded constraints.
-- A frame uses one terminal-aware text measurer for layout, cells, and cursor
-  positions.
-- Prefer deterministic headless tests and reserve PTYs for terminal integration.
+- Persistent Ard Nodes and renderable structs own framework and application
+  state.
+- Vaxis is a narrow terminal backend, not Cooper's public model.
+- Tree mutation and retained state mutation are UI-thread-only.
+- Layout, paint, hit testing, focus, and cursor placement share cached geometry.
+- Paint the complete logical cell buffer first; optimize incrementally only in
+  response to measurements.
+- Prefer one configurable primitive and promote broader APIs only after repeated
+  application-level usage.
 
 ## License
 

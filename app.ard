@@ -1,11 +1,11 @@
 use cooper/cell_style
+use cooper/context
 use cooper/event
-use cooper/retained/context
-use cooper/retained/focus
-use cooper/retained/hit
-use cooper/retained/node
-use cooper/retained/paint
-use cooper/retained/router
+use cooper/focus
+use cooper/hit
+use cooper/node
+use cooper/paint
+use cooper/router
 use cooper/runtime
 use go:go.rockorager.dev/vaxis as raw
 
@@ -64,6 +64,7 @@ struct App {
   ctx: mut context::Context,
   wake: Chan<Bool>,
   updates: mut runtime::DispatchQueue,
+  ui_dispatch: fn(fn()) Void!event::DispatchError,
   focused: mut focus::State,
   suppress_focus_reveal: Bool,
   destroyed: Bool,
@@ -90,13 +91,13 @@ fn new() (mut App)!Error {
     width_measurer: fn(text: Str) Int {
       terminal.RenderedWidth(text)
     },
-    dispatch: dispatch,
   )
   let app = mut App{
     terminal: terminal,
     ctx: ctx,
     wake: wake,
     updates: updates,
+    ui_dispatch: dispatch,
     focused: focus::new(),
     suppress_focus_reveal: false,
     destroyed: false,
@@ -186,14 +187,7 @@ impl App {
     received: raw::Event,
     pointer: router::Pointer?,
   ) router::Outcome {
-    let outcome = router::dispatch(
-      root,
-      target,
-      received,
-      pointer,
-      self.focused,
-      ui_dispatch: self.ctx.dispatch,
-    )
+    let outcome = router::dispatch(root, target, received, pointer, self.focused)
     if outcome.preserve_focus_scroll {
       self.suppress_focus_reveal = true
     }
@@ -207,7 +201,7 @@ impl App {
     defer self.destroy()
     self.ctx.begin_run()
     defer self.ctx.end_run()
-    root.node().mount_root(self.ctx.dispatch)
+    root.node().mount_root(self.ui_dispatch)
     defer root.node().unmount_root()
 
     self.paint(root)

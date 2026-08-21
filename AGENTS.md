@@ -91,16 +91,13 @@ Coalesce redraw requests, compute the attached layout, and repaint the complete
 logical cell buffer. Let Vaxis diff terminal cells. Add incremental layout or
 partial paint only in response to measured problems.
 
-## Active cutover
+## Clean-break status
 
-1. Implement and test attachment-scoped mount cancellation on retained Nodes.
-2. Promote `retained/` modules to canonical package paths.
-3. Rewrite every example and test against the retained API.
-4. Delete the old Surface runtime and obsolete modules.
-5. Update public documentation and run the full retained validation matrix.
-
-This project has no compatibility constraint. Prefer deletion and a coherent
-API over aliases, adapters, or deprecation layers.
+The retained cutover is complete: attachment scopes are active, modules use
+canonical package paths, examples/tests use persistent Nodes, and the old
+Surface runtime has been deleted. This project has no compatibility constraint.
+Prefer deletion and a coherent API over aliases, adapters, or deprecation
+layers.
 
 ## API principles
 
@@ -129,7 +126,7 @@ Use PTY tests for terminal startup/restoration, keyboard and mouse input,
 scrolling, resize, cursor placement, asynchronous dispatch, explorer behavior,
 and clean quit.
 
-Current validation entry points during cutover:
+Current validation entry points:
 
 ```sh
 ard-dev test test
@@ -140,8 +137,6 @@ ARD=ard-dev python3 test_form.py
 ARD=ard-dev python3 test_scroll_form.py
 ARD=ard-dev python3 test_async.py
 ARD=ard-dev python3 test_explorer.py
-ARD=ard-dev python3 test_retained.py
-ARD=ard-dev python3 test_retained_explorer.py
 
 cd ..
 ARD=ard-dev python3 benchmarks/run.py

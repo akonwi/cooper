@@ -1,25 +1,41 @@
 use ard/async
 
-use cooper
+use cooper/app
+use cooper/context
 use cooper/event
-use cooper/surface
-use cooper/text
+use cooper/node
+use cooper/paint
+use cooper/style
 use go:time
 
 struct AsyncStatus {
+  node_ref: mut node::Node,
   message: Str,
 }
 
-fn new() AsyncStatus {
-  AsyncStatus{message: "Loading asynchronously..."}
+fn new(ctx: mut context::Context) mut AsyncStatus {
+  let retained = ctx.create_node(
+    style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      align_items: style::Align::start,
+    ),
+  )
+  let status = mut AsyncStatus{node_ref: retained, message: "Loading asynchronously..."}
+  retained.bind(status)
+  status
 }
 
-impl cooper::Widget for AsyncStatus {
-  fn mut init(ctx: cooper::InitContext) {
+impl node::Renderable for AsyncStatus {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn mut mount(ctx: node::MountContext) {
     async::start(fn() {
       select {
         ctx.cancellation.recv() => (),
-        time::After(2 * time::Second).recv() => {
+        time::After(300 * time::Millisecond).recv() => {
           let _ = ctx.dispatch(fn() {
             self.message = "Loaded on the UI thread. Press Ctrl+C to quit."
           })
@@ -28,17 +44,17 @@ impl cooper::Widget for AsyncStatus {
     })
   }
 
-  fn render(ctx: surface::RenderContext) surface::Surface {
-    let label = text::new(content: self.message)
-    label.render(ctx)
+  fn paint(ctx: mut paint::Context) {
+    ctx.write(0, 0, self.message)
   }
 
-  fn mut event(ctx: mut event::EventContext) event::EventResult {
+  fn event(ctx: mut event::Context) event::EventResult {
     event::EventResult::ignored
   }
 }
 
 fn main() {
-  let status = mut new()
-  cooper::run(status).expect("run Cooper async example")
+  let application = app::new().expect("create Cooper app")
+  let status = new(application.context())
+  application.run(status).expect("run Cooper async example")
 }

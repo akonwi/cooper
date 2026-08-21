@@ -1,5 +1,5 @@
 use cooper/cell_style
-use cooper/retained/geometry
+use cooper/geometry
 use go:go.rockorager.dev/vaxis
 
 struct Cell {

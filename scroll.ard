@@ -1,32 +1,15 @@
-use cooper/cooper
-use cooper/event
-use cooper/surface
+use cooper/context
+use cooper/event as framework_event
+use cooper/event as retained_event
+use cooper/node
+use cooper/paint
+use cooper/style
 use go:go.rockorager.dev/vaxis
-use go:math
 
 struct ScrollView {
-  child: mut cooper::Widget,
-  // Desired vertical cell offset. Rendering clamps it without discarding the
-  // request, so the position is restored if temporarily smaller content grows.
-  requested_offset: Int,
-  // Rows moved per wheel event.
+  node_ref: mut node::Node,
+  child_ref: mut node::Node,
   wheel_step: Int,
-}
-
-fn new(child: mut cooper::Widget, offset: Int?, wheel_step: Int?) ScrollView {
-  ScrollView{
-    child: child,
-    requested_offset: nonnegative(offset.or(0)),
-    wheel_step: positive(wheel_step.or(3)),
-  }
-}
-
-private fn nonnegative(value: Int) Int {
-  if value < 0 {
-    0
-  } else {
-    value
-  }
 }
 
 private fn positive(value: Int) Int {
@@ -37,196 +20,88 @@ private fn positive(value: Int) Int {
   }
 }
 
-private fn maximum(left: Int, right: Int) Int {
-  if left > right {
-    left
-  } else {
-    right
+fn new(
+  ctx: mut context::Context,
+  child: mut node::Renderable,
+  initial_style: style::Style?,
+  wheel_step: Int?,
+) mut ScrollView {
+  let configured = mut initial_style.or(style::new())
+  configured.overflow = style::Overflow::scroll
+  let content = child.node()
+  let retained = ctx.create_node(configured.@)
+  let view = mut ScrollView{
+    node_ref: retained,
+    child_ref: content,
+    wheel_step: positive(wheel_step.or(3)),
   }
+  retained.bind(view)
+  retained.set_pointer_enabled(true)
+  retained.add(content)
+  view
 }
 
-private fn saturating_subtract(left: Int, right: Int) Int {
-  if right > 0 and left < math::MinInt + right {
-    math::MinInt
-  } else if right < 0 and left > math::MaxInt + right {
-    math::MaxInt
-  } else {
-    left - right
+impl node::Renderable for ScrollView {
+  fn node() mut node::Node {
+    self.node_ref
   }
-}
 
-private fn overflow(content: Int, viewport: Int) Int {
-  if content > viewport {
-    content - viewport
-  } else {
-    0
+  fn mount(ctx: node::MountContext) {}
+
+  fn paint(ctx: mut paint::Context) {}
+
+  fn mut event(ctx: mut retained_event::Context) framework_event::EventResult {
+    if ctx.phase == framework_event::EventPhase::capture or ctx.phase == framework_event::EventPhase::bubble and ctx.was_handled() {
+      framework_event::EventResult::ignored
+    } else {
+      match ctx.terminal_event {
+        vaxis::Mouse(mouse) => self.handle_mouse(ctx, mouse),
+        _ => framework_event::EventResult::ignored,
+      }
+    }
   }
-}
-
-private fn clamped(value: Int, maximum: Int) Int {
-  if value < 0 {
-    0
-  } else if value > maximum {
-    maximum
-  } else {
-    value
-  }
-}
-
-private fn advance(current: Int, maximum: Int, amount: Int) Int {
-  let remaining = maximum - current
-  if amount >= remaining {
-    maximum
-  } else {
-    current + amount
-  }
-}
-
-private fn child_context(ctx: surface::RenderContext) surface::RenderContext {
-  ctx.for_child(
-    0,
-    surface::Constraints{
-      min_width: 0,
-      max_width: ctx.constraints.max_width,
-      min_height: 0,
-    },
-  )
-}
-
-private fn normalize(rendered: surface::Surface) surface::Surface {
-  let normalized = mut rendered
-  normalized.size.width = nonnegative(normalized.size.width)
-  normalized.size.height = nonnegative(normalized.size.height)
-  normalized.@
-}
-
-private fn content_wrapper(child: surface::Surface, width: Int) surface::Surface {
-  let wrapped = mut surface::Surface{
-    size: surface::Size{width: maximum(child.size.width, width), height: child.size.height},
-    cells: [],
-    children: [],
-    focusable: false,
-  }
-  wrapped.add_child(0, 0, child)
-  wrapped.@
 }
 
 impl ScrollView {
-  private fn mut ensure_focused_target_visible(ctx: mut event::EventContext) event::EventResult {
-    let viewport = try ctx.current_route_size() -> _ { event::EventResult::ignored }
-    let content = try ctx.next_route_size() -> _ { event::EventResult::ignored }
-    let viewport_origin = try ctx.current_route_origin() -> _ { event::EventResult::ignored }
-    let target_origin = try ctx.target_route_origin() -> _ { event::EventResult::ignored }
-    let target = try ctx.target_size -> _ { event::EventResult::ignored }
-    let viewport_height = nonnegative(viewport.height)
-    let target_height = nonnegative(target.height)
-
-    if viewport_height == 0 {
-      event::EventResult::ignored
-    } else {
-      let max_offset = overflow(nonnegative(content.height), viewport_height)
-      let current = clamped(self.requested_offset, max_offset)
-      let start = saturating_subtract(target_origin.y, viewport_origin.y)
-      mut next = current
-
-      if start < 0 {
-        if start <= -current {
-          next = 0
-        } else {
-          next = current + start
-        }
-      } else if target_height >= viewport_height {
-        if start > 0 {
-          next = advance(current, max_offset, start)
-        }
-      } else {
-        let latest_visible_start = viewport_height - target_height
-        if start > latest_visible_start {
-          next = advance(current, max_offset, start - latest_visible_start)
-        }
-      }
-
-      if next == current {
-        event::EventResult::ignored
-      } else {
-        self.requested_offset = next
-        event::EventResult::handled
-      }
-    }
+  fn offset() Int {
+    self.node_ref.scroll_y()
   }
 
-  private fn mut scroll_wheel(ctx: mut event::EventContext, mouse: vaxis::Mouse) event::EventResult {
+  fn maximum_offset() Int {
+    self.node_ref.max_scroll_y()
+  }
+
+  fn requested_offset() Int {
+    self.node_ref.requested_scroll_y()
+  }
+
+  fn mut set_offset(offset: Int) Bool {
+    self.node_ref.set_scroll_y(offset)
+  }
+
+  fn child() mut node::Node {
+    self.child_ref
+  }
+
+  private fn mut handle_mouse(ctx: mut retained_event::Context, mouse: vaxis::Mouse) framework_event::EventResult {
     if mouse.EventType != vaxis::EventPress or mouse.Button != vaxis::MouseWheelUp and mouse.Button != vaxis::MouseWheelDown {
-      event::EventResult::ignored
+      framework_event::EventResult::ignored
     } else {
-      let viewport = try ctx.current_route_size() -> _ { event::EventResult::ignored }
-      let content = try ctx.next_route_size() -> _ { event::EventResult::ignored }
-      let max_offset = overflow(nonnegative(content.height), nonnegative(viewport.height))
-      let current = clamped(self.requested_offset, max_offset)
-      let wheel_step = positive(self.wheel_step)
-      mut next = current
-
+      mut delta = self.wheel_step
       if mouse.Button == vaxis::MouseWheelUp {
-        if wheel_step >= current {
-          next = 0
-        } else {
-          next = current - wheel_step
-        }
-      } else {
-        let remaining = max_offset - current
-        if wheel_step >= remaining {
-          next = max_offset
-        } else {
-          next = current + wheel_step
-        }
+        delta = 0 - self.wheel_step
       }
-
-      self.requested_offset = next
-      if next == current {
-        event::EventResult::ignored
-      } else {
+      if self.node_ref.scroll_by(delta) {
+        ctx.preserve_focus_scroll()
         ctx.request_redraw()
-        event::EventResult::handled
+        framework_event::EventResult::handled
+      } else {
+        framework_event::EventResult::ignored
       }
     }
   }
-}
 
-impl cooper::Widget for ScrollView {
-  fn init(ctx: cooper::InitContext) {}
-
-  fn render(ctx: surface::RenderContext) surface::Surface {
-    let child = normalize(self.child.render(child_context(ctx)))
-    let width = ctx.constraints.constrain_width(child.size.width)
-    let height = ctx.constraints.constrain_height(child.size.height)
-    let content = content_wrapper(child, width)
-    let max_offset = overflow(content.size.height, height)
-    let offset = clamped(self.requested_offset, max_offset)
-    let viewport = mut surface::Surface{
-      size: surface::Size{width: width, height: height},
-      cells: [],
-      children: [],
-      focusable: false,
-    }
-    viewport.add_widget_child(self.child, 0, 0, -offset, content)
-    viewport.@
-  }
-
-  fn mut event(ctx: mut event::EventContext) event::EventResult {
-    let can_handle = ctx.phase == event::EventPhase::target or ctx.phase == event::EventPhase::bubble
-    if not can_handle {
-      event::EventResult::ignored
-    } else if ctx.kind == event::ContextKind::focus_target {
-      self.ensure_focused_target_visible(ctx)
-    } else if ctx.was_handled() {
-      // A deeper target handled the event, so do not apply viewport fallback.
-      event::EventResult::ignored
-    } else {
-      let received = try ctx.terminal_event -> _ { event::EventResult::ignored }
-      match received {
-        vaxis::Mouse(mouse) => self.scroll_wheel(ctx, mouse),
-        _ => event::EventResult::ignored,
-      }
-    }
+  fn mut destroy() {
+    self.node_ref.destroy()
   }
 }

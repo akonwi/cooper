@@ -1,12 +1,12 @@
 use ard/unsafe
 
 use cooper/event as framework_event
+use cooper/event as retained_event
 use go:cooper/ffi/retainedyoga as yoga
-use cooper/retained/event as retained_event
-use cooper/retained/geometry
-use cooper/retained/paint
-use cooper/retained/style
+use cooper/geometry
+use cooper/paint
 use cooper/runtime
+use cooper/style
 use go:math
 
 enum MeasureMode {

@@ -1,33 +1,44 @@
-use cooper
+use cooper/app
+use cooper/box
 use cooper/input
-use cooper/layout
 use cooper/scroll
+use cooper/style
 use cooper/text
 
-fn main() {
-  let title = mut text::new(content: "Cooper scrolling form")
-  let instructions = mut text::new(
-    content: "Wheel: scroll  Click: focus and place cursor  Ctrl+C: quit",
-  )
-  let items = mut List::new<layout::FlexItem>()
+private fn line() style::Style {
+  style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0)
+}
 
+fn main() {
+  let application = app::new().expect("create Cooper app")
+  let ctx = application.context()
+  let root = box::new(
+    ctx,
+    initial_style: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      align_items: style::Align::stretch,
+    ),
+  )
+  let title = text::new(ctx, content: "Scrollable retained form", initial_style: line())
+  let content = box::new(
+    ctx,
+    initial_style: style::new(width: style::percent(100.0), align_items: style::Align::stretch),
+  )
   mut index = 1
-  while index <= 12 {
-    let label = mut text::new(content: "Field {index}")
-    let field = mut input::new(value: "", placeholder: "Value {index}")
-    items.push(layout::flex_item(label))
-    items.push(layout::flex_item(field))
+  while index <= 8 {
+    content.add(text::new(ctx, content: "Field {index}", initial_style: line()))
+    content.add(input::new(ctx, placeholder: "value {index}", initial_style: line()))
     index =+ 1
   }
-
-  let form = mut layout::column(items.@)
-  let viewport = mut scroll::new(form, wheel_step: 2)
-  let page = mut layout::column(
-    [
-      layout::flex_item(title),
-      layout::flex_item(instructions),
-      layout::flex_item(viewport, flex: 1, fit: layout::FlexFit::tight),
-    ],
+  let viewport = scroll::new(
+    ctx,
+    content,
+    initial_style: style::new(width: style::percent(100.0), height: style::cells(1), grow: 1.0),
+    wheel_step: 2,
   )
-  cooper::run(mut page).expect("run Cooper scrolling form")
+  root.add(title)
+  root.add(viewport)
+
+  application.run(root).expect("run Cooper scrolling form")
 }

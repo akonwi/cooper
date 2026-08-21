@@ -1,7 +1,7 @@
 use cooper/event as framework_event
-use cooper/retained/event as retained_event
-use cooper/retained/focus
-use cooper/retained/node
+use cooper/event as retained_event
+use cooper/focus
+use cooper/node
 use go:go.rockorager.dev/vaxis
 
 struct Pointer {
@@ -123,7 +123,6 @@ private fn deliver(
   pointer: Pointer?,
   focused: mut focus::State,
   state: mut retained_event::State,
-  dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
 ) {
   if current.can_receive_events() and attached_to(root.node(), current) {
     mut local_x = Maybe::new<Int>()
@@ -165,7 +164,6 @@ private fn dispatch_path(
   received: vaxis::Event,
   pointer: Pointer?,
   focused: mut focus::State,
-  ui_dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
   routed: [RouteEntry],
   tree_version: Int,
 ) Outcome {
@@ -185,22 +183,12 @@ private fn dispatch_path(
       pointer,
       focused,
       state,
-      ui_dispatch,
     )
     index =+ 1
   }
 
   if (not state.propagation_stopped) and route_is_current(routed, tree_version) {
-    deliver(
-      root,
-      target,
-      framework_event::EventPhase::target,
-      received,
-      pointer,
-      focused,
-      state,
-      ui_dispatch,
-    )
+    deliver(root, target, framework_event::EventPhase::target, received, pointer, focused, state)
   }
 
   if routed.size() > 1 {
@@ -215,7 +203,6 @@ private fn dispatch_path(
         pointer,
         focused,
         state,
-        ui_dispatch,
       )
     }
   }
@@ -236,12 +223,11 @@ fn dispatch(
   received: vaxis::Event,
   pointer: Pointer?,
   focused: mut focus::State,
-  ui_dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
 ) Outcome {
   match path(root.node(), target) {
     routed => {
       let tree_version: Int = root.node().attachment_tree_version()
-      dispatch_path(root, target, received, pointer, focused, ui_dispatch, routed, tree_version)
+      dispatch_path(root, target, received, pointer, focused, routed, tree_version)
     },
     _ => {
       Outcome{

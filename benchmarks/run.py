@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 ARD = shlex.split(os.environ.get("ARD", "ard-dev"))
 BENCHMARKS = {
     "tess_retained": ROOT / "benchmarks" / "retained_layout.ard",
-    "ard_surface": ROOT / "benchmarks" / "surface_layout.ard",
     "tess_virtual": ROOT / "benchmarks" / "retained_virtual_list.ard",
     "tess_stress": ROOT / "benchmarks" / "retained_stress.ard",
 }
@@ -81,16 +80,12 @@ def print_summary(
 ) -> None:
     tail_label = "p95" if sample_count >= 20 else "max"
     print(f"Median µs ({tail_label} in parentheses; lower is better)")
-    print("metric                 tess retained      Ard Surface       surface/tess")
+    retained = results["tess_retained"]
+    print("\n1,001 retained nodes")
     for metric in ("construct_us", "initial_layout_us", "single_update_us", "resize_us"):
-        tess = int(results["tess_retained"][metric])
-        tess_p95 = int(results["tess_retained"][f"{metric}_p95"])
-        surface = int(results["ard_surface"][metric])
-        surface_p95 = int(results["ard_surface"][f"{metric}_p95"])
-        ratio = surface / tess if tess else float("inf")
         print(
-            f"{metric:<22} {tess:>6} ({tess_p95:>6})"
-            f" {surface:>10} ({surface_p95:>6}) {ratio:>12.2f}x"
+            f"{metric:<24} {int(retained[metric]):>6}"
+            f" ({int(retained[f'{metric}_p95']):>6})"
         )
 
     virtual = results["tess_virtual"]

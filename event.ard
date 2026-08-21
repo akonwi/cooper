@@ -1,15 +1,8 @@
-use cooper/surface
 use go:go.rockorager.dev/vaxis
 
 enum EventResult {
   ignored,
   handled,
-}
-
-enum ContextKind {
-  idle,
-  terminal,
-  focus_target,
 }
 
 enum EventPhase {
@@ -27,290 +20,87 @@ private fn stopped_dispatch(action: fn()) Void!DispatchError {
   Result::err(DispatchError::stopped)
 }
 
-struct EventContext {
-  kind: ContextKind,
-  phase: EventPhase,
+private fn reject_focus() Bool {
+  false
+}
+
+struct State {
+  propagation_stopped: Bool,
+  handled: Bool,
   redraw: Bool,
   quit: Bool,
-  route: [Int]?,
-  route_depth: Int,
-  route_sizes: [surface::Size],
-  route_origins: [surface::Point],
-  target_size: surface::Size?,
-  width_measurer: (fn(Str) Int)?,
-  terminal_event: vaxis::Event?,
-  source_terminal_event: vaxis::Event?,
-  requested_focus: [Int]?,
-  handled: Bool,
-  propagation_stopped: Bool,
+  preserve_focus_scroll: Bool,
+}
+
+fn new_state() mut State {
+  (mut State{
+    propagation_stopped: false,
+    handled: false,
+    redraw: false,
+    quit: false,
+    preserve_focus_scroll: false,
+  })
+}
+
+struct Context {
+  phase: EventPhase,
+  terminal_event: vaxis::Event,
+  local_x: Int?,
+  local_y: Int?,
+  focused: Bool,
+  state: mut State,
+  focus_request: fn() Bool,
   dispatch: fn(fn()) Void!DispatchError,
 }
 
-private fn copy_path(path: [Int]) [Int] {
-  let copied = mut List::new<Int>()
-  for part in path {
-    copied.push(part)
-  }
-  copied.@
-}
-
-private fn copy_route(route: [Int]?) [Int]? {
-  match route {
-    path => Maybe::new<[Int]>(copy_path(path)),
-    _ => Maybe::new<[Int]>(),
-  }
-}
-
-private fn copy_sizes(sizes: [surface::Size]?) [surface::Size] {
-  let copied = mut List::new<surface::Size>()
-  match sizes {
-    values => {
-      for size in values {
-        copied.push(size)
-      }
-    },
-    _ => (),
-  }
-  copied.@
-}
-
-private fn copy_origins(origins: [surface::Point]?) [surface::Point] {
-  let copied = mut List::new<surface::Point>()
-  match origins {
-    values => {
-      for origin in values {
-        copied.push(origin)
-      }
-    },
-    _ => (),
-  }
-  copied.@
-}
-
-private fn resolved_target_size(explicit: surface::Size?, route_sizes: [surface::Size]?) surface::Size? {
-  match explicit {
-    size => Maybe::new<surface::Size>(size),
-    _ => {
-      match route_sizes {
-        sizes => sizes.at(sizes.size() - 1),
-        _ => Maybe::new<surface::Size>(),
-      }
-    },
-  }
-}
-
-private fn context(
-  kind: ContextKind,
-  route: [Int]?,
-  route_sizes: [surface::Size]?,
-  route_origins: [surface::Point]?,
-  target_size: surface::Size?,
-  width_measurer: (fn(Str) Int)?,
-  terminal_event: vaxis::Event?,
+fn context(
+  phase: EventPhase,
+  terminal_event: vaxis::Event,
+  local_x: Int?,
+  local_y: Int?,
+  focused: Bool,
+  state: mut State,
+  focus_request: (fn() Bool)?,
   dispatch: (fn(fn()) Void!DispatchError)?,
-) EventContext {
-  EventContext{
-    kind: kind,
-    phase: EventPhase::idle,
-    redraw: false,
-    quit: false,
-    route: copy_route(route),
-    route_depth: 0,
-    route_sizes: copy_sizes(route_sizes),
-    route_origins: copy_origins(route_origins),
-    target_size: resolved_target_size(target_size, route_sizes),
-    width_measurer: width_measurer,
+) mut Context {
+  (mut Context{
+    phase: phase,
     terminal_event: terminal_event,
-    source_terminal_event: terminal_event,
-    requested_focus: Maybe::new<[Int]>(),
-    handled: false,
-    propagation_stopped: false,
+    local_x: local_x,
+    local_y: local_y,
+    focused: focused,
+    state: state,
+    focus_request: focus_request.or(reject_focus),
     dispatch: dispatch.or(stopped_dispatch),
-  }
+  })
 }
 
-fn new_context(dispatch: (fn(fn()) Void!DispatchError)?) EventContext {
-  context(
-    ContextKind::idle,
-    Maybe::new<[Int]>(),
-    Maybe::new<[surface::Size]>(),
-    Maybe::new<[surface::Point]>(),
-    Maybe::new<surface::Size>(),
-    Maybe::new<fn(Str) Int>(),
-    Maybe::new<vaxis::Event>(),
-    dispatch,
-  )
-}
-
-fn terminal_context(
-  received: vaxis::Event,
-  route: [Int]?,
-  route_sizes: [surface::Size]?,
-  route_origins: [surface::Point]?,
-  target_size: surface::Size?,
-  width_measurer: (fn(Str) Int)?,
-  dispatch: (fn(fn()) Void!DispatchError)?,
-) EventContext {
-  context(
-    ContextKind::terminal,
-    route,
-    route_sizes,
-    route_origins,
-    target_size,
-    width_measurer,
-    Maybe::new<vaxis::Event>(received),
-    dispatch,
-  )
-}
-
-fn focus_context(
-  route: [Int],
-  route_sizes: [surface::Size],
-  route_origins: [surface::Point],
-  dispatch: (fn(fn()) Void!DispatchError)?,
-) EventContext {
-  context(
-    ContextKind::focus_target,
-    route,
-    route_sizes,
-    route_origins,
-    Maybe::new<surface::Size>(),
-    Maybe::new<fn(Str) Int>(),
-    Maybe::new<vaxis::Event>(),
-    dispatch,
-  )
-}
-
-impl EventContext {
-  fn mut request_redraw() {
-    self.redraw = true
+impl Context {
+  fn stop_propagation() {
+    self.state.propagation_stopped = true
   }
 
-  fn mut request_quit() {
-    self.quit = true
+  fn request_redraw() {
+    self.state.redraw = true
   }
 
-  fn redraw_requested() Bool {
-    self.redraw
+  fn request_quit() {
+    self.state.quit = true
   }
 
-  fn quit_requested() Bool {
-    self.quit
-  }
-
-  fn mut set_dispatch(dispatch: fn(fn()) Void!DispatchError) {
-    self.dispatch = dispatch
-  }
-
-  fn mut retarget(route: [Int], route_sizes: [surface::Size], route_origins: [surface::Point]) {
-    self.route = copy_route(route)
-    self.route_depth = 0
-    self.route_sizes = copy_sizes(route_sizes)
-    self.route_origins = copy_origins(route_origins)
-    self.target_size = match route_sizes.at(route_sizes.size() - 1) {
-      size => Maybe::new<surface::Size>(size),
-      _ => Maybe::new<surface::Size>(),
-    }
-  }
-
-  fn mut localize_terminal(received: vaxis::Event) {
-    self.kind = ContextKind::terminal
-    self.terminal_event = Maybe::new<vaxis::Event>(received)
-    self.source_terminal_event = Maybe::new<vaxis::Event>(received)
-  }
-
-  // Requests a focus path relative to the widget currently handling this context.
-  fn mut request_focus(relative: [Int]) {
-    let requested = mut List::new<Int>()
-    match self.route {
-      current => {
-        mut index = 0
-        while index < self.route_depth and index < current.size() {
-          requested.push(current.at(index).expect("focus request route prefix"))
-          index =+ 1
-        }
-      },
-      _ => (),
-    }
-    for part in relative {
-      requested.push(part)
-    }
-    self.requested_focus = Maybe::new<[Int]>(requested.@)
-  }
-
-  fn focus_requested() [Int]? {
-    copy_route(self.requested_focus)
-  }
-
-  fn current_route_size() surface::Size? {
-    self.route_sizes.at(self.route_depth)
-  }
-
-  fn next_route_size() surface::Size? {
-    self.route_sizes.at(self.route_depth + 1)
-  }
-
-  fn current_route_origin() surface::Point? {
-    self.route_origins.at(self.route_depth)
-  }
-
-  fn target_route_origin() surface::Point? {
-    self.route_origins.at(self.route_origins.size() - 1)
-  }
-
-  fn next_route_index() Int? {
-    match self.route {
-      path => path.at(self.route_depth),
-      _ => Maybe::new<Int>(),
-    }
-  }
-
-  fn mut begin_delivery(depth: Int, phase: EventPhase) {
-    self.route_depth = depth
-    self.phase = phase
-    match self.source_terminal_event {
-      received => {
-        match received {
-          vaxis::Mouse(mouse) => {
-            match self.current_route_origin() {
-              origin => {
-                self.terminal_event = Maybe::new<vaxis::Event>(
-                  vaxis::Mouse{
-                    Button: mouse.Button,
-                    Row: mouse.Row - origin.y,
-                    Col: mouse.Col - origin.x,
-                    EventType: mouse.EventType,
-                    Modifiers: mouse.Modifiers,
-                    XPixel: mouse.XPixel,
-                    YPixel: mouse.YPixel,
-                  },
-                )
-              },
-              _ => (),
-            }
-          },
-          _ => (),
-        }
-      },
-      _ => (),
-    }
-  }
-
-  fn mut record_result(result: EventResult) {
-    if result == EventResult::handled {
-      self.handled = true
-    }
+  fn request_focus() Bool {
+    self.focus_request()
   }
 
   fn was_handled() Bool {
-    self.handled
+    self.state.handled
   }
 
-  fn mut stop_propagation() {
-    self.propagation_stopped = true
+  fn preserve_focus_scroll() {
+    self.state.preserve_focus_scroll = true
   }
 
-  fn propagation_is_stopped() Bool {
-    self.propagation_stopped
+  fn mark_handled() {
+    self.state.handled = true
   }
 }

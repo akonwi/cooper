@@ -1,335 +1,59 @@
-use cooper/surface
-use go:math
-
-struct RouteGeometry {
-  // Root geometry and opaque owners followed by one entry per routed edge.
-  route_sizes: [surface::Size],
-  route_origins: [surface::Point],
-  owners: [Any?],
-}
+use cooper/geometry
+use cooper/node
+use cooper/style
 
 struct Hit {
-  // Deepest retained widget occurrence under the point.
-  route: [Int],
-  // Deepest focusable occurrence containing the point, if any.
-  focus_path: [Int]?,
-  // Point and size local to the routed widget occurrence.
-  local: surface::Point,
-  size: surface::Size,
-  // Root geometry and opaque owners followed by one entry per routed edge.
-  route_sizes: [surface::Size],
-  route_origins: [surface::Point],
-  owners: [Any?],
+  target: mut node::Node,
+  local_x: Int,
+  local_y: Int,
 }
 
-private struct Rect {
-  left: Int,
-  top: Int,
-  right: Int,
-  bottom: Int,
-}
-
-impl Rect {
-  private fn contains(point: surface::Point) Bool {
-    point.x >= self.left and point.x < self.right and point.y >= self.top and point.y < self.bottom
-  }
-}
-
-private fn intersect(a: Rect, b: Rect) Rect {
-  mut left = a.left
-  mut top = a.top
-  mut right = a.right
-  mut bottom = a.bottom
-  if b.left > left {
-    left = b.left
-  }
-  if b.top > top {
-    top = b.top
-  }
-  if b.right < right {
-    right = b.right
-  }
-  if b.bottom < bottom {
-    bottom = b.bottom
-  }
-  Rect{
-    left: left,
-    top: top,
-    right: right,
-    bottom: bottom,
-  }
-}
-
-private fn saturating_add(left: Int, right: Int) Int {
-  if right > 0 and left > math::MaxInt - right {
-    math::MaxInt
-  } else if right < 0 and left < math::MinInt - right {
-    math::MinInt
-  } else {
-    left + right
-  }
-}
-
-private fn copy_path(path: [Int]) [Int] {
-  let copied = mut List::new<Int>()
-  for part in path {
-    copied.push(part)
-  }
-  copied.@
-}
-
-private fn copy_optional_path(path: [Int]?) [Int]? {
-  match path {
-    current => Maybe::new<[Int]>(copy_path(current)),
-    _ => Maybe::new<[Int]>(),
-  }
-}
-
-private fn append_path(path: [Int], part: Int) [Int] {
-  let appended = mut List::new<Int>()
-  for current in path {
-    appended.push(current)
-  }
-  appended.push(part)
-  appended.@
-}
-
-private fn copy_sizes(sizes: [surface::Size]) [surface::Size] {
-  let copied = mut List::new<surface::Size>()
-  for size in sizes {
-    copied.push(size)
-  }
-  copied.@
-}
-
-private fn append_size(sizes: [surface::Size], size: surface::Size) [surface::Size] {
-  let appended = mut List::new<surface::Size>()
-  for current in sizes {
-    appended.push(current)
-  }
-  appended.push(size)
-  appended.@
-}
-
-private fn copy_points(points: [surface::Point]) [surface::Point] {
-  let copied = mut List::new<surface::Point>()
-  for point in points {
-    copied.push(point)
-  }
-  copied.@
-}
-
-private fn append_point(points: [surface::Point], point: surface::Point) [surface::Point] {
-  let appended = mut List::new<surface::Point>()
-  for current in points {
-    appended.push(current)
-  }
-  appended.push(point)
-  appended.@
-}
-
-private fn copy_owners(owners: [Any?]) [Any?] {
-  let copied = mut List::new<Any?>()
-  for owner in owners {
-    copied.push(owner)
-  }
-  copied.@
-}
-
-private fn append_owner(owners: [Any?], owner: Any?) [Any?] {
-  let appended = mut List::new<Any?>()
-  for current in owners {
-    appended.push(current)
-  }
-  appended.push(owner)
-  appended.@
-}
-
-private fn collect_route_geometry(
-  tree: surface::Surface,
-  origin: surface::Point,
-  desired: [Int],
-  depth: Int,
-  route_sizes: [surface::Size],
-  route_origins: [surface::Point],
-  owners: [Any?],
-) [RouteGeometry] {
-  let found = mut List::new<RouteGeometry>()
-  if depth == desired.size() {
-    found.push(
-      RouteGeometry{
-        route_sizes: copy_sizes(route_sizes),
-        route_origins: copy_points(route_origins),
-        owners: copy_owners(owners),
-      },
-    )
-  } else {
-    let desired_index = desired.at(depth).expect("unresolved route segment")
-    for positioned in tree.children {
-      let child_origin = surface::Point{
-        x: saturating_add(origin.x, positioned.origin.x),
-        y: saturating_add(origin.y, positioned.origin.y),
-      }
-      match positioned.route_index {
-        route_index => {
-          if route_index == desired_index {
-            for geometry in collect_route_geometry(
-              positioned.surface,
-              child_origin,
-              desired,
-              depth + 1,
-              append_size(route_sizes, positioned.surface.size),
-              append_point(route_origins, child_origin),
-              append_owner(owners, positioned.surface.owner),
-            ) {
-              found.push(geometry)
-            }
-          }
-        },
-        _ => {
-          for geometry in collect_route_geometry(
-            positioned.surface,
-            child_origin,
-            desired,
-            depth,
-            route_sizes,
-            route_origins,
-            owners,
-          ) {
-            found.push(geometry)
-          }
-        },
-      }
-    }
-  }
-  found.@
-}
-
-fn route_geometry(tree: surface::Surface, route: [Int]) RouteGeometry? {
-  let origin = surface::Point{x: 0, y: 0}
-  let found = collect_route_geometry(tree, origin, route, 0, [tree.size], [origin], [tree.owner])
-  if found.size() == 1 {
-    found.at(0)
-  } else {
-    // Repeated routed indexes do not identify one authoritative occurrence.
-    Maybe::new<RouteGeometry>()
-  }
-}
-
-private fn hit_surface(
-  tree: surface::Surface,
-  origin: surface::Point,
-  clip: Rect,
-  point: surface::Point,
-  route: [Int],
-  nearest_focus: [Int]?,
-  owner_origin: surface::Point,
-  owner_size: surface::Size,
-  route_sizes: [surface::Size],
-  route_origins: [surface::Point],
-  owners: [Any?],
-) Hit? {
-  if not clip.contains(point) {
+private fn test_node(current: mut node::Node, x: Int, y: Int, inherited_clip: geometry::Rect) Hit? {
+  if current.is_destroyed() or current.style().display == style::Display::none {
     Maybe::new<Hit>()
   } else {
-    mut current_focus = copy_optional_path(nearest_focus)
-    if tree.focusable {
-      current_focus = Maybe::new<[Int]>(copy_path(route))
+    let bounds = current.layout().screen
+    let node_clip = match current.style().overflow {
+      style::Overflow::hidden => geometry::intersect(inherited_clip, bounds),
+      style::Overflow::scroll => geometry::intersect(inherited_clip, bounds),
+      _ => inherited_clip,
     }
 
-    mut found = Maybe::new<Hit>()
-    mut child_index = tree.children.size()
-    while child_index > 0 and found.is_none() {
-      child_index =- 1
-      let positioned = tree.children.at(child_index).expect("reverse hit-test child index")
-      let child_origin = surface::Point{
-        x: saturating_add(origin.x, positioned.origin.x),
-        y: saturating_add(origin.y, positioned.origin.y),
+    if not geometry::contains(node_clip, x, y) {
+      Maybe::new<Hit>()
+    } else {
+      mut index = current.children.size()
+      mut found = Maybe::new<Hit>()
+      while index > 0 and not found.is_some() {
+        index =- 1
+        let child = current.children.at(index).expect("retained hit child index")
+        found = test_node(child, x, y, node_clip)
       }
-      let child_clip = intersect(
-        clip,
-        Rect{
-          left: child_origin.x,
-          top: child_origin.y,
-          right: child_origin.x + positioned.surface.size.width,
-          bottom: child_origin.y + positioned.surface.size.height,
+
+      match found {
+        hit => Maybe::new<Hit>(hit),
+        _ => {
+          if current.accepts_pointer() and geometry::contains(bounds, x, y) {
+            Maybe::new<Hit>(
+              Hit{
+                target: current,
+                local_x: x - bounds.x,
+                local_y: y - bounds.y,
+              },
+            )
+          } else {
+            Maybe::new<Hit>()
+          }
         },
-      )
-
-      if child_clip.contains(point) {
-        mut child_route = copy_path(route)
-        mut child_owner_origin = owner_origin
-        mut child_owner_size = owner_size
-        mut child_route_sizes = copy_sizes(route_sizes)
-        mut child_route_origins = copy_points(route_origins)
-        mut child_owners = copy_owners(owners)
-        match positioned.route_index {
-          route_index => {
-            child_route = append_path(route, route_index)
-            child_owner_origin = child_origin
-            child_owner_size = positioned.surface.size
-            child_route_sizes = append_size(route_sizes, positioned.surface.size)
-            child_route_origins = append_point(route_origins, child_origin)
-            child_owners = append_owner(owners, positioned.surface.owner)
-          },
-          _ => (),
-        }
-        match hit_surface(
-          positioned.surface,
-          child_origin,
-          child_clip,
-          point,
-          child_route,
-          current_focus,
-          child_owner_origin,
-          child_owner_size,
-          child_route_sizes,
-          child_route_origins,
-          child_owners,
-        ) {
-          child_hit => { found = Maybe::new<Hit>(child_hit) },
-          _ => (),
-        }
       }
-    }
-
-    match found {
-      child_hit => Maybe::new<Hit>(child_hit),
-      _ => {
-        Maybe::new<Hit>(
-          Hit{
-            route: copy_path(route),
-            focus_path: copy_optional_path(current_focus),
-            local: surface::Point{x: point.x - owner_origin.x, y: point.y - owner_origin.y},
-            size: owner_size,
-            route_sizes: copy_sizes(route_sizes),
-            route_origins: copy_points(route_origins),
-            owners: copy_owners(owners),
-          },
-        )
-      },
     }
   }
 }
 
-fn hit_test(tree: surface::Surface, point: surface::Point) Hit? {
-  let origin = surface::Point{x: 0, y: 0}
-  hit_surface(
-    tree,
-    origin,
-    Rect{
-      left: 0,
-      top: 0,
-      right: tree.size.width,
-      bottom: tree.size.height,
-    },
-    point,
-    [],
-    Maybe::new<[Int]>(),
-    origin,
-    tree.size,
-    [tree.size],
-    [origin],
-    [tree.owner],
-  )
+fn test(root: mut node::Renderable, x: Int, y: Int) Hit? {
+  let retained = root.node()
+  if retained.parent.is_some() {
+    panic("retained hit testing requires a detached root")
+  }
+  test_node(retained, x, y, retained.layout_viewport())
 }

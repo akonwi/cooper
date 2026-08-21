@@ -67,8 +67,8 @@ signal for framework-scoped effects. External resources and non-cooperative
 work remain application-owned.
 
 The running root cannot be reparented or destroyed. App teardown first unmounts
-the root, then stops dispatch, destroys the Context-owned nodes, and restores
-the terminal.
+the root, then stops dispatch, restores the terminal, and finally destroys the
+Context-owned nodes.
 
 ## Attachment-scoped effects
 
@@ -232,15 +232,11 @@ App-specific searchable lists, filesystem loaders, and virtualization remain in
 applications or benchmarks until repeated usage demonstrates a stable public
 shape.
 
-## Verification and cutover
+## Verification and clean-break status
 
-The retained runtime replaces the old implementation in one clean break:
-
-1. settle and test attachment-scoped mount cancellation;
-2. promote retained modules to canonical paths;
-3. rewrite all examples and tests against persistent Nodes;
-4. remove Surface, discovery rendering, route indexes, and the old runtime;
-5. update public documentation and run the complete retained validation matrix.
+The retained cutover is complete. Attachment-scoped cancellation is tested,
+modules use canonical paths, examples and tests use persistent Nodes, and the
+Surface/discovery runtime has been deleted.
 
 Required headless coverage includes hierarchy identity, layout, clipping, cell
 styles, cursor behavior, focus, hit testing, phased routing, structural mutation

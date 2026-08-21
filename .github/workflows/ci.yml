@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ARD_REF: cc6fcd44fe23c4739b0dd017cd7cba4a4af9e5b5
+  GOEXPERIMENT: jsonv2
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+
+    steps:
+      - name: Check out Cooper
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: "1.26"
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build pinned Ard compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/akonwi/ard.git "$RUNNER_TEMP/ard"
+          git -C "$RUNNER_TEMP/ard" checkout --quiet "$ARD_REF"
+          mkdir -p "$RUNNER_TEMP/bin"
+          (
+            cd "$RUNNER_TEMP/ard/compiler"
+            go build -o "$RUNNER_TEMP/bin/ard-dev" .
+          )
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Download Go dependencies
+        run: go mod download
+
+      - name: Test Go boundary
+        run: go test ./...
+
+      - name: Test Ard framework
+        run: ard-dev test test
+
+      - name: Test external consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer="$RUNNER_TEMP/cooper-consumer"
+          mkdir -p "$consumer"
+          cp .github/fixtures/consumer/main.ard "$consumer/main.ard"
+          cp go.mod go.sum "$consumer/"
+
+          cd "$consumer"
+          go mod edit -module=cooper_consumer
+          go mod edit -require=github.com/akonwi/cooper@v0.0.0
+          go mod edit -replace=github.com/akonwi/cooper="$GITHUB_WORKSPACE"
+          cat > ard.toml <<EOF
+          name = "cooper_consumer"
+          ard = ">= 0.38.0"
+          target = "go"
+
+          [dependencies]
+          cooper = { path = "$GITHUB_WORKSPACE" }
+          EOF
+
+          go mod download all
+          ard-dev build --out "$RUNNER_TEMP/cooper-consumer-bin" main.ard
+          "$RUNNER_TEMP/cooper-consumer-bin"
+
+      - name: Check Python scripts
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m py_compile \
+            examples/test_input.py \
+            examples/test_form.py \
+            examples/test_scroll_form.py \
+            examples/test_async.py \
+            examples/test_explorer.py \
+            benchmarks/run.py
+
+      - name: Test terminal examples
+        if: runner.os == 'Linux'
+        working-directory: examples
+        env:
+          ARD: ard-dev
+        run: |
+          python3 test_input.py
+          python3 test_form.py
+          python3 test_scroll_form.py
+          python3 test_async.py
+          python3 test_explorer.py
+
+      - name: Smoke-test benchmarks
+        if: runner.os == 'Linux'
+        env:
+          ARD: ard-dev
+        run: python3 benchmarks/run.py --iterations 1 --warmups 0
+
+      - name: Check whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]]; then
+            git diff --check "$BASE_SHA"...HEAD
+          else
+            git show --check --oneline HEAD
+          fi

@@ -2,13 +2,12 @@ module cooper_examples
 
 go 1.26
 
-replace go.rockorager.dev/vaxis => ../../vaxis
+replace github.com/akonwi/cooper => ..
 
-replace cooper => ..
-
+// Ard source imports Cooper and Vaxis directly through the Go backend.
 require (
-	cooper v0.0.0
-	go.rockorager.dev/vaxis v0.16.0
+	github.com/akonwi/cooper v0.0.0
+	go.rockorager.dev/vaxis v0.17.2-0.20260811162040-8a93a9a0e2e7
 )
 
 require (

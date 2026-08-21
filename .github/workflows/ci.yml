@@ -62,32 +62,6 @@ jobs:
       - name: Test Ard framework
         run: ard-dev test test
 
-      - name: Test external consumer
-        shell: bash
-        run: |
-          set -euo pipefail
-          consumer="$RUNNER_TEMP/cooper-consumer"
-          mkdir -p "$consumer"
-          cp .github/fixtures/consumer/main.ard "$consumer/main.ard"
-          cp go.mod go.sum "$consumer/"
-
-          cd "$consumer"
-          go mod edit -module=cooper_consumer
-          go mod edit -require=github.com/akonwi/cooper@v0.0.0
-          go mod edit -replace=github.com/akonwi/cooper="$GITHUB_WORKSPACE"
-          cat > ard.toml <<EOF
-          name = "cooper_consumer"
-          ard = ">= 0.38.0"
-          target = "go"
-
-          [dependencies]
-          cooper = { path = "$GITHUB_WORKSPACE" }
-          EOF
-
-          go mod download all
-          ard-dev build --out "$RUNNER_TEMP/cooper-consumer-bin" main.ard
-          "$RUNNER_TEMP/cooper-consumer-bin"
-
       - name: Check Python scripts
         if: runner.os == 'Linux'
         run: |

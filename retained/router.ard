@@ -16,7 +16,12 @@ struct Outcome {
   preserve_focus_scroll: Bool,
 }
 
-private fn path(root: mut node::Node, target: mut node::Node) [mut node::Node]? {
+private struct RouteEntry {
+  owner: mut node::Node,
+  generation: Int,
+}
+
+private fn path(root: mut node::Node, target: mut node::Node) [RouteEntry]? {
   let ascending = mut List::new<mut node::Node>()
   mut current = Maybe::new<mut node::Node>(target)
   mut found = false
@@ -37,16 +42,57 @@ private fn path(root: mut node::Node, target: mut node::Node) [mut node::Node]? 
   }
 
   if not found {
-    Maybe::new<[mut node::Node]>()
+    Maybe::new<[RouteEntry]>()
   } else {
-    let routed = mut List::new<mut node::Node>()
+    let routed = mut List::new<RouteEntry>()
     mut index = ascending.size()
     while index > 0 {
       index =- 1
-      routed.push(ascending.at(index).expect("retained routed ancestor"))
+      let owner = ascending.at(index).expect("retained routed ancestor")
+      routed.push(RouteEntry{owner: owner, generation: owner.attachment_generation()})
     }
-    Maybe::new<[mut node::Node]>(routed.@)
+    Maybe::new<[RouteEntry]>(routed.@)
   }
+}
+
+private fn route_is_current(routed: [RouteEntry], tree_version: Int) Bool {
+  mut current = true
+  match routed.at(0) {
+    root => {
+      if root.owner.event_route_invalidated() or root.owner.attachment_tree_version() != tree_version {
+        current = false
+      }
+    },
+    _ => { current = false },
+  }
+  for entry, index in routed {
+    let owner = entry.owner
+    if (not owner.is_mounted()) or owner.attachment_generation() != entry.generation {
+      current = false
+      break
+    }
+    if index == 0 {
+      if owner.parent.is_some() {
+        current = false
+        break
+      }
+    } else {
+      let expected_parent = routed.at(index - 1).expect("route parent").owner
+      match owner.parent {
+        parent => {
+          if parent.id != expected_parent.id {
+            current = false
+            break
+          }
+        },
+        _ => {
+          current = false
+          break
+        },
+      }
+    }
+  }
+  current
 }
 
 private fn attached_to(root: mut node::Node, current: mut node::Node) Bool {
@@ -100,11 +146,15 @@ private fn deliver(
       focus_request: fn() Bool {
         focused.focus(root, current)
       },
-      dispatch: dispatch,
+      dispatch: current.attachment_dispatch(),
     )
+    let tree_version_before: Int = root.node().attachment_tree_version()
     let result = current.owner_as_renderable().event(ctx)
     if result == framework_event::EventResult::handled {
       state.handled = true
+    }
+    if root.node().attachment_tree_version() != tree_version_before {
+      state.propagation_stopped = true
     }
   }
 }
@@ -116,15 +166,20 @@ private fn dispatch_path(
   pointer: Pointer?,
   focused: mut focus::State,
   ui_dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
-  routed: [mut node::Node],
+  routed: [RouteEntry],
+  tree_version: Int,
 ) Outcome {
+  let routed_root = root.node()
   let state = retained_event::new_state()
+  routed_root.begin_event_route(fn() {
+    state.propagation_stopped = true
+  })
 
   mut index = 0
-  while index + 1 < routed.size() and not state.propagation_stopped {
+  while index + 1 < routed.size() and (not state.propagation_stopped) and route_is_current(routed, tree_version) {
     deliver(
       root,
-      routed.at(index).expect("retained capture owner"),
+      routed.at(index).expect("retained capture owner").owner,
       framework_event::EventPhase::capture,
       received,
       pointer,
@@ -135,7 +190,7 @@ private fn dispatch_path(
     index =+ 1
   }
 
-  if not state.propagation_stopped {
+  if (not state.propagation_stopped) and route_is_current(routed, tree_version) {
     deliver(
       root,
       target,
@@ -150,11 +205,11 @@ private fn dispatch_path(
 
   if routed.size() > 1 {
     index = routed.size() - 1
-    while index > 0 and not state.propagation_stopped {
+    while index > 0 and (not state.propagation_stopped) and route_is_current(routed, tree_version) {
       index =- 1
       deliver(
         root,
-        routed.at(index).expect("retained bubble owner"),
+        routed.at(index).expect("retained bubble owner").owner,
         framework_event::EventPhase::bubble,
         received,
         pointer,
@@ -165,12 +220,14 @@ private fn dispatch_path(
     }
   }
 
-  Outcome{
+  let outcome = Outcome{
     handled: state.handled,
     redraw: state.redraw,
     quit: state.quit,
     preserve_focus_scroll: state.preserve_focus_scroll,
   }
+  routed_root.end_event_route()
+  outcome
 }
 
 fn dispatch(
@@ -182,7 +239,10 @@ fn dispatch(
   ui_dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
 ) Outcome {
   match path(root.node(), target) {
-    routed => dispatch_path(root, target, received, pointer, focused, ui_dispatch, routed),
+    routed => {
+      let tree_version: Int = root.node().attachment_tree_version()
+      dispatch_path(root, target, received, pointer, focused, ui_dispatch, routed, tree_version)
+    },
     _ => {
       Outcome{
         handled: false,

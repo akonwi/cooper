@@ -14,7 +14,13 @@ use cooper/retained/router
 use cooper/retained/scroll
 use cooper/retained/style
 use cooper/retained/text
+use cooper/runtime
 use go:go.rockorager.dev/vaxis
+
+private fn immediate_dispatch(action: fn()) Void!framework_event::DispatchError {
+  action()
+  Result::ok(())
+}
 
 private fn fixed(width: Int, height: Int) style::Style {
   style::new(width: style::cells(width), height: style::cells(height), shrink: 0.0)
@@ -26,7 +32,12 @@ private struct EventProbe {
   focus_on_target: Bool,
   stop_capture: Bool,
   destroy_on_capture: (mut node::Node)?,
+  reparent_on_capture: (mut node::Node)?,
+  reparent_destination: (mut node::Node)?,
   last_local_x: Int?,
+  mounts: Int,
+  mounted_dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
+  cancellation: Receiver<Void>?,
 }
 
 private fn event_probe(
@@ -42,7 +53,12 @@ private fn event_probe(
     focus_on_target: focus_on_target.or(false),
     stop_capture: stop_capture.or(false),
     destroy_on_capture: Maybe::new<mut node::Node>(),
+    reparent_on_capture: Maybe::new<mut node::Node>(),
+    reparent_destination: Maybe::new<mut node::Node>(),
     last_local_x: Maybe::new<Int>(),
+    mounts: 0,
+    mounted_dispatch: Maybe::new<fn(fn()) Void!framework_event::DispatchError>(),
+    cancellation: Maybe::new<Receiver<Void>>(),
   }
   retained.bind(probe)
   probe
@@ -53,6 +69,12 @@ impl node::Renderable for EventProbe {
     self.node_ref
   }
 
+  fn mut mount(ctx: node::MountContext) {
+    self.mounts =+ 1
+    self.mounted_dispatch = Maybe::new<fn(fn()) Void!framework_event::DispatchError>(ctx.dispatch)
+    self.cancellation = Maybe::new<Receiver<Void>>(ctx.cancellation)
+  }
+
   fn paint(ctx: mut paint::Context) {}
 
   fn mut event(ctx: mut retained_event::Context) framework_event::EventResult {
@@ -61,6 +83,15 @@ impl node::Renderable for EventProbe {
     if ctx.phase == framework_event::EventPhase::capture {
       match self.destroy_on_capture {
         target => target.destroy(),
+        _ => (),
+      }
+      match self.reparent_on_capture {
+        target => {
+          match self.reparent_destination {
+            destination => destination.add(target),
+            _ => (),
+          }
+        },
         _ => (),
       }
       if self.stop_capture {
@@ -541,6 +572,60 @@ test fn retained_focus_traversal_uses_persistent_node_identity() Void!Str {
   testing::assert(first.node().is_destroyed(), "Expected focus tree cleanup")
 }
 
+test fn retained_attachment_scopes_cancel_and_refresh_on_reattach() Void!Str {
+  let ctx = context::new()
+  let root = event_probe(ctx, fixed(2, 1))
+  let child = event_probe(ctx, fixed(2, 1))
+  root.add(child)
+  let queue = mut runtime::new_dispatch_queue()
+  let base = fn(action: fn()) Void!framework_event::DispatchError {
+    if queue.post(action) {
+      Result::ok(())
+    } else {
+      Result::err(framework_event::DispatchError::stopped)
+    }
+  }
+
+  try testing::assert(root.mounts == 0 and child.mounts == 0, "Expected detached construction")
+  root.node().mount_root(base)
+  try testing::assert(root.mounts == 1 and child.mounts == 1, "Expected root-first subtree mount")
+  let old_dispatch = child.mounted_dispatch.expect("first attachment dispatch")
+  let old_cancellation = child.cancellation.expect("first attachment cancellation")
+  mut stale_called = false
+  let accepted = old_dispatch(fn() {
+    stale_called = true
+  })
+
+  try testing::assert(root.node().remove(child.node()), "Expected mounted child detach")
+  let cancelled = select {
+    old_cancellation.recv() => true,
+    _ => false,
+  }
+  (queue.pop().expect("queued stale attachment action"))()
+  try testing::assert(accepted.is_ok() and cancelled, "Expected accepted then cancelled old scope")
+  try testing::assert(not stale_called, "Expected stale queued action suppression")
+  try testing::assert(old_dispatch(fn() {}).is_err(), "Expected old dispatch rejection")
+
+  root.add(child)
+  try testing::assert(child.mounts == 2, "Expected fresh mount after reattach")
+  let fresh_dispatch = child.mounted_dispatch.expect("fresh attachment dispatch")
+  mut fresh_called = false
+  try testing::assert(
+    fresh_dispatch(fn() {
+      fresh_called = true
+    }).is_ok(),
+    "Expected fresh dispatch acceptance",
+  )
+  (queue.pop().expect("fresh attachment action"))()
+  try testing::assert(fresh_called, "Expected fresh attachment action")
+
+  root.node().unmount_root()
+  try testing::assert(fresh_dispatch(fn() {}).is_err(), "Expected root unmount cancellation")
+  queue.stop()
+  ctx.destroy()
+  testing::assert(child.node().is_destroyed(), "Expected attachment tree cleanup")
+}
+
 test fn retained_router_delivers_capture_target_bubble_by_node_reference() Void!Str {
   let ctx = context::new()
   let root = event_probe(ctx, fixed(4, 1))
@@ -548,6 +633,7 @@ test fn retained_router_delivers_capture_target_bubble_by_node_reference() Void!
   child.node().set_focusable(true)
   root.add(child)
   ctx.compute_layout(root, 4, 1)
+  root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
 
   let outcome = router::dispatch(
@@ -575,6 +661,7 @@ test fn retained_router_delivers_capture_target_bubble_by_node_reference() Void!
     "Expected target phase",
   )
   try testing::assert(child.last_local_x.or(-1) == 1, "Expected target-local routed pointer")
+  root.node().unmount_root()
   ctx.destroy()
   testing::assert(child.node().is_destroyed(), "Expected routed tree cleanup")
 }
@@ -586,6 +673,7 @@ test fn retained_router_survives_target_destruction_during_capture() Void!Str {
   root.add(child)
   root.destroy_on_capture = Maybe::new<mut node::Node>(child.node())
   ctx.compute_layout(root, 2, 1)
+  root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
 
   let outcome = router::dispatch(root, child.node(), vaxis::Key{Text: "x"}, focused: focused)
@@ -593,8 +681,37 @@ test fn retained_router_survives_target_destruction_during_capture() Void!Str {
   try testing::assert(outcome.handled, "Expected surviving capture handling")
   try testing::assert(child.node().is_destroyed(), "Expected capture-time target destruction")
   try testing::assert(child.phases.size() == 0, "Expected destroyed target suppression")
+  root.node().unmount_root()
   ctx.destroy()
   testing::assert(root.node().is_destroyed(), "Expected mutation route cleanup")
+}
+
+test fn retained_router_stops_when_capture_reparents_target_attachment() Void!Str {
+  let ctx = context::new()
+  let root = event_probe(ctx, fixed(4, 1))
+  let former_parent = event_probe(ctx, fixed(2, 1))
+  let new_parent = event_probe(ctx, fixed(2, 1))
+  let child = event_probe(ctx, fixed(2, 1))
+  former_parent.add(child)
+  root.add(former_parent)
+  root.add(new_parent)
+  former_parent.reparent_on_capture = Maybe::new<mut node::Node>(child.node())
+  former_parent.reparent_destination = Maybe::new<mut node::Node>(new_parent.node())
+  ctx.compute_layout(root, 4, 1)
+  root.node().mount_root(immediate_dispatch)
+  let focused = focus::new()
+
+  let outcome = router::dispatch(root, child.node(), vaxis::Key{Text: "x"}, focused: focused)
+
+  try testing::assert(outcome.handled, "Expected capture handling before reparent")
+  try testing::assert(former_parent.phases.size() == 1, "Expected former-parent capture only")
+  try testing::assert(child.phases.size() == 0, "Expected reattached target suppression")
+  try testing::assert(new_parent.phases.size() == 0, "Expected no delivery on new route")
+  try testing::assert(child.mounts == 2, "Expected a fresh target attachment")
+
+  root.node().unmount_root()
+  ctx.destroy()
+  testing::assert(child.node().is_destroyed(), "Expected reparented route cleanup")
 }
 
 test fn retained_router_honors_capture_propagation_stop() Void!Str {
@@ -603,6 +720,7 @@ test fn retained_router_honors_capture_propagation_stop() Void!Str {
   let child = event_probe(ctx, fixed(2, 1))
   root.add(child)
   ctx.compute_layout(root, 2, 1)
+  root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
 
   let outcome = router::dispatch(root, child.node(), vaxis::Key{Text: "x"}, focused: focused)
@@ -610,6 +728,7 @@ test fn retained_router_honors_capture_propagation_stop() Void!Str {
   try testing::assert(outcome.handled, "Expected capture handling")
   try testing::assert(root.phases.size() == 1, "Expected only stopped capture delivery")
   try testing::assert(child.phases.size() == 0, "Expected target suppression")
+  root.node().unmount_root()
   ctx.destroy()
   testing::assert(child.node().is_destroyed(), "Expected stopped route cleanup")
 }
@@ -646,6 +765,7 @@ test fn retained_input_mutates_through_direct_routing_and_paints_cursor() Void!S
   let field = input::new(ctx, value: "abc", placeholder: "type", initial_style: fixed(5, 1))
   root.add(field)
   ctx.compute_layout(root, 5, 1)
+  root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
 
   let mouse = vaxis::Mouse{
@@ -679,6 +799,7 @@ test fn retained_input_mutates_through_direct_routing_and_paints_cursor() Void!S
     "Expected focused retained cursor",
   )
 
+  root.node().unmount_root()
   ctx.destroy()
   testing::assert(field.node().is_destroyed(), "Expected retained input cleanup")
 }
@@ -789,6 +910,7 @@ test fn retained_scroll_wheel_bubbles_and_stops_at_boundaries() Void!Str {
   let content = box::new(ctx, initial_style: fixed(2, 5))
   let view = scroll::new(ctx, content, initial_style: fixed(2, 2), wheel_step: 2)
   ctx.compute_layout(view, 2, 2)
+  view.node().mount_root(immediate_dispatch)
   let focused = focus::new()
   let wheel = vaxis::Mouse{
     Col: 0,
@@ -824,6 +946,7 @@ test fn retained_scroll_wheel_bubbles_and_stops_at_boundaries() Void!Str {
   )
   try testing::assert(not boundary.handled, "Expected ignored wheel at boundary")
 
+  view.node().unmount_root()
   ctx.destroy()
   testing::assert(content.node().is_destroyed(), "Expected wheel scroll cleanup")
 }

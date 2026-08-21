@@ -6,6 +6,7 @@ use cooper/retained/event as retained_event
 use cooper/retained/geometry
 use cooper/retained/paint
 use cooper/retained/style
+use cooper/runtime
 use go:math
 
 enum MeasureMode {
@@ -26,8 +27,24 @@ struct MeasureSize {
   height: Float32,
 }
 
+struct MountContext {
+  dispatch: fn(fn()) Void!framework_event::DispatchError,
+  cancellation: Receiver<Void>,
+}
+
+impl MountContext {
+  fn is_cancelled() Bool {
+    select {
+      self.cancellation.recv() => true,
+      _ => false,
+    }
+  }
+}
+
 trait Renderable {
   fn node() mut Node
+
+  fn mut mount(ctx: MountContext)
 
   fn paint(ctx: mut paint::Context)
 
@@ -36,10 +53,24 @@ trait Renderable {
 
 struct ContextToken {
   marker: Int,
+  attachment_version: Int,
+  active_routes: Int,
+  route_invalidated: Bool,
+  route_stoppers: [fn()],
 }
 
 fn new_context_token() mut ContextToken {
-  (mut ContextToken{marker: 1})
+  (mut ContextToken{
+    marker: 1,
+    attachment_version: 0,
+    active_routes: 0,
+    route_invalidated: false,
+    route_stoppers: [],
+  })
+}
+
+private fn stopped_dispatch(action: fn()) Void!framework_event::DispatchError {
+  Result::err(framework_event::DispatchError::stopped)
 }
 
 struct Node {
@@ -58,6 +89,9 @@ struct Node {
   pointer_enabled: Bool,
   focused: Bool,
   mounted_root: Bool,
+  mount_generation: Int,
+  mount_scope: (mut runtime::MountScope)?,
+  mount_dispatch_base: (fn(fn()) Void!framework_event::DispatchError)?,
   requested_scroll_y: Int,
   children_offset_y: Int,
   request_render: fn(),
@@ -224,6 +258,9 @@ fn create(
     pointer_enabled: false,
     focused: false,
     mounted_root: false,
+    mount_generation: 0,
+    mount_scope: Maybe::new<mut runtime::MountScope>(),
+    mount_dispatch_base: Maybe::new<fn(fn()) Void!framework_event::DispatchError>(),
     requested_scroll_y: 0,
     children_offset_y: 0,
     request_render: request_render,
@@ -251,7 +288,7 @@ impl Node {
   }
 
   fn can_have_children() Bool {
-    not self.measured and not self.destroyed
+    (not self.measured) and not self.destroyed
   }
 
   fn is_focusable() Bool {
@@ -274,7 +311,70 @@ impl Node {
   }
 
   fn can_receive_events() Bool {
-    not self.destroyed and self.owner.is_some()
+    (not self.destroyed) and self.owner.is_some() and self.mount_scope.is_some()
+  }
+
+  fn is_mounted() Bool {
+    self.mount_scope.is_some()
+  }
+
+  fn attachment_generation() Int {
+    self.mount_generation
+  }
+
+  fn attachment_tree_version() Int {
+    self.context_token.attachment_version
+  }
+
+  private fn mut bump_attachment_tree_version() {
+    if self.context_token.attachment_version == math::MaxInt {
+      panic("retained attachment tree version overflow")
+    }
+    self.context_token.attachment_version =+ 1
+    if self.context_token.active_routes > 0 {
+      self.context_token.route_invalidated = true
+      for stop in self.context_token.route_stoppers {
+        stop()
+      }
+    }
+  }
+
+  fn mut begin_event_route(stop: fn()) {
+    if self.context_token.active_routes == math::MaxInt {
+      panic("retained event route depth overflow")
+    }
+    if self.context_token.active_routes == 0 {
+      self.context_token.route_invalidated = false
+    }
+    self.context_token.active_routes =+ 1
+    self.context_token.route_stoppers.push(stop)
+  }
+
+  fn event_route_invalidated() Bool {
+    self.context_token.route_invalidated
+  }
+
+  fn mut end_event_route() {
+    if self.context_token.active_routes < 1 {
+      panic("retained event route is not active")
+    }
+    self.context_token.active_routes =- 1
+    let retained = mut List::new<fn()>()
+    mut index = 0
+    while index < self.context_token.route_stoppers.size() - 1 {
+      retained.push(self.context_token.route_stoppers.at(index).expect("active route stopper"))
+      index =+ 1
+    }
+    self.context_token.route_stoppers = retained.@
+    if self.context_token.active_routes == 0 {
+      self.context_token.route_invalidated = false
+    }
+  }
+
+  fn attachment_dispatch() fn(fn()) Void!framework_event::DispatchError {
+    let scope = try self.mount_scope -> _ { stopped_dispatch }
+    let base = try self.mount_dispatch_base -> _ { stopped_dispatch }
+    runtime::scoped_dispatch(base, scope)
   }
 
   fn mut set_focusable(value: Bool) {
@@ -303,14 +403,90 @@ impl Node {
     }
   }
 
-  fn mut mount_root() {
+  private fn has_mount_scope(expected: mut runtime::MountScope) Bool {
+    match self.mount_scope {
+      current => current == expected,
+      _ => false,
+    }
+  }
+
+  private fn is_direct_child(child: mut Node) Bool {
+    match child.parent {
+      current_parent => current_parent.id == self.id,
+      _ => false,
+    }
+  }
+
+  private fn mut mount_subtree(base: fn(fn()) Void!framework_event::DispatchError) {
+    if self.destroyed {
+      panic("cannot mount a destroyed retained Node")
+    }
+    if not self.mount_scope.is_some() {
+      if not self.owner.is_some() {
+        panic("cannot mount an unbound retained Node")
+      }
+      if self.mount_generation == math::MaxInt {
+        panic("retained Node attachment generation overflow")
+      }
+      self.mount_generation =+ 1
+      self.bump_attachment_tree_version()
+      let scope = runtime::new_mount_scope()
+      self.mount_dispatch_base = Maybe::new<fn(fn()) Void!framework_event::DispatchError>(base)
+      self.mount_scope = Maybe::new<mut runtime::MountScope>(scope)
+      self.owner_as_renderable().mount(
+        MountContext{dispatch: runtime::scoped_dispatch(base, scope), cancellation: scope.cancellation()},
+      )
+
+      if self.has_mount_scope(scope) {
+        let pending = mut List::new<mut Node>()
+        for child in self.children {
+          pending.push(child)
+        }
+        for child in pending {
+          if self.has_mount_scope(scope) and self.is_direct_child(child) {
+            child.mount_subtree(base)
+          }
+        }
+      }
+    }
+  }
+
+  private fn mut unmount_subtree() {
+    match self.mount_scope {
+      scope => {
+        scope.stop()
+        self.bump_attachment_tree_version()
+      },
+      _ => (),
+    }
+    self.mount_scope = Maybe::new<mut runtime::MountScope>()
+    self.mount_dispatch_base = Maybe::new<fn(fn()) Void!framework_event::DispatchError>()
+
+    let pending = mut List::new<mut Node>()
+    for child in self.children {
+      pending.push(child)
+    }
+    for child in pending {
+      child.unmount_subtree()
+    }
+  }
+
+  fn mut mount_root(base: fn(fn()) Void!framework_event::DispatchError) {
     if self.destroyed or self.parent.is_some() or self.mounted_root {
       panic("only a live detached retained Node can become the mounted root")
     }
     self.mounted_root = true
+    self.mount_subtree(base)
+    if (not self.mounted_root) or not self.mount_scope.is_some() {
+      panic("retained root was unmounted while mounting")
+    }
   }
 
   fn mut unmount_root() {
+    if (not self.mounted_root) or self.parent.is_some() {
+      panic("only the mounted retained root can be unmounted as root")
+    }
+    self.unmount_subtree()
     self.mounted_root = false
   }
 
@@ -459,6 +635,10 @@ impl Node {
     child.apply_backend_style(child.current_style)
     self.children.push(child)
     self.yoga.AppendChild(child.yoga)
+    match self.mount_dispatch_base {
+      base => child.mount_subtree(base),
+      _ => (),
+    }
     self.request_render()
   }
 
@@ -480,6 +660,7 @@ impl Node {
       self.children = retained.@
       self.yoga.RemoveChild(child.yoga)
       child.parent = Maybe::new<mut Node>()
+      child.unmount_subtree()
       child.apply_backend_style(child.current_style)
       self.request_render()
     }
@@ -620,7 +801,7 @@ impl Node {
         current_parent => {
           let _ = current_parent.remove(self)
         },
-        _ => (),
+        _ => self.unmount_subtree(),
       }
       self.destroyed = true
 

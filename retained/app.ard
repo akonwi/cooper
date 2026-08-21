@@ -207,7 +207,7 @@ impl App {
     defer self.destroy()
     self.ctx.begin_run()
     defer self.ctx.end_run()
-    root.node().mount_root()
+    root.node().mount_root(self.ctx.dispatch)
     defer root.node().unmount_root()
 
     self.paint(root)

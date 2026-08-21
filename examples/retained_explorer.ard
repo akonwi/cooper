@@ -43,6 +43,8 @@ impl node::Renderable for EntryRow {
     self.node_ref
   }
 
+  fn mount(ctx: node::MountContext) {}
+
   fn paint(ctx: mut paint::Context) {
     mut marker = " "
     mut row_style = cell_style::new()

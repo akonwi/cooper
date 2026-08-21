@@ -253,6 +253,8 @@ impl node::Renderable for Input {
     self.node_ref
   }
 
+  fn mount(ctx: node::MountContext) {}
+
   fn paint(ctx: mut paint::Context) {
     let width = self.node_ref.layout().screen.width
     let view = input_view(

@@ -63,6 +63,8 @@ impl node::Renderable for Text {
     self.node_ref
   }
 
+  fn mount(ctx: node::MountContext) {}
+
   fn paint(ctx: mut paint::Context) {
     ctx.write_measured(0, 0, self.content, self.width_measurer, text_style: self.text_style)
   }

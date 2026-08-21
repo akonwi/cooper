@@ -46,6 +46,8 @@ impl node::Renderable for ScrollView {
     self.node_ref
   }
 
+  fn mount(ctx: node::MountContext) {}
+
   fn paint(ctx: mut paint::Context) {}
 
   fn mut event(ctx: mut retained_event::Context) framework_event::EventResult {

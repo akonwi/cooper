@@ -5,149 +5,112 @@ An Ard-native retained-mode TUI framework using
 
 ## Architecture
 
-The accepted direction is documented in
+The accepted clean-break direction is documented in
 [`docs/architecture.md`](./docs/architecture.md). Read it before changing the
 framework model.
 
-Cooper is not a Vaxis binding. Ard owns widget state, layout, surfaces, event
-results, focus state, and application helpers. Direct Go interop with Vaxis is
-isolated to terminal-specific behavior.
+The persistent Node tree is the framework. The old `Widget.render() -> Surface`
+runtime, discovery rendering, route indexes, and mount reconciliation are
+superseded and are being removed rather than preserved for compatibility.
 
-## Widget contract
-
-The framework depends on mutating trait receiver contracts:
+## Renderable contract
 
 ```ard
-trait Widget {
-  fn mut init(ctx: InitContext)
-  fn render(ctx: RenderContext) Surface
+trait Renderable {
+  fn node() mut Node
+  fn mut mount(ctx: MountContext)
+  fn paint(ctx: mut PaintContext)
   fn mut event(ctx: mut EventContext) EventResult
 }
 ```
 
-- Calling a mutating trait method requires a mutable receiver reference.
-- `init` runs once per mount, immediately after an owner first appears in an
-  unpainted discovery tree. It may mutate state and start mount-scoped effects.
-- A mutating implementation cannot satisfy a non-mutating contract.
+- Every renderable owns one persistent Node.
 - A non-mutating implementation may satisfy a mutating contract.
-- `EventContext` carries one terminal event or focused-target geometry. It also
-  exposes capture/target/bubble phase, mount-scoped UI-thread dispatch,
-  propagation control, and relative focus requests.
-- Routed surfaces retain opaque `Any` references to their widget owners. The
-  runtime recovers `mut Widget` references and invokes each owner directly;
-  containers do not forward events.
+- `paint` observes retained state and writes directly into the root cell buffer.
+- `mount` runs once per structural attachment to a running root.
+- Detach cancels attachment-scoped work; reattach receives a fresh scope.
+- There is no general unmount callback.
 
 Before adopting unfamiliar Ard syntax or interop behavior, use the
 `ard-expert` sub-agent and verify the smallest shape with the current compiler.
 
 ## Architecture rules
 
+### Persistent hierarchy is authoritative
+
+Construct detached concrete renderables with application Context. Change the
+tree only through `add`, `remove`, reparent, and `destroy`. Removal permits reuse;
+destruction recursively releases resources and is permanent.
+
+Application state lives directly in long-lived Ard renderable structs. Do not
+introduce immutable widget-description rebuilding, owner discovery renders, or a
+generic external state registry.
+
 ### Ard owns framework behavior
 
-Implement widgets, surfaces, layout, cell buffers, event results, focus state,
-and application helpers in Ard. Call base Vaxis through direct Go interop. Add
-a Go companion only after a concrete capability is proven inexpressible in Ard.
+Implement Nodes, styles, cells, layout semantics, geometry, focus, events,
+scrolling, and application helpers in Ard. Direct Go interop is limited to Vaxis
+and the internal layout backend. Tess/Yoga must remain hidden behind Cooper's
+validated Ard API and be replaceable by an Ard-native implementation.
 
-### Widgets retain state
+### Paint directly
 
-Application state lives directly in long-lived Ard widget structs. Events
-mutate those widgets through `mut Widget`. Do not introduce a separate generic
-state registry or rebuild immutable widget descriptions after every event.
+Layout mutates cached Node geometry. Paint traverses persistent Nodes in child
+order into one Ard cell buffer. Vaxis only receives the completed cells and
+handles terminal diffing. Do not reintroduce compositional Surface trees.
 
-Rendering observes widget state and returns a `Surface`; it should not mutate
-widget state. The runtime performs an unpainted discovery render, directly calls
-`init` on owners that are not currently mounted, then rerenders before painting.
-Repeat discovery after every state-driven render mounts dynamically introduced
-widgets. Owners absent from the converged tree are unmounted; their
-`InitContext` cancellation signal closes, later dispatch is rejected, and
-already queued scoped actions are suppressed. Reintroducing the same retained
-widget creates a fresh mount and calls `init` again. Background work must
-cooperatively observe cancellation and dispatch before reading or mutating
-retained widget state. There is no widget `unmount` callback; cleanup outside
-framework-scoped effects remains application-owned.
+Use one frame-consistent text measurer for layout, grapheme spans, paint, and
+cursor positions. Preserve wide-cell and style invariants when clipping or
+overwriting.
 
-### Surfaces are compositional
+### Events and focus use Node references
 
-Widgets return sized, pure Ard surfaces containing cells, positioned child
-surfaces, and optional cursor information. The runtime paints the completed
-surface tree into Vaxis. Vaxis handles terminal-cell diffing.
+Derive capture/target/bubble paths, hit targets, and focus order from the
+attached Node tree and cached geometry. Revalidate every owner before delivery
+because handlers may mutate structure.
 
-Associate widget ownership with rendered children through routed positioned
-surface edges. Each routed child surface stores its retained owner opaquely as
-`Any`, avoiding the `surface` → `cooper` module cycle. Parents attach their child
-references after rendering; the runtime recovers them as `mut Widget` through
-`ard/unsafe` and uses a narrow `reflect` check to reject non-reference owners.
-Routed child indexes still identify occurrences for focus and
-geometry. Ambiguous duplicate routes are not eligible for automatic geometry
-resolution.
+`EventResult::handled` records handling but does not stop propagation. Call
+`ctx.stop_propagation()` explicitly. Wheel fallback depends on this distinction.
 
-### Layout is constraint-based
+Focus stores direct Node identity. Scrolling translates cached descendant
+geometry so paint, hit testing, cursor placement, and focus reveal agree.
 
-Parents derive child constraints, render children, and position the resulting
-surfaces. Use VXFW as prior art, not as an API that must be wrapped.
+### Effects are attachment-scoped
 
-Loose flex children preserve inherent height; `FlexFit::tight` children use
-only their bounded allocation and may shrink. Use tight flex for viewports.
+Tree mutation and retained state mutation are UI-thread-only. Background work
+must use the current `MountContext.dispatch` and cooperatively observe
+`MountContext.cancellation`.
 
-Use Ard `Int` for dimensions, coordinates, list indexes, and layout arithmetic.
-Validate non-negative sizes at constructors and boundaries. Represent
-unbounded constraints explicitly; do not use a maximum integer sentinel. Use
-the frame's `RenderContext` measurer consistently for text layout, cells, and
-cursor positions; the live runtime delegates to Vaxis's terminal-aware width.
+Detach and destroy reject later scoped posts and suppress already queued stale
+actions. Reattachment creates a fresh scope; old dispatch functions remain
+stopped forever.
 
-### Keep the runtime simple
+### Keep scheduling simple
 
-Initially redraw the complete logical surface after state changes and let Vaxis
-diff terminal cells. Add incremental layout only in response to measured
-performance problems.
+Coalesce redraw requests, compute the attached layout, and repaint the complete
+logical cell buffer. Let Vaxis diff terminal cells. Add incremental layout or
+partial paint only in response to measured problems.
 
-Derive event owner paths, focus paths, and mouse hit targets from the latest
-rendered surface tree. Deliver directly through the owner path in
-capture/target/bubble order. `EventResult::handled` records handling but does not
-stop propagation; widgets explicitly call `ctx.stop_propagation()` when needed.
+## Active cutover
 
-## Implementation milestones
+1. Implement and test attachment-scoped mount cancellation on retained Nodes.
+2. Promote `retained/` modules to canonical package paths.
+3. Rewrite every example and test against the retained API.
+4. Delete the old Surface runtime and obsolete modules.
+5. Update public documentation and run the full retained validation matrix.
 
-1. Retained `Input` as the root widget: complete.
-2. `Text`, `Column`, child surfaces, clipping, and two-pass flex allocation:
-   complete.
-3. Multiple inputs with focus routing and Tab/Shift+Tab traversal: complete.
-4. Mouse hit testing, Input click focus, retained vertical scrolling,
-   focused-descendant reveal, direct surface-owner event delivery, mount-scoped
-   widget initialization/cancellation, and asynchronous UI-thread dispatch:
-   complete.
-5. A representative asynchronous filesystem explorer now exercises responsive
-   horizontal composition, dynamic pane data, mouse input, and programmatic
-   focus. Promote broader widget APIs only from demonstrated repetition.
+This project has no compatibility constraint. Prefer deletion and a coherent
+API over aliases, adapters, or deprecation layers.
 
-## Module direction
+## API principles
 
-```text
-cooper.ard      public Widget contract and application runtime
-surface.ard     Size, Point, Constraints, Cell, Surface
-event.ard       phased event context, dispatch, and EventResult
-focus.ard       focus path discovery and traversal state
-hit.ard         clipped routed Surface hit testing and owner paths
-runtime.ard     reentrant UI-dispatch queue
-scroll.ard      retained vertical ScrollView
-text.ard        stateless Text widget
-input.ard       retained Input widget
-layout.ard      Column and flex layout
-```
-
-Module boundaries may change as later milestones expose better seams.
-
-## API design principles
-
-- Prefer one configurable function or widget over many single-purpose variants.
-- Use Ard enums and structs in public APIs; convert Go-specific encodings at the
-  backend boundary.
-- Match upstream Vaxis terminal behavior unless a deliberate Cooper choice is
-  documented.
-- Keep direct Go imports narrow and terminal-specific operations separate from
-  headless framework behavior.
-- This project is not compatibility constrained yet. Prefer a clean API over
-  aliases and deprecation layers.
+- Prefer one configurable primitive over many single-purpose variants.
+- Primitive constructors are infallible; application/terminal creation may fail.
+- Use Ard-native public structs and enums; convert backend values at boundaries.
+- Keep application-specific loaders, searchable lists, and virtualization local
+  until repetition demonstrates a stable reusable shape.
+- Use Ard `Int` for geometry and indexes, and validate non-negative sizes at
+  constructors and boundaries.
 
 ## Verification
 
@@ -155,37 +118,38 @@ Run formatting and compiler validation on every changed Ard file.
 
 Prefer deterministic headless tests for:
 
-- event-driven widget mutation;
-- surface cell snapshots;
-- constraints, flex allocation, and clipping;
-- focus order and hit paths.
+- persistent identity and hierarchy mutation;
+- attachment cancellation and stale dispatch suppression;
+- layout, clipping, scrolling, and translated geometry;
+- direct cell painting, styles, wide spans, and cursor placement;
+- focus order, hit testing, and phased event routing;
+- recursive destruction and Context ownership.
 
-Use PTY tests for terminal integration:
+Use PTY tests for terminal startup/restoration, keyboard and mouse input,
+scrolling, resize, cursor placement, asynchronous dispatch, explorer behavior,
+and clean quit.
 
-- startup and terminal restoration;
-- keyboard input and resize events;
-- cursor placement;
-- clean quit.
-
-Current validation entry points:
+Current validation entry points during cutover:
 
 ```sh
-ard test test
+ard-dev test test
 
 cd examples
-python3 test_input.py
-python3 test_form.py
-python3 test_scroll_form.py
-python3 test_async.py
-python3 test_explorer.py
-python3 test_retained.py
-python3 test_retained_explorer.py
+ARD=ard-dev python3 test_input.py
+ARD=ard-dev python3 test_form.py
+ARD=ard-dev python3 test_scroll_form.py
+ARD=ard-dev python3 test_async.py
+ARD=ard-dev python3 test_explorer.py
+ARD=ard-dev python3 test_retained.py
+ARD=ard-dev python3 test_retained_explorer.py
+
+cd ..
+ARD=ard-dev python3 benchmarks/run.py
 ```
 
 ## References
 
 - Architecture: [`docs/architecture.md`](./docs/architecture.md)
 - Vaxis source: `../vaxis` or `go.rockorager.dev/vaxis`
-- VXFW prior art: `../vaxis/vxfw`
 - Ard compiler source: `../ard`
 - Ard docs: <https://ard.run>

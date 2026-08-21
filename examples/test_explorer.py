@@ -39,17 +39,20 @@ def main():
         wait_for(fd, screen, "Retained Explorer")
         wait_for(fd, screen, "ard.toml")
 
+        wide_details = screen.line(4).find("Details")
+        assert wide_details >= 40, "details pane was not horizontally positioned"
+        first_label = screen.line(4)[:wide_details].lstrip("> ").rstrip()
+        second_label = screen.line(5)[:wide_details].lstrip("> ").rstrip()
+        assert first_label and second_label, "explorer did not expose two retained rows"
+
         # Initial focus belongs to Input; Tab traverses to the first persistent row.
         send(fd, "\t")
         send(fd, "\r")
-        wait_for(fd, screen, "Selected: ard-out/")
+        wait_for(fd, screen, f"Selected: {first_label}")
 
         # Mouse targeting uses the retained row geometry directly.
         click(fd, col=2, row=5)
-        wait_for(fd, screen, "Selected: ard.toml")
-
-        wide_details = screen.line(4).find("Details")
-        assert wide_details >= 40, "details pane was not horizontally positioned"
+        wait_for(fd, screen, f"Selected: {second_label}")
         resize(fd, rows=8, cols=60)
         for _ in range(5):
             read_for(fd, screen, 0.1)

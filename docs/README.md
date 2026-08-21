@@ -4,9 +4,10 @@ Design notes and investigations for Cooper's Ard-native retained-mode framework.
 
 ## Architecture
 
-- [architecture.md](./architecture.md) — retained widgets, constraints and
-  surfaces, event routing, runtime responsibilities, verification strategy, and
-  implementation milestones.
+- [architecture.md](./architecture.md) — accepted retained render tree,
+  lifecycle, layout, painting, event routing, and runtime responsibilities.
+- [api-proposal.md](./api-proposal.md) — proposed imperative application API,
+  its OpenTUI lineage, and intentionally deferred extension surfaces.
 
 ## Conventions
 

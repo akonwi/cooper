@@ -1,4 +1,5 @@
 use ard/testing
+use ard/unsafe
 
 use cooper/cooper
 use cooper/event
@@ -21,6 +22,8 @@ private struct FixedHeight {
 }
 
 impl cooper::Widget for HeightProbe {
+  fn init(ctx: cooper::InitContext) {}
+
   fn render(ctx: surface::RenderContext) surface::Surface {
     surface::Surface{
       size: surface::Size{width: 1, height: self.height},
@@ -36,6 +39,8 @@ impl cooper::Widget for HeightProbe {
 }
 
 impl cooper::Widget for FixedHeight {
+  fn init(ctx: cooper::InitContext) {}
+
   fn render(ctx: surface::RenderContext) surface::Surface {
     let child = self.child.render(
       ctx.for_child(
@@ -54,24 +59,12 @@ impl cooper::Widget for FixedHeight {
       children: [],
       focusable: false,
     }
-    output.add_widget_child(0, 0, 0, child)
+    output.add_widget_child(self.child, 0, 0, 0, child)
     output.@
   }
 
   fn mut event(ctx: mut event::EventContext) event::EventResult {
-    if ctx.kind == event::ContextKind::mount or ctx.kind == event::ContextKind::unmount {
-      self.child.event(ctx)
-    } else {
-      let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
-      if route_index != 0 {
-        event::EventResult::ignored
-      } else {
-        ctx.enter_child()
-        let result = self.child.event(ctx)
-        ctx.leave_child()
-        result
-      }
-    }
+    event::EventResult::ignored
   }
 }
 
@@ -87,16 +80,49 @@ private fn wheel(view: mut scroll::ScrollView, tree: surface::Surface, button: v
     vaxis::Mouse{Button: button, EventType: vaxis::EventPress},
     route: target.route,
     route_sizes: target.route_sizes,
+    route_origins: target.route_origins,
     target_size: target.size,
   )
+  ctx.begin_delivery(0, event::EventPhase::bubble)
   let _ = view.event(ctx)
   ctx.@
 }
 
 private fn reveal(view: mut cooper::Widget, tree: surface::Surface, route: [Int]) event::EventResult {
-  let geometry = hit::route_geometry(tree, route).expect("focus route geometry")
+  let owned = mut tree
+  owned.set_owner(view)
+  let geometry = hit::route_geometry(owned.@, route).expect("focus route geometry")
   let ctx = mut event::focus_context(route, geometry.route_sizes, geometry.route_origins)
-  view.event(ctx)
+  mut depth = geometry.owners.size()
+  while depth > 0 {
+    depth =- 1
+    match geometry.owners.at(depth) {
+      owner => {
+        match owner {
+          opaque => {
+            match unsafe::cast<mut cooper::Widget>(opaque) {
+              widget => {
+                let phase = match depth == geometry.owners.size() - 1 {
+                  true => event::EventPhase::target,
+                  false => event::EventPhase::bubble,
+                }
+                ctx.begin_delivery(depth, phase)
+                let result = widget.event(ctx)
+                ctx.record_result(result)
+              },
+              _ => (),
+            }
+          },
+          _ => (),
+        }
+      },
+      _ => (),
+    }
+  }
+  match ctx.was_handled() {
+    true => event::EventResult::handled,
+    false => event::EventResult::ignored,
+  }
 }
 
 test fn scroll_view_clips_and_scrolls_its_unbounded_child() Void!Str {
@@ -269,6 +295,7 @@ test fn reveal_saturates_extreme_target_origin_differences() Void!Str {
     [surface::Size{width: 1, height: 2}, surface::Size{width: 1, height: 10}],
     [surface::Point{x: 0, y: math::MinInt}, surface::Point{x: 0, y: math::MaxInt}],
   )
+  down_ctx.begin_delivery(0, event::EventPhase::bubble)
   let down = view.event(down_ctx)
   try testing::assert(down == event::EventResult::handled, "Expected an extreme target below to scroll")
   try testing::assert(view.requested_offset == 8, "Expected the maximum bounded offset")
@@ -278,6 +305,7 @@ test fn reveal_saturates_extreme_target_origin_differences() Void!Str {
     [surface::Size{width: 1, height: 2}, surface::Size{width: 1, height: 10}],
     [surface::Point{x: 0, y: math::MaxInt}, surface::Point{x: 0, y: math::MinInt}],
   )
+  up_ctx.begin_delivery(0, event::EventPhase::bubble)
   let up = view.event(up_ctx)
   try testing::assert(up == event::EventResult::handled, "Expected an extreme target above to scroll")
   testing::assert(view.requested_offset == 0, "Expected the minimum bounded offset")
@@ -333,15 +361,20 @@ test fn repeated_reveal_geometry_settles_nested_scroll_views() Void!Str {
   )
 }
 
-test fn scroll_view_routes_non_wheel_events_to_its_retained_child() Void!Str {
+test fn scroll_view_surface_exposes_retained_child_for_direct_events() Void!Str {
   let field = mut input::new(value: "", placeholder: "Type")
-  let view = mut scroll::new(field)
+  let view = scroll::new(field)
+  let rendered = render(view, 1)
+  let child = rendered.children.at(0).expect("scroll child")
+  let opaque = child.surface.owner.expect("opaque child owner")
+  let target = unsafe::cast<mut cooper::Widget>(opaque).expect("mutable child Widget")
   let ctx = mut event::terminal_context(vaxis::Key{Text: "x"}, route: [0])
+  ctx.begin_delivery(1, event::EventPhase::target)
 
-  let result = view.event(ctx)
+  let result = target.event(ctx)
 
   try testing::assert(result == event::EventResult::handled, "Expected the child to handle typing")
-  testing::assert(field.value == "x", "Expected retained child mutation through the ScrollView")
+  testing::assert(field.value == "x", "Expected retained child mutation through the Surface")
 }
 
 test fn scrolled_hit_testing_returns_focus_and_coordinates_in_content_space() Void!Str {

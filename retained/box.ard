@@ -1,0 +1,50 @@
+use cooper/retained/context
+use cooper/retained/geometry
+use cooper/retained/node
+use cooper/retained/paint
+use cooper/retained/style
+
+struct Box {
+  node_ref: mut node::Node,
+}
+
+fn new(ctx: mut context::Context, initial_style: style::Style?) mut Box {
+  let retained = ctx.create_node(initial_style.or(style::new()))
+  let box = mut Box{node_ref: retained}
+  retained.bind(box)
+  box
+}
+
+impl node::Renderable for Box {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn paint(ctx: mut paint::Context) {}
+}
+
+impl Box {
+  fn mut add(child: mut node::Renderable) {
+    self.node_ref.add(child.node())
+  }
+
+  fn mut remove(child: mut node::Renderable) Bool {
+    self.node_ref.remove(child.node())
+  }
+
+  fn mut set_style(next: style::Style) {
+    self.node_ref.apply_style(next)
+  }
+
+  fn layout() geometry::Geometry {
+    self.node_ref.layout()
+  }
+
+  fn child_count() Int {
+    self.node_ref.child_count()
+  }
+
+  fn mut destroy() {
+    self.node_ref.destroy()
+  }
+}

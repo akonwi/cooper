@@ -13,9 +13,9 @@ test fn hit_test_returns_nested_route_focus_and_local_geometry() Void!Str {
   let field = mut surface::blank(4, 1)
   field.accept_focus()
   let section = mut surface::blank(6, 2)
-  section.add_widget_child(3, 1, 1, field.@)
+  section.add_widget_child("test-owner", 3, 1, 1, field.@)
   let root = mut surface::blank(10, 4)
-  root.add_widget_child(2, 2, 1, section.@)
+  root.add_widget_child("test-owner", 2, 2, 1, section.@)
 
   let found = hit::hit_test(root.@, surface::Point{x: 4, y: 2}).expect("nested field hit")
 
@@ -38,9 +38,9 @@ test fn hit_test_returns_nested_route_focus_and_local_geometry() Void!Str {
 test fn route_geometry_resolves_clipped_descendants_through_decorations() Void!Str {
   let field = surface::blank(4, 1)
   let section = mut surface::blank(6, 4)
-  section.add_widget_child(3, 1, 2, field)
+  section.add_widget_child("test-owner", 3, 1, 2, field)
   let decoration = mut surface::blank(8, 8)
-  decoration.add_widget_child(2, 2, 3, section.@)
+  decoration.add_widget_child("test-owner", 2, 2, 3, section.@)
   let root = mut surface::blank(10, 2)
   root.add_child(0, -2, decoration.@)
 
@@ -66,8 +66,8 @@ test fn route_geometry_rejects_ambiguous_occurrences() Void!Str {
   let first = surface::blank(1, 1)
   let second = surface::blank(1, 1)
   let root = mut surface::blank(2, 1)
-  root.add_widget_child(7, 0, 0, first)
-  root.add_widget_child(7, 1, 0, second)
+  root.add_widget_child("test-owner", 7, 0, 0, first)
+  root.add_widget_child("test-owner", 7, 1, 0, second)
 
   testing::assert(
     not hit::route_geometry(root.@, [7]).is_some(),
@@ -78,7 +78,7 @@ test fn route_geometry_rejects_ambiguous_occurrences() Void!Str {
 test fn route_geometry_saturates_extreme_nested_origins() Void!Str {
   let positive_target = surface::blank(1, 1)
   let positive_decoration = mut surface::blank(1, 1)
-  positive_decoration.add_widget_child(1, 0, 1, positive_target)
+  positive_decoration.add_widget_child("test-owner", 1, 0, 1, positive_target)
   let positive_root = mut surface::blank(1, 1)
   positive_root.add_child(0, math::MaxInt, positive_decoration.@)
   let positive = hit::route_geometry(positive_root.@, [1]).expect("positive geometry")
@@ -89,7 +89,7 @@ test fn route_geometry_saturates_extreme_nested_origins() Void!Str {
 
   let negative_target = surface::blank(1, 1)
   let negative_decoration = mut surface::blank(1, 1)
-  negative_decoration.add_widget_child(2, 0, -1, negative_target)
+  negative_decoration.add_widget_child("test-owner", 2, 0, -1, negative_target)
   let negative_root = mut surface::blank(1, 1)
   negative_root.add_child(0, math::MinInt, negative_decoration.@)
   let negative = hit::route_geometry(negative_root.@, [2]).expect("negative geometry")
@@ -105,8 +105,8 @@ test fn hit_test_visits_later_painted_children_first() Void!Str {
   let upper = mut surface::blank(3, 1)
   upper.accept_focus()
   let root = mut surface::blank(3, 1)
-  root.add_widget_child(0, 0, 0, lower.@)
-  root.add_widget_child(1, 0, 0, upper.@)
+  root.add_widget_child("test-owner", 0, 0, 0, lower.@)
+  root.add_widget_child("test-owner", 1, 0, 0, upper.@)
 
   let found = hit::hit_test(root.@, surface::Point{x: 1, y: 0}).expect("overlapping hit")
 
@@ -118,9 +118,9 @@ test fn hit_test_clips_descendants_to_every_ancestor() Void!Str {
   let overflowing = mut surface::blank(4, 1)
   overflowing.accept_focus()
   let clipped_parent = mut surface::blank(2, 1)
-  clipped_parent.add_widget_child(0, 0, 0, overflowing.@)
+  clipped_parent.add_widget_child("test-owner", 0, 0, 0, overflowing.@)
   let root = mut surface::blank(5, 1)
-  root.add_widget_child(1, 1, 0, clipped_parent.@)
+  root.add_widget_child("test-owner", 1, 1, 0, clipped_parent.@)
 
   let visible = hit::hit_test(root.@, surface::Point{x: 2, y: 0}).expect("visible descendant")
   try assert_path(visible.route, [1, 0], "Expected the visible routed descendant")
@@ -136,7 +136,7 @@ test fn decorative_surfaces_preserve_widget_route_and_focus_owner() Void!Str {
   field.accept_focus()
   field.add_child(1, 0, decoration.@)
   let root = mut surface::blank(4, 1)
-  root.add_widget_child(5, 0, 0, field.@)
+  root.add_widget_child("test-owner", 5, 0, 0, field.@)
 
   let found = hit::hit_test(root.@, surface::Point{x: 2, y: 0}).expect("decorative hit")
 

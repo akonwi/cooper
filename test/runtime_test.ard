@@ -1,4 +1,5 @@
 use ard/testing
+use ard/unsafe
 
 use cooper/cooper
 use cooper/event
@@ -7,23 +8,20 @@ use cooper/runtime
 use cooper/surface
 use go:go.rockorager.dev/vaxis
 
-private struct LifecycleProbe {
-  mounts: Int,
-  unmounts: Int,
+private struct EventProbe {
+  calls: Int,
 }
 
-impl cooper::Widget for LifecycleProbe {
+impl cooper::Widget for EventProbe {
+  fn init(ctx: cooper::InitContext) {}
+
   fn render(ctx: surface::RenderContext) surface::Surface {
     surface::blank(1, 1)
   }
 
   fn mut event(ctx: mut event::EventContext) event::EventResult {
-    match ctx.kind {
-      event::ContextKind::mount => { self.mounts =+ 1 },
-      event::ContextKind::unmount => { self.unmounts =+ 1 },
-      _ => (),
-    }
-    event::EventResult::ignored
+    self.calls =+ 1
+    event::EventResult::handled
   }
 }
 
@@ -57,11 +55,10 @@ test fn context_constructors_select_one_context_kind() Void!Str {
     [surface::Size{width: 1, height: 1}],
     [surface::Point{x: 0, y: 0}],
   )
-  let mount = event::lifecycle_context(event::LifecycleEvent::mount)
 
   try testing::assert(terminal.kind == event::ContextKind::terminal, "Expected terminal context")
   try testing::assert(focus.kind == event::ContextKind::focus_target, "Expected focus context")
-  testing::assert(mount.kind == event::ContextKind::mount, "Expected lifecycle context")
+  testing::assert(terminal.phase == event::EventPhase::idle, "Expected delivery to assign a phase")
 }
 
 test fn dispatch_queue_accepts_reentrant_actions_without_blocking() Void!Str {
@@ -95,16 +92,47 @@ test fn stopped_dispatch_queue_rejects_and_discards_work() Void!Str {
   testing::assert(not queue.pop().is_some(), "Expected shutdown to discard queued actions")
 }
 
-test fn column_broadcasts_lifecycle_to_retained_children() Void!Str {
-  let first = mut LifecycleProbe{mounts: 0, unmounts: 0}
-  let second = mut LifecycleProbe{mounts: 0, unmounts: 0}
-  let column = mut layout::column([layout::flex_item(first), layout::flex_item(second)])
-  let mount_ctx = mut event::lifecycle_context(event::LifecycleEvent::mount)
-  let unmount_ctx = mut event::lifecycle_context(event::LifecycleEvent::unmount)
+test fn mount_scope_rejects_and_suppresses_stale_dispatch() Void!Str {
+  let queue = mut runtime::new_dispatch_queue()
+  let base = fn(action: fn()) Void!event::DispatchError {
+    if queue.post(action) {
+      Result::ok(())
+    } else {
+      Result::err(event::DispatchError::stopped)
+    }
+  }
+  let scope = runtime::new_mount_scope()
+  let dispatch = runtime::scoped_dispatch(base, scope)
+  mut called = false
 
-  let _ = column.event(mount_ctx)
-  let _ = column.event(unmount_ctx)
+  let accepted = dispatch(fn() {
+    called = true
+  })
+  scope.stop()
+  (queue.pop().expect("queued scoped action"))()
+  let rejected = dispatch(fn() {
+    called = true
+  })
 
-  try testing::assert(first.mounts == 1 and second.mounts == 1, "Expected one mount per child")
-  testing::assert(first.unmounts == 1 and second.unmounts == 1, "Expected one unmount per child")
+  try testing::assert(accepted.is_ok(), "Expected dispatch while mounted")
+  try testing::assert(scope.is_cancelled(), "Expected stopped mount cancellation")
+  try testing::assert(rejected.is_err(), "Expected dispatch rejection after unmount")
+  testing::assert(not called, "Expected unmount to suppress queued retained-state mutation")
+}
+
+test fn routed_surface_retains_opaque_mutable_widget_owner() Void!Str {
+  let probe = mut EventProbe{calls: 0}
+  let column = mut layout::column([layout::flex_item(probe)])
+  let rendered = column.render(
+    surface::RenderContext{constraints: surface::bounded(max_width: 10, max_height: 10)},
+  )
+  let child = rendered.children.at(0).expect("rendered child")
+  let opaque = child.surface.owner.expect("opaque child owner")
+  let recovered = unsafe::cast<mut cooper::Widget>(opaque).expect("mutable Widget owner")
+  let ctx = mut event::terminal_context(vaxis::Key{Text: "x"})
+
+  let result = recovered.event(ctx)
+
+  try testing::assert(result == event::EventResult::handled, "Expected direct owner invocation")
+  testing::assert(probe.calls == 1, "Expected mutation through retained opaque owner")
 }

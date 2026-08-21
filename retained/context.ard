@@ -1,0 +1,110 @@
+use cooper/event
+use cooper/retained/node
+use cooper/retained/style
+use go:go.rockorager.dev/vaxis
+
+private fn no_op() {}
+
+private fn stopped_dispatch(action: fn()) Void!event::DispatchError {
+  Result::err(event::DispatchError::stopped)
+}
+
+private fn default_width(text: Str) Int {
+  mut width = 0
+  for character in vaxis::Characters(text) {
+    width = width + character.Width
+  }
+  width
+}
+
+struct Context {
+  next_id: Int,
+  context_token: mut node::ContextToken,
+  nodes: [mut node::Node],
+  destroyed: Bool,
+  request_render: fn(),
+  width_measurer: fn(Str) Int,
+  dispatch: fn(fn()) Void!event::DispatchError,
+}
+
+fn new(
+  request_render: fn()?,
+  width_measurer: (fn(Str) Int)?,
+  dispatch: (fn(fn()) Void!event::DispatchError)?,
+) mut Context {
+  (mut Context{
+    next_id: 1,
+    context_token: node::new_context_token(),
+    nodes: [],
+    destroyed: false,
+    request_render: request_render.or(no_op),
+    width_measurer: width_measurer.or(default_width),
+    dispatch: dispatch.or(stopped_dispatch),
+  })
+}
+
+impl Context {
+  fn mut create_node(initial_style: style::Style) mut node::Node {
+    if self.destroyed {
+      panic("cannot create a retained Node from a destroyed Context")
+    }
+    let created = node::create(
+      self.next_id,
+      self.context_token,
+      initial_style,
+      self.request_render,
+      fn(destroyed_id: Int) {
+        self.release(destroyed_id)
+      },
+    )
+    self.next_id =+ 1
+    self.nodes.push(created)
+    created
+  }
+
+  private fn mut release(destroyed_id: Int) {
+    let retained = mut List::new<mut node::Node>()
+    for current in self.nodes {
+      if current.id != destroyed_id {
+        retained.push(current)
+      }
+    }
+    self.nodes = retained.@
+  }
+
+  fn node_count() Int {
+    self.nodes.size()
+  }
+
+  fn is_destroyed() Bool {
+    self.destroyed
+  }
+
+  fn measure_text(text: Str) Int {
+    self.width_measurer(text)
+  }
+
+  fn mut compute_layout(root: mut node::Renderable, width: Int, height: Int) {
+    if self.destroyed {
+      panic("cannot lay out with a destroyed Context")
+    }
+    if root.node().context_token != self.context_token {
+      panic("cannot lay out a retained tree from another Context")
+    }
+    if root.node().parent.is_some() {
+      panic("only a detached retained root can be laid out")
+    }
+    root.node().compute(width, height)
+  }
+
+  fn mut destroy() {
+    if not self.destroyed {
+      self.destroyed = true
+      let owned = self.nodes
+      self.nodes = []
+      for retained in owned {
+        retained.destroy()
+      }
+    }
+  }
+}

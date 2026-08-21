@@ -176,6 +176,8 @@ private fn normalize(rendered: surface::Surface) surface::Surface {
 }
 
 impl cooper::Widget for Column {
+  fn init(ctx: cooper::InitContext) {}
+
   fn render(ctx: surface::RenderContext) surface::Surface {
     let measured = mut List::new<MeasuredItem>()
     let height_limit = nonnegative(ctx.constraints.max_height.or(math::MaxInt))
@@ -266,37 +268,14 @@ impl cooper::Widget for Column {
     }
     mut y = 0
     for rendered, index in rendered_children {
-      output.add_widget_child(index, 0, y, rendered)
+      let item = self.children.at(index).expect("rendered column child owner")
+      output.add_widget_child(item.widget, index, 0, y, rendered)
       y = saturating_add(y, rendered.size.height, math::MaxInt)
     }
     output.@
   }
 
   fn mut event(ctx: mut event::EventContext) event::EventResult {
-    match ctx.kind {
-      event::ContextKind::mount => {
-        for item in self.children {
-          let _ = item.widget.event(ctx)
-        }
-        event::EventResult::ignored
-      },
-      event::ContextKind::unmount => {
-        mut index = self.children.size()
-        while index > 0 {
-          index =- 1
-          let item = self.children.at(index).expect("reverse lifecycle child")
-          let _ = item.widget.event(ctx)
-        }
-        event::EventResult::ignored
-      },
-      _ => {
-        let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
-        let item = try self.children.at(route_index) -> _ { event::EventResult::ignored }
-        ctx.enter_child()
-        let result = item.widget.event(ctx)
-        ctx.leave_child()
-        result
-      },
-    }
+    event::EventResult::ignored
   }
 }

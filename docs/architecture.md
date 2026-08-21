@@ -25,23 +25,35 @@ A widget is a long-lived Ard struct that owns its state:
 
 ```ard
 trait Widget {
+  fn mut init(ctx: InitContext)
   fn render(ctx: RenderContext) Surface
   fn mut event(ctx: mut EventContext) EventResult
 }
 ```
 
-`render` observes state and produces a surface. It does not mutate widget
-state. `event` may mutate the retained widget and therefore requires
-`mut Widget` access. `EventContext` identifies a terminal event, a focused
-route-geometry pass, or a mount/unmount lifecycle signal; widgets opt into only
-the cases they need. Stateless implementations may satisfy the mutating
-contract with a non-mutating method.
+`init` and `event` may mutate the retained widget and therefore require
+`mut Widget` access. `render` observes state and produces a surface without
+mutating widget state. Stateless implementations may satisfy mutating contracts
+with non-mutating methods.
 
-Mount lifecycle signals are broadcast through retained ownership before the
-first render. Unmount signals are broadcast in reverse ownership order during
-shutdown. This permits widget-local startup and cleanup without adding required
-lifecycle methods to `Widget`; an effect decorator may make these cases more
-ergonomic later.
+The runtime performs an unpainted discovery render and recovers opaque widget
+owners. An owner absent from the current mount table receives a fresh mount
+scope and `init` in root-first frontier order. The mount handle enters the table
+only after infallible initialization returns. The runtime rerenders after each
+frontier and repeats to a bounded fixed point, allowing parent initialization to
+expose more widgets before painting.
+
+After convergence, owners absent from the final tree are unmounted and removed
+from the table. Reintroducing the same retained widget therefore creates a new
+mount and calls `init` again. `InitContext.dispatch` is scoped to one mount:
+unmount rejects future posts and suppresses accepted actions that have not yet
+executed. Its cancellation receiver also closes so framework-started effects can
+stop cooperatively. Constructor failures occur before a widget can become an
+owner; `init` itself remains infallible.
+
+Cooper has no widget `unmount` callback and cannot forcibly terminate arbitrary
+fibers started outside its cancellation protocol. External resources and
+non-cooperative work remain application concerns.
 
 This depends on mutating trait receiver contracts added to Ard in
 [ard#416](https://github.com/akonwi/ard/issues/416) and
@@ -55,18 +67,25 @@ Ard `Surface` containing:
 - its measured cell size;
 - its cell buffer;
 - positioned child surfaces with optional retained-child route indexes;
+- an optional opaque reference to the retained widget owner;
 - optional cursor information;
 - whether the current surface is a focus target.
 
 The runtime paints the completed surface into the Vaxis root window. Vaxis
 remains responsible for efficiently diffing terminal cells.
 
-A surface does not need a widget to upcast its own `self`. Parents associate
-positioned child surfaces with indexes in their retained child lists. These
-routed edges form structural widget paths for focus and event delivery while
-decorative surface edges remain transparent. A routed index must identify one
-child occurrence per owner and frame; ambiguous duplicate occurrences are not
-eligible for automatic geometry resolution.
+`surface.ard` cannot import the `Widget` trait without creating a module cycle,
+so `Surface.owner` stores `Any?`. Parents attach retained mutable child
+references when adding routed child surfaces, and the runtime recovers
+`mut Widget` through `ard/unsafe`. A narrow `reflect` check rejects non-reference
+owners before identity tracking. The root owner is attached at the runtime
+boundary. This is a temporary type-erasure seam until Ard supports the cyclic
+relationship directly.
+
+Routed indexes continue to identify structural occurrences for focus and
+geometry while decorative edges remain transparent. A routed index must
+identify one child occurrence per owner and frame; ambiguous duplicate
+occurrences are not eligible for automatic geometry resolution.
 
 A focusable widget marks its root surface as focusable. `RenderContext` carries
 an optional focus path relative to the current widget, so rendering can observe
@@ -116,12 +135,18 @@ Incremental layout is considered only after profiling demonstrates a need.
 ### Event routing grows from the rendered tree
 
 The final unflattened surface tree is the authoritative frame snapshot. The
-runtime collects focusable routed paths in depth-first order and retains one
-optional current path. Tab and Shift+Tab move through that order with wrapping.
-A routed `EventContext` starts at the root; each retained container consumes
-one path segment and delivers terminal or focus geometry to exactly one child.
-It never probes siblings for the first handler. Lifecycle contexts have no
-target route and containers broadcast them to all retained children.
+runtime collects focusable routed paths and opaque owner paths in depth-first
+order and retains one optional current focus path. Tab and Shift+Tab move
+through that order with wrapping.
+
+For a focused or hit-tested occurrence, the runtime recovers each retained
+owner and delivers directly in three phases: capture from root to the target
+parent, target, then bubble back to root. Containers do not forward contexts to
+children. `EventResult::handled` records that some owner handled the event but
+does not stop traversal; explicit `ctx.stop_propagation()` does. This separation
+allows ancestors to observe handled child updates and provides VXFW-style
+fallback behavior such as scrolling only when a deeper target declined a wheel
+event.
 
 `RenderContext` carries the same relative path during rendering. An empty path
 means the current widget is focused, a non-empty path identifies a focused
@@ -160,18 +185,22 @@ to current bounds without discarding it, so temporarily shrunken content
 restores the requested position if it grows again. Tight column flex supplies
 adaptive bounded viewport height.
 
-`EventContext.dispatch` is a function field for background-to-UI work. The live
-runtime backs it with an Ard-owned, mutex-protected action queue and a coalesced
-wake channel selected beside Vaxis events. Posting is nonblocking and reentrant;
-the UI loop executes bounded batches serially and redraws afterward. Shutdown
-stops and clears the queue before unmount, so late dispatch returns
-`DispatchError::stopped`. Background work may capture retained references but
-must only read or mutate them inside the dispatched closure. Rendering never
-starts asynchronous work.
+`EventContext.dispatch` is a function field for background-to-UI work. Before
+each owner invocation, the runtime scopes it to that owner's current mount. The
+live runtime backs scoped dispatch with an Ard-owned, mutex-protected action
+queue and a coalesced wake channel selected beside Vaxis events. Posting is
+nonblocking and reentrant; the UI loop executes bounded batches serially and
+redraws afterward. Unmount rejects or suppresses stale scoped work; shutdown
+stops and clears the base queue.
+Background work may capture retained references but must only read or mutate
+them inside dispatched closures. `InitContext` exposes a mount-scoped version of
+the function plus a cancellation receiver. Effects must select or poll that
+receiver cooperatively; arbitrary `async::start` fibers cannot be forcibly
+terminated.
 
-Capture and bubble phases are otherwise deferred until a concrete widget
-requires them. Pixel coordinates remain terminal-relative when cell coordinates
-are localized until terminal cell-pixel geometry is exposed.
+Cell coordinates are localized for each owner during phased mouse delivery.
+Pixel coordinates remain terminal-relative until terminal cell-pixel geometry
+is exposed.
 
 ## Runtime loop
 
@@ -182,18 +211,20 @@ The application runtime owns:
 - the latest rendered surface tree;
 - focus state;
 - redraw and quit requests;
-- lifecycle and asynchronous update channels.
+- currently mounted owner identities and their cancellation scopes;
+- the asynchronous update queue.
 
 At a high level it:
 
-1. opens Vaxis and creates the UI-dispatch channel;
-2. broadcasts mount lifecycle context before rendering;
-3. renders and paints the root under current terminal constraints;
+1. opens Vaxis and creates the UI-dispatch queue;
+2. performs an unpainted render and mounts newly discovered widget owners;
+3. rerenders to a mount fixed point, unmounts absent owners, and paints the frame;
 4. selects between terminal events and accepted UI actions;
-5. routes contexts or executes dispatched state mutation;
-6. renders again when requested;
-7. broadcasts unmount lifecycle context in reverse ownership order;
-8. stops dispatch and restores the terminal.
+5. derives an owner path and performs capture/target/bubble delivery, or executes
+   dispatched state mutation;
+6. reconciles mounts again whenever state requests a render;
+7. cancels all mount scopes and stops dispatch;
+8. restores the terminal.
 
 Cleanup must remain explicit and reliable on both normal exit and errors.
 
@@ -204,10 +235,10 @@ The module boundaries may evolve, but Cooper separates these responsibilities:
 ```text
 cooper.ard      public Widget contract and application runtime
 surface.ard     Size, Point, Constraints, Cell, Surface
-event.ard       unified context, lifecycle, dispatch, and EventResult
+event.ard       phased context, dispatch, propagation, and EventResult
 focus.ard       focus path discovery, reconciliation, and traversal
-hit.ard         clipped routed Surface hit testing
-runtime.ard     reentrant UI-dispatch queue
+hit.ard         clipped hit testing, geometry, and opaque owner paths
+runtime.ard     reentrant UI-dispatch queue and mount cancellation scopes
 scroll.ard      retained vertical ScrollView
 text.ard        stateless Text widget
 input.ard       retained Input widget
@@ -229,7 +260,7 @@ Use PTY smoke tests for the integration boundary:
 - keyboard input;
 - resize handling;
 - cursor placement;
-- asynchronous dispatch and lifecycle cleanup;
+- initialization-started asynchronous dispatch;
 - programmatic focus and representative filesystem navigation;
 - clean quit.
 
@@ -243,7 +274,8 @@ Use PTY smoke tests for the integration boundary:
    cursor ownership, and wrapped focus traversal.
 4. **Interaction — complete:** routed mouse hit testing, click focus, Input
    cursor placement, retained vertical scrolling, focused-descendant reveal,
-   lifecycle contexts, and asynchronous UI dispatch.
+   opaque surface-owner event delivery, mount-scoped widget initialization and
+   cancellation, and asynchronous UI dispatch.
 5. **Library surface — in progress:** the asynchronous filesystem explorer
    exercises responsive horizontal composition, dynamic pane data, mouse
    selection, stale-safe loading, and programmatic focus. Promote reusable APIs
@@ -253,6 +285,5 @@ Use PTY smoke tests for the integration boundary:
 
 - wrapping `vaxis/ui` or VXFW wholesale;
 - a broad widget catalog;
-- capture/bubble event phases;
 - incremental render-tree reconciliation;
 - graphics protocols or embedded terminals.

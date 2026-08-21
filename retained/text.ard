@@ -1,0 +1,80 @@
+use cooper/retained/context
+use cooper/retained/geometry
+use cooper/retained/node
+use cooper/retained/paint
+use cooper/retained/style
+use go:go.rockorager.dev/vaxis
+
+struct Text {
+  node_ref: mut node::Node,
+  content: Str,
+  width_measurer: fn(Str) Int,
+}
+
+private fn constrained(value: Float32, available: Float32, mode: node::MeasureMode) Float32 {
+  match mode {
+    node::MeasureMode::exactly => available,
+    node::MeasureMode::at_most => {
+      if value > available {
+        available
+      } else {
+        value
+      }
+    },
+    node::MeasureMode::undefined => value,
+  }
+}
+
+fn new(ctx: mut context::Context, content: Str, initial_style: style::Style?) mut Text {
+  let retained = ctx.create_node(initial_style.or(style::new()))
+  let text = mut Text{
+    node_ref: retained,
+    content: content,
+    width_measurer: ctx.width_measurer,
+  }
+  retained.bind(text)
+  retained.set_measure(fn(input: node::MeasureInput) node::MeasureSize {
+    mut measured_width = 0
+    for character in vaxis::Characters(text.content) {
+      measured_width = measured_width + text.width_measurer(character.Grapheme)
+    }
+    let desired_width = Float32::from(measured_width)
+    let desired_height: Float32 = 1.0
+    node::MeasureSize{
+      width: constrained(desired_width, input.width, input.width_mode),
+      height: constrained(desired_height, input.height, input.height_mode),
+    }
+  })
+  text
+}
+
+impl node::Renderable for Text {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn paint(ctx: mut paint::Context) {
+    ctx.write_measured(0, 0, self.content, self.width_measurer)
+  }
+}
+
+impl Text {
+  fn mut set_content(content: Str) {
+    if self.content != content {
+      self.content = content
+      self.node_ref.mark_measure_dirty()
+    }
+  }
+
+  fn layout() geometry::Geometry {
+    self.node_ref.layout()
+  }
+
+  fn mut set_style(next: style::Style) {
+    self.node_ref.apply_style(next)
+  }
+
+  fn mut destroy() {
+    self.node_ref.destroy()
+  }
+}

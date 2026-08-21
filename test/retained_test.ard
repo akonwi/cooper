@@ -1,0 +1,345 @@
+use ard/testing
+
+use cooper/retained/box
+use cooper/retained/context
+use cooper/retained/geometry
+use cooper/retained/paint
+use cooper/retained/style
+use cooper/retained/text
+
+private fn fixed(width: Int, height: Int) style::Style {
+  style::new(width: style::cells(width), height: style::cells(height), shrink: 0.0)
+}
+
+test fn retained_tree_mirrors_explicit_children_into_yoga() Void!Str {
+  mut render_requests = 0
+  let ctx = context::new(fn() {
+    render_requests =+ 1
+  })
+  let root = box::new(
+    ctx,
+    initial_style: style::new(
+      flex_direction: style::Direction::row,
+      width: style::cells(30),
+      height: style::cells(10),
+    ),
+  )
+  let fixed_child = box::new(ctx, initial_style: fixed(10, 10))
+  let flexible_child = box::new(ctx, initial_style: style::new(height: style::cells(10), grow: 1.0))
+
+  root.add(fixed_child)
+  root.add(flexible_child)
+  ctx.compute_layout(root, 30, 10)
+
+  let fixed_layout = fixed_child.layout().local
+  let flexible_layout = flexible_child.layout().local
+  try testing::assert(root.child_count() == 2, "Expected two retained children")
+  try testing::assert(fixed_layout.x == 0 and fixed_layout.width == 10, "Expected fixed child width")
+  try testing::assert(flexible_layout.x == 10, "Expected retained sibling position")
+  try testing::assert(flexible_layout.width == 20, "Expected Yoga flex growth")
+  try testing::assert(render_requests > 0, "Expected retained mutations to request rendering")
+  ctx.destroy()
+  testing::assert(root.node().is_destroyed(), "Expected Context-owned native cleanup")
+}
+
+test fn retained_remove_detaches_and_readd_preserves_identity() Void!Str {
+  let ctx = context::new()
+  let root = box::new(ctx)
+  let child = box::new(ctx, initial_style: fixed(4, 2))
+  let child_node = child.node()
+
+  root.add(child)
+  let removed = root.remove(child)
+
+  try testing::assert(removed, "Expected explicit child removal")
+  try testing::assert(root.child_count() == 0, "Expected retained child list removal")
+  try testing::assert(not child_node.parent.is_some(), "Expected parent reference to clear")
+
+  root.add(child)
+
+  try testing::assert(root.child_count() == 1, "Expected detached renderable to be reusable")
+  try testing::assert(child.node() == child_node, "Expected concrete renderable identity to persist")
+  try testing::assert(child_node.parent.is_some(), "Expected parent reference after reattachment")
+  ctx.destroy()
+  testing::assert(child_node.is_destroyed(), "Expected Context cleanup after reattachment")
+}
+
+test fn retained_text_measurement_updates_without_rebuilding_identity() Void!Str {
+  mut render_requests = 0
+  let ctx = context::new(fn() {
+    render_requests =+ 1
+  })
+  let root = box::new(
+    ctx,
+    initial_style: style::new(
+      width: style::cells(80),
+      height: style::cells(10),
+      align_items: style::Align::start,
+    ),
+  )
+  let label = text::new(ctx, content: "abc")
+  let original_node = label.node()
+  root.add(label)
+
+  ctx.compute_layout(root, 80, 10)
+  let initial = label.layout().local
+  try testing::assert(initial.width == 3 and initial.height == 1, "Expected intrinsic text measurement")
+
+  label.set_content("abcdef")
+  ctx.compute_layout(root, 80, 10)
+  let updated = label.layout().local
+
+  try testing::assert(updated.width == 6, "Expected dirty text remeasurement")
+  try testing::assert(label.node() == original_node, "Expected text updates to retain node identity")
+  try testing::assert(render_requests > 0, "Expected text mutation to request rendering")
+
+  root.destroy()
+  ctx.destroy()
+  testing::assert(label.node().is_destroyed(), "Expected measured node cleanup")
+}
+
+test fn retained_tree_paints_directly_into_one_clipped_buffer() Void!Str {
+  let ctx = context::new()
+  let root_style = mut style::new(
+    width: style::cells(3),
+    height: style::cells(1),
+    align_items: style::Align::start,
+  )
+  root_style.overflow = style::Overflow::hidden
+  let root = box::new(ctx, initial_style: root_style.@)
+  let label = text::new(ctx, content: "hello", initial_style: style::new(shrink: 0.0))
+  root.add(label)
+  ctx.compute_layout(root, 3, 1)
+
+  let buffer = paint::new_buffer(5, 1)
+  root.node().paint(buffer)
+
+  try testing::assert(
+    buffer.cell_at(0, 0).expect("first cell").grapheme == "h",
+    "Expected direct text paint",
+  )
+  try testing::assert(
+    buffer.cell_at(2, 0).expect("third cell").grapheme == "l",
+    "Expected visible clipped text",
+  )
+  try testing::assert(
+    buffer.cell_at(3, 0).expect("outside clip").grapheme == " ",
+    "Expected ancestor clipping",
+  )
+
+  root.destroy()
+  ctx.destroy()
+  testing::assert(label.node().is_destroyed(), "Expected painted child cleanup")
+}
+
+test fn retained_node_overflow_clips_its_own_paint() Void!Str {
+  let ctx = context::new()
+  let root = box::new(
+    ctx,
+    initial_style: style::new(
+      width: style::cells(5),
+      height: style::cells(1),
+      align_items: style::Align::start,
+    ),
+  )
+  let label_style = mut style::new(width: style::cells(3), shrink: 0.0)
+  label_style.overflow = style::Overflow::hidden
+  let label = text::new(ctx, content: "hello", initial_style: label_style.@)
+  root.add(label)
+  ctx.compute_layout(root, 5, 1)
+  let buffer = paint::new_buffer(5, 1)
+  root.node().paint(buffer)
+
+  try testing::assert(
+    buffer.cell_at(2, 0).expect("inside own clip").grapheme == "l",
+    "Expected own clipped content",
+  )
+  try testing::assert(
+    buffer.cell_at(3, 0).expect("outside own clip").grapheme == " ",
+    "Expected own overflow clipping",
+  )
+  ctx.destroy()
+  testing::assert(label.node().is_destroyed(), "Expected clipped text cleanup")
+}
+
+test fn retained_display_none_skips_paint() Void!Str {
+  let ctx = context::new()
+  let hidden_style = mut style::new(width: style::cells(1), height: style::cells(1))
+  hidden_style.display = style::Display::none
+  let label = text::new(ctx, content: "x", initial_style: hidden_style.@)
+  ctx.compute_layout(label, 1, 1)
+  let buffer = paint::new_buffer(1, 1)
+  label.node().paint(buffer)
+
+  try testing::assert(
+    buffer.cell_at(0, 0).expect("hidden cell").grapheme == " ",
+    "Expected display none to skip paint",
+  )
+  ctx.destroy()
+  testing::assert(label.node().is_destroyed(), "Expected hidden text cleanup")
+}
+
+test fn retained_zero_bounds_remain_bounded() Void!Str {
+  let ctx = context::new()
+  let root = box::new(ctx)
+
+  ctx.compute_layout(root, 0, 0)
+  let layout = root.layout().local
+
+  try testing::assert(layout.width == 0 and layout.height == 0, "Expected bounded zero layout")
+  ctx.destroy()
+  testing::assert(root.node().is_destroyed(), "Expected zero-sized tree cleanup")
+}
+
+test fn retained_text_uses_one_measurer_for_layout_and_paint() Void!Str {
+  let ctx = context::new(width_measurer: fn(_text: Str) Int {
+    2
+  })
+  let root = box::new(
+    ctx,
+    initial_style: style::new(
+      width: style::cells(4),
+      height: style::cells(1),
+      align_items: style::Align::start,
+    ),
+  )
+  let label = text::new(ctx, content: "ab")
+  root.add(label)
+  ctx.compute_layout(root, 4, 1)
+  let buffer = paint::new_buffer(4, 1)
+  root.node().paint(buffer)
+
+  try testing::assert(label.layout().local.width == 4, "Expected per-grapheme measured layout width")
+  try testing::assert(
+    buffer.cell_at(0, 0).expect("first lead").width == 2,
+    "Expected matching first painted width",
+  )
+  try testing::assert(
+    buffer.cell_at(1, 0).expect("first continuation").width == 0,
+    "Expected first continuation",
+  )
+  try testing::assert(
+    buffer.cell_at(2, 0).expect("second lead").width == 2,
+    "Expected matching second painted width",
+  )
+  try testing::assert(
+    buffer.cell_at(3, 0).expect("second continuation").width == 0,
+    "Expected second continuation",
+  )
+  try testing::assert(
+    not label.node().can_have_children(),
+    "Expected measured text to be a retained leaf",
+  )
+  ctx.destroy()
+  testing::assert(label.node().is_destroyed(), "Expected custom measured text cleanup")
+}
+
+test fn retained_style_replacement_clears_spacing() Void!Str {
+  let ctx = context::new()
+  let padded = mut style::new(
+    width: style::cells(10),
+    height: style::cells(3),
+    align_items: style::Align::start,
+  )
+  padded.padding = style::edges(style::cells(2))
+  let root = box::new(ctx, initial_style: padded.@)
+  let child = box::new(ctx, initial_style: fixed(1, 1))
+  root.add(child)
+  ctx.compute_layout(root, 10, 3)
+  try testing::assert(child.layout().local.x == 2, "Expected initial retained padding")
+
+  root.set_style(
+    style::new(width: style::cells(10), height: style::cells(3), align_items: style::Align::start),
+  )
+  ctx.compute_layout(root, 10, 3)
+
+  try testing::assert(child.layout().local.x == 0, "Expected undefined padding to reset to zero")
+  ctx.destroy()
+  testing::assert(root.node().is_destroyed(), "Expected spacing test cleanup")
+}
+
+test fn retained_paint_clears_partially_clipped_wide_spans() Void!Str {
+  let buffer = paint::new_buffer(3, 1)
+  let bounds = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 3,
+    height: 1,
+  }
+  let full = mut paint::Context{
+    buffer: buffer,
+    bounds: bounds,
+    clip: bounds,
+  }
+  full.write(0, 0, "abc")
+
+  let narrow = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+  }
+  let clipped = mut paint::Context{
+    buffer: buffer,
+    bounds: bounds,
+    clip: narrow,
+  }
+  clipped.write(0, 0, "界")
+
+  try testing::assert(
+    buffer.cell_at(0, 0).expect("visible clipped part").grapheme == " ",
+    "Expected visible partial span clearing",
+  )
+  testing::assert(
+    buffer.cell_at(1, 0).expect("outside clip").grapheme == "b",
+    "Expected outside clip preservation",
+  )
+}
+
+test fn retained_paint_clears_overwritten_wide_spans() Void!Str {
+  let buffer = paint::new_buffer(3, 1)
+  let bounds = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 3,
+    height: 1,
+  }
+  let ctx = mut paint::Context{
+    buffer: buffer,
+    bounds: bounds,
+    clip: bounds,
+  }
+
+  ctx.write(0, 0, "界")
+  ctx.write(1, 0, "x")
+
+  try testing::assert(
+    buffer.cell_at(0, 0).expect("cleared lead").grapheme == " ",
+    "Expected wide lead clearing",
+  )
+  try testing::assert(
+    buffer.cell_at(1, 0).expect("replacement").grapheme == "x",
+    "Expected replacement cell",
+  )
+  testing::assert(
+    buffer.cell_at(1, 0).expect("replacement width").width == 1,
+    "Expected no orphan continuation",
+  )
+}
+
+test fn retained_destroy_releases_the_owned_tree() Void!Str {
+  let ctx = context::new()
+  let root = box::new(ctx)
+  let child = box::new(ctx)
+  root.add(child)
+
+  root.destroy()
+
+  try testing::assert(root.node().is_destroyed(), "Expected root destruction")
+  try testing::assert(child.node().is_destroyed(), "Expected recursive child destruction")
+  try testing::assert(root.child_count() == 0, "Expected destroyed tree to release children")
+  try testing::assert(ctx.node_count() == 0, "Expected individual destruction to deregister the subtree")
+  ctx.destroy()
+  try testing::assert(ctx.is_destroyed(), "Expected Context to become terminal")
+  testing::assert(root.node().is_destroyed(), "Expected idempotent Context cleanup")
+}

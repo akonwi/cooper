@@ -1,0 +1,431 @@
+use ard/unsafe
+
+use go:cooper/ffi/retainedyoga as yoga
+use cooper/retained/geometry
+use cooper/retained/paint
+use cooper/retained/style
+
+enum MeasureMode {
+  undefined,
+  exactly,
+  at_most,
+}
+
+struct MeasureInput {
+  width: Float32,
+  width_mode: MeasureMode,
+  height: Float32,
+  height_mode: MeasureMode,
+}
+
+struct MeasureSize {
+  width: Float32,
+  height: Float32,
+}
+
+trait Renderable {
+  fn node() mut Node
+
+  fn paint(ctx: mut paint::Context)
+}
+
+struct ContextToken {
+  marker: Int,
+}
+
+fn new_context_token() mut ContextToken {
+  (mut ContextToken{marker: 1})
+}
+
+struct Node {
+  id: Int,
+  context_token: mut ContextToken,
+  owner: Any?,
+  parent: (mut Node)?,
+  children: [mut Node],
+  yoga: mut yoga::Node,
+  current_style: style::Style,
+  geometry: geometry::Geometry,
+  destroyed: Bool,
+  measured: Bool,
+  request_render: fn(),
+  on_destroy: fn(Int),
+}
+
+private fn measure_mode(code: Int) MeasureMode {
+  match code {
+    1 => MeasureMode::exactly,
+    2 => MeasureMode::at_most,
+    _ => MeasureMode::undefined,
+  }
+}
+
+private fn to_value(length: style::Length) yoga::Value {
+  let kind = match length.kind {
+    style::LengthKind::undefined => 0,
+    style::LengthKind::auto => 1,
+    style::LengthKind::cells => 2,
+    style::LengthKind::percent => 3,
+    style::LengthKind::max_content => 4,
+    style::LengthKind::fit_content => 5,
+    style::LengthKind::stretch => 6,
+  }
+  yoga::Value{Kind: kind, Value: length.value}
+}
+
+private fn direction_code(direction: style::Direction) Int {
+  match direction {
+    style::Direction::column => 0,
+    style::Direction::column_reverse => 1,
+    style::Direction::row => 2,
+    style::Direction::row_reverse => 3,
+  }
+}
+
+private fn align_code(align: style::Align) Int {
+  match align {
+    style::Align::auto => 0,
+    style::Align::stretch => 1,
+    style::Align::baseline => 2,
+    style::Align::start => 3,
+    style::Align::end => 4,
+    style::Align::center => 5,
+    style::Align::space_between => 6,
+    style::Align::space_around => 7,
+    style::Align::space_evenly => 8,
+  }
+}
+
+private fn justify_code(justify: style::Justify) Int {
+  match justify {
+    style::Justify::start => 0,
+    style::Justify::end => 1,
+    style::Justify::center => 2,
+    style::Justify::space_between => 3,
+    style::Justify::space_around => 4,
+    style::Justify::space_evenly => 5,
+  }
+}
+
+private fn wrap_code(wrap: style::Wrap) Int {
+  match wrap {
+    style::Wrap::no_wrap => 0,
+    style::Wrap::wrap => 1,
+    style::Wrap::wrap_reverse => 2,
+  }
+}
+
+private fn position_code(position: style::Position) Int {
+  match position {
+    style::Position::static => 0,
+    style::Position::relative => 1,
+    style::Position::absolute => 2,
+  }
+}
+
+private fn overflow_code(overflow: style::Overflow) Int {
+  match overflow {
+    style::Overflow::visible => 0,
+    style::Overflow::hidden => 1,
+    style::Overflow::scroll => 2,
+  }
+}
+
+private fn display_code(display: style::Display) Int {
+  match display {
+    style::Display::flex => 0,
+    style::Display::contents => 1,
+    style::Display::none => 2,
+  }
+}
+
+private fn to_edges(edges: style::Edges) yoga::Edges {
+  yoga::Edges{
+    Top: to_value(edges.top),
+    Right: to_value(edges.right),
+    Bottom: to_value(edges.bottom),
+    Left: to_value(edges.left),
+  }
+}
+
+private fn to_backend_style(value: style::Style) yoga::Style {
+  yoga::Style{
+    Display: display_code(value.display),
+    Direction: direction_code(value.direction),
+    AlignItems: align_code(value.align_items),
+    AlignSelf: align_code(value.align_self),
+    Justify: justify_code(value.justify),
+    Wrap: wrap_code(value.wrap),
+    Position: position_code(value.position),
+    Overflow: overflow_code(value.overflow),
+    Width: to_value(value.width),
+    Height: to_value(value.height),
+    MinWidth: to_value(value.min_width),
+    MinHeight: to_value(value.min_height),
+    MaxWidth: to_value(value.max_width),
+    MaxHeight: to_value(value.max_height),
+    Basis: to_value(value.basis),
+    Grow: value.grow,
+    Shrink: value.shrink,
+    Padding: to_edges(value.padding),
+    Margin: to_edges(value.margin),
+    Gap: to_value(value.gap),
+  }
+}
+
+fn create(
+  id: Int,
+  context_token: mut ContextToken,
+  initial_style: style::Style,
+  request_render: fn(),
+  on_destroy: fn(Int),
+) mut Node {
+  let empty = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  }
+  let node = mut Node{
+    id: id,
+    context_token: context_token,
+    owner: Maybe::new<Any>(),
+    parent: Maybe::new<mut Node>(),
+    children: [],
+    yoga: yoga::NewNode(),
+    current_style: initial_style,
+    geometry: geometry::Geometry{local: empty, screen: empty},
+    destroyed: false,
+    measured: false,
+    request_render: request_render,
+    on_destroy: on_destroy,
+  }
+  node.apply_style(initial_style)
+  node
+}
+
+impl Node {
+  fn mut bind(owner: Any) {
+    if self.owner.is_some() {
+      panic("retained Node owner is already bound")
+    }
+    self.owner = Maybe::new<Any>(owner)
+  }
+
+  fn owner_as_renderable() mut Renderable {
+    let opaque = self.owner.expect("retained Node owner")
+    unsafe::cast<mut Renderable>(opaque).expect("retained Node owner must be mut Renderable")
+  }
+
+  fn child_count() Int {
+    self.children.size()
+  }
+
+  fn can_have_children() Bool {
+    not self.measured and not self.destroyed
+  }
+
+  fn layout() geometry::Geometry {
+    self.geometry
+  }
+
+  fn is_destroyed() Bool {
+    self.destroyed
+  }
+
+  fn style() style::Style {
+    self.current_style
+  }
+
+  fn mut apply_style(next: style::Style) {
+    if self.destroyed {
+      panic("cannot style a destroyed retained Node")
+    }
+    self.yoga.Apply(to_backend_style(next))
+    self.current_style = next
+    self.request_render()
+  }
+
+  fn mut add(child: mut Node) {
+    if self.destroyed or child.destroyed {
+      panic("cannot attach a destroyed retained Node")
+    }
+    if self.measured {
+      panic("a measured retained Node cannot contain children")
+    }
+    if self.context_token != child.context_token {
+      panic("retained Nodes from different contexts cannot be attached")
+    }
+    if self == child {
+      panic("a retained Node cannot contain itself")
+    }
+
+    mut ancestor = Maybe::new<mut Node>(self)
+    mut checking = true
+    while checking {
+      match ancestor {
+        current => {
+          if current == child {
+            panic("attaching this retained Node would create a cycle")
+          }
+          ancestor = current.parent
+        },
+        _ => { checking = false },
+      }
+    }
+
+    match child.parent {
+      current_parent => current_parent.remove(child),
+      _ => (),
+    }
+
+    child.parent = Maybe::new<mut Node>(self)
+    self.children.push(child)
+    self.yoga.AppendChild(child.yoga)
+    self.request_render()
+  }
+
+  fn mut remove(child: mut Node) Bool {
+    if self.destroyed {
+      panic("cannot detach from a destroyed retained Node")
+    }
+    mut removed = false
+    let retained = mut List::new<mut Node>()
+    for current in self.children {
+      if current == child {
+        removed = true
+      } else {
+        retained.push(current)
+      }
+    }
+
+    if removed {
+      self.children = retained.@
+      self.yoga.RemoveChild(child.yoga)
+      child.parent = Maybe::new<mut Node>()
+      self.request_render()
+    }
+    removed
+  }
+
+  fn mut set_measure(measure: fn(MeasureInput) MeasureSize) {
+    if self.destroyed {
+      panic("cannot measure a destroyed retained Node")
+    }
+    if self.children.size() > 0 {
+      panic("a retained Node with children cannot become measured")
+    }
+    self.measured = true
+    self.yoga.SetMeasureFunc(
+      fn(width: Float32, width_mode: Int, height: Float32, height_mode: Int) yoga::Size {
+        let measured = measure(
+          MeasureInput{
+            width: width,
+            width_mode: measure_mode(width_mode),
+            height: height,
+            height_mode: measure_mode(height_mode),
+          },
+        )
+        yoga::Size{Width: measured.width, Height: measured.height}
+      },
+    )
+  }
+
+  fn mut mark_measure_dirty() {
+    if self.destroyed or not self.measured {
+      panic("only a live measured retained Node can be marked dirty")
+    }
+    self.yoga.MarkDirty()
+    self.request_render()
+  }
+
+  fn mut compute(width: Int, height: Int) {
+    if self.destroyed {
+      panic("cannot lay out a destroyed retained Node")
+    }
+    if width < 0 or height < 0 {
+      panic("retained layout bounds must be non-negative")
+    }
+    self.yoga.Compute(width, height)
+    self.sync_geometry(0, 0)
+  }
+
+  private fn mut sync_geometry(parent_x: Int, parent_y: Int) {
+    let computed = self.yoga.Layout()
+    let local = geometry::Rect{
+      x: computed.Left,
+      y: computed.Top,
+      width: computed.Width,
+      height: computed.Height,
+    }
+    let screen = geometry::Rect{
+      x: parent_x + local.x,
+      y: parent_y + local.y,
+      width: local.width,
+      height: local.height,
+    }
+    self.geometry = geometry::Geometry{local: local, screen: screen}
+
+    for child in self.children {
+      child.sync_geometry(screen.x, screen.y)
+    }
+  }
+
+  fn paint(buffer: mut paint::Buffer) {
+    let root_clip = geometry::Rect{
+      x: 0,
+      y: 0,
+      width: buffer.width,
+      height: buffer.height,
+    }
+    self.paint_with_clip(buffer, root_clip)
+  }
+
+  private fn paint_with_clip(buffer: mut paint::Buffer, inherited_clip: geometry::Rect) {
+    if (not self.destroyed) and self.current_style.display != style::Display::none {
+      let bounds = self.geometry.screen
+      let node_clip = match self.current_style.overflow {
+        style::Overflow::hidden => geometry::intersect(inherited_clip, bounds),
+        style::Overflow::scroll => geometry::intersect(inherited_clip, bounds),
+        _ => inherited_clip,
+      }
+      let ctx = mut paint::Context{
+        buffer: buffer,
+        bounds: bounds,
+        clip: node_clip,
+      }
+      self.owner_as_renderable().paint(ctx)
+
+      let child_clip = node_clip
+      for child in self.children {
+        child.paint_with_clip(buffer, child_clip)
+      }
+    }
+  }
+
+  fn mut destroy() {
+    if self.destroyed {
+      ()
+    } else {
+      match self.parent {
+        current_parent => {
+          let _ = current_parent.remove(self)
+        },
+        _ => (),
+      }
+      self.destroyed = true
+
+      let owned = self.children
+      self.children = []
+      for child in owned {
+        self.yoga.RemoveChild(child.yoga)
+        child.parent = Maybe::new<mut Node>()
+        child.destroy()
+      }
+      self.owner = Maybe::new<Any>()
+      self.yoga.Free()
+      self.on_destroy(self.id)
+      self.request_render()
+    }
+  }
+}

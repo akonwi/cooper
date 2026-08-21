@@ -112,18 +112,6 @@ private fn content_wrapper(child: surface::Surface, width: Int) surface::Surface
 }
 
 impl ScrollView {
-  private fn mut route_child(ctx: mut event::EventContext) event::EventResult {
-    let route_index = try ctx.next_route_index() -> _ { event::EventResult::ignored }
-    if route_index != 0 {
-      event::EventResult::ignored
-    } else {
-      ctx.enter_child()
-      let result = self.child.event(ctx)
-      ctx.leave_child()
-      result
-    }
-  }
-
   private fn mut ensure_focused_target_visible(ctx: mut event::EventContext) event::EventResult {
     let viewport = try ctx.current_route_size() -> _ { event::EventResult::ignored }
     let content = try ctx.next_route_size() -> _ { event::EventResult::ignored }
@@ -205,6 +193,8 @@ impl ScrollView {
 }
 
 impl cooper::Widget for ScrollView {
+  fn init(ctx: cooper::InitContext) {}
+
   fn render(ctx: surface::RenderContext) surface::Surface {
     let child = normalize(self.child.render(child_context(ctx)))
     let width = ctx.constraints.constrain_width(child.size.width)
@@ -218,44 +208,25 @@ impl cooper::Widget for ScrollView {
       children: [],
       focusable: false,
     }
-    viewport.add_widget_child(0, 0, -offset, content)
+    viewport.add_widget_child(self.child, 0, 0, -offset, content)
     viewport.@
   }
 
   fn mut event(ctx: mut event::EventContext) event::EventResult {
-    match ctx.kind {
-      event::ContextKind::mount => {
-        let _ = self.child.event(ctx)
-        event::EventResult::ignored
-      },
-      event::ContextKind::unmount => {
-        let _ = self.child.event(ctx)
-        event::EventResult::ignored
-      },
-      _ => {
-        if ctx.kind == event::ContextKind::focus_target {
-          let child_result = self.route_child(ctx)
-          let visibility_result = self.ensure_focused_target_visible(ctx)
-          if child_result == event::EventResult::handled or visibility_result == event::EventResult::handled {
-            event::EventResult::handled
-          } else {
-            event::EventResult::ignored
-          }
-        } else {
-          let received = try ctx.terminal_event -> _ { event::EventResult::ignored }
-          match received {
-            vaxis::Mouse(mouse) => {
-              let child_result = self.route_child(ctx)
-              if child_result == event::EventResult::handled {
-                child_result
-              } else {
-                self.scroll_wheel(ctx, mouse)
-              }
-            },
-            _ => self.route_child(ctx),
-          }
-        }
-      },
+    let can_handle = ctx.phase == event::EventPhase::target or ctx.phase == event::EventPhase::bubble
+    if not can_handle {
+      event::EventResult::ignored
+    } else if ctx.kind == event::ContextKind::focus_target {
+      self.ensure_focused_target_visible(ctx)
+    } else if ctx.was_handled() {
+      // A deeper target handled the event, so do not apply viewport fallback.
+      event::EventResult::ignored
+    } else {
+      let received = try ctx.terminal_event -> _ { event::EventResult::ignored }
+      match received {
+        vaxis::Mouse(mouse) => self.scroll_wheel(ctx, mouse),
+        _ => event::EventResult::ignored,
+      }
     }
   }
 }

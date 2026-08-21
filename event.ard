@@ -6,17 +6,17 @@ enum EventResult {
   handled,
 }
 
-enum LifecycleEvent {
-  mount,
-  unmount,
-}
-
 enum ContextKind {
   idle,
   terminal,
   focus_target,
-  mount,
-  unmount,
+}
+
+enum EventPhase {
+  idle,
+  capture,
+  target,
+  bubble,
 }
 
 enum DispatchError {
@@ -29,6 +29,7 @@ private fn stopped_dispatch(action: fn()) Void!DispatchError {
 
 struct EventContext {
   kind: ContextKind,
+  phase: EventPhase,
   redraw: Bool,
   quit: Bool,
   route: [Int]?,
@@ -38,7 +39,10 @@ struct EventContext {
   target_size: surface::Size?,
   width_measurer: (fn(Str) Int)?,
   terminal_event: vaxis::Event?,
+  source_terminal_event: vaxis::Event?,
   requested_focus: [Int]?,
+  handled: Bool,
+  propagation_stopped: Bool,
   dispatch: fn(fn()) Void!DispatchError,
 }
 
@@ -107,6 +111,7 @@ private fn context(
 ) EventContext {
   EventContext{
     kind: kind,
+    phase: EventPhase::idle,
     redraw: false,
     quit: false,
     route: copy_route(route),
@@ -116,7 +121,10 @@ private fn context(
     target_size: resolved_target_size(target_size, route_sizes),
     width_measurer: width_measurer,
     terminal_event: terminal_event,
+    source_terminal_event: terminal_event,
     requested_focus: Maybe::new<[Int]>(),
+    handled: false,
+    propagation_stopped: false,
     dispatch: dispatch.or(stopped_dispatch),
   }
 }
@@ -138,6 +146,7 @@ fn terminal_context(
   received: vaxis::Event,
   route: [Int]?,
   route_sizes: [surface::Size]?,
+  route_origins: [surface::Point]?,
   target_size: surface::Size?,
   width_measurer: (fn(Str) Int)?,
   dispatch: (fn(fn()) Void!DispatchError)?,
@@ -146,7 +155,7 @@ fn terminal_context(
     ContextKind::terminal,
     route,
     route_sizes,
-    Maybe::new<[surface::Point]>(),
+    route_origins,
     target_size,
     width_measurer,
     Maybe::new<vaxis::Event>(received),
@@ -172,23 +181,6 @@ fn focus_context(
   )
 }
 
-fn lifecycle_context(lifecycle: LifecycleEvent, dispatch: (fn(fn()) Void!DispatchError)?) EventContext {
-  let kind = match lifecycle {
-    LifecycleEvent::mount => ContextKind::mount,
-    LifecycleEvent::unmount => ContextKind::unmount,
-  }
-  context(
-    kind,
-    Maybe::new<[Int]>(),
-    Maybe::new<[surface::Size]>(),
-    Maybe::new<[surface::Point]>(),
-    Maybe::new<surface::Size>(),
-    Maybe::new<fn(Str) Int>(),
-    Maybe::new<vaxis::Event>(),
-    dispatch,
-  )
-}
-
 impl EventContext {
   fn mut request_redraw() {
     self.redraw = true
@@ -206,10 +198,15 @@ impl EventContext {
     self.quit
   }
 
-  fn mut retarget(route: [Int], route_sizes: [surface::Size]) {
+  fn mut set_dispatch(dispatch: fn(fn()) Void!DispatchError) {
+    self.dispatch = dispatch
+  }
+
+  fn mut retarget(route: [Int], route_sizes: [surface::Size], route_origins: [surface::Point]) {
     self.route = copy_route(route)
     self.route_depth = 0
     self.route_sizes = copy_sizes(route_sizes)
+    self.route_origins = copy_origins(route_origins)
     self.target_size = match route_sizes.at(route_sizes.size() - 1) {
       size => Maybe::new<surface::Size>(size),
       _ => Maybe::new<surface::Size>(),
@@ -219,6 +216,7 @@ impl EventContext {
   fn mut localize_terminal(received: vaxis::Event) {
     self.kind = ContextKind::terminal
     self.terminal_event = Maybe::new<vaxis::Event>(received)
+    self.source_terminal_event = Maybe::new<vaxis::Event>(received)
   }
 
   // Requests a focus path relative to the widget currently handling this context.
@@ -267,13 +265,52 @@ impl EventContext {
     }
   }
 
-  fn mut enter_child() {
-    self.route_depth =+ 1
+  fn mut begin_delivery(depth: Int, phase: EventPhase) {
+    self.route_depth = depth
+    self.phase = phase
+    match self.source_terminal_event {
+      received => {
+        match received {
+          vaxis::Mouse(mouse) => {
+            match self.current_route_origin() {
+              origin => {
+                self.terminal_event = Maybe::new<vaxis::Event>(
+                  vaxis::Mouse{
+                    Button: mouse.Button,
+                    Row: mouse.Row - origin.y,
+                    Col: mouse.Col - origin.x,
+                    EventType: mouse.EventType,
+                    Modifiers: mouse.Modifiers,
+                    XPixel: mouse.XPixel,
+                    YPixel: mouse.YPixel,
+                  },
+                )
+              },
+              _ => (),
+            }
+          },
+          _ => (),
+        }
+      },
+      _ => (),
+    }
   }
 
-  fn mut leave_child() {
-    if self.route_depth > 0 {
-      self.route_depth =- 1
+  fn mut record_result(result: EventResult) {
+    if result == EventResult::handled {
+      self.handled = true
     }
+  }
+
+  fn was_handled() Bool {
+    self.handled
+  }
+
+  fn mut stop_propagation() {
+    self.propagation_stopped = true
+  }
+
+  fn propagation_is_stopped() Bool {
+    self.propagation_stopped
   }
 }

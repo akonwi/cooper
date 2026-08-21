@@ -2,7 +2,10 @@ module cooper
 
 go 1.26
 
-require go.rockorager.dev/vaxis v0.16.0
+require (
+	github.com/AnatoleLucet/tess v1.0.0-rc.2
+	go.rockorager.dev/vaxis v0.16.0
+)
 
 replace go.rockorager.dev/vaxis => ../vaxis
 

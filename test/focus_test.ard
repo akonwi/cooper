@@ -1,5 +1,7 @@
 use ard/testing
+use ard/unsafe
 
+use cooper/cooper
 use cooper/event
 use cooper/focus
 use cooper/input
@@ -14,17 +16,17 @@ private fn routed_focus_tree() surface::Surface {
   let email = mut surface::blank(1, 1)
   email.accept_focus()
   let identity = mut surface::blank(1, 2)
-  identity.add_widget_child(2, 0, 0, name.@)
-  identity.add_widget_child(4, 0, 1, email.@)
+  identity.add_widget_child("test-owner", 2, 0, 0, name.@)
+  identity.add_widget_child("test-owner", 4, 0, 1, email.@)
 
   let city = mut surface::blank(1, 1)
   city.accept_focus()
   let location = mut surface::blank(1, 1)
-  location.add_widget_child(2, 0, 0, city.@)
+  location.add_widget_child("test-owner", 2, 0, 0, city.@)
 
   let root = mut surface::blank(1, 3)
-  root.add_widget_child(2, 0, 0, identity.@)
-  root.add_widget_child(3, 0, 2, location.@)
+  root.add_widget_child("test-owner", 2, 0, 0, identity.@)
+  root.add_widget_child("test-owner", 3, 0, 2, location.@)
   root.@
 }
 
@@ -34,8 +36,8 @@ private fn two_target_tree() surface::Surface {
   let second = mut surface::blank(1, 1)
   second.accept_focus()
   let root = mut surface::blank(1, 2)
-  root.add_widget_child(2, 0, 0, first.@)
-  root.add_widget_child(4, 0, 1, second.@)
+  root.add_widget_child("test-owner", 2, 0, 0, first.@)
+  root.add_widget_child("test-owner", 4, 0, 1, second.@)
   root.@
 }
 
@@ -64,7 +66,7 @@ test fn focus_paths_deduplicate_markers_for_one_routed_occurrence() Void!Str {
   target.accept_focus()
   target.add_child(0, 0, decoration.@)
   let root = mut surface::blank(1, 1)
-  root.add_widget_child(4, 0, 0, target.@)
+  root.add_widget_child("test-owner", 4, 0, 0, target.@)
 
   let paths = focus::focusable_paths(root.@)
 
@@ -165,8 +167,8 @@ test fn focused_flatten_keeps_only_the_selected_route_cursor() Void!Str {
   second.accept_focus()
   second.show_cursor(surface::Point{x: 1, y: 0}, surface::CursorShape::beam)
   let root = mut surface::blank(4, 1)
-  root.add_widget_child(0, 0, 0, first.@)
-  root.add_widget_child(1, 2, 0, second.@)
+  root.add_widget_child("test-owner", 0, 0, 0, first.@)
+  root.add_widget_child("test-owner", 1, 2, 0, second.@)
 
   let first_focused = surface::flatten_focused(root.@, [0])
   try testing::assert(
@@ -182,7 +184,7 @@ test fn focused_flatten_keeps_only_the_selected_route_cursor() Void!Str {
   testing::assert(not none_focused.cursor.is_some(), "Expected no cursor without focus")
 }
 
-test fn nested_columns_route_render_focus_and_keyboard_to_one_input() Void!Str {
+test fn nested_columns_expose_focused_owner_for_direct_keyboard_delivery() Void!Str {
   let heading = mut text::new(content: "Fields")
   let first = mut input::new(value: "", placeholder: "First")
   let second = mut input::new(value: "", placeholder: "Second")
@@ -208,16 +210,21 @@ test fn nested_columns_route_render_focus_and_keyboard_to_one_input() Void!Str {
     "Expected the second nested Input to own the cursor",
   )
 
+  let fields_surface = rendered.children.at(1).expect("fields surface").surface
+  let input_surface = fields_surface.children.at(1).expect("second Input surface").surface
+  let owner = input_surface.owner.expect("second Input owner")
+  let target = unsafe::cast<mut cooper::Widget>(owner).expect("mutable Input Widget")
   let ctx = mut event::terminal_context(vaxis::Key{Text: "x"}, route: [1, 1])
-  let result = root.event(ctx)
-  try testing::assert(result == event::EventResult::handled, "Expected routed typing to be handled")
+  ctx.begin_delivery(2, event::EventPhase::target)
+  let result = target.event(ctx)
+  try testing::assert(result == event::EventResult::handled, "Expected direct typing to be handled")
   try testing::assert(first.value.is_empty(), "Expected the first Input to remain unchanged")
   testing::assert(second.value == "x", "Expected only the focused Input to mutate")
 }
 
 test fn focus_requests_are_relative_to_the_current_routed_widget() Void!Str {
   let ctx = mut event::terminal_context(vaxis::Key{Text: "x"}, route: [2, 3])
-  ctx.enter_child()
+  ctx.begin_delivery(1, event::EventPhase::capture)
 
   ctx.request_focus([4, 5])
 

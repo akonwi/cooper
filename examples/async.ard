@@ -8,44 +8,32 @@ use go:time
 
 struct AsyncStatus {
   message: Str,
-  started: Bool,
-  stop: Chan<Bool>,
 }
 
 fn new() AsyncStatus {
-  AsyncStatus{
-    message: "Loading asynchronously...",
-    started: false,
-    stop: Chan::new<Bool>(),
-  }
+  AsyncStatus{message: "Loading asynchronously..."}
 }
 
 impl cooper::Widget for AsyncStatus {
+  fn mut init(ctx: cooper::InitContext) {
+    async::start(fn() {
+      select {
+        ctx.cancellation.recv() => (),
+        time::After(2 * time::Second).recv() => {
+          let _ = ctx.dispatch(fn() {
+            self.message = "Loaded on the UI thread. Press Ctrl+C to quit."
+          })
+        },
+      }
+    })
+  }
+
   fn render(ctx: surface::RenderContext) surface::Surface {
     let label = text::new(content: self.message)
     label.render(ctx)
   }
-  
+
   fn mut event(ctx: mut event::EventContext) event::EventResult {
-    match ctx.kind {
-      mount => {
-        if not self.started {
-          self.started = true
-          async::start(fn() {
-            select {
-              self.stop.recv() => (),
-              time::After(2 * time::Second).recv() => {
-                ctx.dispatch(fn() {
-                  self.message = "Loaded on the UI thread. Press Ctrl+C to quit."
-                })
-              },
-            }
-          })
-        }
-      },
-      unmount => self.stop.close(),
-      _ => (),
-    }
     event::EventResult::ignored
   }
 }

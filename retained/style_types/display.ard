@@ -1,0 +1,5 @@
+enum Display {
+  flex,
+  contents,
+  none,
+}

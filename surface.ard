@@ -112,6 +112,9 @@ struct Surface {
   children: [PositionedSurface],
   cursor: Cursor?,
   focusable: Bool,
+  // Opaque retained Widget reference. Surface cannot import cooper without a
+  // module cycle; the runtime recovers mut Widget through ard/unsafe.
+  owner: Any?,
 }
 
 fn blank(width: Int, height: Int) Surface {
@@ -189,7 +192,9 @@ fn blank_cell() Cell {
 }
 
 private fn snapshot(surface: Surface) Surface {
-  let cells = mut List::map(surface.cells, fn(c) { c })
+  let cells = mut List::map(surface.cells, fn(c) {
+    c
+  })
   let children = mut List::map(surface.children, fn(c) {
     PositionedSurface{
       origin: c.origin,
@@ -203,6 +208,7 @@ private fn snapshot(surface: Surface) Surface {
     children: children.@,
     cursor: surface.cursor,
     focusable: surface.focusable,
+    owner: surface.owner,
   }
 }
 
@@ -270,7 +276,7 @@ impl Surface {
       let cell = try self.cell(origin, y) -> _ { origin }
       match cell.width == 0 {
         true => { origin =- 1 },
-        false => { searching = false }
+        false => { searching = false },
       }
     }
     origin
@@ -329,14 +335,20 @@ impl Surface {
     self.children.push(PositionedSurface{origin: Point{x: x, y: y}, surface: snapshot(child)})
   }
 
-  fn mut add_widget_child(route_index: Int, x: Int, y: Int, child: Surface) {
+  fn mut add_widget_child(owner: Any, route_index: Int, x: Int, y: Int, child: Surface) {
+    let owned = mut snapshot(child)
+    owned.set_owner(owner)
     self.children.push(
       PositionedSurface{
         origin: Point{x: x, y: y},
-        surface: snapshot(child),
+        surface: owned.@,
         route_index: route_index,
       },
     )
+  }
+
+  fn mut set_owner(owner: Any) {
+    self.owner = Maybe::new<Any>(owner)
   }
 
   fn mut accept_focus() {

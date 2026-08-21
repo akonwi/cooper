@@ -19,20 +19,23 @@ The framework depends on mutating trait receiver contracts:
 
 ```ard
 trait Widget {
+  fn mut init(ctx: InitContext)
   fn render(ctx: RenderContext) Surface
   fn mut event(ctx: mut EventContext) EventResult
 }
 ```
 
 - Calling a mutating trait method requires a mutable receiver reference.
+- `init` runs once per mount, immediately after an owner first appears in an
+  unpainted discovery tree. It may mutate state and start mount-scoped effects.
 - A mutating implementation cannot satisfy a non-mutating contract.
 - A non-mutating implementation may satisfy a mutating contract.
-- `EventContext` carries one terminal event, focused-target geometry, or a
-  mount/unmount lifecycle signal. It also exposes direct UI-thread dispatch and
-  relative focus requests.
-- Containers broadcast lifecycle signals and route terminal/focus contexts
-  through exact retained child indexes. Leaves ignore context kinds they do not
-  use.
+- `EventContext` carries one terminal event or focused-target geometry. It also
+  exposes capture/target/bubble phase, mount-scoped UI-thread dispatch,
+  propagation control, and relative focus requests.
+- Routed surfaces retain opaque `Any` references to their widget owners. The
+  runtime recovers `mut Widget` references and invokes each owner directly;
+  containers do not forward events.
 
 Before adopting unfamiliar Ard syntax or interop behavior, use the
 `ard-expert` sub-agent and verify the smallest shape with the current compiler.
@@ -52,9 +55,16 @@ mutate those widgets through `mut Widget`. Do not introduce a separate generic
 state registry or rebuild immutable widget descriptions after every event.
 
 Rendering observes widget state and returns a `Surface`; it should not mutate
-widget state. Start widget-owned asynchronous work from a mount lifecycle
-context, not from rendering. Background work must call the context's `dispatch`
-function before reading or mutating retained widget state.
+widget state. The runtime performs an unpainted discovery render, directly calls
+`init` on owners that are not currently mounted, then rerenders before painting.
+Repeat discovery after every state-driven render mounts dynamically introduced
+widgets. Owners absent from the converged tree are unmounted; their
+`InitContext` cancellation signal closes, later dispatch is rejected, and
+already queued scoped actions are suppressed. Reintroducing the same retained
+widget creates a fresh mount and calls `init` again. Background work must
+cooperatively observe cancellation and dispatch before reading or mutating
+retained widget state. There is no widget `unmount` callback; cleanup outside
+framework-scoped effects remains application-owned.
 
 ### Surfaces are compositional
 
@@ -63,11 +73,13 @@ surfaces, and optional cursor information. The runtime paints the completed
 surface tree into Vaxis. Vaxis handles terminal-cell diffing.
 
 Associate widget ownership with rendered children through routed positioned
-surface edges. Do not require a widget implementation to upcast its own `self`
-merely to construct a surface. Routed child indexes must identify one occurrence
-per owner; ambiguous duplicate routes are not eligible for automatic focused
-geometry resolution. The runtime derives focus order from the final unflattened
-tree; containers route contexts through their retained child indexes.
+surface edges. Each routed child surface stores its retained owner opaquely as
+`Any`, avoiding the `surface` → `cooper` module cycle. Parents attach their child
+references after rendering; the runtime recovers them as `mut Widget` through
+`ard/unsafe` and uses a narrow `reflect` check to reject non-reference owners.
+Routed child indexes still identify occurrences for focus and
+geometry. Ambiguous duplicate routes are not eligible for automatic geometry
+resolution.
 
 ### Layout is constraint-based
 
@@ -89,9 +101,10 @@ Initially redraw the complete logical surface after state changes and let Vaxis
 diff terminal cells. Add incremental layout only in response to measured
 performance problems.
 
-Start event delivery at the root. Add focus paths and mouse hit testing from
-the latest rendered surface tree when composition lands. Do not preemptively
-copy the full capture/target/bubble system from `vaxis/ui`.
+Derive event owner paths, focus paths, and mouse hit targets from the latest
+rendered surface tree. Deliver directly through the owner path in
+capture/target/bubble order. `EventResult::handled` records handling but does not
+stop propagation; widgets explicitly call `ctx.stop_propagation()` when needed.
 
 ## Implementation milestones
 
@@ -100,8 +113,9 @@ copy the full capture/target/bubble system from `vaxis/ui`.
    complete.
 3. Multiple inputs with focus routing and Tab/Shift+Tab traversal: complete.
 4. Mouse hit testing, Input click focus, retained vertical scrolling,
-   focused-descendant reveal, lifecycle contexts, and asynchronous UI-thread
-   dispatch: complete.
+   focused-descendant reveal, direct surface-owner event delivery, mount-scoped
+   widget initialization/cancellation, and asynchronous UI-thread dispatch:
+   complete.
 5. A representative asynchronous filesystem explorer now exercises responsive
    horizontal composition, dynamic pane data, mouse input, and programmatic
    focus. Promote broader widget APIs only from demonstrated repetition.
@@ -111,9 +125,9 @@ copy the full capture/target/bubble system from `vaxis/ui`.
 ```text
 cooper.ard      public Widget contract and application runtime
 surface.ard     Size, Point, Constraints, Cell, Surface
-event.ard       unified event context, lifecycle, dispatch, and EventResult
+event.ard       phased event context, dispatch, and EventResult
 focus.ard       focus path discovery and traversal state
-hit.ard         clipped routed Surface hit testing
+hit.ard         clipped routed Surface hit testing and owner paths
 runtime.ard     reentrant UI-dispatch queue
 scroll.ard      retained vertical ScrollView
 text.ard        stateless Text widget

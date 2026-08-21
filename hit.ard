@@ -2,9 +2,10 @@ use cooper/surface
 use go:math
 
 struct RouteGeometry {
-  // Root geometry followed by one owner for every routed edge.
+  // Root geometry and opaque owners followed by one entry per routed edge.
   route_sizes: [surface::Size],
   route_origins: [surface::Point],
+  owners: [Any?],
 }
 
 struct Hit {
@@ -15,8 +16,10 @@ struct Hit {
   // Point and size local to the routed widget occurrence.
   local: surface::Point,
   size: surface::Size,
-  // Root size followed by one owner size for every routed edge.
+  // Root geometry and opaque owners followed by one entry per routed edge.
   route_sizes: [surface::Size],
+  route_origins: [surface::Point],
+  owners: [Any?],
 }
 
 private struct Rect {
@@ -125,6 +128,23 @@ private fn append_point(points: [surface::Point], point: surface::Point) [surfac
   appended.@
 }
 
+private fn copy_owners(owners: [Any?]) [Any?] {
+  let copied = mut List::new<Any?>()
+  for owner in owners {
+    copied.push(owner)
+  }
+  copied.@
+}
+
+private fn append_owner(owners: [Any?], owner: Any?) [Any?] {
+  let appended = mut List::new<Any?>()
+  for current in owners {
+    appended.push(current)
+  }
+  appended.push(owner)
+  appended.@
+}
+
 private fn collect_route_geometry(
   tree: surface::Surface,
   origin: surface::Point,
@@ -132,11 +152,16 @@ private fn collect_route_geometry(
   depth: Int,
   route_sizes: [surface::Size],
   route_origins: [surface::Point],
+  owners: [Any?],
 ) [RouteGeometry] {
   let found = mut List::new<RouteGeometry>()
   if depth == desired.size() {
     found.push(
-      RouteGeometry{route_sizes: copy_sizes(route_sizes), route_origins: copy_points(route_origins)},
+      RouteGeometry{
+        route_sizes: copy_sizes(route_sizes),
+        route_origins: copy_points(route_origins),
+        owners: copy_owners(owners),
+      },
     )
   } else {
     let desired_index = desired.at(depth).expect("unresolved route segment")
@@ -155,13 +180,22 @@ private fn collect_route_geometry(
               depth + 1,
               append_size(route_sizes, positioned.surface.size),
               append_point(route_origins, child_origin),
+              append_owner(owners, positioned.surface.owner),
             ) {
               found.push(geometry)
             }
           }
         },
         _ => {
-          for geometry in collect_route_geometry(positioned.surface, child_origin, desired, depth, route_sizes, route_origins) {
+          for geometry in collect_route_geometry(
+            positioned.surface,
+            child_origin,
+            desired,
+            depth,
+            route_sizes,
+            route_origins,
+            owners,
+          ) {
             found.push(geometry)
           }
         },
@@ -173,7 +207,7 @@ private fn collect_route_geometry(
 
 fn route_geometry(tree: surface::Surface, route: [Int]) RouteGeometry? {
   let origin = surface::Point{x: 0, y: 0}
-  let found = collect_route_geometry(tree, origin, route, 0, [tree.size], [origin])
+  let found = collect_route_geometry(tree, origin, route, 0, [tree.size], [origin], [tree.owner])
   if found.size() == 1 {
     found.at(0)
   } else {
@@ -192,6 +226,8 @@ private fn hit_surface(
   owner_origin: surface::Point,
   owner_size: surface::Size,
   route_sizes: [surface::Size],
+  route_origins: [surface::Point],
+  owners: [Any?],
 ) Hit? {
   if not clip.contains(point) {
     Maybe::new<Hit>()
@@ -225,12 +261,16 @@ private fn hit_surface(
         mut child_owner_origin = owner_origin
         mut child_owner_size = owner_size
         mut child_route_sizes = copy_sizes(route_sizes)
+        mut child_route_origins = copy_points(route_origins)
+        mut child_owners = copy_owners(owners)
         match positioned.route_index {
           route_index => {
             child_route = append_path(route, route_index)
             child_owner_origin = child_origin
             child_owner_size = positioned.surface.size
             child_route_sizes = append_size(route_sizes, positioned.surface.size)
+            child_route_origins = append_point(route_origins, child_origin)
+            child_owners = append_owner(owners, positioned.surface.owner)
           },
           _ => (),
         }
@@ -244,6 +284,8 @@ private fn hit_surface(
           child_owner_origin,
           child_owner_size,
           child_route_sizes,
+          child_route_origins,
+          child_owners,
         ) {
           child_hit => { found = Maybe::new<Hit>(child_hit) },
           _ => (),
@@ -261,6 +303,8 @@ private fn hit_surface(
             local: surface::Point{x: point.x - owner_origin.x, y: point.y - owner_origin.y},
             size: owner_size,
             route_sizes: copy_sizes(route_sizes),
+            route_origins: copy_points(route_origins),
+            owners: copy_owners(owners),
           },
         )
       },
@@ -285,5 +329,7 @@ fn hit_test(tree: surface::Surface, point: surface::Point) Hit? {
     origin,
     tree.size,
     [tree.size],
+    [origin],
+    [tree.owner],
   )
 }

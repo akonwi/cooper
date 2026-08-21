@@ -286,6 +286,8 @@ impl Input {
 }
 
 impl cooper::Widget for Input {
+  fn init(ctx: cooper::InitContext) {}
+
   fn render(ctx: surface::RenderContext) surface::Surface {
     let display = match self.value.is_empty() {
       true => self.placeholder,

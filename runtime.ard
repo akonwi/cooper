@@ -1,6 +1,50 @@
+use cooper/event
 use go:sync
 
 private fn no_op() {}
+
+struct MountScope {
+  stopped: Bool,
+  cancellation: Chan<Void>,
+}
+
+fn new_mount_scope() mut MountScope {
+  (mut MountScope{stopped: false, cancellation: Chan::new<Void>()})
+}
+
+impl MountScope {
+  fn cancellation() Receiver<Void> {
+    self.cancellation.receiver()
+  }
+
+  fn is_cancelled() Bool {
+    select {
+      self.cancellation.recv() => true,
+      _ => false,
+    }
+  }
+
+  fn mut stop() {
+    if not self.stopped {
+      self.stopped = true
+      self.cancellation.close()
+    }
+  }
+}
+
+fn scoped_dispatch(base: fn(fn()) Void!event::DispatchError, scope: mut MountScope) fn(fn()) Void!event::DispatchError {
+  fn(action: fn()) Void!event::DispatchError {
+    if scope.is_cancelled() {
+      Result::err(event::DispatchError::stopped)
+    } else {
+      base(fn() {
+        if not scope.is_cancelled() {
+          action()
+        }
+      })
+    }
+  }
+}
 
 struct DispatchQueue {
   mutex: mut sync::Mutex,

@@ -1,11 +1,30 @@
+use ard/unsafe
+
 use cooper/event
 use cooper/focus
 use cooper/hit
 use cooper/runtime
 use cooper/surface
 use go:go.rockorager.dev/vaxis as raw
+use go:reflect
+
+struct InitContext {
+  dispatch: fn(fn()) Void!event::DispatchError,
+  cancellation: Receiver<Void>,
+}
+
+impl InitContext {
+  fn is_cancelled() Bool {
+    select {
+      self.cancellation.recv() => true,
+      _ => false,
+    }
+  }
+}
 
 trait Widget {
+  fn mut init(ctx: InitContext)
+
   fn render(ctx: surface::RenderContext) surface::Surface
 
   fn mut event(ctx: mut event::EventContext) event::EventResult
@@ -22,7 +41,7 @@ private fn cursor_style(shape: surface::CursorShape) raw::CursorStyle {
 
 private fn render_root(root: mut Widget, app: mut raw::Vaxis, focused_path: [Int]?) surface::Surface {
   let window = app.Window()
-  root.render(
+  let rendered = mut root.render(
     surface::RenderContext{
       constraints: surface::bounded(max_width: window.Width, max_height: window.Height),
       width_measurer: fn(text: Str) Int {
@@ -31,6 +50,118 @@ private fn render_root(root: mut Widget, app: mut raw::Vaxis, focused_path: [Int
       focus_path: focused_path,
     },
   )
+  rendered.set_owner(root)
+  rendered.@
+}
+
+private fn retained_widget(opaque: Any) mut Widget {
+  let owner = unsafe::cast<mut Widget>(opaque).expect("routed Surface owner must be mut Widget")
+  if reflect::ValueOf(owner).Kind() != reflect::Ptr {
+    panic("routed Surface owner must retain a mutable Widget reference")
+  }
+  owner
+}
+
+private fn mount_new_owners(
+  tree: surface::Surface,
+  mounted: mut [mut Widget: mut runtime::MountScope],
+  frontier: mut [mut Widget: Bool],
+  dispatch: fn(fn()) Void!event::DispatchError,
+) Int {
+  mut count = 0
+  mut mounted_here = false
+  match tree.owner {
+    opaque => {
+      let owner = retained_widget(opaque)
+      if frontier.has(owner) {
+        // Another occurrence mounted this owner from the same stale tree.
+        mounted_here = true
+      } else if not mounted.has(owner) {
+        let scope = runtime::new_mount_scope()
+        let ctx = InitContext{dispatch: runtime::scoped_dispatch(dispatch, scope), cancellation: scope.cancellation()}
+        // A mount handle enters the table only after initialization completes.
+        frontier.set(owner, true)
+        owner.init(ctx)
+        mounted.set(owner, scope)
+        mounted_here = true
+        count =+ 1
+      }
+    },
+    _ => (),
+  }
+
+  // Rerender after mounting an ownership frontier. An ancestor may remove or
+  // replace descendants during init; stale descendants must not mount.
+  if not mounted_here {
+    for positioned in tree.children {
+      count = count + mount_new_owners(positioned.surface, mounted, frontier, dispatch)
+    }
+  }
+  count
+}
+
+private fn render_mounted(
+  root: mut Widget,
+  app: mut raw::Vaxis,
+  focused_path: [Int]?,
+  mounted: mut [mut Widget: mut runtime::MountScope],
+  dispatch: fn(fn()) Void!event::DispatchError,
+) surface::Surface {
+  mut rendered = render_root(root, app, focused_path)
+  mut passes = 0
+  mut discovering = true
+  while discovering {
+    let frontier_table: [mut Widget: Bool] = [:]
+    let frontier = mut frontier_table
+    let mounted_count = mount_new_owners(rendered, mounted, frontier, dispatch)
+    if mounted_count == 0 {
+      discovering = false
+    } else {
+      passes =+ 1
+      if passes >= 64 {
+        panic("Widget mounting did not converge after 64 renders")
+      }
+      // Initialization may mutate visible state or expose more retained widgets.
+      rendered = render_root(root, app, focused_path)
+    }
+  }
+  rendered
+}
+
+private fn collect_owners(tree: surface::Surface, owners: mut [mut Widget: Bool]) {
+  match tree.owner {
+    opaque => owners.set(retained_widget(opaque), true),
+    _ => (),
+  }
+  for positioned in tree.children {
+    collect_owners(positioned.surface, owners)
+  }
+}
+
+private fn unmount_absent(
+  tree: surface::Surface,
+  mounted: mut [mut Widget: mut runtime::MountScope],
+) {
+  let current_table: [mut Widget: Bool] = [:]
+  let current = mut current_table
+  collect_owners(tree, current)
+
+  let removed = mut List::new<mut Widget>()
+  for owner, scope in mounted {
+    if not current.has(owner) {
+      scope.stop()
+      removed.push(owner)
+    }
+  }
+  for owner in removed {
+    mounted.delete(owner)
+  }
+}
+
+private fn unmount_all(mounted: mut [mut Widget: mut runtime::MountScope]) {
+  for _owner, scope in mounted {
+    scope.stop()
+  }
 }
 
 private fn paint_surface(rendered: surface::Surface, app: mut raw::Vaxis) {
@@ -64,10 +195,74 @@ private fn paint_surface(rendered: surface::Surface, app: mut raw::Vaxis) {
   app.Render()
 }
 
+private fn invoke_owner(
+  opaque_owner: Any?,
+  mounted: mut [mut Widget: mut runtime::MountScope],
+  dispatch: fn(fn()) Void!event::DispatchError,
+  ctx: mut event::EventContext,
+) event::EventResult {
+  let opaque = try opaque_owner -> _ { event::EventResult::ignored }
+  let owner = retained_widget(opaque)
+  let scope = try mounted.get(owner) -> _ { event::EventResult::ignored }
+  ctx.set_dispatch(runtime::scoped_dispatch(dispatch, scope))
+  owner.event(ctx)
+}
+
+private fn invoke_at(
+  owners: [Any?],
+  depth: Int,
+  phase: event::EventPhase,
+  mounted: mut [mut Widget: mut runtime::MountScope],
+  dispatch: fn(fn()) Void!event::DispatchError,
+  ctx: mut event::EventContext,
+) {
+  ctx.begin_delivery(depth, phase)
+  let result = match owners.at(depth) {
+    owner => invoke_owner(owner, mounted, dispatch, ctx),
+    _ => event::EventResult::ignored,
+  }
+  ctx.record_result(result)
+}
+
+// Surface ownership lets the runtime invoke each widget directly. Containers do
+// not forward contexts. Delivery follows VXFW's capture, target, bubble order.
+private fn dispatch_to_owners(
+  owners: [Any?],
+  mounted: mut [mut Widget: mut runtime::MountScope],
+  dispatch: fn(fn()) Void!event::DispatchError,
+  ctx: mut event::EventContext,
+) event::EventResult {
+  if owners.size() == 0 {
+    event::EventResult::ignored
+  } else {
+    let target = owners.size() - 1
+    mut depth = 0
+    while depth < target and not ctx.propagation_is_stopped() {
+      invoke_at(owners, depth, event::EventPhase::capture, mounted, dispatch, ctx)
+      depth =+ 1
+    }
+
+    if not ctx.propagation_is_stopped() {
+      invoke_at(owners, target, event::EventPhase::target, mounted, dispatch, ctx)
+    }
+
+    depth = target
+    while depth > 0 and not ctx.propagation_is_stopped() {
+      depth =- 1
+      invoke_at(owners, depth, event::EventPhase::bubble, mounted, dispatch, ctx)
+    }
+
+    match ctx.was_handled() {
+      true => event::EventResult::handled,
+      false => event::EventResult::ignored,
+    }
+  }
+}
+
 private fn reconcile_focused_target(
-  root: mut Widget,
   focus_state: focus::FocusState,
   rendered_tree: surface::Surface,
+  mounted: mut [mut Widget: mut runtime::MountScope],
   dispatch: fn(fn()) Void!event::DispatchError,
 ) Bool {
   let focused_path = try focus_state.current_path() -> _ { false }
@@ -78,22 +273,23 @@ private fn reconcile_focused_target(
     geometry.route_origins,
     dispatch: dispatch,
   )
-  root.event(ctx) == event::EventResult::handled
+  dispatch_to_owners(geometry.owners, mounted, dispatch, ctx) == event::EventResult::handled
 }
 
 private fn paint(
   root: mut Widget,
   app: mut raw::Vaxis,
   focus_state: mut focus::FocusState,
+  mounted: mut [mut Widget: mut runtime::MountScope],
   reconcile_focus: Bool,
   requested_focus: [Int]?,
   dispatch: fn(fn()) Void!event::DispatchError,
 ) surface::Surface {
-  mut rendered_tree = render_root(root, app, focus_state.current_path())
+  mut rendered_tree = render_mounted(root, app, focus_state.current_path(), mounted, dispatch)
   mut should_reconcile_focus = reconcile_focus
   if focus_state.reconcile(rendered_tree) {
     // Focus discovery and stale-path fallback must be visible in the frame being painted.
-    rendered_tree = render_root(root, app, focus_state.current_path())
+    rendered_tree = render_mounted(root, app, focus_state.current_path(), mounted, dispatch)
     let _ = focus_state.reconcile(rendered_tree)
     should_reconcile_focus = true
   }
@@ -101,7 +297,7 @@ private fn paint(
   match requested_focus {
     requested => {
       if focus_state.focus(requested) {
-        rendered_tree = render_root(root, app, focus_state.current_path())
+        rendered_tree = render_mounted(root, app, focus_state.current_path(), mounted, dispatch)
         let _ = focus_state.reconcile(rendered_tree)
         should_reconcile_focus = true
       }
@@ -117,10 +313,10 @@ private fn paint(
     }
   }
   while remaining_focus_passes > 0 {
-    if reconcile_focused_target(root, focus_state.@, rendered_tree, dispatch) {
-      rendered_tree = render_root(root, app, focus_state.current_path())
+    if reconcile_focused_target(focus_state.@, rendered_tree, mounted, dispatch) {
+      rendered_tree = render_mounted(root, app, focus_state.current_path(), mounted, dispatch)
       if focus_state.reconcile(rendered_tree) {
-        rendered_tree = render_root(root, app, focus_state.current_path())
+        rendered_tree = render_mounted(root, app, focus_state.current_path(), mounted, dispatch)
       }
       remaining_focus_passes =- 1
     } else {
@@ -128,27 +324,46 @@ private fn paint(
     }
   }
 
+  unmount_absent(rendered_tree, mounted)
   let rendered = surface::flatten_focused(rendered_tree, focus_state.current_path())
   paint_surface(rendered, app)
   rendered_tree
 }
 
-private fn local_mouse(mouse: raw::Mouse, point: surface::Point) raw::Mouse {
-  // Cell coordinates are target-local. Pixel coordinates remain terminal-relative
-  // until Cooper exposes the terminal cell-pixel geometry needed to translate them.
-  raw::Mouse{
-    Button: mouse.Button,
-    Row: point.y,
-    Col: point.x,
-    EventType: mouse.EventType,
-    Modifiers: mouse.Modifiers,
-    XPixel: mouse.XPixel,
-    YPixel: mouse.YPixel,
-  }
-}
-
 private fn is_global_key(key: raw::Key) Bool {
   key.EventType != raw::EventRelease and key.EventType != raw::EventPaste
+}
+
+private fn dispatch_root(
+  rendered_tree: surface::Surface,
+  mounted: mut [mut Widget: mut runtime::MountScope],
+  dispatch: fn(fn()) Void!event::DispatchError,
+  ctx: mut event::EventContext,
+) {
+  let origin = surface::Point{x: 0, y: 0}
+  ctx.retarget([], [rendered_tree.size], [origin])
+  let _ = dispatch_to_owners([rendered_tree.owner], mounted, dispatch, ctx)
+}
+
+private fn dispatch_focused(
+  focus_state: focus::FocusState,
+  rendered_tree: surface::Surface,
+  mounted: mut [mut Widget: mut runtime::MountScope],
+  dispatch: fn(fn()) Void!event::DispatchError,
+  ctx: mut event::EventContext,
+) {
+  match focus_state.current_path() {
+    focused_path => {
+      match hit::route_geometry(rendered_tree, focused_path) {
+        geometry => {
+          ctx.retarget(focused_path, geometry.route_sizes, geometry.route_origins)
+          let _ = dispatch_to_owners(geometry.owners, mounted, dispatch, ctx)
+        },
+        _ => dispatch_root(rendered_tree, mounted, dispatch, ctx),
+      }
+    },
+    _ => dispatch_root(rendered_tree, mounted, dispatch, ctx),
+  }
 }
 
 fn run(root: mut Widget) Void!Error {
@@ -156,6 +371,7 @@ fn run(root: mut Widget) Void!Error {
   defer app.Close()
 
   let updates = mut runtime::new_dispatch_queue()
+  defer updates.stop()
   let update_events = updates.events()
   let dispatch = fn(action: fn()) Void!event::DispatchError {
     if updates.post(action) {
@@ -164,12 +380,11 @@ fn run(root: mut Widget) Void!Error {
       Result::err(event::DispatchError::stopped)
     }
   }
-
-  let mount_ctx = mut event::lifecycle_context(event::LifecycleEvent::mount, dispatch: dispatch)
-  let _ = root.event(mount_ctx)
-
+  let mounted_table: [mut Widget: mut runtime::MountScope] = [:]
+  let mounted = mut mounted_table
+  defer unmount_all(mounted)
   let focus_state = mut focus::new_state()
-  mut rendered_tree = paint(root, app, focus_state, true, Maybe::new<[Int]>(), dispatch)
+  mut rendered_tree = paint(root, app, focus_state, mounted, true, Maybe::new<[Int]>(), dispatch)
   let events = app.Events()
   mut running = true
 
@@ -191,7 +406,15 @@ fn run(root: mut Widget) Void!Error {
         }
         updates.wake_if_pending()
         if changed {
-          rendered_tree = paint(root, app, focus_state, false, Maybe::new<[Int]>(), dispatch)
+          rendered_tree = paint(
+            root,
+            app,
+            focus_state,
+            mounted,
+            false,
+            Maybe::new<[Int]>(),
+            dispatch,
+          )
         }
       },
       let posted = events.recv() => {
@@ -199,7 +422,6 @@ fn run(root: mut Widget) Void!Error {
           received => {
             let ctx = mut event::terminal_context(
               received,
-              route: focus_state.current_path(),
               dispatch: dispatch,
               width_measurer: fn(text: Str) Int {
                 app.RenderedWidth(text)
@@ -232,9 +454,8 @@ fn run(root: mut Widget) Void!Error {
                         _ => (),
                       }
                     }
-                    ctx.retarget(target.route, target.route_sizes)
-                    ctx.localize_terminal(local_mouse(mouse, target.local))
-                    let _ = root.event(ctx)
+                    ctx.retarget(target.route, target.route_sizes, target.route_origins)
+                    let _ = dispatch_to_owners(target.owners, mounted, dispatch, ctx)
                   },
                   _ => (),
                 }
@@ -253,12 +474,10 @@ fn run(root: mut Widget) Void!Error {
                 } else if is_global_key(key) and key.MatchString("Ctrl+c") {
                   ctx.request_quit()
                 } else {
-                  let _ = root.event(ctx)
+                  dispatch_focused(focus_state.@, rendered_tree, mounted, dispatch, ctx)
                 }
               },
-              _ => {
-                let _ = root.event(ctx)
-              },
+              _ => dispatch_focused(focus_state.@, rendered_tree, mounted, dispatch, ctx),
             }
 
             let requested_focus = ctx.focus_requested()
@@ -271,6 +490,7 @@ fn run(root: mut Widget) Void!Error {
                 root,
                 app,
                 focus_state,
+                mounted,
                 reconcile_focus,
                 requested_focus,
                 dispatch,
@@ -285,10 +505,6 @@ fn run(root: mut Widget) Void!Error {
       },
     }
   }
-
-  updates.stop()
-  let unmount_ctx = mut event::lifecycle_context(event::LifecycleEvent::unmount, dispatch: dispatch)
-  let _ = root.event(unmount_ctx)
 
   Result::ok(())
 }

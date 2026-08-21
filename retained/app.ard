@@ -1,0 +1,149 @@
+use cooper/event
+use cooper/retained/context
+use cooper/retained/node
+use cooper/retained/paint
+use cooper/runtime
+use go:go.rockorager.dev/vaxis as raw
+
+struct App {
+  terminal: mut raw::Vaxis,
+  ctx: mut context::Context,
+  wake: Chan<Bool>,
+  updates: mut runtime::DispatchQueue,
+  destroyed: Bool,
+}
+
+fn new() (mut App)!Error {
+  let terminal = try raw::New(raw::Options{})
+  let wake = Chan::new<Bool>(1)
+  let updates = mut runtime::new_dispatch_queue()
+  let dispatch = fn(action: fn()) Void!event::DispatchError {
+    if updates.post(action) {
+      Result::ok(())
+    } else {
+      Result::err(event::DispatchError::stopped)
+    }
+  }
+  let ctx = context::new(
+    request_render: fn() {
+      select {
+        wake.send(true) => (),
+        _ => (),
+      }
+    },
+    width_measurer: fn(text: Str) Int {
+      terminal.RenderedWidth(text)
+    },
+    dispatch: dispatch,
+  )
+  let app = mut App{
+    terminal: terminal,
+    ctx: ctx,
+    wake: wake,
+    updates: updates,
+    destroyed: false,
+  }
+  Result::ok(app)
+}
+
+impl App {
+  fn context() mut context::Context {
+    self.ctx
+  }
+
+  private fn mut paint(root: mut node::Renderable) {
+    let window = self.terminal.Window()
+    self.ctx.compute_layout(root, window.Width, window.Height)
+    let buffer = paint::new_buffer(window.Width, window.Height)
+    root.node().paint(buffer)
+
+    window.Clear()
+    self.terminal.HideCursor()
+    if buffer.width > 0 {
+      for cell, index in buffer.cells {
+        if cell.width > 0 {
+          let x = index % buffer.width
+          let y = index / buffer.width
+          window.SetCell(
+            x,
+            y,
+            raw::Cell{Character: raw::Character{Grapheme: cell.grapheme, Width: cell.width}},
+          )
+        }
+      }
+    }
+    self.terminal.Render()
+  }
+
+  fn mut run(root: mut node::Renderable) Void!Error {
+    if self.destroyed {
+      panic("cannot run a destroyed retained App")
+    }
+    defer self.destroy()
+
+    self.paint(root)
+    let events = self.terminal.Events()
+    let redraws = self.wake.receiver()
+    let update_events = self.updates.events()
+    mut running = true
+    while running {
+      select {
+        redraws.recv() => self.paint(root),
+        update_events.recv() => {
+          mut changed = false
+          mut drained = 0
+          mut draining = true
+          while draining and drained < 64 {
+            match self.updates.pop() {
+              action => {
+                action()
+                changed = true
+                drained =+ 1
+              },
+              _ => { draining = false },
+            }
+          }
+          self.updates.wake_if_pending()
+          if changed {
+            self.paint(root)
+          }
+        },
+        let posted = events.recv() => {
+          match posted {
+            received => {
+              match received {
+                raw::Resize(size) => {
+                  self.terminal.Resize(size)
+                  self.paint(root)
+                },
+                raw::Redraw(_) => self.paint(root),
+                raw::SyncFunc(action) => {
+                  action()
+                  self.paint(root)
+                },
+                raw::QuitEvent(_) => { running = false },
+                raw::Key(key) => {
+                  if key.MatchString("Ctrl+c") {
+                    running = false
+                  }
+                },
+                _ => (),
+              }
+            },
+            _ => { running = false },
+          }
+        },
+      }
+    }
+    Result::ok(())
+  }
+
+  fn mut destroy() {
+    if not self.destroyed {
+      self.destroyed = true
+      self.updates.stop()
+      self.terminal.Close()
+      self.ctx.destroy()
+    }
+  }
+}

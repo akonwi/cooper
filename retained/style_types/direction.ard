@@ -1,0 +1,6 @@
+enum Direction {
+  column,
+  column_reverse,
+  row,
+  row_reverse,
+}

@@ -1,0 +1,50 @@
+struct Rect {
+  x: Int,
+  y: Int,
+  width: Int,
+  height: Int,
+}
+
+struct Geometry {
+  local: Rect,
+  screen: Rect,
+}
+
+fn intersect(left: Rect, right: Rect) Rect {
+  mut x = left.x
+  if right.x > x {
+    x = right.x
+  }
+  mut y = left.y
+  if right.y > y {
+    y = right.y
+  }
+
+  mut edge = left.x + left.width
+  if right.x + right.width < edge {
+    edge = right.x + right.width
+  }
+  mut bottom = left.y + left.height
+  if right.y + right.height < bottom {
+    bottom = right.y + right.height
+  }
+
+  mut width = 0
+  if edge > x {
+    width = edge - x
+  }
+  mut height = 0
+  if bottom > y {
+    height = bottom - y
+  }
+  Rect{
+    x: x,
+    y: y,
+    width: width,
+    height: height,
+  }
+}
+
+fn contains(rect: Rect, x: Int, y: Int) Bool {
+  x >= rect.x and y >= rect.y and x < rect.x + rect.width and y < rect.y + rect.height
+}

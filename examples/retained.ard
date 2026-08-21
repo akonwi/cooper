@@ -1,0 +1,31 @@
+use ard/async
+
+use cooper/retained/app
+use cooper/retained/box
+use cooper/retained/style
+use cooper/retained/text
+use go:time
+
+fn main() {
+  let application = app::new().expect("create retained Cooper app")
+  let ctx = application.context()
+  let root = box::new(
+    ctx,
+    initial_style: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      align_items: style::Align::start,
+    ),
+  )
+  let message = text::new(ctx, content: "Loading retained Cooper...")
+  root.add(message)
+
+  async::start(fn() {
+    time::After(100 * time::Millisecond).recv()
+    let _ = ctx.dispatch(fn() {
+      message.set_content("Hello from retained Cooper. Press Ctrl+C to quit.")
+    })
+  })
+
+  application.run(root).expect("run retained Cooper app")
+}

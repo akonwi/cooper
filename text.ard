@@ -181,6 +181,8 @@ private fn layout_lines(ctx: surface::RenderContext, content: Str, mode: WrapMod
 }
 
 impl cooper::Widget for Text {
+  fn init(ctx: cooper::InitContext) {}
+
   fn render(ctx: surface::RenderContext) surface::Surface {
     let lines = layout_lines(ctx, self.content, self.wrap_mode)
     mut intrinsic_width = 0

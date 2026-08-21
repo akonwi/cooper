@@ -47,7 +47,7 @@ runtime owns Tab/Shift+Tab focus traversal and Ctrl+C shutdown.
 
 See [`examples/form.ard`](./examples/form.ard) for nested focusable inputs,
 [`examples/scroll_form.ard`](./examples/scroll_form.ard) for a wheel-scrollable
-form, [`examples/async.ard`](./examples/async.ard) for mount-time background
+form, [`examples/async.ard`](./examples/async.ard) for initialization-started background
 work, and [`examples/explorer.ard`](./examples/explorer.ard) for an asynchronous
 mouse-enabled Miller-column filesystem explorer.
 
@@ -58,25 +58,36 @@ explicit mutable receiver contract:
 
 ```ard
 trait Widget {
+  fn mut init(ctx: InitContext)
   fn render(ctx: RenderContext) Surface
   fn mut event(ctx: mut EventContext) EventResult
 }
 ```
 
-`EventContext` contains a terminal event, focused-target geometry, or a
-mount/unmount lifecycle signal. Containers route or broadcast that context;
-widgets opt into only the cases they need and may request relative focus paths.
+The runtime discovers opaque widget owners from an unpainted surface tree and
+calls `init` once per mount before painting. It repeats discovery on later
+renders, mounting newly introduced owners and unmounting owners absent from the
+converged tree. Reintroducing the same retained widget calls `init` again.
+
+Each routed child surface retains its widget owner opaquely as `Any`. The
+runtime recovers those references and delivers `EventContext` directly in
+capture, target, and bubble phases; containers do not forward events. Contexts
+contain a terminal event or focused-target geometry, expose UI-thread dispatch,
+and may request relative focus paths or explicitly stop propagation.
 
 The current runtime redraws the complete logical surface after state changes
 and lets Vaxis efficiently diff terminal cells.
 
 ## Asynchronous updates
 
-Every live `EventContext` exposes `dispatch` directly as a function field.
-Background fibers perform slow work without touching widget state, then dispatch
-a short retained-state mutation back to Cooper's UI loop. Accepted actions are
-followed by a redraw; dispatch returns `stopped` after runtime shutdown. See the
-async example for startup and cleanup handling.
+`InitContext` and every owner-delivered `EventContext` expose mount-scoped
+`dispatch` directly as a function field. Widgets start asynchronous effects
+from `init`. An init context also exposes its mount's cancellation receiver. On
+unmount, cancellation becomes ready, later dispatch returns `stopped`, and
+queued scoped actions that have not executed are suppressed. Background fibers
+must observe cancellation cooperatively, perform slow work without touching
+widget state, then dispatch a short retained-state mutation back to Cooper's UI
+loop. Accepted actions are followed by a redraw.
 
 ## Filesystem explorer
 
@@ -92,10 +103,10 @@ ard run explorer.ard
 
 ## Scrolling
 
-`ScrollView` retains a desired vertical offset, handles wheel events after its
-routed child declines them, and reveals focused descendants after focus changes
-or resize. Use tight flex when it should consume and clip to the remaining
-bounded height:
+`ScrollView` retains a desired vertical offset, handles wheel events during
+bubble when no deeper target handled them, and reveals focused descendants
+after focus changes or resize. Use tight flex when it should consume and clip to
+the remaining bounded height:
 
 ```ard
 let viewport = mut scroll::new(content, wheel_step: 2)
@@ -115,9 +126,9 @@ let page = mut layout::column(
 
 ```text
 cooper.ard      Widget contract and application runtime
-event.ard       unified context, lifecycle, dispatch, and EventResult
+event.ard       phased context, dispatch, propagation, and EventResult
 focus.ard       rendered focus paths and traversal state
-hit.ard         clipped routed Surface hit testing
+hit.ard         clipped hit testing, geometry, and opaque owner paths
 runtime.ard     reentrant UI-dispatch queue
 scroll.ard      retained vertical ScrollView
 surface.ard     constraints, cells, surfaces, cursor, text measurement

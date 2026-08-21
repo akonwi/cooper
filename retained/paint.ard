@@ -1,0 +1,163 @@
+use cooper/retained/geometry
+use go:go.rockorager.dev/vaxis
+
+struct Cell {
+  grapheme: Str,
+  width: Int,
+}
+
+private fn blank_cell() Cell {
+  Cell{grapheme: " ", width: 1}
+}
+
+private fn continuation() Cell {
+  Cell{grapheme: "", width: 0}
+}
+
+struct Buffer {
+  width: Int,
+  height: Int,
+  cells: [Cell],
+}
+
+fn new_buffer(width: Int, height: Int) mut Buffer {
+  if width < 0 or height < 0 {
+    panic("retained paint buffer dimensions must be non-negative")
+  }
+  let cells = mut List::new<Cell>()
+  mut index = 0
+  while index < width * height {
+    cells.push(blank_cell())
+    index =+ 1
+  }
+  (mut Buffer{
+    width: width,
+    height: height,
+    cells: cells.@,
+  })
+}
+
+impl Buffer {
+  private fn index(x: Int, y: Int) Int? {
+    if x >= 0 and y >= 0 and x < self.width and y < self.height {
+      Maybe::new<Int>(y * self.width + x)
+    } else {
+      Maybe::new<Int>()
+    }
+  }
+
+  fn cell_at(x: Int, y: Int) Cell? {
+    let index = try self.index(x, y) -> _ { Maybe::new<Cell>() }
+    self.cells.at(index)
+  }
+
+  private fn mut put(x: Int, y: Int, cell: Cell) {
+    match self.index(x, y) {
+      index => self.cells.set(index, cell),
+      _ => (),
+    }
+  }
+
+  private fn mut clear_span_at(x: Int, y: Int) {
+    let existing = try self.cell_at(x, y) -> _ { () }
+    mut start = x
+    if existing.width == 0 {
+      mut scanning = x - 1
+      mut found = false
+      while scanning >= 0 and not found {
+        match self.cell_at(scanning, y) {
+          candidate => {
+            if candidate.width > 0 {
+              if scanning + candidate.width > x {
+                start = scanning
+              }
+              found = true
+            }
+          },
+          _ => { found = true },
+        }
+        scanning =- 1
+      }
+    }
+
+    let lead = try self.cell_at(start, y) -> _ { () }
+    mut span = lead.width
+    if span < 1 {
+      span = 1
+    }
+    mut part = 0
+    while part < span {
+      self.put(start + part, y, blank_cell())
+      part =+ 1
+    }
+  }
+
+  private fn mut write_grapheme(x: Int, y: Int, grapheme: Str, width: Int) {
+    mut part = 0
+    while part < width {
+      self.clear_span_at(x + part, y)
+      part =+ 1
+    }
+    self.put(x, y, Cell{grapheme: grapheme, width: width})
+    part = 1
+    while part < width {
+      self.put(x + part, y, continuation())
+      part =+ 1
+    }
+  }
+
+  fn mut clear() {
+    mut index = 0
+    while index < self.cells.size() {
+      self.cells.set(index, blank_cell())
+      index =+ 1
+    }
+  }
+}
+
+struct Context {
+  buffer: mut Buffer,
+  bounds: geometry::Rect,
+  clip: geometry::Rect,
+}
+
+impl Context {
+  fn mut write(x: Int, y: Int, text: Str) {
+    self.write_measured(x, y, text, fn(grapheme: Str) Int {
+      mut width = 0
+      for character in vaxis::Characters(grapheme) {
+        width = width + character.Width
+      }
+      width
+    })
+  }
+
+  fn mut write_measured(x: Int, y: Int, text: Str, measure_width: fn(Str) Int) {
+    let target_y = self.bounds.y + y
+    mut target_x = self.bounds.x + x
+    for character in vaxis::Characters(text) {
+      let width = measure_width(character.Grapheme)
+      mut visible = width > 0
+      mut part = 0
+      while part < width {
+        if not geometry::contains(self.clip, target_x + part, target_y) {
+          visible = false
+        }
+        part =+ 1
+      }
+
+      if visible {
+        self.buffer.write_grapheme(target_x, target_y, character.Grapheme, width)
+      } else {
+        part = 0
+        while part < width {
+          if geometry::contains(self.clip, target_x + part, target_y) {
+            self.buffer.clear_span_at(target_x + part, target_y)
+          }
+          part =+ 1
+        }
+      }
+      target_x = target_x + width
+    }
+  }
+}

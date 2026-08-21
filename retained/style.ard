@@ -1,0 +1,127 @@
+use cooper/retained/style_types/align as align_type
+use cooper/retained/style_types/direction as direction_type
+use cooper/retained/style_types/display as display_type
+use cooper/retained/style_types/justify as justify_type
+use cooper/retained/style_types/length_kind as length_kind_type
+use cooper/retained/style_types/overflow as overflow_type
+use cooper/retained/style_types/position as position_type
+use cooper/retained/style_types/wrap as wrap_type
+
+type Align = align_type::Align
+type Direction = direction_type::Direction
+type Display = display_type::Display
+type Justify = justify_type::Justify
+type LengthKind = length_kind_type::LengthKind
+type Overflow = overflow_type::Overflow
+type Position = position_type::Position
+type Wrap = wrap_type::Wrap
+
+struct Length {
+  kind: LengthKind,
+  value: Float32,
+}
+
+fn undefined() Length {
+  Length{kind: LengthKind::undefined, value: 0.0}
+}
+
+fn auto() Length {
+  Length{kind: LengthKind::auto, value: 0.0}
+}
+
+fn cells(value: Int) Length {
+  if value < 0 {
+    panic("retained layout cell lengths must be non-negative")
+  }
+  Length{kind: LengthKind::cells, value: Float32::from(value)}
+}
+
+fn percent(value: Float64) Length {
+  Length{kind: LengthKind::percent, value: Float32::from(value)}
+}
+
+fn max_content() Length {
+  Length{kind: LengthKind::max_content, value: 0.0}
+}
+
+fn fit_content() Length {
+  Length{kind: LengthKind::fit_content, value: 0.0}
+}
+
+fn stretch() Length {
+  Length{kind: LengthKind::stretch, value: 0.0}
+}
+
+struct Edges {
+  top: Length,
+  right: Length,
+  bottom: Length,
+  left: Length,
+}
+
+fn edges(all: Length?) Edges {
+  let value = all.or(undefined())
+  Edges{
+    top: value,
+    right: value,
+    bottom: value,
+    left: value,
+  }
+}
+
+struct Style {
+  display: Display,
+  direction: Direction,
+  align_items: Align,
+  align_self: Align,
+  justify: Justify,
+  wrap: Wrap,
+  position: Position,
+  overflow: Overflow,
+  width: Length,
+  height: Length,
+  min_width: Length,
+  min_height: Length,
+  max_width: Length,
+  max_height: Length,
+  basis: Length,
+  grow: Float32,
+  shrink: Float32,
+  padding: Edges,
+  margin: Edges,
+  gap: Length,
+}
+
+fn new(
+  flex_direction: Direction?,
+  width: Length?,
+  height: Length?,
+  grow: Float64?,
+  shrink: Float64?,
+  align_items: Align?,
+  justify_content: Justify?,
+  gap: Length?,
+) Style {
+  Style{
+    display: Display::flex,
+    direction: flex_direction.or(Direction::column),
+    align_items: align_items.or(Align::stretch),
+    align_self: Align::auto,
+    justify: justify_content.or(Justify::start),
+    wrap: Wrap::no_wrap,
+    position: Position::relative,
+    overflow: Overflow::visible,
+    width: width.or(undefined()),
+    height: height.or(undefined()),
+    min_width: undefined(),
+    min_height: undefined(),
+    max_width: undefined(),
+    max_height: undefined(),
+    basis: auto(),
+    grow: Float32::from(grow.or(0.0)),
+    shrink: Float32::from(shrink.or(1.0)),
+    padding: edges(),
+    margin: edges(),
+    gap: gap.or(undefined()),
+  }
+}

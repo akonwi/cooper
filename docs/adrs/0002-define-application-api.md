@@ -326,7 +326,8 @@ blur does not duplicate change. Submit returns false below `min_length`.
 Input removes newlines, applies `max_length`, and keeps cursor movement and
 editing grapheme-safe. `set_value` moves the cursor to the end. A TextStyle
 background fills the complete Input bounds. Cursor appearance remains runtime
-policy.
+policy. ADR 0004 extends this accepted base with an Ard-native editor action
+model and readline-style default keybindings.
 
 ### ScrollBox
 

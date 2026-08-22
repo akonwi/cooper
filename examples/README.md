@@ -27,7 +27,8 @@ ard-dev run input.ard
 ```
 
 Type or paste to insert text, use Left/Right/Home/End and Backspace/Delete for
-editing, click to place the cursor, and press Ctrl+C to exit.
+editing, or use readline-style bindings such as Ctrl+A/E/B/F, Ctrl+W/K/U,
+and Alt+B/F/D. Click to place the cursor and press Ctrl+C to exit.
 
 ## Form
 

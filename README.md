@@ -15,8 +15,9 @@ main. The accepted application API, built-in controls, headless TestApp, and
 runnable examples are implemented.
 
 The canonical design is defined by the accepted
-[application API ADR](./docs/adrs/0002-define-application-api.md) and
-[interaction ADR](./docs/adrs/0003-define-interaction-focus-and-selection.md).
+[application API ADR](./docs/adrs/0002-define-application-api.md),
+[interaction ADR](./docs/adrs/0003-define-interaction-focus-and-selection.md), and
+[input editor ADR](./docs/adrs/0004-define-input-editor-and-keybindings.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
@@ -80,12 +81,14 @@ yet a supported custom-control API.
   focus is reported separately. Cooper does not reserve Tab or choose fallback
   focus.
 - Text and Input participate in one global, grapheme-safe selection.
+- Input delegates logical editing to an Ard-native action model with familiar
+  readline-style Ctrl, Alt, and Super keybindings.
 
 ## Initial controls
 
 - `Box` — indexed flex container with background, border, and title;
 - `Text` — selectable multiline text with terminal-aware wrapping and TextStyle;
-- `Input` — grapheme-aware editing, editable selection, validation, and callbacks;
+- `Input` — grapheme-aware CLI editing, editable selection, validation, and callbacks;
 - `ScrollBox` — focusable multi-child vertical scrolling container.
 
 Public layout and interaction use Ard-native Style, Color, Point, Rect,

@@ -1,0 +1,709 @@
+use go:github.com/rockorager/go-uucode as unicode
+
+private struct Grapheme {
+  text: Str,
+  start: Int,
+  end: Int,
+}
+
+struct Range {
+  start: Int,
+  end: Int,
+}
+
+enum Action {
+  move_left,
+  move_right,
+  move_start,
+  move_end,
+  move_word_backward,
+  move_word_forward,
+  select_left,
+  select_right,
+  select_start,
+  select_end,
+  select_word_backward,
+  select_word_forward,
+  select_all,
+  delete_backward,
+  delete_forward,
+  delete_word_backward,
+  delete_word_forward,
+  delete_to_start,
+  delete_to_end,
+  undo,
+  redo,
+  submit,
+}
+
+struct Outcome {
+  handled: Bool,
+  text_changed: Bool,
+  cursor_changed: Bool,
+  selection_changed: Bool,
+  submit_requested: Bool,
+}
+
+struct State {
+  value_text: Str,
+  cursor_byte: Int,
+  anchor_byte: Int?,
+}
+
+private enum WordClass {
+  whitespace,
+  word,
+  punctuation,
+  symbol,
+}
+
+private fn graphemes(value: Str) [Grapheme] {
+  let iterator = mut unicode::NewGraphemeIterator(value)
+  let output = mut List::new<Grapheme>()
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      grapheme => {
+        output.push(
+          Grapheme{
+            text: value.slice(start: grapheme.Start, end: grapheme.End).or(""),
+            start: grapheme.Start,
+            end: grapheme.End,
+          },
+        )
+      },
+      _ => { reading = false },
+    }
+  }
+  output.@
+}
+
+private fn grapheme_count(value: Str) Int {
+  graphemes(value).size()
+}
+
+private fn previous_boundary(value: Str, cursor: Int) Int {
+  mut previous = 0
+  for glyph in graphemes(value) {
+    if glyph.end >= cursor {
+      previous = glyph.start
+      break
+    }
+    previous = glyph.end
+  }
+  previous
+}
+
+private fn next_boundary(value: Str, cursor: Int) Int {
+  mut next = value.size()
+  for glyph in graphemes(value) {
+    if glyph.end > cursor {
+      next = glyph.end
+      break
+    }
+  }
+  next
+}
+
+private fn normalize_boundary(value: Str, cursor: Int) Int {
+  mut normalized = cursor
+  if normalized < 0 {
+    normalized = 0
+  }
+  if normalized > value.size() {
+    normalized = value.size()
+  }
+  for glyph in graphemes(value) {
+    if normalized > glyph.start and normalized < glyph.end {
+      normalized = glyph.end
+      break
+    }
+  }
+  normalized
+}
+
+private fn remove_range(value: Str, start: Int, end: Int) Str {
+  let before = value.slice(end: start).or("")
+  let after = value.slice(start: end).or("")
+  "{before}{after}"
+}
+
+private fn insert_at(value: Str, index: Int, inserted: Str) Str {
+  let before = value.slice(end: index).or("")
+  let after = value.slice(start: index).or("")
+  "{before}{inserted}{after}"
+}
+
+private fn first_rune(value: Str) Rune? {
+  value.runes().at(0)
+}
+
+private fn basic_word_class(glyph: Grapheme) WordClass {
+  let rune = try first_rune(glyph.text) -> _ { WordClass::symbol }
+  let scalar = Int32::from(rune)
+  if unicode::IsSpace(scalar) {
+    WordClass::whitespace
+  } else if unicode::GeneralCategory(scalar) == unicode::GeneralCategoryPc or unicode::IsLetter(scalar) or unicode::IsNumber(scalar) or unicode::IsMark(scalar) {
+    WordClass::word
+  } else if unicode::IsPunct(scalar) {
+    WordClass::punctuation
+  } else {
+    WordClass::symbol
+  }
+}
+
+private fn apostrophe(glyph: Grapheme) Bool {
+  glyph.text == "'" or glyph.text == "’"
+}
+
+private fn word_class(glyphs: [Grapheme], index: Int) WordClass {
+  let glyph = glyphs.at(index).expect("word class grapheme")
+  if apostrophe(glyph) and index > 0 and index + 1 < glyphs.size() {
+    let before = basic_word_class(glyphs.at(index - 1).expect("apostrophe previous"))
+    let after = basic_word_class(glyphs.at(index + 1).expect("apostrophe next"))
+    if before == WordClass::word and after == WordClass::word {
+      WordClass::word
+    } else {
+      WordClass::punctuation
+    }
+  } else {
+    basic_word_class(glyph)
+  }
+}
+
+private fn previous_word_boundary(value: Str, cursor: Int) Int {
+  let glyphs = graphemes(value)
+  mut index = glyphs.size()
+  mut scanning = 0
+  while scanning < glyphs.size() {
+    let glyph = glyphs.at(scanning).expect("previous word grapheme")
+    if glyph.end >= cursor {
+      if cursor <= glyph.start {
+        index = scanning
+      } else {
+        index = scanning + 1
+      }
+      break
+    }
+    scanning =+ 1
+  }
+  mut skipping_space = true
+  while skipping_space {
+    if index > 0 {
+      if word_class(glyphs, index - 1) == WordClass::whitespace {
+        index =- 1
+      } else {
+        skipping_space = false
+      }
+    } else {
+      skipping_space = false
+    }
+  }
+  if index == 0 {
+    0
+  } else {
+    let target = word_class(glyphs, index - 1)
+    mut scanning_class = true
+    while scanning_class {
+      if index > 0 {
+        if word_class(glyphs, index - 1) == target {
+          index =- 1
+        } else {
+          scanning_class = false
+        }
+      } else {
+        scanning_class = false
+      }
+    }
+    if index < glyphs.size() {
+      glyphs.at(index).expect("previous word boundary").start
+    } else {
+      value.size()
+    }
+  }
+}
+
+private fn next_word_boundary(value: Str, cursor: Int) Int {
+  let glyphs = graphemes(value)
+  mut index = 0
+  mut finding_cursor = true
+  while finding_cursor {
+    if index < glyphs.size() {
+      let glyph = glyphs.at(index).expect("next word grapheme")
+      if glyph.end <= cursor {
+        index =+ 1
+      } else {
+        finding_cursor = false
+      }
+    } else {
+      finding_cursor = false
+    }
+  }
+  if index >= glyphs.size() {
+    value.size()
+  } else {
+    let target = word_class(glyphs, index)
+    if target == WordClass::whitespace {
+      mut skipping_space = true
+      while skipping_space {
+        if index < glyphs.size() {
+          if word_class(glyphs, index) == WordClass::whitespace {
+            index =+ 1
+          } else {
+            skipping_space = false
+          }
+        } else {
+          skipping_space = false
+        }
+      }
+      if index < glyphs.size() {
+        let following = word_class(glyphs, index)
+        mut scanning_class = true
+        while scanning_class {
+          if index < glyphs.size() {
+            if word_class(glyphs, index) == following {
+              index =+ 1
+            } else {
+              scanning_class = false
+            }
+          } else {
+            scanning_class = false
+          }
+        }
+      }
+    } else {
+      mut scanning_class = true
+      while scanning_class {
+        if index < glyphs.size() {
+          if word_class(glyphs, index) == target {
+            index =+ 1
+          } else {
+            scanning_class = false
+          }
+        } else {
+          scanning_class = false
+        }
+      }
+      mut skipping_space = true
+      while skipping_space {
+        if index < glyphs.size() {
+          if word_class(glyphs, index) == WordClass::whitespace {
+            index =+ 1
+          } else {
+            skipping_space = false
+          }
+        } else {
+          skipping_space = false
+        }
+      }
+    }
+    if index >= glyphs.size() {
+      value.size()
+    } else {
+      glyphs.at(index).expect("next word boundary").start
+    }
+  }
+}
+
+private struct Segmentation {
+  started: Bool,
+  previous: unicode::GraphemeBreak,
+  state: unicode::BreakState,
+  count: Int,
+}
+
+private struct SuffixDelta {
+  started: Bool,
+  previous: unicode::GraphemeBreak,
+  state: unicode::BreakState,
+  delta: Int,
+}
+
+private fn segmentation() mut Segmentation {
+  (mut Segmentation{
+    started: false,
+    previous: unicode::GraphemeOther,
+    state: unicode::BreakStateDefault,
+    count: 0,
+  })
+}
+
+private fn push_scalar(segmented: mut Segmentation, scalar: Rune) {
+  let property = unicode::GraphemeBreakProperty(Int32::from(scalar))
+  if segmented.started {
+    let state = mut segmented.state
+    if unicode::ComputeGraphemeBreak(segmented.previous, property, state) {
+      segmented.count =+ 1
+    }
+    segmented.state = state.@
+  } else {
+    segmented.started = true
+    segmented.count = 1
+  }
+  segmented.previous = property
+}
+
+private fn suffix_delta(cache: mut [SuffixDelta], prefix: Segmentation, suffix: Str) Int {
+  mut cached = Maybe::new<Int>()
+  for entry in cache {
+    if entry.started == prefix.started and entry.previous == prefix.previous and entry.state == prefix.state {
+      cached = Maybe::new<Int>(entry.delta)
+    }
+  }
+  match cached {
+    delta => delta,
+    _ => {
+      let evaluated = segmentation()
+      evaluated.started = prefix.started
+      evaluated.previous = prefix.previous
+      evaluated.state = prefix.state
+      evaluated.count = prefix.count
+      for scalar in suffix {
+        push_scalar(evaluated, scalar)
+      }
+      let delta = evaluated.count - prefix.count
+      cache.push(
+        SuffixDelta{
+          started: prefix.started,
+          previous: prefix.previous,
+          state: prefix.state,
+          delta: delta,
+        },
+      )
+      delta
+    },
+  }
+}
+
+private fn longest_insertion(base: Str, cursor: Int, inserted: Str, maximum: Int) Str {
+  let before = base.slice(end: cursor).expect("Editor cursor prefix")
+  let after = base.slice(start: cursor).expect("Editor cursor suffix")
+  let segmented = segmentation()
+  for scalar in before {
+    push_scalar(segmented, scalar)
+  }
+  let cache = mut List::new<SuffixDelta>()
+  mut accepted = ""
+  mut end = 0
+  for scalar in inserted {
+    push_scalar(segmented, scalar)
+    end = end + scalar.to_str().size()
+    if segmented.count + suffix_delta(cache, segmented.@, after) <= maximum {
+      accepted = inserted.slice(end: end).expect("Editor scalar insertion boundary")
+    }
+  }
+  accepted
+}
+
+fn new(value: Str) State {
+  State{
+    value_text: value,
+    cursor_byte: value.size(),
+    anchor_byte: Maybe::new<Int>(),
+  }
+}
+
+private fn same_optional_int(left: Int?, right: Int?) Bool {
+  match left {
+    left_value => {
+      match right {
+        right_value => left_value == right_value,
+        _ => false,
+      }
+    },
+    _ => right.is_none(),
+  }
+}
+
+private fn outcome(
+  state: State,
+  previous_value: Str,
+  previous_cursor: Int,
+  previous_anchor: Int?,
+  submit_requested: Bool?,
+) Outcome {
+  Outcome{
+    handled: true,
+    text_changed: state.value_text != previous_value,
+    cursor_changed: state.cursor_byte != previous_cursor,
+    selection_changed: (not same_optional_int(state.anchor_byte, previous_anchor)) or (state.anchor_byte.is_some() or previous_anchor.is_some()) and state.cursor_byte != previous_cursor,
+    submit_requested: submit_requested.or(false),
+  }
+}
+
+impl State {
+  fn value() Str {
+    self.value_text
+  }
+
+  fn cursor() Int {
+    self.cursor_byte
+  }
+
+  fn anchor() Int? {
+    self.anchor_byte
+  }
+
+  fn has_anchor() Bool {
+    self.anchor_byte.is_some()
+  }
+
+  fn selection() Range? {
+    let anchor = try self.anchor_byte -> _ { Maybe::new<Range>() }
+    if anchor == self.cursor_byte {
+      Maybe::new<Range>()
+    } else if anchor < self.cursor_byte {
+      Maybe::new<Range>(Range{start: anchor, end: self.cursor_byte})
+    } else {
+      Maybe::new<Range>(Range{start: self.cursor_byte, end: anchor})
+    }
+  }
+
+  fn selected_text() Str {
+    match self.selection() {
+      selected => self.value_text.slice(start: selected.start, end: selected.end).or(""),
+      _ => "",
+    }
+  }
+
+  fn mut set_cursor(value: Int) {
+    self.cursor_byte = normalize_boundary(self.value_text, value)
+  }
+
+  fn mut set_anchor(value: Int?) {
+    match value {
+      anchor => { self.anchor_byte = Maybe::new<Int>(normalize_boundary(self.value_text, anchor)) },
+      _ => { self.anchor_byte = Maybe::new<Int>() },
+    }
+  }
+
+  fn mut set_selection(anchor: Int, cursor: Int) {
+    self.anchor_byte = Maybe::new<Int>(normalize_boundary(self.value_text, anchor))
+    self.cursor_byte = normalize_boundary(self.value_text, cursor)
+  }
+
+  fn mut clear_selection() {
+    self.anchor_byte = Maybe::new<Int>()
+  }
+
+  fn mut reset(value: Str) Outcome {
+    let previous_value = self.value_text
+    let previous_cursor = self.cursor_byte
+    let previous_anchor = self.anchor_byte
+    self.value_text = value
+    self.cursor_byte = value.size()
+    self.anchor_byte = Maybe::new<Int>()
+    outcome(self.@, previous_value, previous_cursor, previous_anchor)
+  }
+
+  fn mut insert_text(value: Str, maximum_length: Int?) Outcome {
+    match maximum_length {
+      maximum => {
+        if maximum < 0 {
+          panic("Editor maximum_length must be non-negative")
+        }
+      },
+      _ => (),
+    }
+    let previous_value = self.value_text
+    let previous_cursor = self.cursor_byte
+    let previous_anchor = self.anchor_byte
+    if not value.is_empty() {
+      mut insertion_at = self.cursor_byte
+      mut base = self.value_text
+      match self.selection() {
+        selected => {
+          insertion_at = selected.start
+          base = remove_range(base, selected.start, selected.end)
+        },
+        _ => (),
+      }
+      mut inserted = value
+      match maximum_length {
+        maximum => { inserted = longest_insertion(base, insertion_at, value, maximum) },
+        _ => (),
+      }
+      self.value_text = insert_at(base, insertion_at, inserted)
+      self.cursor_byte = normalize_boundary(self.value_text, insertion_at + inserted.size())
+      self.anchor_byte = Maybe::new<Int>()
+    }
+    outcome(self.@, previous_value, previous_cursor, previous_anchor)
+  }
+
+  fn mut apply(action: Action) Outcome {
+    let previous_value = self.value_text
+    let previous_cursor = self.cursor_byte
+    let previous_anchor = self.anchor_byte
+    match action {
+      Action::move_left => {
+        match self.selection() {
+          selected => { self.cursor_byte = selected.start },
+          _ => { self.cursor_byte = previous_boundary(self.value_text, self.cursor_byte) },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::move_right => {
+        match self.selection() {
+          selected => { self.cursor_byte = selected.end },
+          _ => { self.cursor_byte = next_boundary(self.value_text, self.cursor_byte) },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::move_start => {
+        self.cursor_byte = 0
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::move_end => {
+        self.cursor_byte = self.value_text.size()
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::move_word_backward => {
+        match self.selection() {
+          selected => { self.cursor_byte = selected.start },
+          _ => { self.cursor_byte = previous_word_boundary(self.value_text, self.cursor_byte) },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::move_word_forward => {
+        match self.selection() {
+          selected => { self.cursor_byte = selected.end },
+          _ => { self.cursor_byte = next_word_boundary(self.value_text, self.cursor_byte) },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::select_left => {
+        if self.anchor_byte.is_none() {
+          self.anchor_byte = Maybe::new<Int>(self.cursor_byte)
+        }
+        self.cursor_byte = previous_boundary(self.value_text, self.cursor_byte)
+      },
+      Action::select_right => {
+        if self.anchor_byte.is_none() {
+          self.anchor_byte = Maybe::new<Int>(self.cursor_byte)
+        }
+        self.cursor_byte = next_boundary(self.value_text, self.cursor_byte)
+      },
+      Action::select_start => {
+        if self.anchor_byte.is_none() {
+          self.anchor_byte = Maybe::new<Int>(self.cursor_byte)
+        }
+        self.cursor_byte = 0
+      },
+      Action::select_end => {
+        if self.anchor_byte.is_none() {
+          self.anchor_byte = Maybe::new<Int>(self.cursor_byte)
+        }
+        self.cursor_byte = self.value_text.size()
+      },
+      Action::select_word_backward => {
+        if self.anchor_byte.is_none() {
+          self.anchor_byte = Maybe::new<Int>(self.cursor_byte)
+        }
+        self.cursor_byte = previous_word_boundary(self.value_text, self.cursor_byte)
+      },
+      Action::select_word_forward => {
+        if self.anchor_byte.is_none() {
+          self.anchor_byte = Maybe::new<Int>(self.cursor_byte)
+        }
+        self.cursor_byte = next_word_boundary(self.value_text, self.cursor_byte)
+      },
+      Action::select_all => {
+        self.anchor_byte = Maybe::new<Int>(0)
+        self.cursor_byte = self.value_text.size()
+      },
+      Action::delete_backward => {
+        match self.selection() {
+          selected => {
+            self.value_text = remove_range(self.value_text, selected.start, selected.end)
+            self.cursor_byte = normalize_boundary(self.value_text, selected.start)
+          },
+          _ => {
+            if self.cursor_byte > 0 {
+              let start = previous_boundary(self.value_text, self.cursor_byte)
+              self.value_text = remove_range(self.value_text, start, self.cursor_byte)
+              self.cursor_byte = normalize_boundary(self.value_text, start)
+            }
+          },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::delete_forward => {
+        match self.selection() {
+          selected => {
+            self.value_text = remove_range(self.value_text, selected.start, selected.end)
+            self.cursor_byte = normalize_boundary(self.value_text, selected.start)
+          },
+          _ => {
+            if self.cursor_byte < self.value_text.size() {
+              let finish = next_boundary(self.value_text, self.cursor_byte)
+              self.value_text = remove_range(self.value_text, self.cursor_byte, finish)
+              self.cursor_byte = normalize_boundary(self.value_text, self.cursor_byte)
+            }
+          },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::delete_word_backward => {
+        match self.selection() {
+          selected => {
+            self.value_text = remove_range(self.value_text, selected.start, selected.end)
+            self.cursor_byte = normalize_boundary(self.value_text, selected.start)
+          },
+          _ => {
+            let start = previous_word_boundary(self.value_text, self.cursor_byte)
+            self.value_text = remove_range(self.value_text, start, self.cursor_byte)
+            self.cursor_byte = normalize_boundary(self.value_text, start)
+          },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::delete_word_forward => {
+        match self.selection() {
+          selected => {
+            self.value_text = remove_range(self.value_text, selected.start, selected.end)
+            self.cursor_byte = normalize_boundary(self.value_text, selected.start)
+          },
+          _ => {
+            let finish = next_word_boundary(self.value_text, self.cursor_byte)
+            self.value_text = remove_range(self.value_text, self.cursor_byte, finish)
+            self.cursor_byte = normalize_boundary(self.value_text, self.cursor_byte)
+          },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::delete_to_start => {
+        match self.selection() {
+          selected => {
+            self.value_text = remove_range(self.value_text, selected.start, selected.end)
+            self.cursor_byte = normalize_boundary(self.value_text, selected.start)
+          },
+          _ => {
+            self.value_text = remove_range(self.value_text, 0, self.cursor_byte)
+            self.cursor_byte = 0
+          },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::delete_to_end => {
+        match self.selection() {
+          selected => {
+            self.value_text = remove_range(self.value_text, selected.start, selected.end)
+            self.cursor_byte = normalize_boundary(self.value_text, selected.start)
+          },
+          _ => { self.value_text = self.value_text.slice(end: self.cursor_byte).or("") },
+        }
+        self.anchor_byte = Maybe::new<Int>()
+      },
+      Action::undo => (),
+      Action::redo => (),
+      Action::submit => (),
+    }
+    outcome(
+      self.@,
+      previous_value,
+      previous_cursor,
+      previous_anchor,
+      submit_requested: action == Action::submit,
+    )
+  }
+}

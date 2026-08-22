@@ -3,6 +3,7 @@ use cooper/context
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
+use cooper/editor
 use cooper/event
 use cooper/geometry
 use cooper/selection
@@ -27,9 +28,101 @@ private struct ByteRange {
   end: Int,
 }
 
+private struct InputKeyBinding {
+  name: Str,
+  action: editor::Action,
+  shift: Bool,
+  ctrl: Bool,
+  alt: Bool,
+  super: Bool,
+}
+
+private fn input_binding(
+  name: Str,
+  action: editor::Action,
+  shift: Bool?,
+  ctrl: Bool?,
+  alt: Bool?,
+  super: Bool?,
+) InputKeyBinding {
+  InputKeyBinding{
+    name: name,
+    action: action,
+    shift: shift.or(false),
+    ctrl: ctrl.or(false),
+    alt: alt.or(false),
+    super: super.or(false),
+  }
+}
+
+private fn default_input_bindings() [InputKeyBinding] {
+  [
+    input_binding("left", editor::Action::select_left, shift: true),
+    input_binding("right", editor::Action::select_right, shift: true),
+    input_binding("b", editor::Action::select_left, shift: true, ctrl: true),
+    input_binding("f", editor::Action::select_right, shift: true, ctrl: true),
+    input_binding("home", editor::Action::select_start, shift: true),
+    input_binding("end", editor::Action::select_end, shift: true),
+    input_binding("a", editor::Action::select_start, shift: true, ctrl: true),
+    input_binding("e", editor::Action::select_end, shift: true, ctrl: true),
+    input_binding("left", editor::Action::select_word_backward, shift: true, alt: true),
+    input_binding("left", editor::Action::select_word_backward, shift: true, ctrl: true),
+    input_binding("b", editor::Action::select_word_backward, shift: true, alt: true),
+    input_binding("right", editor::Action::select_word_forward, shift: true, alt: true),
+    input_binding("right", editor::Action::select_word_forward, shift: true, ctrl: true),
+    input_binding("f", editor::Action::select_word_forward, shift: true, alt: true),
+    input_binding("left", editor::Action::move_left),
+    input_binding("right", editor::Action::move_right),
+    input_binding("b", editor::Action::move_left, ctrl: true),
+    input_binding("f", editor::Action::move_right, ctrl: true),
+    input_binding("home", editor::Action::move_start),
+    input_binding("end", editor::Action::move_end),
+    input_binding("a", editor::Action::move_start, ctrl: true),
+    input_binding("e", editor::Action::move_end, ctrl: true),
+    input_binding("left", editor::Action::move_start, super: true),
+    input_binding("right", editor::Action::move_end, super: true),
+    input_binding("left", editor::Action::select_start, shift: true, super: true),
+    input_binding("right", editor::Action::select_end, shift: true, super: true),
+    input_binding("left", editor::Action::move_word_backward, alt: true),
+    input_binding("left", editor::Action::move_word_backward, ctrl: true),
+    input_binding("b", editor::Action::move_word_backward, alt: true),
+    input_binding("right", editor::Action::move_word_forward, alt: true),
+    input_binding("right", editor::Action::move_word_forward, ctrl: true),
+    input_binding("f", editor::Action::move_word_forward, alt: true),
+    input_binding("backspace", editor::Action::delete_backward),
+    input_binding("delete", editor::Action::delete_forward),
+    input_binding("d", editor::Action::delete_forward, ctrl: true),
+    input_binding("w", editor::Action::delete_word_backward, ctrl: true),
+    input_binding("backspace", editor::Action::delete_word_backward, ctrl: true),
+    input_binding("backspace", editor::Action::delete_word_backward, alt: true),
+    input_binding("d", editor::Action::delete_word_forward, alt: true),
+    input_binding("delete", editor::Action::delete_word_forward, alt: true),
+    input_binding("delete", editor::Action::delete_word_forward, ctrl: true),
+    input_binding("u", editor::Action::delete_to_start, ctrl: true),
+    input_binding("k", editor::Action::delete_to_end, ctrl: true),
+    input_binding("a", editor::Action::select_all, super: true),
+    input_binding("z", editor::Action::undo, super: true),
+    input_binding("z", editor::Action::redo, shift: true, super: true),
+    input_binding("-", editor::Action::undo, ctrl: true),
+    input_binding(".", editor::Action::redo, ctrl: true),
+    input_binding("return", editor::Action::submit),
+  ]
+}
+
+private fn resolve_input_action(name: Str, modifiers: event::Modifiers) editor::Action? {
+  mut resolved = Maybe::new<editor::Action>()
+  for configured in default_input_bindings() {
+    if configured.name == name and configured.shift == modifiers.shift and configured.ctrl == modifiers.ctrl and configured.alt == modifiers.alt and configured.super == modifiers.super {
+      resolved = Maybe::new<editor::Action>(configured.action)
+      break
+    }
+  }
+  resolved
+}
+
 struct Input {
   node_ref: mut node::Node,
-  value_text: Str,
+  editor_state: mut editor::State,
   placeholder_text: Str,
   minimum_length: Int,
   maximum_length: Int?,
@@ -37,7 +130,6 @@ struct Input {
   placeholder_text_style: text::TextStyle,
   selection_patch: fn(mut text::TextStyle),
   selected_style: text::TextStyle,
-  selection_anchor: Int?,
   selection_generation: Int,
   selection_version: Int,
   selection_view_start: Int,
@@ -50,7 +142,6 @@ struct Input {
   selected_range: selection::Range?,
   selected_text_value: Str,
   commit_baseline: Str,
-  cursor: Int,
   width_measurer: fn(Str) Int,
 }
 
@@ -115,114 +206,12 @@ private fn normalize_boundary(text: Str, cursor: Int) Int {
   normalized
 }
 
-private fn remove_range(text: Str, start: Int, end: Int) Str {
-  let before = text.slice(end: start).or("")
-  let after = text.slice(start: end).or("")
-  "{before}{after}"
-}
-
-private fn insert_at(text: Str, index: Int, inserted_text: Str) Str {
-  let before = text.slice(end: index).or("")
-  let after = text.slice(start: index).or("")
-  "{before}{inserted_text}{after}"
-}
-
 private fn single_line(value: Str) Str {
   value.replace("\r\n", "").replace("\r", "").replace("\n", "").replace("\t", "    ")
 }
 
 private fn grapheme_count(value: Str) Int {
   glyphs(value).size()
-}
-
-private struct Segmentation {
-  started: Bool,
-  previous: unicode::GraphemeBreak,
-  state: unicode::BreakState,
-  count: Int,
-}
-
-private struct SuffixDelta {
-  started: Bool,
-  previous: unicode::GraphemeBreak,
-  state: unicode::BreakState,
-  delta: Int,
-}
-
-private fn segmentation() mut Segmentation {
-  (mut Segmentation{
-    started: false,
-    previous: unicode::GraphemeOther,
-    state: unicode::BreakStateDefault,
-    count: 0,
-  })
-}
-
-private fn push_scalar(segmented: mut Segmentation, scalar: Rune) {
-  let property = unicode::GraphemeBreakProperty(Int32::from(scalar))
-  if segmented.started {
-    let state = mut segmented.state
-    if unicode::ComputeGraphemeBreak(segmented.previous, property, state) {
-      segmented.count =+ 1
-    }
-    segmented.state = state.@
-  } else {
-    segmented.started = true
-    segmented.count = 1
-  }
-  segmented.previous = property
-}
-
-private fn suffix_delta(cache: mut [SuffixDelta], prefix: Segmentation, suffix: Str) Int {
-  mut cached = Maybe::new<Int>()
-  for entry in cache {
-    if entry.started == prefix.started and entry.previous == prefix.previous and entry.state == prefix.state {
-      cached = Maybe::new<Int>(entry.delta)
-    }
-  }
-  match cached {
-    delta => delta,
-    _ => {
-      let evaluated = segmentation()
-      evaluated.started = prefix.started
-      evaluated.previous = prefix.previous
-      evaluated.state = prefix.state
-      evaluated.count = prefix.count
-      for scalar in suffix {
-        push_scalar(evaluated, scalar)
-      }
-      let delta = evaluated.count - prefix.count
-      cache.push(
-        SuffixDelta{
-          started: prefix.started,
-          previous: prefix.previous,
-          state: prefix.state,
-          delta: delta,
-        },
-      )
-      delta
-    },
-  }
-}
-
-private fn longest_valid_insertion(value: Str, cursor: Int, inserted: Str, maximum: Int) Str {
-  let before = value.slice(end: cursor).expect("Input cursor prefix")
-  let after = value.slice(start: cursor).expect("Input cursor suffix")
-  let segmented = segmentation()
-  for scalar in before {
-    push_scalar(segmented, scalar)
-  }
-  let cache = mut List::new<SuffixDelta>()
-  mut accepted = ""
-  mut end = 0
-  for scalar in inserted {
-    push_scalar(segmented, scalar)
-    end = end + scalar.to_str().size()
-    if segmented.count + suffix_delta(cache, segmented.@, after) <= maximum {
-      accepted = inserted.slice(end: end).expect("Input scalar insertion boundary")
-    }
-  }
-  accepted
 }
 
 private fn truncate(value: Str, maximum: Int?) Str {
@@ -240,7 +229,9 @@ private fn same_color(left: color::Color?, right: color::Color?) Bool {
   match left {
     left_color => {
       match right {
-        right_color => left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue,
+        right_color => {
+          left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue
+        },
         _ => false,
       }
     },
@@ -256,10 +247,7 @@ private fn default_selection_style(value: mut text::TextStyle) {
   value.reverse = not value.reverse
 }
 
-private fn apply_style_patch(
-  base: text::TextStyle,
-  patch: fn(mut text::TextStyle),
-) text::TextStyle {
+private fn apply_style_patch(base: text::TextStyle, patch: fn(mut text::TextStyle)) text::TextStyle {
   let selected = mut base
   patch(selected)
   selected.@
@@ -470,7 +458,7 @@ fn new(
   text_style: text::TextStyle?,
   placeholder_style: text::TextStyle?,
   selectable: Bool?,
-  selection_style: (fn(mut text::TextStyle))?,
+  selection_style: fn(mut text::TextStyle)?,
 ) mut Input {
   let minimum = min_length.or(0)
   if minimum < 0 {
@@ -490,7 +478,7 @@ fn new(
   let patch = selection_style.or(default_selection_style)
   let input = mut Input{
     node_ref: context::internal_state(ctx).create_node(configured_style),
-    value_text: initial_value,
+    editor_state: mut editor::new(initial_value),
     placeholder_text: single_line(placeholder.or("")),
     minimum_length: minimum,
     maximum_length: max_length,
@@ -498,7 +486,6 @@ fn new(
     placeholder_text_style: placeholder_style.or(text::style(dim: true)),
     selection_patch: patch,
     selected_style: apply_style_patch(base_style, patch),
-    selection_anchor: Maybe::new<Int>(),
     selection_generation: 0,
     selection_version: 0,
     selection_view_start: 0,
@@ -511,20 +498,19 @@ fn new(
     selected_range: Maybe::new<selection::Range>(),
     selected_text_value: "",
     commit_baseline: initial_value,
-    cursor: initial_value.size(),
     width_measurer: context::internal_state(ctx).width_measurer,
   }
   let retained = input.node_ref
   retained.bind(input)
   retained.set_focusable(true)
   let _ = retained.on_focus(fn() {
-    input.commit_baseline = input.value_text
+    input.commit_baseline = input.editor_state.value()
   })
   let _ = retained.on_blur(fn() {
     input.commit_pending_change()
   })
   retained.set_measure(fn(measurement: node::MeasureInput) node::MeasureSize {
-    mut display = input.value_text
+    mut display = input.editor_state.value()
     if display.is_empty() {
       display = input.placeholder_text
     }
@@ -550,25 +536,29 @@ impl node::Renderable for Input {
 
   fn paint(ctx: mut paint::Context) {
     let width = self.node_ref.layout().screen.width
-    let view = match self.selection_anchor {
-      anchor => input_view_from_start(
-        self.value_text,
-        self.placeholder_text,
-        self.cursor,
-        width,
-        self.selection_view_start,
-        self.width_measurer,
-      ),
-      _ => input_view(
-        self.value_text,
-        self.placeholder_text,
-        self.cursor,
-        width,
-        self.width_measurer,
-      ),
+    let view = match self.editor_state.anchor() {
+      anchor => {
+        input_view_from_start(
+          self.editor_state.value(),
+          self.placeholder_text,
+          self.editor_state.cursor(),
+          width,
+          self.selection_view_start,
+          self.width_measurer,
+        )
+      },
+      _ => {
+        input_view(
+          self.editor_state.value(),
+          self.placeholder_text,
+          self.editor_state.cursor(),
+          width,
+          self.width_measurer,
+        )
+      },
     }
     ctx.fill(cell_style(self.value_style))
-    let painted_style = match self.value_text.is_empty() {
+    let painted_style = match self.editor_state.value().is_empty() {
       true => placeholder_paint_style(self.value_style, self.placeholder_text_style),
       false => self.value_style,
     }
@@ -576,7 +566,7 @@ impl node::Renderable for Input {
     match self.byte_selection() {
       selected => {
         mut x = 0
-        for glyph in glyphs(self.value_text) {
+        for glyph in glyphs(self.editor_state.value()) {
           if glyph.end > view.start {
             let glyph_width = self.width_measurer(glyph.text)
             if x + glyph_width <= width {
@@ -635,18 +625,14 @@ impl node::Renderable for Input {
 
 impl Input {
   private fn byte_selection() ByteRange? {
-    let anchor = try self.selection_anchor -> _ { Maybe::new<ByteRange>() }
-    if anchor == self.cursor {
-      Maybe::new<ByteRange>()
-    } else if anchor < self.cursor {
-      Maybe::new<ByteRange>(ByteRange{start: anchor, end: self.cursor})
-    } else {
-      Maybe::new<ByteRange>(ByteRange{start: self.cursor, end: anchor})
+    match self.editor_state.selection() {
+      selected => Maybe::new<ByteRange>(ByteRange{start: selected.start, end: selected.end}),
+      _ => Maybe::new<ByteRange>(),
     }
   }
 
   private fn mut clear_local_selection() node::SelectionResult {
-    self.selection_anchor = Maybe::new<Int>()
+    self.editor_state.clear_selection()
     self.selection_generation = 0
     self.selection_version = 0
     self.selection_view_start = 0
@@ -662,11 +648,14 @@ impl Input {
       selected => {
         self.selected_range = Maybe::new<selection::Range>(
           selection::Range{
-            start: display_offset(self.value_text, selected.start, self.width_measurer),
-            end: display_offset(self.value_text, selected.end, self.width_measurer),
+            start: display_offset(self.editor_state.value(), selected.start, self.width_measurer),
+            end: display_offset(self.editor_state.value(), selected.end, self.width_measurer),
           },
         )
-        self.selected_text_value = self.value_text.slice(start: selected.start, end: selected.end).or("")
+        self.selected_text_value = self.editor_state.value().slice(
+          start: selected.start,
+          end: selected.end,
+        ).or("")
       },
       _ => {
         self.selected_range = Maybe::new<selection::Range>()
@@ -681,7 +670,7 @@ impl Input {
 
   private fn mut apply_local_selection(value: node::LocalSelection?) node::SelectionResult {
     let local = try value -> _ { self.clear_local_selection() }
-    if (not local.is_active) or (local.anchor_y < 0 and local.focus_y < 0) or (local.anchor_y > 0 and local.focus_y > 0) {
+    if (not local.is_active) or local.anchor_y < 0 and local.focus_y < 0 or local.anchor_y > 0 and local.focus_y > 0 {
       self.clear_local_selection()
     } else {
       let width = self.node_ref.layout().screen.width
@@ -698,9 +687,9 @@ impl Input {
         focus_column = width
       }
       let view = input_view(
-        self.value_text,
+        self.editor_state.value(),
         self.placeholder_text,
-        self.cursor,
+        self.editor_state.cursor(),
         width,
         self.width_measurer,
       )
@@ -709,23 +698,26 @@ impl Input {
         self.selection_view_start = view.start
         self.selection_view_width = width
       }
-      let preserve_initial = self.selection_generation == 0 and self.selection_anchor.is_some()
-      let generation_changed = self.selection_generation != local.generation or (not self.selection_anchor.is_some())
+      let preserve_initial = self.selection_generation == 0 and self.editor_state.anchor().is_some()
+      let generation_changed = self.selection_generation != local.generation or not self.editor_state.anchor().is_some()
       let version_changed = self.selection_version != local.version
       let owns_selection = self.node_ref.owns_global_selection()
-      let local_changed = (not self.selection_local_valid) or self.selection_local_anchor_x != local.anchor_x or self.selection_local_anchor_y != local.anchor_y or self.selection_local_focus_x != local.focus_x or self.selection_local_focus_y != local.focus_y or (width_changed and (not owns_selection))
-      let remap_anchor = generation_changed or (local_changed and (not owns_selection))
+      let local_changed = (not self.selection_local_valid) or self.selection_local_anchor_x != local.anchor_x or self.selection_local_anchor_y != local.anchor_y or self.selection_local_focus_x != local.focus_x or self.selection_local_focus_y != local.focus_y or width_changed and (not owns_selection)
+      let remap_anchor = generation_changed or local_changed and (not owns_selection)
       if remap_anchor {
         if not preserve_initial {
           if local.anchor_y < 0 {
-            self.selection_anchor = Maybe::new<Int>(0)
+            self.editor_state.set_anchor(0)
           } else if local.anchor_y > 0 {
-            self.selection_anchor = Maybe::new<Int>(self.value_text.size())
+            self.editor_state.set_anchor(self.editor_state.value().size())
           } else {
-            self.selection_anchor = Maybe::new<Int>(
-              normalize_boundary(
-                self.value_text,
-                cursor_for_column(self.value_text, view.start, anchor_column, width, self.width_measurer),
+            self.editor_state.set_anchor(
+              cursor_for_column(
+                self.editor_state.value(),
+                view.start,
+                anchor_column,
+                width,
+                self.width_measurer,
               ),
             )
           }
@@ -738,29 +730,34 @@ impl Input {
       if generation_changed or version_changed or local_changed {
         if not preserve_initial {
           if local.focus_y < 0 {
-            self.cursor = 0
+            self.editor_state.set_cursor(0)
             self.selection_view_start = 0
           } else if local.focus_y > 0 {
-            self.cursor = self.value_text.size()
+            self.editor_state.set_cursor(self.editor_state.value().size())
             self.selection_view_start = input_view(
-              self.value_text,
+              self.editor_state.value(),
               self.placeholder_text,
-              self.cursor,
+              self.editor_state.cursor(),
               width,
               self.width_measurer,
             ).start
           } else {
             if local.allow_edge_pan and version_changed {
               if focus_column < 0 {
-                self.selection_view_start = previous_boundary(self.value_text, self.selection_view_start)
+                self.selection_view_start = previous_boundary(
+                  self.editor_state.value(),
+                  self.selection_view_start,
+                )
               } else if focus_column >= width {
-                self.selection_view_start = next_boundary(self.value_text, self.selection_view_start)
+                self.selection_view_start = next_boundary(
+                  self.editor_state.value(),
+                  self.selection_view_start,
+                )
               }
             }
-            self.cursor = normalize_boundary(
-              self.value_text,
+            self.editor_state.set_cursor(
               cursor_for_column(
-                self.value_text,
+                self.editor_state.value(),
                 self.selection_view_start,
                 focus_column,
                 width,
@@ -819,7 +816,7 @@ impl Input {
   }
 
   fn value() Str {
-    self.value_text
+    self.editor_state.value()
   }
 
   fn mut focus() Bool {
@@ -914,7 +911,7 @@ impl Input {
       _ => (),
     }
     self.maximum_length = value
-    self.set_value(self.value_text)
+    self.set_value(self.editor_state.value())
   }
 
   fn text_style() text::TextStyle {
@@ -927,7 +924,7 @@ impl Input {
 
   fn mut set_selectable(value: Bool) {
     self.node_ref.require_live()
-    if value and (not self.node_ref.is_selectable()) {
+    if value and not self.node_ref.is_selectable() {
       self.enable_selection()
     } else if (not value) and self.node_ref.is_selectable() {
       self.node_ref.clear_selection_callbacks()
@@ -973,26 +970,23 @@ impl Input {
   fn mut set_value(value: Str) {
     self.node_ref.require_live()
     let normalized = truncate(single_line(value), self.maximum_length)
-    let changed = self.value_text != normalized
-    let cursor_changed = self.cursor != normalized.size()
-    let selection_changed = self.selection_anchor.is_some()
-    if selection_changed {
+    let had_selection = self.editor_state.has_anchor()
+    let changed = self.editor_state.reset(normalized)
+    if had_selection {
       self.node_ref.clear_global_selection()
       let _ = self.clear_local_selection()
     }
-    self.value_text = normalized
-    self.cursor = normalized.size()
-    if changed {
+    if changed.text_changed {
       self.node_ref.mark_measure_dirty()
       self.node_ref.emit_value(1, normalized)
-    } else if cursor_changed or selection_changed {
+    } else if changed.cursor_changed or changed.selection_changed {
       self.node_ref.request_redraw()
     }
   }
 
   private fn mut commit_pending_change() {
-    if self.value_text != self.commit_baseline {
-      let committed = self.value_text
+    if self.editor_state.value() != self.commit_baseline {
+      let committed = self.editor_state.value()
       self.node_ref.emit_value(2, committed)
       self.commit_baseline = committed
     }
@@ -1000,10 +994,10 @@ impl Input {
 
   fn mut submit() Bool {
     self.node_ref.require_live()
-    if grapheme_count(self.value_text) < self.minimum_length {
+    if grapheme_count(self.editor_state.value()) < self.minimum_length {
       false
     } else {
-      let submitted = self.value_text
+      let submitted = self.editor_state.value()
       if submitted != self.commit_baseline {
         self.node_ref.emit_value(2, submitted)
       }
@@ -1028,7 +1022,7 @@ impl Input {
   private fn mut changed(ctx: mut event_delivery::Context, text_changed: Bool) event_delivery::Disposition {
     if text_changed {
       self.node_ref.mark_measure_dirty()
-      self.node_ref.emit_value(1, self.value_text)
+      self.node_ref.emit_value(1, self.editor_state.value())
     } else {
       self.node_ref.request_redraw()
     }
@@ -1036,45 +1030,29 @@ impl Input {
     event_delivery::Disposition::handled
   }
 
-  private fn mut remove_selected_for_insertion() Bool {
-    mut removed = false
-    match self.byte_selection() {
-      selected => {
-        self.value_text = remove_range(self.value_text, selected.start, selected.end)
-        self.cursor = selected.start
-        removed = true
-      },
-      _ => (),
-    }
-    if self.selection_anchor.is_some() {
+  private fn mut finish_editor_outcome(
+    ctx: mut event_delivery::Context,
+    changed: editor::Outcome,
+    had_selection: Bool,
+  ) event_delivery::Disposition {
+    if had_selection and not self.editor_state.has_anchor() {
       self.node_ref.clear_global_selection()
       let _ = self.clear_local_selection()
     }
-    removed
-  }
-
-  private fn mut delete_selected() Bool {
-    mut removed = false
-    match self.byte_selection() {
-      selected => {
-        self.value_text = remove_range(self.value_text, selected.start, selected.end)
-        self.cursor = normalize_boundary(self.value_text, selected.start)
-        removed = true
-      },
-      _ => (),
+    if changed.text_changed {
+      self.changed(ctx, true)
+    } else if changed.cursor_changed or changed.selection_changed {
+      self.changed(ctx, false)
+    } else {
+      event_delivery::Disposition::handled
     }
-    if self.selection_anchor.is_some() {
-      self.node_ref.clear_global_selection()
-      let _ = self.clear_local_selection()
-    }
-    removed
   }
 
   private fn cursor_column() Int {
     let view = input_view(
-      self.value_text,
+      self.editor_state.value(),
       self.placeholder_text,
-      self.cursor,
+      self.editor_state.cursor(),
       self.node_ref.layout().screen.width,
       self.width_measurer,
     )
@@ -1082,20 +1060,20 @@ impl Input {
   }
 
   private fn mut begin_keyboard_selection() Bool {
-    if self.selection_anchor.is_some() and self.node_ref.owns_global_selection() {
+    if self.editor_state.has_anchor() and self.node_ref.owns_global_selection() {
       true
     } else {
-      if self.selection_anchor.is_some() {
+      if self.editor_state.has_anchor() {
         let _ = self.clear_local_selection()
       }
       let view = input_view(
-        self.value_text,
+        self.editor_state.value(),
         self.placeholder_text,
-        self.cursor,
+        self.editor_state.cursor(),
         self.node_ref.layout().screen.width,
         self.width_measurer,
       )
-      self.selection_anchor = Maybe::new<Int>(self.cursor)
+      self.editor_state.set_anchor(self.editor_state.cursor())
       self.selection_generation = 0
       self.selection_version = 0
       self.selection_view_start = view.start
@@ -1111,9 +1089,9 @@ impl Input {
 
   private fn mut finish_keyboard_selection() {
     let view = input_view(
-      self.value_text,
+      self.editor_state.value(),
       self.placeholder_text,
-      self.cursor,
+      self.editor_state.cursor(),
       self.node_ref.layout().screen.width,
       self.width_measurer,
     )
@@ -1126,40 +1104,20 @@ impl Input {
   }
 
   private fn mut clear_keyboard_selection() {
-    if self.selection_anchor.is_some() {
+    if self.editor_state.has_anchor() {
       self.node_ref.clear_global_selection()
       let _ = self.clear_local_selection()
     }
   }
 
   private fn mut insert_text(ctx: mut event_delivery::Context, value: Str) event_delivery::Disposition {
-    mut inserted = single_line(value)
+    let inserted = single_line(value)
     if inserted.is_empty() {
       event_delivery::Disposition::handled
     } else {
-      let removed = self.remove_selected_for_insertion()
-      match self.maximum_length {
-        maximum => {
-          let complete = insert_at(self.value_text, self.cursor, inserted)
-          if grapheme_count(complete) > maximum {
-            inserted = longest_valid_insertion(self.value_text, self.cursor, inserted, maximum)
-          }
-        },
-        _ => (),
-      }
-      if inserted.is_empty() {
-        if removed {
-          self.cursor = normalize_boundary(self.value_text, self.cursor)
-          self.changed(ctx, true)
-        } else {
-          event_delivery::Disposition::handled
-        }
-      } else {
-        let desired_cursor = self.cursor + inserted.size()
-        self.value_text = insert_at(self.value_text, self.cursor, inserted)
-        self.cursor = normalize_boundary(self.value_text, desired_cursor)
-        self.changed(ctx, true)
-      }
+      let had_selection = self.editor_state.has_anchor()
+      let changed = self.editor_state.insert_text(inserted, maximum_length: self.maximum_length)
+      self.finish_editor_outcome(ctx, changed, had_selection)
     }
   }
 
@@ -1170,18 +1128,23 @@ impl Input {
       let column = mouse.local_x
       let width = self.node_ref.layout().screen.width
       let view = input_view(
-        self.value_text,
+        self.editor_state.value(),
         self.placeholder_text,
-        self.cursor,
+        self.editor_state.cursor(),
         width,
         self.width_measurer,
       )
-      self.cursor = normalize_boundary(
-        self.value_text,
-        cursor_for_column(self.value_text, view.start, column, width, self.width_measurer),
+      self.editor_state.set_cursor(
+        cursor_for_column(
+          self.editor_state.value(),
+          view.start,
+          column,
+          width,
+          self.width_measurer,
+        ),
       )
       if self.node_ref.is_selectable() and self.node_ref.owns_global_selection() {
-        self.selection_anchor = Maybe::new<Int>(self.cursor)
+        self.editor_state.set_anchor(self.editor_state.cursor())
         self.selection_generation = 0
         self.selection_version = 0
         self.selection_view_start = view.start
@@ -1192,86 +1155,74 @@ impl Input {
     }
   }
 
+  private fn mut select_all(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    if self.editor_state.has_anchor() {
+      self.node_ref.clear_global_selection()
+      let _ = self.clear_local_selection()
+    }
+    self.editor_state.set_cursor(0)
+    let selecting = self.begin_keyboard_selection()
+    if selecting {
+      let _ = self.editor_state.apply(editor::Action::select_end)
+      self.finish_keyboard_selection()
+    } else {
+      let _ = self.editor_state.apply(editor::Action::move_end)
+    }
+    self.changed(ctx, false)
+  }
+
+  private fn mut perform_selection_action(ctx: mut event_delivery::Context, action: editor::Action) event_delivery::Disposition {
+    let selecting = self.begin_keyboard_selection()
+    if selecting {
+      let _ = self.editor_state.apply(action)
+      self.finish_keyboard_selection()
+    } else {
+      let fallback = match action {
+        editor::Action::select_left => editor::Action::move_left,
+        editor::Action::select_right => editor::Action::move_right,
+        editor::Action::select_start => editor::Action::move_start,
+        editor::Action::select_end => editor::Action::move_end,
+        editor::Action::select_word_backward => editor::Action::move_word_backward,
+        editor::Action::select_word_forward => editor::Action::move_word_forward,
+        _ => action,
+      }
+      let _ = self.editor_state.apply(fallback)
+    }
+    self.changed(ctx, false)
+  }
+
   private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
     if key.event_type == event::KeyEventType::release {
       event_delivery::Disposition::ignored
-    } else if key.matches("left", shift: true) {
-      let selecting = self.begin_keyboard_selection()
-      self.cursor = previous_boundary(self.value_text, self.cursor)
-      if selecting {
-        self.finish_keyboard_selection()
-      }
-      self.changed(ctx, false)
-    } else if key.matches("right", shift: true) {
-      let selecting = self.begin_keyboard_selection()
-      self.cursor = next_boundary(self.value_text, self.cursor)
-      if selecting {
-        self.finish_keyboard_selection()
-      }
-      self.changed(ctx, false)
-    } else if key.matches("home", shift: true) {
-      let selecting = self.begin_keyboard_selection()
-      self.cursor = 0
-      if selecting {
-        self.finish_keyboard_selection()
-      }
-      self.changed(ctx, false)
-    } else if key.matches("end", shift: true) {
-      let selecting = self.begin_keyboard_selection()
-      self.cursor = self.value_text.size()
-      if selecting {
-        self.finish_keyboard_selection()
-      }
-      self.changed(ctx, false)
-    } else if key.matches("left") {
-      match self.byte_selection() {
-        selected => { self.cursor = selected.start },
-        _ => { self.cursor = previous_boundary(self.value_text, self.cursor) },
-      }
-      self.clear_keyboard_selection()
-      self.changed(ctx, false)
-    } else if key.matches("right") {
-      match self.byte_selection() {
-        selected => { self.cursor = selected.end },
-        _ => { self.cursor = next_boundary(self.value_text, self.cursor) },
-      }
-      self.clear_keyboard_selection()
-      self.changed(ctx, false)
-    } else if key.matches("home") {
-      self.cursor = 0
-      self.clear_keyboard_selection()
-      self.changed(ctx, false)
-    } else if key.matches("end") {
-      self.cursor = self.value_text.size()
-      self.clear_keyboard_selection()
-      self.changed(ctx, false)
-    } else if key.matches("backspace") {
-      if self.delete_selected() {
-        self.changed(ctx, true)
-      } else if self.cursor > 0 {
-        let previous = previous_boundary(self.value_text, self.cursor)
-        self.value_text = remove_range(self.value_text, previous, self.cursor)
-        self.cursor = normalize_boundary(self.value_text, previous)
-        self.changed(ctx, true)
-      } else {
-        event_delivery::Disposition::handled
-      }
-    } else if key.matches("delete") {
-      if self.delete_selected() {
-        self.changed(ctx, true)
-      } else if self.cursor < self.value_text.size() {
-        let next = next_boundary(self.value_text, self.cursor)
-        self.value_text = remove_range(self.value_text, self.cursor, next)
-        self.cursor = normalize_boundary(self.value_text, self.cursor)
-        self.changed(ctx, true)
-      } else {
-        event_delivery::Disposition::handled
-      }
-    } else if key.matches("return") {
-      let _ = self.submit()
-      event_delivery::Disposition::handled
     } else {
-      self.insert_text(ctx, key.text)
+      match resolve_input_action(key.name, key.modifiers) {
+        action => {
+          match action {
+            editor::Action::submit => {
+              let _ = self.submit()
+              event_delivery::Disposition::handled
+            },
+            editor::Action::select_all => self.select_all(ctx),
+            _ => {
+              let selecting = action == editor::Action::select_left or action == editor::Action::select_right or action == editor::Action::select_start or action == editor::Action::select_end or action == editor::Action::select_word_backward or action == editor::Action::select_word_forward
+              if selecting {
+                self.perform_selection_action(ctx, action)
+              } else {
+                let had_selection = self.editor_state.has_anchor()
+                let changed = self.editor_state.apply(action)
+                self.finish_editor_outcome(ctx, changed, had_selection)
+              }
+            },
+          }
+        },
+        _ => {
+          if (not key.text.is_empty()) and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super) {
+            self.insert_text(ctx, key.text)
+          } else {
+            event_delivery::Disposition::ignored
+          }
+        },
+      }
     }
   }
 

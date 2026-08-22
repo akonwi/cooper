@@ -1,0 +1,242 @@
+use ard/testing as assertions
+
+use cooper/context
+use cooper/core/app_runtime
+use cooper/core/paint
+use cooper/event
+use cooper/root
+use cooper/selection
+use cooper/text
+
+struct Cell {
+  grapheme: Str,
+  width: Int,
+  style: text::TextStyle,
+}
+
+struct Frame {
+  buffer: paint::Buffer,
+}
+
+private fn text_style(value: paint::CellStyle) text::TextStyle {
+  text::TextStyle{
+    foreground: value.foreground,
+    background: value.background,
+    bold: value.bold,
+    dim: value.dim,
+    italic: value.italic,
+    underline: value.underline,
+    blink: value.blink,
+    reverse: value.reverse,
+    strike: value.strike,
+  }
+}
+
+impl Frame {
+  fn width() Int {
+    self.buffer.width
+  }
+
+  fn height() Int {
+    self.buffer.height
+  }
+
+  fn cell(x: Int, y: Int) Cell? {
+    match self.buffer.cell_at(x, y) {
+      value => {
+        Maybe::new<Cell>(
+          Cell{
+            grapheme: value.grapheme,
+            width: value.width,
+            style: text_style(value.style),
+          },
+        )
+      },
+      _ => Maybe::new<Cell>(),
+    }
+  }
+
+  fn cursor_x() Int? {
+    match self.buffer.cursor {
+      cursor => Maybe::new<Int>(cursor.x),
+      _ => Maybe::new<Int>(),
+    }
+  }
+
+  fn cursor_y() Int? {
+    match self.buffer.cursor {
+      cursor => Maybe::new<Int>(cursor.y),
+      _ => Maybe::new<Int>(),
+    }
+  }
+
+  fn text() Str {
+    mut output = ""
+    mut y = 0
+    while y < self.buffer.height {
+      if y > 0 {
+        output = "{output}\n"
+      }
+      mut x = 0
+      while x < self.buffer.width {
+        match self.buffer.cell_at(x, y) {
+          cell => {
+            if cell.width > 0 {
+              output = "{output}{cell.grapheme}"
+            }
+          },
+          _ => (),
+        }
+        x =+ 1
+      }
+      y =+ 1
+    }
+    output
+  }
+}
+
+struct TestApp {
+  context: mut context::Context,
+  root: mut root::Root,
+}
+
+private fn modifiers(value: event::Modifiers?) event::Modifiers {
+  value.or(event::Modifiers{shift: false, ctrl: false, alt: false, super: false})
+}
+
+fn new(width: Int, height: Int) TestApp {
+  let runtime = app_runtime::new_headless(width, height)
+  let ctx = context::internal_new(
+    request_render: runtime.request_render(),
+    width_measurer: runtime.width_measurer(),
+    dispatch: runtime.dispatch(),
+    cancellation: runtime.cancellation(),
+    focus_request: runtime.focus_request(),
+    blur_request: runtime.blur_request(),
+    selection_start: runtime.selection_start_request(),
+    selection_update: runtime.selection_update_request(),
+    selection_owns: runtime.selection_owns_request(),
+    selection_clear: runtime.selection_clear_request(),
+  )
+  let root = root::new(ctx, runtime)
+  runtime.start_test(ctx, root)
+  TestApp{context: ctx, root: root}
+}
+
+impl TestApp {
+  fn on_key(handler: fn(mut event::KeyEvent)) fn() {
+    self.root.state_ref.on_key(handler)
+  }
+
+  fn on_paste(handler: fn(mut event::PasteEvent)) fn() {
+    self.root.state_ref.on_paste(handler)
+  }
+
+  fn terminal_focus() event::TerminalFocus? {
+    self.root.state_ref.terminal_focus()
+  }
+
+  fn on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
+    self.root.state_ref.on_terminal_focus(handler)
+  }
+
+  fn set_terminal_focus(value: event::TerminalFocus) {
+    self.root.state_ref.terminal_focus_test(self.context, self.root, value)
+  }
+
+  fn selection() selection::Selection? {
+    self.root.state_ref.current_selection()
+  }
+
+  fn clear_selection() {
+    self.root.state_ref.clear_selection()
+  }
+
+  fn on_selection_change(handler: fn(selection::Selection?)) fn() {
+    self.root.state_ref.on_selection_change(handler)
+  }
+
+  fn render() {
+    self.root.state_ref.render_test(self.context, self.root)
+  }
+
+  fn flush(limit: Int?) Int {
+    self.root.state_ref.flush_test(self.context, self.root, limit.or(1024))
+  }
+
+  fn resize(width: Int, height: Int) {
+    self.root.state_ref.resize_test(width, height)
+    self.render()
+  }
+
+  fn key(received: mut event::KeyEvent) {
+    self.root.state_ref.key_test(self.context, self.root, received)
+  }
+
+  fn paste(received: mut event::PasteEvent) {
+    self.root.state_ref.paste_test(self.context, self.root, received)
+  }
+
+  fn mouse(received: mut event::MouseEvent) {
+    self.root.state_ref.mouse_test(self.context, self.root, received)
+  }
+
+  fn mouse_move(x: Int, y: Int, received_modifiers: event::Modifiers?) {
+    self.mouse(event::mouse(event::MouseEventType::move, event::MouseButton::none, x, y, modifiers(received_modifiers)))
+  }
+
+  fn mouse_down(x: Int, y: Int, button: event::MouseButton?, received_modifiers: event::Modifiers?) {
+    self.mouse(event::mouse(event::MouseEventType::down, button.or(event::MouseButton::left), x, y, modifiers(received_modifiers)))
+  }
+
+  fn mouse_up(x: Int, y: Int, button: event::MouseButton?, received_modifiers: event::Modifiers?) {
+    self.mouse(event::mouse(event::MouseEventType::up, button.or(event::MouseButton::left), x, y, modifiers(received_modifiers)))
+  }
+
+  fn click(x: Int, y: Int, button: event::MouseButton?, received_modifiers: event::Modifiers?) {
+    let configured = button.or(event::MouseButton::left)
+    self.mouse_down(x, y, configured, received_modifiers)
+    self.mouse_up(x, y, configured, received_modifiers)
+  }
+
+  fn drag(
+    start_x: Int,
+    start_y: Int,
+    end_x: Int,
+    end_y: Int,
+    button: event::MouseButton?,
+    received_modifiers: event::Modifiers?,
+  ) {
+    let configured = button.or(event::MouseButton::left)
+    let applied_modifiers = modifiers(received_modifiers)
+    self.mouse_down(start_x, start_y, configured, applied_modifiers)
+    self.mouse(event::mouse(event::MouseEventType::drag, configured, end_x, end_y, applied_modifiers))
+    self.mouse_up(end_x, end_y, configured, applied_modifiers)
+  }
+
+  fn scroll(x: Int, y: Int, delta_y: Int, delta_x: Int?) {
+    self.mouse(
+      event::mouse(
+        event::MouseEventType::scroll,
+        event::MouseButton::none,
+        x,
+        y,
+        modifiers(),
+        scroll_x: delta_x.or(0),
+        scroll_y: delta_y,
+      ),
+    )
+  }
+
+  fn frame() Frame {
+    Frame{buffer: self.root.state_ref.frame()}
+  }
+
+  fn destroy() {
+    self.root.state_ref.destroy_test(self.context, self.root)
+  }
+}
+
+fn assert_contains(actual: Str, expected: Str) Void!Str {
+  assertions::assert(actual.contains(expected), "Expected frame text to contain {expected}")
+}

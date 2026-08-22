@@ -1,0 +1,139 @@
+use cooper/event
+
+enum Disposition {
+  ignored,
+  handled,
+}
+
+private fn stopped_dispatch(action: fn()) Void!event::DispatchError {
+  Result::err(event::DispatchError::stopped)
+}
+
+private fn reject_focus() Bool {
+  false
+}
+
+struct Outcome {
+  handled: Bool,
+  redraw: Bool,
+  quit: Bool,
+  preserve_focus_scroll: Bool,
+}
+
+fn new_outcome() mut Outcome {
+  (mut Outcome{
+    handled: false,
+    redraw: false,
+    quit: false,
+    preserve_focus_scroll: false,
+  })
+}
+
+struct Context {
+  key_event: (mut event::KeyEvent)?,
+  paste_event: (mut event::PasteEvent)?,
+  mouse_event: (mut event::MouseEvent)?,
+  local_x: Int?,
+  local_y: Int?,
+  focused: Bool,
+  outcome: mut Outcome,
+  focus_request: fn() Bool,
+  dispatch: fn(fn()) Void!event::DispatchError,
+}
+
+fn context(
+  key_event: (mut event::KeyEvent)?,
+  paste_event: (mut event::PasteEvent)?,
+  mouse_event: (mut event::MouseEvent)?,
+  local_x: Int?,
+  local_y: Int?,
+  focused: Bool,
+  outcome: mut Outcome,
+  focus_request: (fn() Bool)?,
+  dispatch: (fn(fn()) Void!event::DispatchError)?,
+) mut Context {
+  (mut Context{
+    key_event: key_event,
+    paste_event: paste_event,
+    mouse_event: mouse_event,
+    local_x: local_x,
+    local_y: local_y,
+    focused: focused,
+    outcome: outcome,
+    focus_request: focus_request.or(reject_focus),
+    dispatch: dispatch.or(stopped_dispatch),
+  })
+}
+
+impl Context {
+  fn stop_propagation() {
+    match self.key_event {
+      received => received.stop_propagation(),
+      _ => (),
+    }
+    match self.paste_event {
+      received => received.stop_propagation(),
+      _ => (),
+    }
+    match self.mouse_event {
+      received => received.stop_propagation(),
+      _ => (),
+    }
+  }
+
+  fn prevent_default() {
+    match self.key_event {
+      received => received.prevent_default(),
+      _ => (),
+    }
+    match self.paste_event {
+      received => received.prevent_default(),
+      _ => (),
+    }
+    match self.mouse_event {
+      received => received.prevent_default(),
+      _ => (),
+    }
+  }
+
+  fn is_default_prevented() Bool {
+    mut prevented = false
+    match self.key_event {
+      received => { prevented = received.is_default_prevented() },
+      _ => (),
+    }
+    match self.paste_event {
+      received => { prevented = received.is_default_prevented() },
+      _ => (),
+    }
+    match self.mouse_event {
+      received => { prevented = received.is_default_prevented() },
+      _ => (),
+    }
+    prevented
+  }
+
+  fn request_redraw() {
+    self.outcome.redraw = true
+  }
+
+  fn request_quit() {
+    self.outcome.quit = true
+  }
+
+  fn request_focus() Bool {
+    self.focus_request()
+  }
+
+  fn was_handled() Bool {
+    self.outcome.handled
+  }
+
+  fn preserve_focus_scroll() {
+    self.outcome.preserve_focus_scroll = true
+  }
+
+  fn mark_handled() {
+    self.outcome.handled = true
+  }
+}

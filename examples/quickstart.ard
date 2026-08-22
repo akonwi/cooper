@@ -1,0 +1,83 @@
+use cooper/app
+use cooper/color
+use cooper/event
+use cooper/style
+use cooper/ui
+
+fn main() {
+  let application = app::new().expect("create Cooper app")
+  let ctx = application.context
+
+  let background = ui::box(
+    ctx,
+    styles: style::new(
+      background: color::hex("#1131E9"),
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      align_items: style::Align::start,
+    ),
+  )
+  let panel = ui::box(
+    ctx,
+    styles: style::new(
+      background: color::hex("#1131E9"),
+      width: style::cells(42),
+      height: style::cells(9),
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  let content = ui::box(
+    ctx,
+    styles: style::new(
+      background: color::hex("#2947F0"),
+      width: style::cells(38),
+      height: style::cells(7),
+      padding: style::edges(style::cells(1)),
+      flex_direction: style::FlexDirection::column,
+      gap: style::cells(1),
+      align_items: style::Align::center,
+    ),
+  )
+
+  mut count = 0
+  let counter = ui::text(
+    ctx,
+    content: "Count  {count}",
+    styles: style::new(foreground: color::hex("#FFFFFF")),
+  )
+  content.add(
+    ui::text(
+      ctx,
+      content: "Hello, Cooper!",
+      styles: style::new(foreground: color::hex("#DCE3FF")),
+    ),
+  )
+  content.add(counter)
+  content.add(
+    ui::text(
+      ctx,
+      content: "left/right change | q quit",
+      styles: style::new(foreground: color::hex("#AEBBFF")),
+    ),
+  )
+  panel.add(content)
+  background.add(panel)
+  application.root.add(background)
+
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release {
+      if received.matches("q") {
+        application.destroy()
+      } else if received.matches("left") {
+        count =- 1
+        counter.set_content("Count  {count}")
+      } else if received.matches("right") {
+        count =+ 1
+        counter.set_content("Count  {count}")
+      }
+    }
+  })
+
+  application.run().expect("run Cooper quickstart")
+}

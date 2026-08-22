@@ -1,0 +1,509 @@
+use cooper/core/node
+use cooper/geometry
+use cooper/selection
+use cooper/style
+use go:math
+
+struct Anchor {
+  control: mut node::Node,
+  root: mut node::Node,
+  local_x: Int,
+  local_y: Int,
+}
+
+struct Session {
+  anchor: Anchor,
+  focus: geometry::Point,
+  focus_control: (mut node::Node)?,
+  focus_local_x: Int,
+  focus_local_y: Int,
+  focus_tracks_control: Bool,
+  resolved_anchor: geometry::Point,
+  resolved_focus: geometry::Point,
+  container: mut node::Node,
+  is_dragging: Bool,
+  generation: Int,
+  version: Int,
+  edge_pan_version: Int,
+}
+
+struct State {
+  session: Session?,
+  touched: [mut node::Node],
+  snapshot: selection::Selection?,
+  revision_value: Int,
+  next_generation: Int,
+}
+
+fn new() mut State {
+  (mut State{
+    session: Maybe::new<Session>(),
+    touched: [],
+    snapshot: Maybe::new<selection::Selection>(),
+    revision_value: 0,
+    next_generation: 1,
+  })
+}
+
+private fn contains(nodes: [mut node::Node], target: mut node::Node) Bool {
+  mut found = false
+  for current in nodes {
+    if current == target {
+      found = true
+      break
+    }
+  }
+  found
+}
+
+private fn connected(root: mut node::Node, target: mut node::Node) Bool {
+  mut current = Maybe::new<mut node::Node>(target)
+  mut found = false
+  mut scanning = true
+  while scanning {
+    match current {
+      retained => {
+        if (not retained.pointer_route_visible()) or (not retained.is_mounted()) {
+          scanning = false
+        } else if retained == root {
+          found = true
+          scanning = false
+        } else {
+          current = retained.parent
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+  found
+}
+
+private fn is_ancestor(candidate: mut node::Node, target: mut node::Node) Bool {
+  mut current = Maybe::new<mut node::Node>(target)
+  mut found = false
+  mut scanning = true
+  while scanning {
+    match current {
+      retained => {
+        if retained == candidate {
+          found = true
+          scanning = false
+        } else {
+          current = retained.parent
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+  found
+}
+
+private fn expanded_container(
+  root: mut node::Node,
+  current: mut node::Node,
+  anchor: mut node::Node,
+  focus: (mut node::Node)?,
+) mut node::Node {
+  mut candidate = current
+  if not connected(root, candidate) {
+    candidate = root
+  }
+  mut focus_target = root
+  match focus {
+    target => {
+      if connected(root, target) {
+        focus_target = target
+      }
+    },
+    _ => (),
+  }
+  mut scanning = true
+  while scanning and ((not is_ancestor(candidate, anchor)) or (not is_ancestor(candidate, focus_target))) {
+    if candidate == root {
+      scanning = false
+    } else {
+      match candidate.parent {
+        parent => { candidate = parent },
+        _ => {
+          candidate = root
+          scanning = false
+        },
+      }
+    }
+  }
+  candidate
+}
+
+private struct WalkResult {
+  touched: [mut node::Node],
+  fragments: [node::SelectionFragment],
+}
+
+private fn walk(
+  current: mut node::Node,
+  container: mut node::Node,
+  inside: Bool,
+  inherited_clip: geometry::Rect,
+  anchor: geometry::Point,
+  focus: geometry::Point,
+  is_dragging: Bool,
+  edge_pan_version: Int,
+  generation: Int,
+  version: Int,
+  touched: mut [mut node::Node],
+  fragments: mut [node::SelectionFragment],
+) {
+  if (not current.is_destroyed()) and current.style().display != style::Display::none {
+    let bounds = current.layout().screen
+    let clip = match current.style().overflow {
+      style::Overflow::hidden => geometry::intersect(inherited_clip, bounds),
+      style::Overflow::scroll => geometry::intersect(inherited_clip, bounds),
+      _ => inherited_clip,
+    }
+    let active = inside or current == container
+    if active and current.is_selectable() {
+      let result = current.apply_selection(
+        Maybe::new<node::LocalSelection>(
+          node::LocalSelection{
+            anchor_x: anchor.x - bounds.x,
+            anchor_y: anchor.y - bounds.y,
+            focus_x: focus.x - bounds.x,
+            focus_y: focus.y - bounds.y,
+            clip: geometry::Rect{
+              x: clip.x - bounds.x,
+              y: clip.y - bounds.y,
+              width: clip.width,
+              height: clip.height,
+            },
+            is_active: true,
+            is_dragging: is_dragging,
+            allow_edge_pan: edge_pan_version == version,
+            generation: generation,
+            version: version,
+          },
+        ),
+      )
+      touched.push(current)
+      if result.has_selection {
+        for fragment in result.fragments {
+          fragments.push(fragment)
+        }
+      }
+    }
+    for child in current.children {
+      walk(child, container, active, clip, anchor, focus, is_dragging, edge_pan_version, generation, version, touched, fragments)
+    }
+  }
+}
+
+private fn resolve_focus(root: mut node::Node, session: Session) Session {
+  let resolved = mut session
+  if (not resolved.is_dragging) and resolved.focus_tracks_control {
+    match resolved.focus_control {
+      control => {
+        if connected(root, control) {
+          let bounds = control.layout().screen
+          resolved.focus = geometry::Point{
+            x: bounds.x + resolved.focus_local_x,
+            y: bounds.y + resolved.focus_local_y,
+          }
+        }
+      },
+      _ => (),
+    }
+  }
+  resolved.@
+}
+
+private fn selected_text(fragments: [node::SelectionFragment]) Str {
+  let ordered = mut List::new<node::SelectionFragment>()
+  for fragment in fragments {
+    ordered.push(fragment)
+  }
+  ordered.sort(fn(left: node::SelectionFragment, right: node::SelectionFragment) Bool {
+    left.screen_y < right.screen_y or (left.screen_y == right.screen_y and left.screen_x < right.screen_x)
+  })
+  mut output = ""
+  mut previous_y = 0
+  mut started = false
+  for fragment in ordered {
+    if started and fragment.screen_y != previous_y {
+      output = "{output}\n"
+    }
+    output = "{output}{fragment.text}"
+    previous_y = fragment.screen_y
+    started = true
+  }
+  output
+}
+
+impl State {
+  private fn mut bump() {
+    if self.revision_value == math::MaxInt {
+      panic("selection revision overflow")
+    }
+    self.revision_value =+ 1
+  }
+
+  fn revision() Int {
+    self.revision_value
+  }
+
+  fn current() selection::Selection? {
+    self.snapshot
+  }
+
+  fn has_selection() Bool {
+    self.session.is_some()
+  }
+
+  fn owns(target: mut node::Node) Bool {
+    match self.session {
+      active => active.anchor.control == target,
+      _ => false,
+    }
+  }
+
+  fn is_dragging() Bool {
+    match self.session {
+      active => active.is_dragging,
+      _ => false,
+    }
+  }
+
+  fn generation() Int? {
+    match self.session {
+      active => Maybe::new<Int>(active.generation),
+      _ => Maybe::new<Int>(),
+    }
+  }
+
+  fn mut start(
+    root: mut node::Renderable,
+    target: mut node::Node,
+    x: Int,
+    y: Int,
+  ) Bool {
+    let bounds = target.layout().screen
+    let local_x = x - bounds.x
+    let local_y = y - bounds.y
+    if (not target.is_selectable()) or (not target.selection_accepts(local_x, local_y)) {
+      false
+    } else {
+      if self.next_generation == math::MaxInt {
+        panic("selection generation overflow")
+      }
+      let generation = self.next_generation
+      self.next_generation =+ 1
+      self.session = Maybe::new<Session>(
+        Session{
+          anchor: Anchor{
+            control: target,
+            root: root.node(),
+            local_x: local_x,
+            local_y: local_y,
+          },
+          focus: geometry::Point{x: x, y: y},
+          focus_control: Maybe::new<mut node::Node>(target),
+          focus_local_x: local_x,
+          focus_local_y: local_y,
+          focus_tracks_control: true,
+          resolved_anchor: geometry::Point{x: x, y: y},
+          resolved_focus: geometry::Point{x: x, y: y},
+          container: match target.parent {
+            parent => parent,
+            _ => root.node(),
+          },
+          is_dragging: true,
+          generation: generation,
+          version: 0,
+          edge_pan_version: -1,
+        },
+      )
+      self.bump()
+      true
+    }
+  }
+
+  fn mut update(target: (mut node::Node)?, x: Int, y: Int, edge_pan: Bool?) Bool {
+    match self.session {
+      active => {
+        let updated = mut active
+        updated.focus = geometry::Point{x: x, y: y}
+        updated.resolved_focus = geometry::Point{x: x, y: y}
+        updated.focus_control = target
+        match target {
+          control => {
+            let bounds = control.layout().screen
+            updated.focus_local_x = x - bounds.x
+            updated.focus_local_y = y - bounds.y
+            updated.focus_tracks_control = true
+          },
+          _ => { updated.focus_tracks_control = false },
+        }
+        if updated.version == math::MaxInt {
+          panic("selection update version overflow")
+        }
+        updated.version =+ 1
+        if edge_pan.or(false) {
+          updated.edge_pan_version = updated.version
+        } else {
+          updated.edge_pan_version = -1
+        }
+        updated.container = expanded_container(
+          active.anchor.root,
+          active.container,
+          active.anchor.control,
+          target,
+        )
+        updated.is_dragging = true
+        self.session = Maybe::new<Session>(updated.@)
+        self.bump()
+        true
+      },
+      _ => false,
+    }
+  }
+
+  fn mut finish(expected_generation: Int) Bool {
+    match self.session {
+      active => {
+        if active.generation == expected_generation {
+          let updated = mut active
+          updated.is_dragging = false
+          self.session = Maybe::new<Session>(updated.@)
+          self.bump()
+          true
+        } else {
+          false
+        }
+      },
+      _ => false,
+    }
+  }
+
+  fn mut clear() Bool {
+    let changed = self.session.is_some() or self.snapshot.is_some() or self.touched.size() > 0
+    if changed {
+      self.session = Maybe::new<Session>()
+      self.snapshot = Maybe::new<selection::Selection>()
+      for old in self.touched {
+        if not old.is_destroyed() {
+          let _ = old.apply_selection(Maybe::new<node::LocalSelection>())
+        }
+      }
+      self.touched = []
+      self.bump()
+    }
+    changed
+  }
+
+  fn mut reconcile(root: mut node::Renderable) {
+    let previous = self.snapshot
+    match self.session {
+      active => {
+        let root_node = root.node()
+        if active.anchor.root != root_node or (not active.anchor.control.is_selectable()) or (not connected(root_node, active.anchor.control)) {
+          self.session = Maybe::new<Session>()
+          self.reconcile(root)
+        } else {
+          let resolved = resolve_focus(root_node, active)
+          let anchor_bounds = resolved.anchor.control.layout().screen
+          let anchor = geometry::Point{
+            x: anchor_bounds.x + resolved.anchor.local_x,
+            y: anchor_bounds.y + resolved.anchor.local_y,
+          }
+          let container = expanded_container(
+            root_node,
+            resolved.container,
+            resolved.anchor.control,
+            resolved.focus_control,
+          )
+          let retained_session = mut resolved
+          let geometry_changed = anchor.x != retained_session.resolved_anchor.x or anchor.y != retained_session.resolved_anchor.y or retained_session.focus.x != retained_session.resolved_focus.x or retained_session.focus.y != retained_session.resolved_focus.y
+          if geometry_changed {
+            if retained_session.version == math::MaxInt {
+              panic("selection geometry version overflow")
+            }
+            retained_session.version =+ 1
+            retained_session.resolved_anchor = anchor
+            retained_session.resolved_focus = retained_session.focus
+          }
+          retained_session.container = container
+          let current_session = retained_session.@
+          self.session = Maybe::new<Session>(current_session)
+          let touched = mut List::new<mut node::Node>()
+          let fragments = mut List::new<node::SelectionFragment>()
+          walk(
+            root_node,
+            container,
+            false,
+            root_node.layout_viewport(),
+            anchor,
+            current_session.focus,
+            current_session.is_dragging,
+            current_session.edge_pan_version,
+            current_session.generation,
+            current_session.version,
+            touched,
+            fragments,
+          )
+          for old in self.touched {
+            if (not contains(touched.@, old)) and (not old.is_destroyed()) {
+              let _ = old.apply_selection(Maybe::new<node::LocalSelection>())
+            }
+          }
+          self.touched = touched.@
+          mut min_x = current_session.focus.x
+          mut min_y = current_session.focus.y
+          mut max_x = current_session.focus.x
+          mut max_y = current_session.focus.y
+          if anchor.x < min_x {
+            min_x = anchor.x
+          }
+          if anchor.y < min_y {
+            min_y = anchor.y
+          }
+          if anchor.x > max_x {
+            max_x = anchor.x
+          }
+          if anchor.y > max_y {
+            max_y = anchor.y
+          }
+          self.snapshot = Maybe::new<selection::Selection>(
+            selection::Selection{
+              anchor: anchor,
+              focus: current_session.focus,
+              bounds: geometry::Rect{x: min_x, y: min_y, width: max_x - min_x + 1, height: max_y - min_y + 1},
+              selected_text: selected_text(fragments.@),
+              is_dragging: current_session.is_dragging,
+            },
+          )
+        }
+      },
+      _ => {
+        for old in self.touched {
+          if not old.is_destroyed() {
+            let _ = old.apply_selection(Maybe::new<node::LocalSelection>())
+          }
+        }
+        self.touched = []
+        self.snapshot = Maybe::new<selection::Selection>()
+      },
+    }
+    if not selection::internal_same(previous, self.snapshot) {
+      self.bump()
+    }
+  }
+
+  fn mut destroy() {
+    for old in self.touched {
+      if not old.is_destroyed() {
+        let _ = old.apply_selection(Maybe::new<node::LocalSelection>())
+      }
+    }
+    self.touched = []
+    self.session = Maybe::new<Session>()
+    self.snapshot = Maybe::new<selection::Selection>()
+  }
+}

@@ -1,0 +1,1184 @@
+use cooper/color
+use cooper/context
+use cooper/core/focus
+use cooper/core/node
+use cooper/core/paint
+use cooper/core/pointer
+use cooper/core/router
+use cooper/core/runtime
+use cooper/core/selection_state
+use cooper/event
+use cooper/selection as public_selection
+use go:github.com/akonwi/cooper/ffi/core/backend/vaxisbridge as bridge
+use go:go.rockorager.dev/vaxis
+use go:math
+use go:sync
+
+private fn vaxis_color(value: color::Color?) vaxis::Color {
+  match value {
+    color => {
+      let packed = Uint32::from(color.red) * 65536 + Uint32::from(color.green) * 256 + Uint32::from(color.blue)
+      vaxis::HexColor(packed)
+    },
+    _ => vaxis::ColorDefault,
+  }
+}
+
+private fn vaxis_attributes(style: paint::CellStyle) vaxis::AttributeMask {
+  mut attributes = vaxis::AttributeMask::from(0)
+  if style.bold {
+    attributes = attributes + vaxis::AttrBold
+  }
+  if style.dim {
+    attributes = attributes + vaxis::AttrDim
+  }
+  if style.italic {
+    attributes = attributes + vaxis::AttrItalic
+  }
+  if style.blink {
+    attributes = attributes + vaxis::AttrBlink
+  }
+  if style.reverse {
+    attributes = attributes + vaxis::AttrReverse
+  }
+  if style.strike {
+    attributes = attributes + vaxis::AttrStrikethrough
+  }
+  attributes
+}
+
+private fn vaxis_style(style: paint::CellStyle) vaxis::Style {
+  mut underline: vaxis::UnderlineStyle = vaxis::UnderlineOff
+  if style.underline {
+    underline = vaxis::UnderlineSingle
+  }
+  vaxis::Style{
+    Foreground: vaxis_color(style.foreground),
+    Background: vaxis_color(style.background),
+    UnderlineStyle: underline,
+    Attribute: vaxis_attributes(style),
+  }
+}
+
+private fn key_event_type(code: Int) event::KeyEventType {
+  match code {
+    1 => event::KeyEventType::repeat,
+    2 => event::KeyEventType::release,
+    _ => event::KeyEventType::press,
+  }
+}
+
+private fn key_event(key: vaxis::Key) mut event::KeyEvent {
+  let converted = bridge::Key(key)
+  event::key(
+    converted.Name,
+    converted.Text,
+    key_event_type(converted.EventType),
+    event::Modifiers{
+      shift: converted.Shift,
+      ctrl: converted.Ctrl,
+      alt: converted.Alt,
+      super: converted.Super,
+    },
+  )
+}
+
+private fn mouse_event_type(code: Int) event::MouseEventType {
+  match code {
+    1 => event::MouseEventType::up,
+    2 => event::MouseEventType::move,
+    3 => event::MouseEventType::drag,
+    4 => event::MouseEventType::drag_end,
+    5 => event::MouseEventType::drop,
+    6 => event::MouseEventType::over,
+    7 => event::MouseEventType::out,
+    8 => event::MouseEventType::scroll,
+    _ => event::MouseEventType::down,
+  }
+}
+
+private fn mouse_button(code: Int) event::MouseButton {
+  match code {
+    1 => event::MouseButton::left,
+    2 => event::MouseButton::middle,
+    3 => event::MouseButton::right,
+    _ => event::MouseButton::none,
+  }
+}
+
+private fn mouse_event(mouse: vaxis::Mouse) mut event::MouseEvent {
+  let converted = bridge::Mouse(mouse)
+  event::mouse(
+    mouse_event_type(converted.EventType),
+    mouse_button(converted.Button),
+    converted.X,
+    converted.Y,
+    event::Modifiers{
+      shift: converted.Shift,
+      ctrl: converted.Ctrl,
+      alt: converted.Alt,
+      super: converted.Super,
+    },
+    scroll_x: converted.ScrollX,
+    scroll_y: converted.ScrollY,
+  )
+}
+
+private fn default_width(text: Str) Int {
+  mut width = 0
+  for character in vaxis::Characters(text) {
+    width = width + character.Width
+  }
+  width
+}
+
+struct KeyListener {
+  id: Int,
+  handler: fn(mut event::KeyEvent),
+}
+
+struct PasteListener {
+  id: Int,
+  handler: fn(mut event::PasteEvent),
+}
+
+struct TerminalFocusListener {
+  id: Int,
+  handler: fn(event::TerminalFocus),
+}
+
+struct SelectionListener {
+  id: Int,
+  handler: fn(public_selection::Selection?),
+}
+
+struct PendingSelection {
+  revision: Int,
+  value: public_selection::Selection?,
+}
+
+struct State {
+  terminal: (mut vaxis::Vaxis)?,
+  lifecycle: mut sync::Mutex,
+  phase: Int,
+  resources_stopped: Bool,
+  construction_committed: Bool,
+  test_flushing: Bool,
+  shutdown: Chan<Bool>,
+  wake: Chan<Bool>,
+  updates: mut runtime::DispatchQueue,
+  cancellation_signal: Chan<Void>,
+  root_node: (mut node::Node)?,
+  pointer: mut pointer::State,
+  selection: mut selection_state::State,
+  focused: mut focus::State,
+  has_frame: Bool,
+  post_frame_quit: Bool,
+  suppress_focus_reveal: Bool,
+  exit_on_ctrl_c: Bool,
+  auto_focus: Bool,
+  headless_width: Int,
+  headless_height: Int,
+  last_frame: mut paint::Buffer,
+  next_listener_id: Int,
+  key_listeners: [KeyListener],
+  paste_listeners: [PasteListener],
+  terminal_focus_state: event::TerminalFocus?,
+  terminal_focus_listeners: [TerminalFocusListener],
+  selection_listeners: [SelectionListener],
+  painted_selection: public_selection::Selection?,
+  pending_selection: PendingSelection?,
+  selection_notifying: Bool,
+  selection_clear_queued: Bool,
+}
+
+private fn state(
+  terminal: (mut vaxis::Vaxis)?,
+  exit_on_ctrl_c: Bool,
+  auto_focus: Bool,
+  width: Int,
+  height: Int,
+  construction_committed: Bool,
+) mut State {
+  let lifecycle = mut sync::Mutex{}
+  let updates = mut runtime::new_dispatch_queue()
+  (mut State{
+    terminal: terminal,
+    lifecycle: lifecycle,
+    phase: 0,
+    resources_stopped: false,
+    construction_committed: construction_committed,
+    test_flushing: false,
+    shutdown: Chan::new<Bool>(1),
+    wake: Chan::new<Bool>(1),
+    updates: updates,
+    cancellation_signal: Chan::new<Void>(),
+    root_node: Maybe::new<mut node::Node>(),
+    pointer: pointer::new(),
+    selection: selection_state::new(),
+    focused: focus::new(),
+    has_frame: false,
+    post_frame_quit: false,
+    suppress_focus_reveal: false,
+    exit_on_ctrl_c: exit_on_ctrl_c,
+    auto_focus: auto_focus,
+    headless_width: width,
+    headless_height: height,
+    last_frame: paint::new_buffer(width, height),
+    next_listener_id: 1,
+    key_listeners: [],
+    paste_listeners: [],
+    terminal_focus_state: Maybe::new<event::TerminalFocus>(),
+    terminal_focus_listeners: [],
+    selection_listeners: [],
+    painted_selection: Maybe::new<public_selection::Selection>(),
+    pending_selection: Maybe::new<PendingSelection>(),
+    selection_notifying: false,
+    selection_clear_queued: false,
+  })
+}
+
+fn new_live(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Bool) (mut State)!Error {
+  let terminal = try vaxis::New(vaxis::Options{DisableMouse: not use_mouse})
+  let created = state(Maybe::new<mut vaxis::Vaxis>(terminal), exit_on_ctrl_c, auto_focus, 0, 0, false)
+  Result::ok(created)
+}
+
+fn new_headless(width: Int, height: Int) mut State {
+  if width < 0 or height < 0 {
+    panic("headless application dimensions must be non-negative")
+  }
+  let created = state(Maybe::new<mut vaxis::Vaxis>(), true, true, width, height, true)
+  created
+}
+
+impl State {
+  fn mut bind_root(root: mut node::Node) {
+    if self.root_node.is_some() {
+      panic("application runtime Root is already bound")
+    }
+    self.root_node = Maybe::new<mut node::Node>(root)
+  }
+
+  private fn mut focus_node(target_id: Int) Bool {
+    match self.root_node {
+      root => {
+        match root.find(target_id) {
+          target => self.focused.focus(root.owner_as_renderable(), target),
+          _ => false,
+        }
+      },
+      _ => false,
+    }
+  }
+
+  private fn mut blur_node(target_id: Int) {
+    match self.focused.focused() {
+      target => {
+        if target.id == target_id {
+          self.focused.blur(target)
+        }
+      },
+      _ => (),
+    }
+  }
+
+  fn mut focus_request() fn(Int) Bool {
+    fn(target_id: Int) Bool {
+      self.focus_node(target_id)
+    }
+  }
+
+  fn mut blur_request() fn(Int) {
+    fn(target_id: Int) {
+      self.blur_node(target_id)
+    }
+  }
+
+  private fn mut start_selection_node(target_id: Int, local_x: Int, local_y: Int) Bool {
+    match self.root_node {
+      root => {
+        match root.find(target_id) {
+          target => {
+            let bounds = target.layout().screen
+            let changed = self.selection.start(
+              root.owner_as_renderable(),
+              target,
+              bounds.x + local_x,
+              bounds.y + local_y,
+            )
+            if changed {
+              (self.request_render())()
+            }
+            changed
+          },
+          _ => false,
+        }
+      },
+      _ => false,
+    }
+  }
+
+  private fn mut update_selection_node(
+    target_id: Int,
+    local_x: Int,
+    local_y: Int,
+    finish: Bool,
+  ) Bool {
+    match self.root_node {
+      root => {
+        match root.find(target_id) {
+          target => {
+            let bounds = target.layout().screen
+            let generation = self.selection.generation()
+            let changed = self.selection.update(
+              Maybe::new<mut node::Node>(target),
+              bounds.x + local_x,
+              bounds.y + local_y,
+            )
+            if finish {
+              match generation {
+                expected => { let _ = self.selection.finish(expected) },
+                _ => (),
+              }
+            }
+            if changed {
+              (self.request_render())()
+            }
+            changed
+          },
+          _ => false,
+        }
+      },
+      _ => false,
+    }
+  }
+
+  private fn selection_owned_by(target_id: Int) Bool {
+    match self.root_node {
+      root => {
+        match root.find(target_id) {
+          target => self.selection.owns(target),
+          _ => false,
+        }
+      },
+      _ => false,
+    }
+  }
+
+  fn mut selection_start_request() fn(Int, Int, Int) Bool {
+    fn(target_id: Int, local_x: Int, local_y: Int) Bool {
+      self.start_selection_node(target_id, local_x, local_y)
+    }
+  }
+
+  fn mut selection_update_request() fn(Int, Int, Int, Bool) Bool {
+    fn(target_id: Int, local_x: Int, local_y: Int, finish: Bool) Bool {
+      self.update_selection_node(target_id, local_x, local_y, finish)
+    }
+  }
+
+  fn mut selection_owns_request() fn(Int) Bool {
+    fn(target_id: Int) Bool {
+      self.selection_owned_by(target_id)
+    }
+  }
+
+  fn mut selection_clear_request() fn() {
+    fn() {
+      self.clear_selection()
+    }
+  }
+
+  fn mut commit_construction() {
+    self.lifecycle.Lock()
+    if self.phase != 0 or self.construction_committed {
+      self.lifecycle.Unlock()
+      panic("application runtime construction cannot be committed")
+    }
+    self.construction_committed = true
+    self.lifecycle.Unlock()
+  }
+
+  fn mut rollback_construction() {
+    self.lifecycle.Lock()
+    let should_stop = self.phase == 0 and (not self.construction_committed) and (not self.resources_stopped)
+    if should_stop {
+      self.phase = 3
+      self.resources_stopped = true
+    }
+    self.lifecycle.Unlock()
+
+    if should_stop {
+      self.updates.stop()
+      self.key_listeners = []
+      self.paste_listeners = []
+      self.terminal_focus_listeners = []
+      self.selection_listeners = []
+      self.pointer.clear()
+      self.selection.destroy()
+      self.cancellation_signal.close()
+      match self.terminal {
+        terminal => terminal.Close(),
+        _ => (),
+      }
+    }
+  }
+
+  private fn mut begin_phase(expected_terminal: Bool, next_phase: Int) {
+    self.lifecycle.Lock()
+    let valid = self.phase == 0 and self.construction_committed and self.terminal.is_some() == expected_terminal
+    if valid {
+      self.phase = next_phase
+    }
+    self.lifecycle.Unlock()
+    if not valid {
+      panic("application runtime is not available to start")
+    }
+  }
+
+  private fn require_phase(expected: Int) {
+    self.lifecycle.Lock()
+    let valid = self.phase == expected
+    self.lifecycle.Unlock()
+    if not valid {
+      panic("application runtime is not active")
+    }
+  }
+
+  private fn mut request_live_destroy() Bool {
+    self.lifecycle.Lock()
+    mut finish_now = false
+    mut request_shutdown = false
+    mut stop_dispatch = false
+    if self.phase == 0 {
+      self.phase = 3
+      finish_now = true
+    } else if self.phase == 1 {
+      self.phase = 4
+      request_shutdown = true
+      stop_dispatch = true
+    }
+    self.lifecycle.Unlock()
+
+    if stop_dispatch {
+      self.updates.stop()
+    }
+    if request_shutdown {
+      select {
+        self.shutdown.send(true) => (),
+        _ => (),
+      }
+    }
+    finish_now
+  }
+
+  private fn mut claim_test_destroy() Bool {
+    self.lifecycle.Lock()
+    mut finish_now = false
+    mut stop_dispatch = false
+    if self.phase == 2 {
+      stop_dispatch = true
+      if self.test_flushing {
+        self.phase = 4
+      } else {
+        self.phase = 3
+        finish_now = true
+      }
+    }
+    self.lifecycle.Unlock()
+    if stop_dispatch {
+      self.updates.stop()
+    }
+    finish_now
+  }
+
+  private fn test_stopping() Bool {
+    self.lifecycle.Lock()
+    let stopping = self.phase == 4
+    self.lifecycle.Unlock()
+    stopping
+  }
+
+  private fn test_active() Bool {
+    self.lifecycle.Lock()
+    let active = self.phase == 2
+    self.lifecycle.Unlock()
+    active
+  }
+
+  private fn callbacks_active() Bool {
+    self.lifecycle.Lock()
+    let active = self.phase == 1 or self.phase == 2
+    self.lifecycle.Unlock()
+    active
+  }
+
+  private fn mut begin_test_flush() {
+    self.lifecycle.Lock()
+    let valid = self.phase == 2 and (not self.test_flushing)
+    if valid {
+      self.test_flushing = true
+    }
+    self.lifecycle.Unlock()
+    if not valid {
+      panic("headless application runtime cannot flush")
+    }
+  }
+
+  private fn mut end_test_flush() Bool {
+    self.lifecycle.Lock()
+    self.test_flushing = false
+    let finish_destroy = self.phase == 4
+    self.lifecycle.Unlock()
+    finish_destroy
+  }
+
+  private fn live_stopping() Bool {
+    self.lifecycle.Lock()
+    let stopping = self.phase == 4
+    self.lifecycle.Unlock()
+    stopping
+  }
+
+  private fn mut finish_test(ctx: mut context::Context, root: mut node::Renderable) {
+    root.node().unmount_root()
+    context::internal_state(ctx).end_run()
+    self.stop_resources(ctx)
+  }
+
+  private fn mut stop_resources(ctx: mut context::Context) {
+    self.lifecycle.Lock()
+    let should_stop = not self.resources_stopped
+    if should_stop {
+      self.resources_stopped = true
+      self.phase = 3
+    }
+    self.lifecycle.Unlock()
+
+    if should_stop {
+      self.updates.stop()
+      self.key_listeners = []
+      self.paste_listeners = []
+      self.terminal_focus_listeners = []
+      self.selection_listeners = []
+      self.pointer.clear()
+      self.selection.destroy()
+      self.cancellation_signal.close()
+      match self.terminal {
+        terminal => terminal.Close(),
+        _ => (),
+      }
+      context::internal_state(ctx).destroy()
+    }
+  }
+
+  private fn take_redraw_request() Bool {
+    let pending = self.wake.receiver()
+    select {
+      pending.recv() => true,
+      _ => false,
+    }
+  }
+
+  private fn drain_redraw_requests() {
+    let pending = self.wake.receiver()
+    mut draining = true
+    while draining {
+      select {
+        pending.recv() => (),
+        _ => { draining = false },
+      }
+    }
+  }
+
+  private fn mut draw(ctx: mut context::Context, root: mut node::Renderable, width: Int, height: Int) mut paint::Buffer {
+    context::internal_state(ctx).compute_layout(root, width, height)
+    self.focused.reconcile(root)
+    let focus_changed = self.focused.take_reveal_request()
+    if focus_changed or (not self.suppress_focus_reveal) {
+      match self.focused.focused() {
+        target => {
+          let _ = focus::reveal(root, target)
+        },
+        _ => (),
+      }
+    }
+    self.suppress_focus_reveal = false
+    self.selection.reconcile(root)
+    let selected = self.selection.current()
+    if not public_selection::internal_same(self.painted_selection, selected) {
+      self.painted_selection = selected
+      self.pending_selection = Maybe::new<PendingSelection>(
+        PendingSelection{revision: self.selection.revision(), value: selected},
+      )
+    }
+    let buffer = paint::new_buffer(width, height)
+    root.node().paint(buffer)
+    self.last_frame = buffer
+    self.has_frame = true
+    self.drain_redraw_requests()
+    buffer
+  }
+
+  private fn mut present(terminal: mut vaxis::Vaxis, buffer: mut paint::Buffer) {
+    let window = terminal.Window()
+    window.Clear()
+    terminal.HideCursor()
+    if buffer.width > 0 {
+      for cell, index in buffer.cells {
+        if cell.width > 0 {
+          let x = index % buffer.width
+          let y = index / buffer.width
+          window.SetCell(
+            x,
+            y,
+            vaxis::Cell{
+              Character: vaxis::Character{Grapheme: cell.grapheme, Width: cell.width},
+              Style: vaxis_style(cell.style),
+            },
+          )
+        }
+      }
+    }
+    match buffer.cursor {
+      cursor => {
+        match buffer.cell_at(cursor.x, cursor.y) {
+          cell => {
+            if cell.width > 0 {
+              window.ShowCursor(cursor.x, cursor.y, vaxis::CursorStyle::from(vaxis::CursorBeam))
+            }
+          },
+          _ => (),
+        }
+      },
+      _ => (),
+    }
+    terminal.Render()
+  }
+
+  private fn mut post_frame_pointer(root: mut node::Renderable) {
+    let outcome = self.pointer.reconcile(root, self.focused)
+    self.apply_outcome(outcome)
+    if outcome.redraw {
+      (self.request_render())()
+    }
+    if outcome.quit {
+      self.post_frame_quit = true
+    }
+  }
+
+  private fn mut post_frame_selection() {
+    mut deferred = false
+    if self.pending_selection.is_some() and self.take_redraw_request() {
+      deferred = true
+      if self.callbacks_active() {
+        (self.request_render())()
+      }
+    }
+    if not deferred {
+      match self.pending_selection {
+        pending => {
+          self.pending_selection = Maybe::new<PendingSelection>()
+          if pending.revision == self.selection.revision() {
+            let listeners = self.selection_listeners
+            self.selection_notifying = true
+            for listener in listeners {
+              if self.callbacks_active() {
+                listener.handler(pending.value)
+              }
+            }
+            self.selection_notifying = false
+            if self.selection_clear_queued {
+              self.selection_clear_queued = false
+              if self.callbacks_active() and self.selection.clear() {
+                (self.request_render())()
+              }
+            }
+          } else {
+            (self.request_render())()
+          }
+        },
+        _ => (),
+      }
+    }
+  }
+
+  private fn mut paint_live(ctx: mut context::Context, root: mut node::Renderable) {
+    let terminal = self.terminal.expect("live application terminal")
+    let window = terminal.Window()
+    let buffer = self.draw(ctx, root, window.Width, window.Height)
+    self.present(terminal, buffer)
+    self.post_frame_pointer(root)
+    self.post_frame_selection()
+  }
+
+  private fn mut paint_test(ctx: mut context::Context, root: mut node::Renderable) {
+    let _ = self.draw(ctx, root, self.headless_width, self.headless_height)
+    self.post_frame_pointer(root)
+    self.post_frame_selection()
+  }
+
+  private fn mut apply_outcome(outcome: router::Outcome) {
+    if outcome.preserve_focus_scroll {
+      self.suppress_focus_reveal = true
+    }
+  }
+
+  private fn mut drain_updates() Int {
+    mut drained = 0
+    mut draining = true
+    while draining and drained < 64 {
+      match self.updates.pop() {
+        action => {
+          action()
+          drained =+ 1
+        },
+        _ => { draining = false },
+      }
+    }
+    self.updates.wake_if_pending()
+    drained
+  }
+}
+
+impl State {
+  fn request_render() fn() {
+    let wake = self.wake
+    fn() {
+      select {
+        wake.send(true) => (),
+        _ => (),
+      }
+    }
+  }
+
+  fn width_measurer() fn(Str) Int {
+    match self.terminal {
+      terminal => {
+        fn(text: Str) Int {
+          terminal.RenderedWidth(text)
+        }
+      },
+      _ => default_width,
+    }
+  }
+
+  fn dispatch() fn(fn()) Void!event::DispatchError {
+    let updates = self.updates
+    fn(action: fn()) Void!event::DispatchError {
+      if updates.post(action) {
+        Result::ok(())
+      } else {
+        Result::err(event::DispatchError::stopped)
+      }
+    }
+  }
+
+  fn cancellation() Receiver<Void> {
+    self.cancellation_signal.receiver()
+  }
+
+  private fn mut next_listener() Int {
+    self.lifecycle.Lock()
+    let available = self.phase != 3 and self.next_listener_id < math::MaxInt
+    mut id = 0
+    if available {
+      id = self.next_listener_id
+      self.next_listener_id =+ 1
+    }
+    self.lifecycle.Unlock()
+    if not available {
+      panic("application listener registration is unavailable")
+    }
+    id
+  }
+
+  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+    let id = self.next_listener()
+    self.key_listeners.push(KeyListener{id: id, handler: handler})
+    fn() { self.remove_key_listener(id) }
+  }
+
+  private fn mut remove_key_listener(id: Int) {
+    let retained = mut List::new<KeyListener>()
+    for listener in self.key_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.key_listeners = retained.@
+  }
+
+  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+    let id = self.next_listener()
+    self.paste_listeners.push(PasteListener{id: id, handler: handler})
+    fn() { self.remove_paste_listener(id) }
+  }
+
+  private fn mut remove_paste_listener(id: Int) {
+    let retained = mut List::new<PasteListener>()
+    for listener in self.paste_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.paste_listeners = retained.@
+  }
+
+  fn terminal_focus() event::TerminalFocus? {
+    self.terminal_focus_state
+  }
+
+  fn mut on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
+    let id = self.next_listener()
+    self.terminal_focus_listeners.push(TerminalFocusListener{id: id, handler: handler})
+    fn() { self.remove_terminal_focus_listener(id) }
+  }
+
+  private fn mut remove_terminal_focus_listener(id: Int) {
+    let retained = mut List::new<TerminalFocusListener>()
+    for listener in self.terminal_focus_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.terminal_focus_listeners = retained.@
+  }
+
+  private fn mut set_terminal_focus(value: event::TerminalFocus) {
+    mut changed = true
+    match self.terminal_focus_state {
+      current => { changed = current != value },
+      _ => (),
+    }
+    if changed {
+      self.terminal_focus_state = Maybe::new<event::TerminalFocus>(value)
+      let listeners = self.terminal_focus_listeners
+      for listener in listeners {
+        listener.handler(value)
+      }
+    }
+  }
+
+  fn current_selection() public_selection::Selection? {
+    self.selection.current()
+  }
+
+  fn mut clear_selection() {
+    if self.selection_notifying {
+      self.selection_clear_queued = true
+    } else if self.selection.clear() {
+      (self.request_render())()
+    }
+  }
+
+  fn mut on_selection_change(handler: fn(public_selection::Selection?)) fn() {
+    let id = self.next_listener()
+    self.selection_listeners.push(SelectionListener{id: id, handler: handler})
+    fn() { self.remove_selection_listener(id) }
+  }
+
+  private fn mut remove_selection_listener(id: Int) {
+    let retained = mut List::new<SelectionListener>()
+    for listener in self.selection_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.selection_listeners = retained.@
+  }
+
+  private fn emit_key(received: mut event::KeyEvent) {
+    let listeners = self.key_listeners
+    for listener in listeners {
+      if not received.is_propagation_stopped() {
+        listener.handler(received)
+      }
+    }
+  }
+
+  private fn emit_paste(received: mut event::PasteEvent) {
+    let listeners = self.paste_listeners
+    for listener in listeners {
+      if not received.is_propagation_stopped() {
+        listener.handler(received)
+      }
+    }
+  }
+
+  fn mut run(ctx: mut context::Context, root: mut node::Renderable) Void!Error {
+    self.begin_phase(true, 1)
+    defer self.stop_resources(ctx)
+    context::internal_state(ctx).begin_run()
+    defer context::internal_state(ctx).end_run()
+    root.node().mount_root(self.dispatch())
+    defer root.node().unmount_root()
+
+    let terminal = self.terminal.expect("live application terminal")
+    terminal.Resize(terminal.Size())
+    self.paint_live(ctx, root)
+    let events = terminal.Events()
+    let redraws = self.wake.receiver()
+    let update_events = self.updates.events()
+    let shutdowns = self.shutdown.receiver()
+    mut running = true
+    while running and (not self.live_stopping()) and (not self.post_frame_quit) {
+      select {
+        shutdowns.recv() => { running = false },
+        redraws.recv() => self.paint_live(ctx, root),
+        update_events.recv() => {
+          let _ = self.drain_updates()
+          if self.take_redraw_request() {
+            self.paint_live(ctx, root)
+          }
+        },
+        let posted = events.recv() => {
+          match posted {
+            received => {
+              if self.live_stopping() {
+                running = false
+              } else {
+                if self.take_redraw_request() {
+                  self.paint_live(ctx, root)
+                } else {
+                  self.focused.reconcile(root)
+                }
+                match received {
+                vaxis::Resize(size) => {
+                  terminal.Resize(size)
+                  self.paint_live(ctx, root)
+                },
+                vaxis::Redraw(_) => self.paint_live(ctx, root),
+                vaxis::SyncFunc(action) => {
+                  action()
+                  if self.take_redraw_request() {
+                    self.paint_live(ctx, root)
+                  }
+                },
+                vaxis::QuitEvent(_) => { running = false },
+                vaxis::FocusIn(_) => {
+                  self.set_terminal_focus(event::TerminalFocus::gained)
+                  if self.take_redraw_request() {
+                    self.paint_live(ctx, root)
+                  }
+                },
+                vaxis::FocusOut(_) => {
+                  self.set_terminal_focus(event::TerminalFocus::lost)
+                  if self.take_redraw_request() {
+                    self.paint_live(ctx, root)
+                  }
+                },
+                vaxis::Mouse(mouse) => {
+                  let converted = mouse_event(mouse)
+                  let outcome = self.pointer.process(root, converted, self.focused, self.selection, self.auto_focus)
+                  self.apply_outcome(outcome)
+                  if outcome.redraw or self.take_redraw_request() {
+                    self.paint_live(ctx, root)
+                  }
+                  if outcome.quit or self.post_frame_quit {
+                    running = false
+                  }
+                },
+                vaxis::Key(key) => {
+                  if key.EventType == vaxis::EventPaste {
+                    let converted = event::paste(key.Text)
+                    self.emit_paste(converted)
+                    self.focused.reconcile(root)
+                    match self.focused.focused() {
+                      target => {
+                        if not converted.is_propagation_stopped() {
+                          let outcome = router::dispatch_paste(target, converted, self.focused)
+                          self.apply_outcome(outcome)
+                          if outcome.redraw {
+                            self.paint_live(ctx, root)
+                          }
+                          if outcome.quit {
+                            running = false
+                          }
+                        }
+                      },
+                      _ => (),
+                    }
+                  } else {
+                    let converted = key_event(key)
+                    self.emit_key(converted)
+                    self.focused.reconcile(root)
+                    if self.exit_on_ctrl_c and converted.event_type != event::KeyEventType::release and converted.matches("c", ctrl: true) and (not converted.is_default_prevented()) and (not converted.is_propagation_stopped()) {
+                      running = false
+                    } else {
+                      match self.focused.focused() {
+                        target => {
+                          if not converted.is_propagation_stopped() {
+                            let outcome = router::dispatch_key(target, converted, self.focused)
+                            self.apply_outcome(outcome)
+                            if outcome.redraw {
+                              self.paint_live(ctx, root)
+                            }
+                            if outcome.quit {
+                              running = false
+                            }
+                          }
+                        },
+                        _ => (),
+                      }
+                    }
+                  }
+                },
+                _ => (),
+                }
+              }
+            },
+            _ => { running = false },
+          }
+        },
+      }
+    }
+    Result::ok(())
+  }
+
+  fn mut destroy_live(ctx: mut context::Context) {
+    if self.request_live_destroy() {
+      self.stop_resources(ctx)
+    }
+  }
+
+  fn mut start_test(ctx: mut context::Context, root: mut node::Renderable) {
+    self.begin_phase(false, 2)
+    context::internal_state(ctx).begin_run()
+    root.node().mount_root(self.dispatch())
+  }
+
+  fn mut render_test(ctx: mut context::Context, root: mut node::Renderable) {
+    self.require_phase(2)
+    self.paint_test(ctx, root)
+  }
+
+  fn mut key_test(ctx: mut context::Context, root: mut node::Renderable, received: mut event::KeyEvent) {
+    self.require_phase(2)
+    self.emit_key(received)
+    self.focused.reconcile(root)
+    mut redraw = false
+    match self.focused.focused() {
+      target => {
+        if not received.is_propagation_stopped() {
+          let outcome = router::dispatch_key(target, received, self.focused)
+          self.apply_outcome(outcome)
+          redraw = outcome.redraw
+        }
+      },
+      _ => (),
+    }
+    if self.test_active() and (redraw or self.take_redraw_request()) {
+      self.paint_test(ctx, root)
+    }
+  }
+
+  fn mut paste_test(ctx: mut context::Context, root: mut node::Renderable, received: mut event::PasteEvent) {
+    self.require_phase(2)
+    self.emit_paste(received)
+    self.focused.reconcile(root)
+    mut redraw = false
+    match self.focused.focused() {
+      target => {
+        if not received.is_propagation_stopped() {
+          let outcome = router::dispatch_paste(target, received, self.focused)
+          self.apply_outcome(outcome)
+          redraw = outcome.redraw
+        }
+      },
+      _ => (),
+    }
+    if self.test_active() and (redraw or self.take_redraw_request()) {
+      self.paint_test(ctx, root)
+    }
+  }
+
+  fn mut mouse_test(ctx: mut context::Context, root: mut node::Renderable, received: mut event::MouseEvent) {
+    self.require_phase(2)
+    mut precommit = not self.has_frame
+    if self.take_redraw_request() {
+      precommit = true
+    }
+    if precommit {
+      self.paint_test(ctx, root)
+    } else {
+      self.focused.reconcile(root)
+    }
+    let outcome = self.pointer.process(root, received, self.focused, self.selection, self.auto_focus)
+    self.apply_outcome(outcome)
+    if self.test_active() and (outcome.redraw or self.take_redraw_request()) {
+      self.paint_test(ctx, root)
+    }
+  }
+
+  fn mut terminal_focus_test(
+    ctx: mut context::Context,
+    root: mut node::Renderable,
+    value: event::TerminalFocus,
+  ) {
+    self.require_phase(2)
+    self.set_terminal_focus(value)
+    if self.test_active() and self.take_redraw_request() {
+      self.paint_test(ctx, root)
+    }
+  }
+
+  fn mut flush_test(ctx: mut context::Context, root: mut node::Renderable, limit: Int) Int {
+    self.require_phase(2)
+    if limit < 0 {
+      panic("headless flush limit must be non-negative")
+    }
+    self.begin_test_flush()
+    mut drained = 0
+    mut reading = true
+    while reading and drained < limit {
+      match self.updates.pop() {
+        action => {
+          action()
+          drained =+ 1
+          if self.test_stopping() {
+            reading = false
+          }
+        },
+        _ => { reading = false },
+      }
+    }
+    if self.test_stopping() {
+      if self.take_redraw_request() {
+        self.paint_test(ctx, root)
+      }
+    } else {
+      self.updates.wake_if_pending()
+      if self.take_redraw_request() {
+        self.paint_test(ctx, root)
+      }
+    }
+    if self.end_test_flush() {
+      self.finish_test(ctx, root)
+    }
+    drained
+  }
+
+  fn mut resize_test(width: Int, height: Int) {
+    self.require_phase(2)
+    if width < 0 or height < 0 {
+      panic("headless application dimensions must be non-negative")
+    }
+    if self.headless_width != width or self.headless_height != height {
+      self.headless_width = width
+      self.headless_height = height
+      (self.request_render())()
+    }
+  }
+
+  fn frame() paint::Buffer {
+    self.last_frame.@
+  }
+
+  fn mut destroy_test(ctx: mut context::Context, root: mut node::Renderable) {
+    if self.claim_test_destroy() {
+      self.finish_test(ctx, root)
+    }
+  }
+}

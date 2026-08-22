@@ -1,0 +1,28 @@
+use cooper/geometry
+
+struct Range {
+  start: Int,
+  end: Int,
+}
+
+struct Selection {
+  anchor: geometry::Point,
+  focus: geometry::Point,
+  bounds: geometry::Rect,
+  selected_text: Str,
+  is_dragging: Bool,
+}
+
+fn internal_same(left: Selection?, right: Selection?) Bool {
+  match left {
+    left_value => {
+      match right {
+        right_value => {
+          left_value.anchor.x == right_value.anchor.x and left_value.anchor.y == right_value.anchor.y and left_value.focus.x == right_value.focus.x and left_value.focus.y == right_value.focus.y and left_value.bounds.x == right_value.bounds.x and left_value.bounds.y == right_value.bounds.y and left_value.bounds.width == right_value.bounds.width and left_value.bounds.height == right_value.bounds.height and left_value.selected_text == right_value.selected_text and left_value.is_dragging == right_value.is_dragging
+        },
+        _ => false,
+      }
+    },
+    _ => not right.is_some(),
+  }
+}

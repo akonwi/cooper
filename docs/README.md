@@ -7,6 +7,8 @@ Design decisions for Cooper's Ard-native retained-mode framework.
 - [ADR 0002](./adrs/0002-define-application-api.md) — accepted imperative
   application API, runtime model, OpenTUI lineage, and intentionally deferred
   extension surfaces.
+- [ADR 0003](./adrs/0003-define-interaction-focus-and-selection.md) — accepted
+  pointer, focus, terminal-focus, and selection semantics.
 
 ## Architecture Decision Records
 
@@ -16,6 +18,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | --- | --- | --- |
 | [0001](./adrs/0001-record-architecture-decisions.md) | Accepted | Record architecture decisions |
 | [0002](./adrs/0002-define-application-api.md) | Accepted | Define the application API |
+| [0003](./adrs/0003-define-interaction-focus-and-selection.md) | Accepted | Define interaction, focus, and selection |
 
 ### Add an ADR
 

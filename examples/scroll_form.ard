@@ -1,44 +1,57 @@
 use cooper/app
 use cooper/box
+use cooper/event
 use cooper/input
-use cooper/scroll
+use cooper/scroll_box
 use cooper/style
 use cooper/text
 
 private fn line() style::Style {
-  style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0)
+  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
 }
 
 fn main() {
   let application = app::new().expect("create Cooper app")
-  let ctx = application.context()
+  let ctx = application.context
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::percent(100.0),
       height: style::percent(100.0),
       align_items: style::Align::stretch,
     ),
   )
-  let title = text::new(ctx, content: "Scrollable retained form", initial_style: line())
-  let content = box::new(
+  let title = text::new(ctx, content: "Scrollable retained form", styles: line())
+  let viewport = scroll_box::new(
     ctx,
-    initial_style: style::new(width: style::percent(100.0), align_items: style::Align::stretch),
+    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_grow: 1.0),
   )
+  let fields = mut List::new<mut input::Input>()
   mut index = 1
   while index <= 8 {
-    content.add(text::new(ctx, content: "Field {index}", initial_style: line()))
-    content.add(input::new(ctx, placeholder: "value {index}", initial_style: line()))
+    let field = input::new(ctx, placeholder: "value {index}", styles: line())
+    fields.push(field)
+    viewport.add(text::new(ctx, content: "Field {index}", styles: line()))
+    viewport.add(field)
     index =+ 1
   }
-  let viewport = scroll::new(
-    ctx,
-    content,
-    initial_style: style::new(width: style::percent(100.0), height: style::cells(1), grow: 1.0),
-    wheel_step: 2,
-  )
   root.add(title)
   root.add(viewport)
 
-  application.run(root).expect("run Cooper scrolling form")
+  application.root.add(root)
+  fields.at(0).expect("first field").focus()
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release and received.matches("tab") {
+      mut current = -1
+      for field, field_index in fields {
+        if field.is_focused() {
+          current = field_index
+        }
+      }
+      let next = (current + 1) % fields.size()
+      fields.at(next).expect("next field").focus()
+      received.prevent_default()
+    }
+  })
+  application.run().expect("run Cooper scrolling form")
 }

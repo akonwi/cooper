@@ -4,11 +4,13 @@ use cooper/style
 
 fn main() {
   let application = app::new().expect("create Cooper app")
-  let ctx = application.context()
+  let ctx = application.context
   let field = input::new(
     ctx,
     placeholder: "Type here, then press Ctrl+C to quit",
-    initial_style: style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0),
+    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
   )
-  application.run(field).expect("run Cooper input")
+  application.root.add(field)
+  field.focus()
+  application.run().expect("run Cooper input")
 }

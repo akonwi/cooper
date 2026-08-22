@@ -17,6 +17,7 @@ BENCHMARKS = {
     "tess_retained": ROOT / "benchmarks" / "retained_layout.ard",
     "tess_virtual": ROOT / "benchmarks" / "retained_virtual_list.ard",
     "tess_stress": ROOT / "benchmarks" / "retained_stress.ard",
+    "tess_interaction": ROOT / "benchmarks" / "retained_interaction.ard",
 }
 
 
@@ -116,6 +117,14 @@ def print_summary(
         print(
             f"{metric:<24} {int(stress[metric]):>6}"
             f" ({int(stress[f'{metric}_p95']):>6})"
+        )
+
+    interaction = results["tess_interaction"]
+    print("\nStacking and selection stress")
+    for metric in ("overlap_hit_10000_us", "selection_100x200_us"):
+        print(
+            f"{metric:<24} {int(interaction[metric]):>6}"
+            f" ({int(interaction[f'{metric}_p95']):>6})"
         )
 
 

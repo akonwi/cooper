@@ -1,0 +1,506 @@
+use cooper/app
+use cooper/box
+use cooper/color
+use cooper/event
+use cooper/input
+use cooper/scroll_box
+use cooper/selection
+use cooper/style
+use cooper/text
+use go:strings
+
+private fn row(height: Int?, border: style::Border?, border_color: color::Color?) style::Style {
+  style::new(
+    border: border,
+    border_color: border_color,
+    width: style::percent(100.0),
+    height: style::cells(height.or(1)),
+    flex_shrink: 0.0,
+    align_items: style::Align::start,
+  )
+}
+
+private fn absolute_panel(
+  left: Int,
+  width: Int,
+  height: Int,
+  z_index: Int?,
+  border: style::Border?,
+  border_color: color::Color?,
+) style::Style {
+  style::new(
+    border: border,
+    border_color: border_color,
+    position: style::Position::absolute,
+    left: style::cells(left),
+    top: style::cells(0),
+    width: style::cells(width),
+    height: style::cells(height),
+    flex_shrink: 0.0,
+    z_index: z_index.or(0),
+  )
+}
+
+private fn clamp_position(value: Int, minimum: Int, maximum: Int) Int {
+  mut safe_maximum = maximum
+  if safe_maximum < minimum {
+    safe_maximum = minimum
+  }
+  if value < minimum {
+    minimum
+  } else if value > safe_maximum {
+    safe_maximum
+  } else {
+    value
+  }
+}
+
+fn main() {
+  let application = app::new().expect("create Interaction Lab")
+  let ctx = application.context
+  let root = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      align_items: style::Align::start,
+    ),
+  )
+  let main = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(65.0),
+      height: style::percent(100.0),
+      align_items: style::Align::start,
+    ),
+  )
+  let diagnostics = box::new(
+    ctx,
+    title: "LIVE DIAGNOSTICS",
+    styles: style::new(
+      border: style::Border::single,
+      border_color: color::rgb(70, 95, 125),
+      position: style::Position::absolute,
+      left: style::percent(65.0),
+      top: style::cells(0),
+      width: style::percent(35.0),
+      height: style::percent(100.0),
+      flex_shrink: 0.0,
+      align_items: style::Align::start,
+    ),
+  )
+
+  let title = text::new(
+    ctx,
+    content: "Interaction Lab — try each labeled behavior",
+    styles: row(),
+    selectable: false,
+    text_style: text::style(foreground: color::rgb(90, 170, 255), bold: true),
+  )
+  let terminal = text::new(
+    ctx,
+    content: "Window focus: UNKNOWN — switch away and back to observe",
+    styles: row(),
+    selectable: false,
+  )
+
+  let focus_card = box::new(
+    ctx,
+    title: "FOCUSABLE ANCESTOR — click its nested child",
+    styles: row(height: 4, border: style::Border::single, border_color: color::rgb(105, 105, 120)),
+  )
+  focus_card.set_focusable(true)
+  let nested_child = box::new(
+    ctx,
+    title: "NESTED CHILD (not focusable)",
+    styles: style::new(
+      border: style::Border::single,
+      border_color: color::rgb(85, 85, 100),
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      flex_shrink: 0.0,
+    ),
+  )
+  focus_card.add(nested_child)
+
+  let stacking = box::new(ctx, styles: row())
+  let back = text::new(
+    ctx,
+    content: "BACKBACK",
+    styles: absolute_panel(28, 8, 1),
+    selectable: false,
+    text_style: text::style(background: color::rgb(70, 70, 110)),
+  )
+  let front = text::new(
+    ctx,
+    content: "FRONT",
+    styles: absolute_panel(31, 7, 1, z_index: 1),
+    selectable: false,
+    text_style: text::style(background: color::rgb(120, 70, 70), bold: true),
+  )
+  stacking.add(
+    text::new(
+      ctx,
+      content: "STACKING — click overlap",
+      styles: absolute_panel(0, 26, 1),
+      selectable: false,
+    ),
+  )
+  stacking.add(back)
+  stacking.add(front)
+
+  let drag_lane = box::new(ctx, styles: row(height: 5))
+  drag_lane.add(
+    text::new(
+      ctx,
+      content: "DRAG — left moves SOURCE to ZONE; right/middle only route",
+      styles: absolute_panel(0, 60, 1),
+      selectable: false,
+    ),
+  )
+  let source_style = mut absolute_panel(
+    0,
+    18,
+    3,
+    z_index: 3,
+    border: style::Border::single,
+    border_color: color::rgb(120, 150, 210),
+  )
+  source_style.top = style::cells(1)
+  let source = box::new(ctx, title: "SOURCE", styles: source_style.@)
+  let source_label = text::new(ctx, content: " drag me →      ", styles: row(), selectable: false)
+  source.add(source_label)
+  let drop_style = mut absolute_panel(
+    42,
+    18,
+    3,
+    z_index: 2,
+    border: style::Border::single,
+    border_color: color::rgb(120, 120, 135),
+  )
+  drop_style.top = style::cells(1)
+  let drop_zone = box::new(ctx, title: "DROP ZONE", styles: drop_style.@)
+  drop_zone.add(text::new(ctx, content: " release here", styles: row(), selectable: false))
+  drag_lane.add(source)
+  drag_lane.add(drop_zone)
+
+  let hover_lane = box::new(ctx, styles: row(height: 4))
+  hover_lane.add(
+    text::new(
+      ctx,
+      content: "HOVER — point at tile; press m before editing to swap",
+      styles: absolute_panel(0, 60, 1),
+      selectable: false,
+    ),
+  )
+  let hover_left_style = mut absolute_panel(
+    0,
+    18,
+    3,
+    border: style::Border::single,
+    border_color: color::rgb(95, 95, 110),
+  )
+  let hover_right_style = mut absolute_panel(
+    38,
+    18,
+    3,
+    border: style::Border::single,
+    border_color: color::rgb(95, 95, 110),
+  )
+  hover_left_style.top = style::cells(1)
+  hover_right_style.top = style::cells(1)
+  let hover_left = box::new(ctx, title: "LEFT: hover", styles: hover_left_style.@)
+  let hover_left_label = text::new(
+    ctx,
+    content: " pointer outside",
+    styles: row(),
+    selectable: false,
+  )
+  hover_left.add(hover_left_label)
+  let hover_right = box::new(ctx, title: "RIGHT: hover", styles: hover_right_style.@)
+  let hover_right_label = text::new(
+    ctx,
+    content: " pointer outside",
+    styles: row(),
+    selectable: false,
+  )
+  hover_right.add(hover_right_label)
+  hover_lane.add(hover_left)
+  hover_lane.add(hover_right)
+
+  let selectable_text = text::new(
+    ctx,
+    content: "SELECTABLE TEXT — drag across Alpha élan 你好 and naturally wrapped lines.\nSecond line joins selection in reading order.",
+    wrap: text::TextWrap::word,
+    styles: style::new(width: style::percent(100.0), height: style::cells(3), flex_shrink: 0.0),
+    selection_style: fn(value: mut text::TextStyle) {
+      value.background = Maybe::new(color::rgb(45, 75, 125))
+      value.bold = true
+    },
+  )
+
+  let editor_lane = box::new(ctx, styles: row())
+  editor_lane.add(
+    text::new(
+      ctx,
+      content: "EDITABLE INPUT →",
+      styles: absolute_panel(0, 16, 1),
+      selectable: false,
+    ),
+  )
+  let editor = input::new(
+    ctx,
+    value: "select part of this deliberately long editable value",
+    styles: absolute_panel(17, 45, 1),
+  )
+  editor_lane.add(editor)
+
+  let scroll_panel = box::new(
+    ctx,
+    title: "SCROLL AREA — wheel to scroll; drag rows to select",
+    styles: row(height: 4, border: style::Border::single, border_color: color::rgb(80, 120, 155)),
+  )
+  let scroller = scroll_box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      flex_shrink: 0.0,
+    ),
+  )
+  mut index = 0
+  while index < 8 {
+    scroller.add(text::new(ctx, content: "scroll row {index}: selectable content", styles: row()))
+    index =+ 1
+  }
+  scroll_panel.add(scroller)
+
+  let diagnostics_intro = text::new(
+    ctx,
+    content: "Live state reported below.\nBest viewed at ≥100×24.",
+    wrap: text::TextWrap::word,
+    styles: row(height: 2),
+    selectable: false,
+  )
+  let focus_status = text::new(
+    ctx,
+    content: "focus: none — click nested child",
+    styles: row(),
+    selectable: false,
+  )
+  let stack_status = text::new(
+    ctx,
+    content: "stack: none — click overlap",
+    styles: row(),
+    selectable: false,
+  )
+  let hover_status = text::new(
+    ctx,
+    content: "hover: none",
+    wrap: text::TextWrap::word,
+    styles: row(height: 4),
+    selectable: false,
+  )
+  let drag_status = text::new(
+    ctx,
+    content: "drag: idle",
+    wrap: text::TextWrap::word,
+    styles: row(height: 3),
+    selectable: false,
+  )
+  let selection_status = text::new(
+    ctx,
+    content: "selection: none",
+    wrap: text::TextWrap::word,
+    styles: row(height: 6),
+    selectable: false,
+  )
+  let last_status = text::new(
+    ctx,
+    content: "last: ready",
+    wrap: text::TextWrap::word,
+    styles: row(height: 3),
+    selectable: false,
+  )
+
+  main.add(title)
+  main.add(terminal)
+  main.add(focus_card)
+  main.add(stacking)
+  main.add(drag_lane)
+  main.add(hover_lane)
+  main.add(selectable_text)
+  main.add(editor_lane)
+  main.add(scroll_panel)
+  diagnostics.add(diagnostics_intro)
+  diagnostics.add(focus_status)
+  diagnostics.add(stack_status)
+  diagnostics.add(hover_status)
+  diagnostics.add(drag_status)
+  diagnostics.add(selection_status)
+  diagnostics.add(last_status)
+  root.add(main)
+  root.add(diagnostics)
+  application.root.add(root)
+
+  let _ = focus_card.on_focus(fn() {
+    focus_card.set_border_color(color::rgb(80, 220, 140))
+    focus_card.set_title("FOCUSED ANCESTOR ✓ — nested child transferred focus")
+    focus_status.set_content("focus: ancestor ✓")
+  })
+  let _ = focus_card.on_blur(fn() {
+    focus_card.set_border_color(color::rgb(105, 105, 120))
+    focus_card.set_title("FOCUSABLE ANCESTOR — click its nested child")
+    focus_status.set_content("focus: none — click nested child")
+  })
+  let _ = front.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down {
+      stack_status.set_content("stack: FRONT ✓ won overlap")
+    }
+  })
+  let _ = back.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down {
+      stack_status.set_content("stack: BACK")
+    }
+  })
+
+  mut drag_offset_x = 0
+  mut drag_offset_y = 0
+  mut source_moved = false
+  let _ = source.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+      drag_offset_x = received.local_x
+      drag_offset_y = received.local_y
+      source_moved = false
+      source_style.border_color = Maybe::new(color::rgb(245, 190, 80))
+      source.set_style(source_style.@)
+      source.set_title("DRAGGING…")
+      source_label.set_content(" drag me →      ")
+      drop_style.border_color = Maybe::new(color::rgb(110, 180, 240))
+      drop_zone.set_style(drop_style.@)
+      drop_zone.set_title("DROP ZONE")
+      drag_status.set_content("drag: SOURCE armed — move toward DROP ZONE")
+    } else if received.event_type == event::MouseEventType::drag and received.button == event::MouseButton::left {
+      source_moved = true
+      source_style.z_index = 1
+      let lane = drag_lane.layout().screen
+      source_style.left = style::cells(
+        clamp_position(received.x - lane.x - drag_offset_x, 0, lane.width - 18),
+      )
+      source_style.top = style::cells(
+        clamp_position(received.y - lane.y - drag_offset_y, 1, lane.height - 3),
+      )
+      source.set_style(source_style.@)
+      drag_status.set_content("drag: SOURCE is moving (left-button capture active)")
+    } else if received.event_type == event::MouseEventType::drag_end and received.button == event::MouseButton::left {
+      source_style.z_index = 3
+      source_style.border_color = Maybe::new(color::rgb(120, 150, 210))
+      source.set_style(source_style.@)
+      source.set_title("SOURCE")
+      drop_style.border_color = Maybe::new(color::rgb(120, 120, 135))
+      drop_zone.set_style(drop_style.@)
+      drag_status.set_content("drag: capture ended — checking release target")
+    } else if received.event_type == event::MouseEventType::up and received.button == event::MouseButton::left {
+      source_style.z_index = 3
+      source.set_style(source_style.@)
+      if not source_moved {
+        source.set_title("SOURCE")
+        source_style.border_color = Maybe::new(color::rgb(120, 150, 210))
+        source.set_style(source_style.@)
+        drop_style.border_color = Maybe::new(color::rgb(120, 120, 135))
+        drop_zone.set_style(drop_style.@)
+        drag_status.set_content("drag: click only — move while holding left")
+      }
+      source_moved = false
+    }
+  })
+  let _ = drop_zone.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::drop {
+      source_style.z_index = 3
+      source_style.border_color = Maybe::new(color::rgb(80, 220, 140))
+      source.set_style(source_style.@)
+      source.set_title("DROPPED ✓")
+      source_label.set_content(" dropped here ✓ ")
+      drop_style.border_color = Maybe::new(color::rgb(80, 220, 140))
+      drop_zone.set_style(drop_style.@)
+      drop_zone.set_title("DROP ZONE ✓")
+      drag_status.set_content("drag: dropped in zone ✓")
+    } else if received.event_type == event::MouseEventType::drag {
+      if received.button == event::MouseButton::middle {
+        drag_status.set_content("drag: middle drag hit-routed")
+      } else {
+        drag_status.set_content("drag: right drag hit-routed")
+      }
+    }
+  })
+  let _ = hover_left.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::over {
+      hover_left_style.border_color = Maybe::new(color::rgb(80, 220, 200))
+      hover_left.set_style(hover_left_style.@)
+      hover_left.set_title("LEFT ● OVER")
+      hover_left_label.set_content(" pointer here ✓")
+      hover_status.set_content("hover: LEFT ✓ pointer inside")
+    } else if received.event_type == event::MouseEventType::out {
+      hover_left_style.border_color = Maybe::new(color::rgb(95, 95, 110))
+      hover_left.set_style(hover_left_style.@)
+      hover_left.set_title("LEFT: hover")
+      hover_left_label.set_content(" pointer outside")
+      hover_status.set_content("hover: LEFT out")
+    }
+  })
+  let _ = hover_right.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::over {
+      hover_right_style.border_color = Maybe::new(color::rgb(80, 220, 200))
+      hover_right.set_style(hover_right_style.@)
+      hover_right.set_title("RIGHT ● OVER")
+      hover_right_label.set_content(" pointer here ✓")
+      hover_status.set_content("hover: RIGHT ✓ pointer inside")
+    } else if received.event_type == event::MouseEventType::out {
+      hover_right_style.border_color = Maybe::new(color::rgb(95, 95, 110))
+      hover_right.set_style(hover_right_style.@)
+      hover_right.set_title("RIGHT: hover")
+      hover_right_label.set_content(" pointer outside")
+      hover_status.set_content("hover: RIGHT out")
+    }
+  })
+
+  let _ = application.on_terminal_focus(fn(value: event::TerminalFocus) {
+    if value == event::TerminalFocus::gained {
+      terminal.set_content("Window focus: FOCUSED ✓ — this terminal window is active")
+    } else {
+      terminal.set_content("Window focus: UNFOCUSED — this terminal window is inactive")
+    }
+  })
+  let _ = editor.on_input(fn(value: Str) {
+    last_status.set_content("last: Input changed to {value}")
+  })
+  let _ = application.on_selection_change(fn(value: selection::Selection?) {
+    match value {
+      selected => {
+        let flattened = strings::ReplaceAll(selected.selected_text, "\n", "/")
+        selection_status.set_content("selection: {flattened}")
+      },
+      _ => selection_status.set_content("selection: none"),
+    }
+  })
+
+  mut swapped = false
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release and received.matches("m") and (not editor.is_focused()) {
+      if swapped {
+        hover_left_style.left = style::cells(0)
+        hover_right_style.left = style::cells(38)
+      } else {
+        hover_left_style.left = style::cells(38)
+        hover_right_style.left = style::cells(0)
+      }
+      swapped = not swapped
+      hover_left.set_style(hover_left_style.@)
+      hover_right.set_style(hover_right_style.@)
+      last_status.set_content("last: m swapped hover tile layout")
+      received.prevent_default()
+    }
+  })
+
+  application.run().expect("run Interaction Lab")
+}

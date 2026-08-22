@@ -4,36 +4,34 @@
 [Vaxis](https://github.com/rockorager/vaxis).
 
 Cooper keeps application state, control identity, hierarchy, layout geometry,
-focus, listeners, and event targets in persistent Ard controls. Layout updates
+focus, listeners, and selection in persistent Ard controls. Layout updates
 attached Nodes in place, and drawing writes directly into one logical cell
 buffer for Vaxis to diff.
 
 ## Status
 
 Cooper is under active development and currently requires `ard-dev` from Ard
-main. The accepted application API is now being implemented, and the runnable
-examples will be migrated during that work.
+main. The accepted application API, built-in controls, headless TestApp, and
+runnable examples are implemented.
 
-The canonical design is the accepted
-[application API ADR](./docs/adrs/0002-define-application-api.md). Cooper has no
-compatibility constraint while it is implemented.
+The canonical design is defined by the accepted
+[application API ADR](./docs/adrs/0002-define-application-api.md) and
+[interaction ADR](./docs/adrs/0003-define-interaction-focus-and-selection.md).
+Cooper has no compatibility constraint while it is implemented.
 
-## Accepted application shape
-
-> This is the accepted target API. It will become runnable as the implementation
-> cutover proceeds.
+## Application shape
 
 ```ard
 use cooper/app
-use cooper/input
 use cooper/style
+use cooper/ui
 
 fn main() {
   let application = app::new().expect("create Cooper app")
-  let field = input::new(
+  let field = ui::input(
     application.context,
     placeholder: "Type here, then press Ctrl+C to quit",
-    style: style::new(
+    styles: style::new(
       width: style::percent(100.0),
       height: style::cells(1),
     ),
@@ -53,14 +51,14 @@ terminal teardown.
 ## Retained model
 
 Every built-in control owns one persistent internal Node. Parent/child
-relationships change through indexed `add`, `remove`, reparenting, `destroy`,
-and `destroy_recursively`.
+relationships change through indexed `add`, `remove`, reparenting, and
+`destroy`.
 
 - Removal detaches without destroying.
 - Same-parent reorder preserves attachment.
 - Cross-parent reparent receives a fresh attachment scope.
-- `destroy` destroys one control and preserves detached children.
-- `destroy_recursively` destroys the complete subtree.
+- `destroy()` destroys one control and preserves detached children.
+- `destroy(recursive: true)` destroys the complete subtree.
 - App teardown destroys all remaining Context-owned controls.
 
 The internal Renderable protocol is language-visible beneath `core/` but is not
@@ -75,18 +73,23 @@ yet a supported custom-control API.
 - Drawing writes directly into one backend-independent cell buffer.
 - Vaxis input is converted to Cooper-owned event values.
 - Keyboard and paste run through App listeners and then the focused control.
-- Mouse input targets the deepest hit control and bubbles through ancestors.
-- Focus is explicit or caused by configurable mouse autofocus; Cooper does not
-  reserve Tab or choose fallback focus.
+- Mouse input targets the deepest hit control, bubbles through ancestors, and
+  captures left-button drags to their source.
+- Stable sibling z-index controls both paint and hit order.
+- Focus is explicit or caused by configurable mouse autofocus; terminal-window
+  focus is reported separately. Cooper does not reserve Tab or choose fallback
+  focus.
+- Text and Input participate in one global, grapheme-safe selection.
 
 ## Initial controls
 
 - `Box` — indexed flex container with background, border, and title;
-- `Text` — multiline plain text with terminal-aware wrapping and TextStyle;
-- `Input` — grapheme-aware single-line editing, validation, and callbacks;
+- `Text` — selectable multiline text with terminal-aware wrapping and TextStyle;
+- `Input` — grapheme-aware editing, editable selection, validation, and callbacks;
 - `ScrollBox` — focusable multi-child vertical scrolling container.
 
-Public layout uses Ard-native Style, Color, Rect, and Geometry values.
+Public layout and interaction use Ard-native Style, Color, Point, Rect,
+Geometry, and Selection values.
 Tess/Yoga remains a hidden and replaceable internal layout backend.
 
 ## Installation
@@ -95,43 +98,55 @@ Tess/Yoga remains a hidden and replaceable internal layout backend.
 ard-dev add github.com/akonwi/cooper@latest
 ```
 
-Published revisions may lag the accepted target API while the clean-break
-implementation is underway.
 
 ## Examples
 
-Current runnable examples exercise the retained implementation baseline and
-will be migrated during the application API cutover:
+The runnable examples exercise the public application and control APIs:
 
 ```sh
 cd examples
+ard-dev run quickstart.ard
 ard-dev run input.ard
 ard-dev run form.ard
 ard-dev run scroll_form.ard
 ard-dev run async.ard
 ard-dev run explorer.ard
+ard-dev run interaction_lab.ard
 ```
 
-See [`examples/README.md`](./examples/README.md) for current behavior and
-migration status.
+See [`examples/README.md`](./examples/README.md) for behavior and PTY smoke
+tests.
 
-## Target module structure
+## Module structure
 
 ```text
-app.ard          App facade and Vaxis boundary
+app.ard          public App facade
 box.ard          configurable retained flex container
 color.ard        backend-independent RGB color
-context.ard      public construction, dispatch, and cancellation capability
-event.ard        Cooper-owned input events and listener controls
-geometry.ard     Rect and cached Geometry
+context.ard      Context capability, ownership, and backing state
+event.ard        Cooper-owned events, controls, and propagation state
+geometry.ard     Rect, Geometry, and geometry helpers
 input.ard        retained single-line Input
-root.ard         permanent terminal-sized Root
+root.ard         permanent Root and runtime bridge
 scroll_box.ard   retained vertical ScrollBox
-style.ard        Ard-native layout vocabulary
+selection.ard    global selection snapshots and local ranges
+style.ard        colors, layout values, stacking, and validation
 testing.ard      headless TestApp and frame snapshots
 text.ard         Text and TextStyle
-core/            unsupported runtime, layout, and backend implementation
-test/            deterministic headless tests
+ui.ard           convenience aliases for built-in controls
+core/            unsupported runtime mechanisms
+  app_runtime.ard
+  event_delivery.ard
+  focus.ard
+  hit.ard
+  node.ard
+  paint.ard
+  pointer.ard
+  router.ard
+  runtime.ard
+  selection_state.ard
+ffi/core/backend/ replaceable Vaxis and retained Yoga bindings
+test/            deterministic integration tests
 examples/        runnable PTY-tested applications
 benchmarks/      retained layout and stress workloads
 ```
@@ -139,7 +154,7 @@ benchmarks/      retained layout and stress workloads
 ## Development
 
 ```sh
-ard-dev test test
+ard-dev test
 
 git diff --check
 
@@ -151,6 +166,7 @@ ARD=ard-dev python3 test_form.py
 ARD=ard-dev python3 test_scroll_form.py
 ARD=ard-dev python3 test_async.py
 ARD=ard-dev python3 test_explorer.py
+ARD=ard-dev python3 test_interaction.py
 
 cd ..
 ARD=ard-dev python3 benchmarks/run.py

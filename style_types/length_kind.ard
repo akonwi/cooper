@@ -1,9 +1,0 @@
-enum LengthKind {
-  undefined,
-  auto,
-  cells,
-  percent,
-  max_content,
-  fit_content,
-  stretch,
-}

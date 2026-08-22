@@ -1,0 +1,204 @@
+use cooper/context
+use cooper/core/event_delivery
+use cooper/core/node
+use cooper/core/paint
+use cooper/event
+use cooper/geometry
+use cooper/style as layout_style
+
+struct ScrollBox {
+  node_ref: mut node::Node,
+}
+
+private fn positive(value: Int) Int {
+  if value < 1 {
+    1
+  } else {
+    value
+  }
+}
+
+private fn configured(value: layout_style::Style) layout_style::Style {
+  let applied = mut value
+  applied.overflow = layout_style::Overflow::scroll
+  applied.flex_direction = layout_style::FlexDirection::column
+  applied.flex_wrap = layout_style::FlexWrap::no_wrap
+  applied.@
+}
+
+fn new(
+  ctx: mut context::Context,
+  styles: layout_style::Style?,
+) mut ScrollBox {
+  let retained = context::internal_state(ctx).create_node(configured(styles.or(layout_style::new())))
+  let scroll_box = mut ScrollBox{
+    node_ref: retained,
+  }
+  retained.bind(scroll_box)
+  retained.set_focusable(true)
+  scroll_box
+}
+
+impl node::Renderable for ScrollBox {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn mount(ctx: node::MountContext) {}
+
+  fn paint(ctx: mut paint::Context) {}
+
+  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    match ctx.mouse_event {
+      mouse => self.handle_mouse(ctx, mouse),
+      _ => {
+        match ctx.key_event {
+          key => {
+            if ctx.focused {
+              self.handle_key(ctx, key)
+            } else {
+              event_delivery::Disposition::ignored
+            }
+          },
+          _ => event_delivery::Disposition::ignored,
+        }
+      },
+    }
+  }
+}
+
+impl ScrollBox {
+  fn mut add(child: mut node::Renderable, index: Int?) {
+    self.node_ref.add(child.node(), index)
+  }
+
+  fn mut remove(child: mut node::Renderable) Bool {
+    self.node_ref.remove(child.node())
+  }
+
+  fn child_count() Int {
+    self.node_ref.child_count()
+  }
+
+  fn scroll_top() Int {
+    self.node_ref.scroll_y()
+  }
+
+  fn requested_scroll_top() Int {
+    self.node_ref.requested_scroll_y()
+  }
+
+  fn maximum_scroll_top() Int {
+    self.node_ref.max_scroll_y()
+  }
+
+  fn scroll_height() Int {
+    self.node_ref.scroll_height()
+  }
+
+  fn mut scroll_to(y: Int) Bool {
+    self.node_ref.set_scroll_y(y)
+  }
+
+  fn mut scroll_by(delta: Int) Bool {
+    self.node_ref.scroll_by(delta)
+  }
+
+  fn mut scroll_child_into_view(child: mut node::Renderable) Bool {
+    self.node_ref.scroll_node_into_view(child.node())
+  }
+
+  fn style() layout_style::Style {
+    self.node_ref.style()
+  }
+
+  fn mut set_style(value: layout_style::Style) {
+    self.node_ref.apply_style(configured(value))
+  }
+
+  fn mut focus() Bool {
+    self.node_ref.focus()
+  }
+
+  fn mut blur() {
+    self.node_ref.blur()
+  }
+
+  fn is_focused() Bool {
+    self.node_ref.is_focused()
+  }
+
+  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+    self.node_ref.on_key(handler)
+  }
+
+  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+    self.node_ref.on_paste(handler)
+  }
+
+  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+    self.node_ref.on_mouse(handler)
+  }
+
+  fn mut on_focus(handler: fn()) fn() {
+    self.node_ref.on_focus(handler)
+  }
+
+  fn mut on_blur(handler: fn()) fn() {
+    self.node_ref.on_blur(handler)
+  }
+
+  fn layout() geometry::Geometry {
+    self.node_ref.layout()
+  }
+
+  private fn mut moved(ctx: mut event_delivery::Context, changed: Bool) event_delivery::Disposition {
+    if changed {
+      ctx.preserve_focus_scroll()
+      ctx.request_redraw()
+      event_delivery::Disposition::handled
+    } else {
+      event_delivery::Disposition::ignored
+    }
+  }
+
+  private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
+    if mouse.event_type != event::MouseEventType::scroll or mouse.scroll_y == 0 {
+      event_delivery::Disposition::ignored
+    } else {
+      mut delta = 3
+      if mouse.scroll_y < 0 {
+        delta = -3
+      }
+      let result = self.moved(ctx, self.scroll_by(delta))
+      if result == event_delivery::Disposition::handled {
+        ctx.stop_propagation()
+      }
+      result
+    }
+  }
+
+  private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
+    if key.event_type == event::KeyEventType::release {
+      event_delivery::Disposition::ignored
+    } else if key.matches("up") {
+      self.moved(ctx, self.scroll_by(-1))
+    } else if key.matches("down") {
+      self.moved(ctx, self.scroll_by(1))
+    } else if key.matches("page_up") {
+      self.moved(ctx, self.scroll_by(0 - positive(self.node_ref.layout().screen.height)))
+    } else if key.matches("page_down") {
+      self.moved(ctx, self.scroll_by(positive(self.node_ref.layout().screen.height)))
+    } else if key.matches("home") {
+      self.moved(ctx, self.scroll_to(0))
+    } else if key.matches("end") {
+      self.moved(ctx, self.scroll_to(self.maximum_scroll_top()))
+    } else {
+      event_delivery::Disposition::ignored
+    }
+  }
+
+  fn mut destroy(recursive: Bool?) {
+    self.node_ref.destroy(recursive)
+  }
+}

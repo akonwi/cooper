@@ -1,11 +1,10 @@
-use cooper/node
+use cooper/core/node
 use cooper/style
 use go:math
 
 private fn collect_node(current: mut node::Node, targets: mut [mut node::Node]) {
   if (not current.is_destroyed()) and current.style().display != style::Display::none {
-    let layout = current.layout().screen
-    if current.is_focusable() and layout.width > 0 and layout.height > 0 {
+    if current.is_focusable() {
       targets.push(current)
     }
     for child in current.children {
@@ -17,11 +16,93 @@ private fn collect_node(current: mut node::Node, targets: mut [mut node::Node]) 
 fn targets(root: mut node::Renderable) [mut node::Node] {
   let retained = root.node()
   if retained.parent.is_some() {
-    panic("retained focus traversal requires a detached root")
+    panic("retained focus lookup requires a detached root")
   }
   let found = mut List::new<mut node::Node>()
   collect_node(retained, found)
   found.@
+}
+
+struct AutoFocusCandidate {
+  root: mut node::Node,
+  target: mut node::Node,
+  target_generation: Int,
+  ancestor: mut node::Node,
+  ancestor_generation: Int,
+}
+
+fn capture_autofocus(root: mut node::Renderable, target: mut node::Node) AutoFocusCandidate? {
+  let root_node = root.node()
+  mut current = Maybe::new<mut node::Node>(target)
+  mut ancestor = Maybe::new<mut node::Node>()
+  mut found_root = false
+  mut scanning = true
+  while scanning {
+    match current {
+      retained => {
+        if (not ancestor.is_some()) and retained.is_focusable() {
+          ancestor = Maybe::new<mut node::Node>(retained)
+        }
+        if retained == root_node {
+          found_root = true
+          scanning = false
+        } else {
+          current = retained.parent
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+  match ancestor {
+    candidate => {
+      if found_root {
+        Maybe::new<AutoFocusCandidate>(
+          AutoFocusCandidate{
+            root: root_node,
+            target: target,
+            target_generation: target.attachment_generation(),
+            ancestor: candidate,
+            ancestor_generation: candidate.attachment_generation(),
+          },
+        )
+      } else {
+        Maybe::new<AutoFocusCandidate>()
+      }
+    },
+    _ => Maybe::new<AutoFocusCandidate>(),
+  }
+}
+
+private fn autofocus_is_current(candidate: AutoFocusCandidate) Bool {
+  if (not candidate.target.is_mounted()) or candidate.target.attachment_generation() != candidate.target_generation or (not candidate.ancestor.is_mounted()) or candidate.ancestor.attachment_generation() != candidate.ancestor_generation {
+    false
+  } else {
+    mut current = Maybe::new<mut node::Node>(candidate.target)
+    mut found_ancestor = false
+    mut found_root = false
+    mut scanning = true
+    while scanning {
+      match current {
+        retained => {
+          if not retained.pointer_route_visible() {
+            scanning = false
+          } else {
+            if retained == candidate.ancestor {
+              found_ancestor = true
+            }
+            if retained == candidate.root {
+              found_root = true
+              scanning = false
+            } else {
+              current = retained.parent
+            }
+          }
+        },
+        _ => { scanning = false },
+      }
+    }
+    found_ancestor and found_root
+  }
 }
 
 private fn saturating_add(left: Int, right: Int) Int {
@@ -93,14 +174,12 @@ fn reveal(root: mut node::Renderable, target: mut node::Node) Bool {
 
 struct State {
   focused_node: (mut node::Node)?,
-  focused_ordinal: Int,
   reveal_requested: Bool,
 }
 
 fn new() mut State {
   (mut State{
     focused_node: Maybe::new<mut node::Node>(),
-    focused_ordinal: 0,
     reveal_requested: false,
   })
 }
@@ -117,7 +196,7 @@ impl State {
     }
   }
 
-  private fn mut change(next: (mut node::Node)?, ordinal: Int) {
+  private fn mut change(next: (mut node::Node)?) {
     mut changed = true
     match self.focused_node {
       current => {
@@ -133,71 +212,81 @@ impl State {
       },
     }
 
-    self.focused_ordinal = ordinal
     if changed {
-      self.reveal_requested = true
-      match self.focused_node {
-        previous => previous.set_focused(false),
+      let previous = self.focused_node
+      self.focused_node = next
+      self.reveal_requested = next.is_some()
+      match previous {
+        prior => prior.set_focused(false),
         _ => (),
       }
-      self.focused_node = next
-      match self.focused_node {
-        current => current.set_focused(true),
+      match next {
+        intended => {
+          if self.is_focused(intended) and intended.is_focusable() {
+            intended.set_focused(true)
+          }
+        },
         _ => (),
       }
     }
   }
 
   fn mut clear() {
-    self.change(Maybe::new<mut node::Node>(), 0)
+    self.change(Maybe::new<mut node::Node>())
   }
 
-  fn mut focus(root: mut node::Renderable, target: mut node::Node) Bool {
-    mut accepted_index = -1
-    for candidate, index in targets(root) {
-      if candidate == target {
-        accepted_index = index
-      }
+  fn mut blur(target: mut node::Node) {
+    if self.is_focused(target) {
+      self.clear()
     }
-    if accepted_index >= 0 {
-      self.change(Maybe::new<mut node::Node>(target), accepted_index)
-      self.reveal_requested = true
-      true
+  }
+
+  fn mut autofocus(root: mut node::Renderable, candidate: AutoFocusCandidate) Bool {
+    if root.node() == candidate.root and autofocus_is_current(candidate) {
+      self.focus(root, candidate.ancestor)
     } else {
       false
     }
   }
 
+  fn mut focus(root: mut node::Renderable, target: mut node::Node) Bool {
+    mut accepted = false
+    for candidate in targets(root) {
+      if candidate == target {
+        accepted = true
+      }
+    }
+    if accepted {
+      self.change(Maybe::new<mut node::Node>(target))
+      mut retained = false
+      for candidate in targets(root) {
+        if candidate == target {
+          retained = true
+        }
+      }
+      if self.is_focused(target) and retained {
+        self.reveal_requested = true
+      } else if self.is_focused(target) {
+        self.clear()
+      }
+    }
+    self.is_focused(target)
+  }
+
   fn mut reconcile(root: mut node::Renderable) {
-    let candidates = targets(root)
-    mut current_index = -1
     match self.focused_node {
       current => {
-        for candidate, index in candidates {
+        mut retained = false
+        for candidate in targets(root) {
           if candidate == current {
-            current_index = index
+            retained = true
           }
+        }
+        if not retained {
+          self.clear()
         }
       },
       _ => (),
-    }
-
-    if current_index >= 0 {
-      self.focused_ordinal = current_index
-    } else if candidates.size() == 0 {
-      self.clear()
-    } else {
-      mut fallback = self.focused_ordinal
-      if fallback < 0 {
-        fallback = 0
-      }
-      if fallback >= candidates.size() {
-        fallback = candidates.size() - 1
-      }
-      self.change(
-        Maybe::new<mut node::Node>(candidates.at(fallback).expect("retained focus fallback")),
-        fallback,
-      )
     }
   }
 
@@ -205,39 +294,5 @@ impl State {
     let requested = self.reveal_requested
     self.reveal_requested = false
     requested
-  }
-
-  fn mut next(root: mut node::Renderable, reverse: Bool?) {
-    let candidates = targets(root)
-    if candidates.size() == 0 {
-      self.clear()
-    } else {
-      mut current_index = -1
-      match self.focused_node {
-        current => {
-          for candidate, index in candidates {
-            if candidate == current {
-              current_index = index
-            }
-          }
-        },
-        _ => (),
-      }
-
-      mut next_index = 0
-      if reverse.or(false) {
-        if current_index <= 0 {
-          next_index = candidates.size() - 1
-        } else {
-          next_index = current_index - 1
-        }
-      } else if current_index >= 0 {
-        next_index = (current_index + 1) % candidates.size()
-      }
-      self.change(
-        Maybe::new<mut node::Node>(candidates.at(next_index).expect("retained focus target index")),
-        next_index,
-      )
-    }
   }
 }

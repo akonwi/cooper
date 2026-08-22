@@ -1,8 +1,43 @@
-use cooper/node
+use ard/unsafe
+
+use cooper/core/node
+use cooper/event
 use cooper/style
 use go:go.rockorager.dev/vaxis
 
+struct Context {
+  dispatch: fn(fn()) Void!event::DispatchError,
+  cancellation: Receiver<Void>,
+  internal: Any,
+}
+
+private fn stopped_dispatch(action: fn()) Void!event::DispatchError {
+  Result::err(event::DispatchError::stopped)
+}
+
+private fn open_cancellation() Receiver<Void> {
+  Chan::new<Void>().receiver()
+}
+
 private fn no_op() {}
+
+private fn reject_focus(target_id: Int) Bool {
+  false
+}
+
+private fn ignore_blur(target_id: Int) {}
+
+private fn reject_selection_start(target_id: Int, local_x: Int, local_y: Int) Bool {
+  false
+}
+
+private fn reject_selection_update(target_id: Int, local_x: Int, local_y: Int, finish: Bool) Bool {
+  false
+}
+
+private fn reject_selection_owns(target_id: Int) Bool {
+  false
+}
 
 private fn default_width(text: Str) Int {
   mut width = 0
@@ -12,7 +47,7 @@ private fn default_width(text: Str) Int {
   width
 }
 
-struct Context {
+struct InternalState {
   next_id: Int,
   context_token: mut node::ContextToken,
   nodes: [mut node::Node],
@@ -20,10 +55,25 @@ struct Context {
   running: Bool,
   request_render: fn(),
   width_measurer: fn(Str) Int,
+  focus_request: fn(Int) Bool,
+  blur_request: fn(Int),
+  selection_start: fn(Int, Int, Int) Bool,
+  selection_update: fn(Int, Int, Int, Bool) Bool,
+  selection_owns: fn(Int) Bool,
+  selection_clear: fn(),
 }
 
-fn new(request_render: fn()?, width_measurer: (fn(Str) Int)?) mut Context {
-  (mut Context{
+private fn new_state(
+  request_render: fn()?,
+  width_measurer: (fn(Str) Int)?,
+  focus_request: (fn(Int) Bool)?,
+  blur_request: (fn(Int))?,
+  selection_start: (fn(Int, Int, Int) Bool)?,
+  selection_update: (fn(Int, Int, Int, Bool) Bool)?,
+  selection_owns: (fn(Int) Bool)?,
+  selection_clear: (fn())?,
+) mut InternalState {
+  (mut InternalState{
     next_id: 1,
     context_token: node::new_context_token(),
     nodes: [],
@@ -31,10 +81,49 @@ fn new(request_render: fn()?, width_measurer: (fn(Str) Int)?) mut Context {
     running: false,
     request_render: request_render.or(no_op),
     width_measurer: width_measurer.or(default_width),
+    focus_request: focus_request.or(reject_focus),
+    blur_request: blur_request.or(ignore_blur),
+    selection_start: selection_start.or(reject_selection_start),
+    selection_update: selection_update.or(reject_selection_update),
+    selection_owns: selection_owns.or(reject_selection_owns),
+    selection_clear: selection_clear.or(no_op),
   })
 }
 
-impl Context {
+fn internal_new(
+  request_render: fn()?,
+  width_measurer: (fn(Str) Int)?,
+  dispatch: (fn(fn()) Void!event::DispatchError)?,
+  cancellation: Receiver<Void>?,
+  focus_request: (fn(Int) Bool)?,
+  blur_request: (fn(Int))?,
+  selection_start: (fn(Int, Int, Int) Bool)?,
+  selection_update: (fn(Int, Int, Int, Bool) Bool)?,
+  selection_owns: (fn(Int) Bool)?,
+  selection_clear: (fn())?,
+) mut Context {
+  let retained = new_state(
+    request_render,
+    width_measurer,
+    focus_request,
+    blur_request,
+    selection_start,
+    selection_update,
+    selection_owns,
+    selection_clear,
+  )
+  (mut Context{
+    dispatch: dispatch.or(stopped_dispatch),
+    cancellation: cancellation.or(open_cancellation()),
+    internal: retained,
+  })
+}
+
+fn internal_state(ctx: mut Context) mut InternalState {
+  unsafe::cast<mut InternalState>(ctx.internal).expect("Context must be created by Cooper")
+}
+
+impl InternalState {
   fn mut create_node(initial_style: style::Style) mut node::Node {
     if self.destroyed {
       panic("cannot create a retained Node from a destroyed Context")
@@ -44,6 +133,12 @@ impl Context {
       self.context_token,
       initial_style,
       self.request_render,
+      self.focus_request,
+      self.blur_request,
+      self.selection_start,
+      self.selection_update,
+      self.selection_owns,
+      self.selection_clear,
       fn(destroyed_id: Int) {
         self.release(destroyed_id)
       },
@@ -108,7 +203,7 @@ impl Context {
       let owned = self.nodes
       self.nodes = []
       for retained in owned {
-        retained.destroy()
+        retained.destroy_from_context()
       }
     }
   }

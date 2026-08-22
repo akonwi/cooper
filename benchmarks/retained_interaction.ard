@@ -1,0 +1,87 @@
+use cooper/box
+use cooper/event
+use cooper/style
+use cooper/testing as cooper_testing
+use cooper/text
+use go:fmt
+use go:time
+
+private fn absolute(z_index: Int) style::Style {
+  style::new(
+    position: style::Position::absolute,
+    width: style::cells(80),
+    height: style::cells(24),
+    z_index: z_index,
+  )
+}
+
+fn main() {
+  let application = cooper_testing::new(80, 24)
+  let overlap = box::new(application.context, styles: style::new(width: style::cells(80), height: style::cells(24)))
+  mut top = Maybe::new<mut box::Box>()
+  mut index = 0
+  while index < 100 {
+    let layer = box::new(application.context, styles: absolute(index))
+    overlap.add(layer)
+    top = Maybe::new<mut box::Box>(layer)
+    index =+ 1
+  }
+  mut top_events = 0
+  let _ = top.expect("top overlap layer").on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::move {
+      top_events =+ 1
+    }
+  })
+  application.root.add(overlap)
+  application.render()
+
+  let overlap_started = time::Now()
+  index = 0
+  while index < 10000 {
+    application.mouse_move(1, 1)
+    index =+ 1
+  }
+  let overlap_hits = time::Since(overlap_started)
+  if top_events != 10000 {
+    panic("stacking-aware hit benchmark did not reach the top layer")
+  }
+
+  let _ = application.root.remove(overlap)
+  overlap.destroy(recursive: true)
+  let content = box::new(
+    application.context,
+    styles: style::new(width: style::cells(80), height: style::cells(200), flex_shrink: 0.0),
+  )
+  index = 0
+  while index < 200 {
+    content.add(
+      text::new(
+        application.context,
+        content: "selectable row {index}",
+        styles: style::new(width: style::cells(80), height: style::cells(1), flex_shrink: 0.0),
+      ),
+    )
+    index =+ 1
+  }
+  application.root.add(content)
+  application.render()
+
+  let selection_started = time::Now()
+  index = 0
+  while index < 100 {
+    application.drag(0, 0, 20, 23)
+    index =+ 1
+  }
+  let selections = time::Since(selection_started)
+  if application.selection().expect("interaction benchmark selection").selected_text.is_empty() {
+    panic("selection benchmark produced no selected text")
+  }
+
+  fmt::Printf(
+    "backend=tess_interaction overlap_hit_10000_us=%d selection_100x200_us=%d top_events=%d selected=yes\n",
+    overlap_hits.Microseconds(),
+    selections.Microseconds(),
+    top_events,
+  )
+  application.destroy()
+}

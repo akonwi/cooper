@@ -1,0 +1,148 @@
+use ard/testing
+
+use cooper/box
+use cooper/color
+use cooper/context
+use cooper/style
+
+private fn all_edges(value: style::Length) style::Edges {
+  style::Edges{
+    top: value,
+    right: value,
+    bottom: value,
+    left: value,
+  }
+}
+
+test fn style_new_configures_the_complete_public_vocabulary() Void!Str {
+  let configured = style::new(
+    foreground: color::rgb(1, 2, 3),
+    background: color::rgb(4, 5, 6),
+    border: style::Border::double,
+    border_color: color::rgb(7, 8, 9),
+    display: style::Display::flex,
+    position: style::Position::absolute,
+    overflow: style::Overflow::hidden,
+    flex_direction: style::FlexDirection::row,
+    flex_wrap: style::FlexWrap::wrap,
+    flex_basis: style::cells(4),
+    flex_grow: 2.0,
+    flex_shrink: 0.5,
+    align_items: style::Align::center,
+    align_self: style::Align::end,
+    justify_content: style::Justify::space_between,
+    width: style::cells(20),
+    height: style::percent(50.0),
+    min_width: style::cells(5),
+    min_height: style::cells(2),
+    max_width: style::cells(30),
+    max_height: style::cells(10),
+    top: style::cells(1),
+    right: style::auto(),
+    bottom: style::auto(),
+    left: style::cells(3),
+    padding: all_edges(style::cells(1)),
+    margin: all_edges(style::auto()),
+    gap: style::cells(2),
+    z_index: 7,
+  )
+
+  try testing::assert(
+    configured.foreground.expect("foreground").blue == Uint8::from(3),
+    "Expected foreground",
+  )
+  try testing::assert(
+    configured.background.expect("background").blue == Uint8::from(6),
+    "Expected background",
+  )
+  try testing::assert(configured.border == style::Border::double, "Expected border")
+  try testing::assert(
+    configured.border_color.expect("border color").blue == Uint8::from(9),
+    "Expected border color",
+  )
+  try testing::assert(configured.flex_direction == style::FlexDirection::row, "Expected flex direction")
+  try testing::assert(configured.flex_wrap == style::FlexWrap::wrap, "Expected flex wrapping")
+  try testing::assert(configured.flex_basis.value == 4.0, "Expected flex basis")
+  try testing::assert(
+    configured.flex_grow == 2.0 and configured.flex_shrink == 0.5,
+    "Expected flex factors",
+  )
+  try testing::assert(configured.align_self == style::Align::end, "Expected self alignment")
+  try testing::assert(
+    configured.justify_content == style::Justify::space_between,
+    "Expected justification",
+  )
+  try testing::assert(
+    configured.left.value == 3.0 and configured.top.value == 1.0,
+    "Expected edge offsets",
+  )
+  try testing::assert(configured.gap.value == 2.0, "Expected gap")
+  testing::assert(configured.z_index == 7, "Expected z index")
+}
+
+test fn style_replacement_clears_dimensions_constraints_and_offsets() Void!Str {
+  let ctx = context::internal_new()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(10),
+      height: style::cells(5),
+      align_items: style::Align::start,
+    ),
+  )
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(8),
+      height: style::cells(1),
+      max_width: style::cells(4),
+      left: style::cells(2),
+      top: style::cells(1),
+    ),
+  )
+  parent.add(child)
+  context::internal_state(ctx).compute_layout(parent, 10, 5)
+  try testing::assert(
+    child.layout().local.x == 2 and child.layout().local.y == 1 and child.layout().local.width == 4,
+    "Expected initial dimensions, constraint, and offsets",
+  )
+
+  child.set_style(style::new(width: style::cells(8), height: style::cells(1)))
+  context::internal_state(ctx).compute_layout(parent, 10, 5)
+  let reset = child.layout().local
+
+  try testing::assert(reset.x == 0 and reset.y == 0, "Expected undefined offsets to clear backend state")
+  try testing::assert(reset.width == 8, "Expected undefined max width to clear backend state")
+
+  child.set_style(style::new())
+  context::internal_state(ctx).compute_layout(parent, 10, 5)
+  try testing::assert(child.layout().local.width == 0, "Expected undefined width to clear backend state")
+
+  context::internal_state(ctx).destroy()
+  testing::assert(child.node_ref.is_destroyed(), "Expected style reset cleanup")
+}
+
+test fn absolute_edge_offsets_reach_the_layout_backend() Void!Str {
+  let ctx = context::internal_new()
+  let parent = box::new(ctx, styles: style::new(width: style::cells(10), height: style::cells(5)))
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(3),
+      height: style::cells(1),
+      right: style::cells(1),
+      bottom: style::cells(1),
+    ),
+  )
+  parent.add(child)
+
+  context::internal_state(ctx).compute_layout(parent, 10, 5)
+  let layout = child.layout().local
+
+  try testing::assert(layout.x == 6, "Expected right offset in backend layout")
+  try testing::assert(layout.y == 3, "Expected bottom offset in backend layout")
+  context::internal_state(ctx).destroy()
+  testing::assert(child.node_ref.is_destroyed(), "Expected offset test cleanup")
+}

@@ -1,7 +1,7 @@
 use ard/testing
 
 use cooper/event
-use cooper/runtime
+use cooper/core/runtime
 
 test fn dispatch_queue_accepts_reentrant_actions_without_blocking() Void!Str {
   let queue = mut runtime::new_dispatch_queue()

@@ -1,5 +1,5 @@
 use cooper/geometry
-use cooper/node
+use cooper/core/node
 use cooper/style
 
 struct Hit {
@@ -22,11 +22,12 @@ private fn test_node(current: mut node::Node, x: Int, y: Int, inherited_clip: ge
     if not geometry::contains(node_clip, x, y) {
       Maybe::new<Hit>()
     } else {
-      mut index = current.children.size()
+      let stacked = current.stacking_order()
+      mut index = stacked.size()
       mut found = Maybe::new<Hit>()
       while index > 0 and not found.is_some() {
         index =- 1
-        let child = current.children.at(index).expect("retained hit child index")
+        let child = stacked.at(index).expect("retained hit child index")
         found = test_node(child, x, y, node_clip)
       }
 

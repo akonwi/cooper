@@ -1,13 +1,22 @@
 # Cooper examples
 
-These applications currently exercise the retained implementation baseline and
-require `ard-dev` from Ard main (or Ard v0.38.0 once released). They have not yet
-been migrated to the accepted application API and are not canonical API
-examples during the cutover.
+These applications exercise Cooper's accepted application API and require
+`ard-dev` from Ard main (or Ard v0.38.0 once released).
 
-The migration will move them to `App.context`, `App.root`, blocking `run()`,
-listener-based input, explicit focus policy, Context dispatch, and multi-child
-ScrollBox. Until then, the behavior below describes the runnable baseline.
+Every example uses `App.context`, the permanent `App.root`, persistent public
+controls, explicit focus policy, and blocking `run()`.
+
+## Quickstart
+
+`quickstart.ard` recreates OpenTUI's imperative quickstart with nested styled
+Boxes, inherited colors, mutable Text, application key listeners, and the
+single-import `cooper/ui` control aliases.
+
+```sh
+ard-dev run quickstart.ard
+```
+
+Use Left and Right to change the counter, or press Q to quit.
 
 ## Input
 
@@ -22,8 +31,8 @@ editing, click to place the cursor, and press Ctrl+C to exit.
 
 ## Form
 
-`form.ard` composes three Inputs in a retained Box. Tab and Shift+Tab traverse
-direct Node focus; mouse presses focus fields using cached target geometry.
+`form.ard` composes three Inputs in a Box. An App key listener implements Tab
+and Shift+Tab traversal; mouse presses use Input's built-in autofocus.
 
 ```sh
 ard-dev run form.ard
@@ -31,18 +40,19 @@ ard-dev run form.ard
 
 ## Scrollable form
 
-`scroll_form.ard` places eight retained Inputs inside ScrollView. It demonstrates
-wheel fallback, translated mouse targeting, resize, and focused-descendant
-reveal.
+`scroll_form.ard` adds labels and Inputs directly to a multi-child ScrollBox. It
+demonstrates wheel fallback, translated mouse targeting, resize, and automatic
+focused-child reveal.
 
 ```sh
 ard-dev run scroll_form.ard
 ```
 
-## Attachment-scoped async work
+## App-lifetime async work
 
-`async.ard` starts background work from `Renderable.mount`. Detach or App
-shutdown closes cancellation and suppresses stale dispatched mutation.
+`async.ard` waits in a background fiber, observes `Context.cancellation`, and
+uses `Context.dispatch` to update a Text control on the UI thread. App teardown
+cancels pending work and suppresses queued actions.
 
 ```sh
 ard-dev run async.ard
@@ -50,17 +60,27 @@ ard-dev run async.ard
 
 ## Filesystem explorer
 
-`explorer.ard` asynchronously reads the current working directory into persistent
-rows and responsive listing/detail panes. Tab focuses rows, Enter activates the
-focused row, mouse presses activate direct hit targets, and the wheel scrolls
-the listing.
+`explorer.ard` asynchronously reads the current working directory and creates
+persistent public Box and Text controls through UI dispatch. Tab focuses the
+first row, Enter and mouse presses activate rows, and the listing ScrollBox
+handles wheel input.
 
 ```sh
 ard-dev run explorer.ard
 ```
 
-The loader snapshots inputs during mount and only creates/mutates retained Nodes
-inside attachment-scoped UI dispatch.
+## Interaction Lab
+
+`interaction_lab.ard` is the end-to-end acceptance program for ADR 0003. It
+combines nearest-ancestor focus, overlapping z-index controls, captured and
+hit-routed drags, layout-driven hover, terminal focus, selectable Unicode Text,
+editable Input selection, and selection through a ScrollBox. Press M while the
+pointer is over a hover tile to move another tile beneath the stationary
+pointer.
+
+```sh
+ard-dev run interaction_lab.ard
+```
 
 ## PTY smoke tests
 
@@ -70,8 +90,10 @@ ARD=ard-dev python3 test_form.py
 ARD=ard-dev python3 test_scroll_form.py
 ARD=ard-dev python3 test_async.py
 ARD=ard-dev python3 test_explorer.py
+ARD=ard-dev python3 test_interaction.py
 ```
 
-The tests cover terminal startup/restoration, editing, focus, mouse input,
-scrolling, resize, mount cancellation, asynchronous UI dispatch, filesystem
-rows, and clean exit.
+The tests cover terminal startup/restoration, editing, explicit focus policy,
+mouse input, scrolling, resize, App cancellation, asynchronous UI dispatch,
+filesystem rows, drag capture/drop ordering, hover reconciliation, terminal
+focus, text and editable selection, and clean exit.

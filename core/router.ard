@@ -1,0 +1,190 @@
+use cooper/core/event_delivery
+use cooper/core/focus
+use cooper/core/node
+use cooper/event
+
+struct Outcome {
+  handled: Bool,
+  redraw: Bool,
+  quit: Bool,
+  preserve_focus_scroll: Bool,
+}
+
+fn empty_outcome() Outcome {
+  Outcome{handled: false, redraw: false, quit: false, preserve_focus_scroll: false}
+}
+
+fn merge(left: Outcome, right: Outcome) Outcome {
+  Outcome{
+    handled: left.handled or right.handled,
+    redraw: left.redraw or right.redraw,
+    quit: left.quit or right.quit,
+    preserve_focus_scroll: left.preserve_focus_scroll or right.preserve_focus_scroll,
+  }
+}
+
+private struct RouteEntry {
+  owner: mut node::Node,
+  generation: Int,
+}
+
+private fn path(root: mut node::Node, target: mut node::Node) [RouteEntry]? {
+  let routed = mut List::new<RouteEntry>()
+  mut current = Maybe::new<mut node::Node>(target)
+  mut found = false
+  mut scanning = true
+  while scanning {
+    match current {
+      retained => {
+        routed.push(RouteEntry{owner: retained, generation: retained.attachment_generation()})
+        if retained == root {
+          found = true
+          scanning = false
+        } else {
+          current = retained.parent
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+  if found { Maybe::new<[RouteEntry]>(routed.@) } else { Maybe::new<[RouteEntry]>() }
+}
+
+private fn route_is_current(routed: [RouteEntry], tree_version: Int) Bool {
+  mut current = routed.size() > 0
+  for entry, index in routed {
+    let owner = entry.owner
+    if (not owner.is_mounted()) or (not owner.pointer_route_visible()) or owner.attachment_generation() != entry.generation {
+      current = false
+      break
+    }
+    if index + 1 < routed.size() {
+      let expected_parent = routed.at(index + 1).expect("route parent").owner
+      match owner.parent {
+        parent => {
+          if parent != expected_parent {
+            current = false
+            break
+          }
+        },
+        _ => {
+          current = false
+          break
+        },
+      }
+    } else if owner.parent.is_some() or owner.attachment_tree_version() != tree_version or owner.event_route_invalidated() {
+      current = false
+      break
+    }
+  }
+  current
+}
+
+private fn outcome(state: mut event_delivery::Outcome) Outcome {
+  Outcome{
+    handled: state.handled,
+    redraw: state.redraw,
+    quit: state.quit,
+    preserve_focus_scroll: state.preserve_focus_scroll,
+  }
+}
+
+private fn deliver_default(current: mut node::Node, delivery: mut event_delivery::Context) {
+  if (not delivery.is_default_prevented()) and current.can_receive_events() {
+    let result = current.owner_as_renderable().event(delivery)
+    if result == event_delivery::Disposition::handled {
+      delivery.mark_handled()
+    }
+  }
+}
+
+private fn deliver_mouse_default(current: mut node::Node, delivery: mut event_delivery::Context) {
+  if current.can_receive_pointer_events() {
+    let result = current.owner_as_renderable().event(delivery)
+    if result == event_delivery::Disposition::handled {
+      delivery.mark_handled()
+    }
+  }
+}
+
+fn dispatch_mouse(
+  root: mut node::Renderable,
+  target: mut node::Node,
+  mouse: mut event::MouseEvent,
+  focused: mut focus::State,
+) Outcome {
+  let routed = try path(root.node(), target) -> _ { empty_outcome() }
+  let state = event_delivery::new_outcome()
+  let tree_version = root.node().attachment_tree_version()
+  root.node().begin_event_route(fn() {
+    mouse.stop_propagation()
+  })
+
+  mut index = 0
+  while index < routed.size() and (not mouse.is_propagation_stopped()) and route_is_current(routed, tree_version) {
+    let current = routed.at(index).expect("mouse bubble owner").owner
+    let bounds = current.layout().screen
+    mouse.local_x = mouse.x - bounds.x
+    mouse.local_y = mouse.y - bounds.y
+    current.emit_mouse(mouse)
+    if route_is_current(routed, tree_version) {
+      let current_bounds = current.layout().screen
+      mouse.local_x = mouse.x - current_bounds.x
+      mouse.local_y = mouse.y - current_bounds.y
+      deliver_mouse_default(
+        current,
+        event_delivery::context(
+          mouse_event: mouse,
+          local_x: mouse.local_x,
+          local_y: mouse.local_y,
+          focused: focused.is_focused(current),
+          outcome: state,
+          focus_request: fn() Bool { focused.focus(root, current) },
+          dispatch: current.attachment_dispatch(),
+        ),
+      )
+    }
+    index =+ 1
+  }
+
+  root.node().end_event_route()
+  outcome(state)
+}
+
+fn dispatch_key(
+  target: mut node::Node,
+  key: mut event::KeyEvent,
+  focused: mut focus::State,
+) Outcome {
+  let state = event_delivery::new_outcome()
+  target.emit_key(key)
+  deliver_default(
+    target,
+    event_delivery::context(
+      key_event: key,
+      focused: focused.is_focused(target),
+      outcome: state,
+      dispatch: target.attachment_dispatch(),
+    ),
+  )
+  outcome(state)
+}
+
+fn dispatch_paste(
+  target: mut node::Node,
+  paste: mut event::PasteEvent,
+  focused: mut focus::State,
+) Outcome {
+  let state = event_delivery::new_outcome()
+  target.emit_paste(paste)
+  deliver_default(
+    target,
+    event_delivery::context(
+      paste_event: paste,
+      focused: focused.is_focused(target),
+      outcome: state,
+      dispatch: target.attachment_dispatch(),
+    ),
+  )
+  outcome(state)
+}

@@ -1,0 +1,147 @@
+use ard/testing
+
+use cooper/box
+use cooper/color
+use cooper/style
+use cooper/testing as cooper_testing
+use cooper/text
+
+test fn box_paints_background_border_title_and_insets_children() Void!Str {
+  let application = cooper_testing::new(8, 4)
+  let panel = box::new(
+    application.context,
+    styles: style::new(
+      foreground: color::rgb(4, 5, 6),
+      background: color::rgb(1, 2, 3),
+      border: style::Border::single,
+      border_color: color::rgb(200, 201, 202),
+      width: style::cells(8),
+      height: style::cells(4),
+    ),
+    title: "Hi",
+  )
+  let child = text::new(application.context, content: "x")
+  panel.add(child)
+  application.root.add(panel)
+  application.render()
+
+  try testing::assert(
+    child.layout().screen.x == 1 and child.layout().screen.y == 1,
+    "Expected one-cell border inset",
+  )
+  try testing::assert(
+    application.frame().cell(0, 0).expect("top-left border").grapheme == "┌",
+    "Expected single border",
+  )
+  try testing::assert(
+    application.frame().cell(3, 0).expect("title lead").grapheme == "H",
+    "Expected top title",
+  )
+  try testing::assert(
+    application.frame().cell(0, 3).expect("bottom-left border").grapheme == "└",
+    "Expected bottom border",
+  )
+  let child_cell = application.frame().cell(1, 1).expect("child cell")
+  try testing::assert(child_cell.grapheme == "x", "Expected inset child paint")
+  try testing::assert(
+    child_cell.style.foreground.expect("inherited Box foreground").green == Uint8::from(5),
+    "Expected Text without a foreground to inherit its Box foreground",
+  )
+  try testing::assert(
+    child_cell.style.background.expect("inherited Box background").blue == Uint8::from(3),
+    "Expected Text without a background to preserve its Box background",
+  )
+  try testing::assert(
+    application.frame().cell(
+      2,
+      2,
+    ).expect("background cell").style.background.expect("Box background").blue == Uint8::from(3),
+    "Expected complete Box background",
+  )
+
+  application.destroy()
+  testing::assert(child.node_ref.is_destroyed(), "Expected decorated Box cleanup")
+}
+
+test fn box_decoration_setters_update_layout_and_common_api() Void!Str {
+  let application = cooper_testing::new(6, 3)
+  let panel = box::new(
+    application.context,
+    styles: style::new(
+      border: style::Border::rounded,
+      width: style::cells(6),
+      height: style::cells(3),
+    ),
+  )
+  let child = text::new(application.context, content: "child")
+  panel.add(child)
+  application.root.add(panel)
+  application.render()
+  try testing::assert(child.layout().screen.x == 1, "Expected initial rounded inset")
+
+  panel.set_border(box::Border::none)
+  panel.set_title("Later")
+  panel.set_style(
+    style::new(background: color::rgb(10, 20, 30), width: style::cells(6), height: style::cells(3)),
+  )
+  panel.set_border_color(color::rgb(40, 50, 60))
+  application.render()
+
+  try testing::assert(panel.border() == style::Border::none, "Expected Border getter")
+  try testing::assert(panel.title() == "Later", "Expected title getter")
+  try testing::assert(
+    panel.style().background.expect("common Style background").green == Uint8::from(20),
+    "Expected background in the common Style",
+  )
+  try testing::assert(
+    panel.border_color().expect("Box border color getter").red == Uint8::from(40) and panel.style().border_color.expect("Style border color").green == Uint8::from(50),
+    "Expected border color in Style",
+  )
+  try testing::assert(
+    panel.style().width.kind == style::LengthKind::cells,
+    "Expected common style getter",
+  )
+  try testing::assert(
+    child.layout().screen.x == 0 and child.layout().screen.y == 0,
+    "Expected removed border inset",
+  )
+  try testing::assert(panel.child_count() == 1 and panel.remove(child), "Expected Box tree operations")
+
+  application.destroy()
+  child.destroy()
+  testing::assert(child.node_ref.is_destroyed(), "Expected detached Box child cleanup")
+}
+
+test fn box_without_background_preserves_ancestor_fill() Void!Str {
+  let application = cooper_testing::new(4, 2)
+  let parent = box::new(
+    application.context,
+    styles: style::new(
+      background: color::rgb(9, 8, 7),
+      width: style::cells(4),
+      height: style::cells(2),
+    ),
+  )
+  let child = box::new(
+    application.context,
+    styles: style::new(
+      border: style::Border::single,
+      width: style::cells(4),
+      height: style::cells(2),
+    ),
+  )
+  parent.add(child)
+  application.root.add(parent)
+  application.render()
+
+  try testing::assert(
+    application.frame().cell(
+      0,
+      0,
+    ).expect("transparent child border").style.background.expect("ancestor fill").red == Uint8::from(9),
+    "Expected transparent child border not to erase ancestor",
+  )
+
+  application.destroy()
+  testing::assert(child.node_ref.is_destroyed(), "Expected transparent Box cleanup")
+}

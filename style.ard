@@ -1,55 +1,122 @@
-use cooper/style_types/align as align_type
-use cooper/style_types/direction as direction_type
-use cooper/style_types/display as display_type
-use cooper/style_types/justify as justify_type
-use cooper/style_types/length_kind as length_kind_type
-use cooper/style_types/overflow as overflow_type
-use cooper/style_types/position as position_type
-use cooper/style_types/wrap as wrap_type
+use cooper/color
+use go:math
 
-type Align = align_type::Align
-type Direction = direction_type::Direction
-type Display = display_type::Display
-type Justify = justify_type::Justify
-type LengthKind = length_kind_type::LengthKind
-type Overflow = overflow_type::Overflow
-type Position = position_type::Position
-type Wrap = wrap_type::Wrap
+enum Align {
+  auto,
+  stretch,
+  baseline,
+  start,
+  end,
+  center,
+  space_between,
+  space_around,
+  space_evenly,
+}
+
+enum Border {
+  none,
+  single,
+  double,
+  rounded,
+  heavy,
+}
+
+enum Display {
+  flex,
+  contents,
+  none,
+}
+
+enum FlexDirection {
+  column,
+  column_reverse,
+  row,
+  row_reverse,
+}
+
+enum FlexWrap {
+  no_wrap,
+  wrap,
+  wrap_reverse,
+}
+
+enum Justify {
+  start,
+  end,
+  center,
+  space_between,
+  space_around,
+  space_evenly,
+}
+
+enum LengthKind {
+  undefined,
+  auto,
+  cells,
+  percent,
+  max_content,
+  fit_content,
+  stretch,
+}
+
+enum Overflow {
+  visible,
+  hidden,
+  scroll,
+}
+
+enum Position {
+  static,
+  relative,
+  absolute,
+}
 
 struct Length {
   kind: LengthKind,
   value: Float32,
 }
 
+private fn finite(value: Float32) Bool {
+  let infinity = Float32::from(math::Inf(1))
+  value == value and value != infinity and value != 0.0 - infinity
+}
+
+private fn scalar(kind: LengthKind) Length {
+  Length{kind: kind, value: 0.0}
+}
+
 fn undefined() Length {
-  Length{kind: LengthKind::undefined, value: 0.0}
+  scalar(LengthKind::undefined)
 }
 
 fn auto() Length {
-  Length{kind: LengthKind::auto, value: 0.0}
+  scalar(LengthKind::auto)
 }
 
 fn cells(value: Int) Length {
   if value < 0 {
-    panic("retained layout cell lengths must be non-negative")
+    panic("layout cell lengths must be non-negative")
   }
   Length{kind: LengthKind::cells, value: Float32::from(value)}
 }
 
 fn percent(value: Float64) Length {
+  if math::IsNaN(value) or math::IsInf(value, 0) or value < 0.0 or value > 100.0 {
+    panic("layout percentages must be between 0 and 100")
+  }
   Length{kind: LengthKind::percent, value: Float32::from(value)}
 }
 
 fn max_content() Length {
-  Length{kind: LengthKind::max_content, value: 0.0}
+  scalar(LengthKind::max_content)
 }
 
 fn fit_content() Length {
-  Length{kind: LengthKind::fit_content, value: 0.0}
+  scalar(LengthKind::fit_content)
 }
 
 fn stretch() Length {
-  Length{kind: LengthKind::stretch, value: 0.0}
+  scalar(LengthKind::stretch)
 }
 
 struct Edges {
@@ -70,58 +137,179 @@ fn edges(all: Length?) Edges {
 }
 
 struct Style {
+  foreground: color::Color?,
+  background: color::Color?,
+  border: Border,
+  border_color: color::Color?,
   display: Display,
-  direction: Direction,
-  align_items: Align,
-  align_self: Align,
-  justify: Justify,
-  wrap: Wrap,
   position: Position,
   overflow: Overflow,
+  flex_direction: FlexDirection,
+  flex_wrap: FlexWrap,
+  flex_basis: Length,
+  flex_grow: Float32,
+  flex_shrink: Float32,
+  align_items: Align,
+  align_self: Align,
+  justify_content: Justify,
   width: Length,
   height: Length,
   min_width: Length,
   min_height: Length,
   max_width: Length,
   max_height: Length,
-  basis: Length,
-  grow: Float32,
-  shrink: Float32,
+  top: Length,
+  right: Length,
+  bottom: Length,
+  left: Length,
   padding: Edges,
   margin: Edges,
   gap: Length,
+  z_index: Int,
+}
+
+private fn validate_scalar(length: Length, name: Str) {
+  if length.value != 0.0 {
+    panic("{name} does not accept a numeric value")
+  }
+}
+
+private fn validate_numeric(length: Length, name: Str) {
+  if not finite(length.value) or length.value < 0.0 {
+    panic("{name} must be finite and non-negative")
+  }
+  if length.kind == LengthKind::percent and length.value > 100.0 {
+    panic("{name} percentages must be between 0 and 100")
+  }
+}
+
+private fn validate_dimension(length: Length, name: Str) {
+  match length.kind {
+    LengthKind::undefined => validate_scalar(length, name),
+    LengthKind::auto => validate_scalar(length, name),
+    LengthKind::cells => validate_numeric(length, name),
+    LengthKind::percent => validate_numeric(length, name),
+    LengthKind::max_content => validate_scalar(length, name),
+    LengthKind::fit_content => validate_scalar(length, name),
+    LengthKind::stretch => validate_scalar(length, name),
+  }
+}
+
+private fn validate_constraint(length: Length, name: Str) {
+  if length.kind == LengthKind::auto {
+    panic("{name} does not accept auto")
+  }
+  validate_dimension(length, name)
+}
+
+private fn validate_spacing(length: Length, name: Str, allow_auto: Bool) {
+  match length.kind {
+    LengthKind::undefined => validate_scalar(length, name),
+    LengthKind::auto => {
+      if allow_auto {
+        validate_scalar(length, name)
+      } else {
+        panic("{name} does not accept auto")
+      }
+    },
+    LengthKind::cells => validate_numeric(length, name),
+    LengthKind::percent => validate_numeric(length, name),
+    _ => panic("{name} accepts only cells or percentages"),
+  }
+}
+
+private fn validate_edges(value: Edges, name: Str, allow_auto: Bool) {
+  validate_spacing(value.top, "{name}.top", allow_auto)
+  validate_spacing(value.right, "{name}.right", allow_auto)
+  validate_spacing(value.bottom, "{name}.bottom", allow_auto)
+  validate_spacing(value.left, "{name}.left", allow_auto)
+}
+
+fn internal_validate(value: Style) {
+  validate_dimension(value.width, "width")
+  validate_dimension(value.height, "height")
+  validate_constraint(value.min_width, "min_width")
+  validate_constraint(value.min_height, "min_height")
+  validate_constraint(value.max_width, "max_width")
+  validate_constraint(value.max_height, "max_height")
+  validate_dimension(value.flex_basis, "flex_basis")
+  validate_spacing(value.top, "top", true)
+  validate_spacing(value.right, "right", true)
+  validate_spacing(value.bottom, "bottom", true)
+  validate_spacing(value.left, "left", true)
+  validate_edges(value.padding, "padding", false)
+  validate_edges(value.margin, "margin", true)
+  validate_spacing(value.gap, "gap", false)
+  if not finite(value.flex_grow) or value.flex_grow < 0.0 {
+    panic("flex_grow must be finite and non-negative")
+  }
+  if not finite(value.flex_shrink) or value.flex_shrink < 0.0 {
+    panic("flex_shrink must be finite and non-negative")
+  }
 }
 
 fn new(
-  flex_direction: Direction?,
+  foreground: color::Color?,
+  background: color::Color?,
+  border: Border?,
+  border_color: color::Color?,
+  display: Display?,
+  position: Position?,
+  overflow: Overflow?,
+  flex_direction: FlexDirection?,
+  flex_wrap: FlexWrap?,
+  flex_basis: Length?,
+  flex_grow: Float64?,
+  flex_shrink: Float64?,
+  align_items: Align?,
+  align_self: Align?,
+  justify_content: Justify?,
   width: Length?,
   height: Length?,
-  grow: Float64?,
-  shrink: Float64?,
-  align_items: Align?,
-  justify_content: Justify?,
+  min_width: Length?,
+  min_height: Length?,
+  max_width: Length?,
+  max_height: Length?,
+  top: Length?,
+  right: Length?,
+  bottom: Length?,
+  left: Length?,
+  padding: Edges?,
+  margin: Edges?,
   gap: Length?,
+  z_index: Int?,
 ) Style {
-  Style{
-    display: Display::flex,
-    direction: flex_direction.or(Direction::column),
+  let value = Style{
+    foreground: foreground,
+    background: background,
+    border: border.or(Border::none),
+    border_color: border_color,
+    display: display.or(Display::flex),
+    position: position.or(Position::relative),
+    overflow: overflow.or(Overflow::visible),
+    flex_direction: flex_direction.or(FlexDirection::column),
+    flex_wrap: flex_wrap.or(FlexWrap::no_wrap),
+    flex_basis: flex_basis.or(auto()),
+    flex_grow: Float32::from(flex_grow.or(0.0)),
+    flex_shrink: Float32::from(flex_shrink.or(1.0)),
     align_items: align_items.or(Align::stretch),
-    align_self: Align::auto,
-    justify: justify_content.or(Justify::start),
-    wrap: Wrap::no_wrap,
-    position: Position::relative,
-    overflow: Overflow::visible,
+    align_self: align_self.or(Align::auto),
+    justify_content: justify_content.or(Justify::start),
     width: width.or(undefined()),
     height: height.or(undefined()),
-    min_width: undefined(),
-    min_height: undefined(),
-    max_width: undefined(),
-    max_height: undefined(),
-    basis: auto(),
-    grow: Float32::from(grow.or(0.0)),
-    shrink: Float32::from(shrink.or(1.0)),
-    padding: edges(),
-    margin: edges(),
+    min_width: min_width.or(undefined()),
+    min_height: min_height.or(undefined()),
+    max_width: max_width.or(undefined()),
+    max_height: max_height.or(undefined()),
+    top: top.or(undefined()),
+    right: right.or(undefined()),
+    bottom: bottom.or(undefined()),
+    left: left.or(undefined()),
+    padding: padding.or(edges()),
+    margin: margin.or(edges()),
     gap: gap.or(undefined()),
+    z_index: z_index.or(0),
   }
+  internal_validate(value)
+  value
 }

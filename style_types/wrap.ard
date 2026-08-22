@@ -1,5 +1,0 @@
-enum Wrap {
-  no_wrap,
-  wrap,
-  wrap_reverse,
-}

@@ -1,0 +1,95 @@
+use ard/testing
+
+use cooper/event
+use cooper/scroll_box
+use cooper/style
+use cooper/testing as cooper_testing
+use cooper/text
+
+private fn key(name: Str) mut event::KeyEvent {
+  event::key(
+    name,
+    "",
+    event::KeyEventType::press,
+    event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
+  )
+}
+
+private fn row_style() style::Style {
+  style::new(width: style::cells(4), height: style::cells(1), flex_shrink: 0.0)
+}
+
+test fn scroll_box_owns_multiple_vertical_children_and_reveals_them() Void!Str {
+  let application = cooper_testing::new(4, 2)
+  let viewport = scroll_box::new(
+    application.context,
+    styles: style::new(width: style::cells(4), height: style::cells(2)),
+  )
+  let rows = mut List::new<mut text::Text>()
+  for content in ["0", "1", "2", "3", "4"] {
+    let row = text::new(application.context, content: content, styles: row_style())
+    rows.push(row)
+    viewport.add(row)
+  }
+  application.root.add(viewport)
+  application.render()
+
+  try testing::assert(viewport.child_count() == 5, "Expected direct multi-child ScrollBox")
+  try testing::assert(viewport.scroll_height() == 5, "Expected complete scroll height")
+  try testing::assert(viewport.maximum_scroll_top() == 3, "Expected maximum scroll offset")
+  try testing::assert(
+    viewport.style().overflow == style::Overflow::scroll and viewport.style().flex_direction == style::FlexDirection::column and viewport.style().flex_wrap == style::FlexWrap::no_wrap,
+    "Expected enforced vertical scrolling style",
+  )
+
+  let last = rows.at(4).expect("last ScrollBox row")
+  try testing::assert(viewport.scroll_child_into_view(last), "Expected child reveal movement")
+  try testing::assert(viewport.scroll_top() == 3 and last.layout().screen.y == 1, "Expected revealed direct child")
+  try testing::assert(viewport.requested_scroll_top() == 3, "Expected requested offset getter")
+  try testing::assert(viewport.remove(last) and viewport.child_count() == 4, "Expected ScrollBox tree removal")
+
+  application.destroy()
+  last.destroy()
+  testing::assert(last.node_ref.is_destroyed(), "Expected detached ScrollBox child cleanup")
+}
+
+test fn focused_scroll_box_handles_navigation_keys_and_test_scroll() Void!Str {
+  let application = cooper_testing::new(4, 2)
+  let viewport = scroll_box::new(
+    application.context,
+    styles: style::new(width: style::cells(4), height: style::cells(2)),
+  )
+  for content in ["0", "1", "2", "3", "4"] {
+    viewport.add(text::new(application.context, content: content, styles: row_style()))
+  }
+  application.root.add(viewport)
+  application.render()
+  try testing::assert(viewport.focus(), "Expected focusable ScrollBox")
+
+  application.key(key("end"))
+  try testing::assert(viewport.scroll_top() == 3, "Expected End navigation")
+  application.key(key("home"))
+  try testing::assert(viewport.scroll_top() == 0, "Expected Home navigation")
+  application.key(key("page_down"))
+  try testing::assert(viewport.scroll_top() == 2, "Expected Page Down navigation")
+  application.key(key("up"))
+  try testing::assert(viewport.scroll_top() == 1, "Expected arrow navigation")
+  application.key(
+    event::key(
+      "down",
+      "",
+      event::KeyEventType::press,
+      event::Modifiers{shift: false, ctrl: true, alt: false, super: false},
+    ),
+  )
+  try testing::assert(viewport.scroll_top() == 1, "Expected modified arrow to skip ScrollBox default")
+  application.scroll(0, 0, 1)
+  try testing::assert(viewport.scroll_top() == 3, "Expected TestApp scroll input")
+
+  viewport.set_style(style::new(width: style::cells(4), height: style::cells(2), flex_direction: style::FlexDirection::row))
+  application.render()
+  try testing::assert(viewport.style().flex_direction == style::FlexDirection::column, "Expected vertical style enforcement")
+
+  application.destroy()
+  testing::assert(viewport.node_ref.is_destroyed(), "Expected keyboard ScrollBox cleanup")
+}

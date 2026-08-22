@@ -18,13 +18,19 @@ Go interop is limited to Vaxis and the internal layout backend. Tess/Yoga types
 and fallible setters must remain hidden behind Cooper's validated API and remain
 replaceable by an Ard-native implementation.
 
-Public application modules stay at the package root. Move Node, paint, focus,
-hit testing, routing, scheduling, layout, and backend bindings beneath `core/`
-to communicate their unsupported status.
+Public application modules stay at the package root and own their complete Ard
+domain model and supporting logic. Keep only unsupported runtime mechanisms
+with no public counterpart beneath `core/`: Node, paint, focus, hit testing,
+routing, scheduling, and application runtime. Backend bindings stay beneath
+`ffi/core/backend/`.
+
+Import Vaxis as `vaxis`; do not alias it as `raw`.
 
 ## API principles
 
 - Prefer one configurable primitive over many single-purpose variants.
+- Expose each supported built-in control through `ui.ard` with direct constructor
+  and type aliases.
 - Primitive constructors are infallible; application/terminal creation may fail.
 - Use Ard-native public structs and enums and convert backend values at
   boundaries.
@@ -56,7 +62,7 @@ resize, cursor placement, asynchronous dispatch, examples, and clean quit.
 Current validation entry points:
 
 ```sh
-ard-dev test test
+ard-dev test
 
 cd examples
 ARD=ard-dev python3 test_input.py
@@ -64,6 +70,7 @@ ARD=ard-dev python3 test_form.py
 ARD=ard-dev python3 test_scroll_form.py
 ARD=ard-dev python3 test_async.py
 ARD=ard-dev python3 test_explorer.py
+ARD=ard-dev python3 test_interaction.py
 
 cd ..
 ARD=ard-dev python3 benchmarks/run.py

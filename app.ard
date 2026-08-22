@@ -1,327 +1,69 @@
-use cooper/cell_style
 use cooper/context
+use cooper/core/app_runtime
 use cooper/event
-use cooper/focus
-use cooper/hit
-use cooper/node
-use cooper/paint
-use cooper/router
-use cooper/runtime
-use go:go.rockorager.dev/vaxis as raw
-
-private fn vaxis_color(value: cell_style::Color?) raw::Color {
-  match value {
-    color => {
-      let packed = Uint32::from(color.red) * 65536 + Uint32::from(color.green) * 256 + Uint32::from(color.blue)
-      raw::HexColor(packed)
-    },
-    _ => raw::ColorDefault,
-  }
-}
-
-private fn vaxis_attributes(style: cell_style::Style) raw::AttributeMask {
-  mut attributes = raw::AttributeMask::from(0)
-  if style.bold {
-    attributes = attributes + raw::AttrBold
-  }
-  if style.dim {
-    attributes = attributes + raw::AttrDim
-  }
-  if style.italic {
-    attributes = attributes + raw::AttrItalic
-  }
-  if style.blink {
-    attributes = attributes + raw::AttrBlink
-  }
-  if style.reverse {
-    attributes = attributes + raw::AttrReverse
-  }
-  if style.strike {
-    attributes = attributes + raw::AttrStrikethrough
-  }
-  attributes
-}
-
-private fn vaxis_style(style: cell_style::Style) raw::Style {
-  mut underline: raw::UnderlineStyle = raw::UnderlineOff
-  if style.underline {
-    underline = raw::UnderlineSingle
-  }
-  raw::Style{
-    Foreground: vaxis_color(style.foreground),
-    Background: vaxis_color(style.background),
-    UnderlineStyle: underline,
-    Attribute: vaxis_attributes(style),
-  }
-}
-
-private fn is_global_key(key: raw::Key) Bool {
-  key.EventType != raw::EventRelease and key.EventType != raw::EventPaste
-}
+use cooper/root
+use cooper/selection
 
 struct App {
-  terminal: mut raw::Vaxis,
-  ctx: mut context::Context,
-  wake: Chan<Bool>,
-  updates: mut runtime::DispatchQueue,
-  ui_dispatch: fn(fn()) Void!event::DispatchError,
-  focused: mut focus::State,
-  suppress_focus_reveal: Bool,
-  destroyed: Bool,
+  context: mut context::Context,
+  root: mut root::Root,
 }
 
-fn new() (mut App)!Error {
-  let terminal = try raw::New(raw::Options{})
-  let wake = Chan::new<Bool>(1)
-  let updates = mut runtime::new_dispatch_queue()
-  let dispatch = fn(action: fn()) Void!event::DispatchError {
-    if updates.post(action) {
-      Result::ok(())
-    } else {
-      Result::err(event::DispatchError::stopped)
-    }
-  }
-  let ctx = context::new(
-    request_render: fn() {
-      select {
-        wake.send(true) => (),
-        _ => (),
-      }
-    },
-    width_measurer: fn(text: Str) Int {
-      terminal.RenderedWidth(text)
-    },
+fn new(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?) App!Error {
+  let runtime = try app_runtime::new_live(exit_on_ctrl_c.or(true), auto_focus.or(true), use_mouse.or(true))
+  defer runtime.rollback_construction()
+  let ctx = context::internal_new(
+    request_render: runtime.request_render(),
+    width_measurer: runtime.width_measurer(),
+    dispatch: runtime.dispatch(),
+    cancellation: runtime.cancellation(),
+    focus_request: runtime.focus_request(),
+    blur_request: runtime.blur_request(),
+    selection_start: runtime.selection_start_request(),
+    selection_update: runtime.selection_update_request(),
+    selection_owns: runtime.selection_owns_request(),
+    selection_clear: runtime.selection_clear_request(),
   )
-  let app = mut App{
-    terminal: terminal,
-    ctx: ctx,
-    wake: wake,
-    updates: updates,
-    ui_dispatch: dispatch,
-    focused: focus::new(),
-    suppress_focus_reveal: false,
-    destroyed: false,
-  }
-  Result::ok(app)
+  let root = root::new(ctx, runtime)
+  runtime.commit_construction()
+  Result::ok(App{context: ctx, root: root})
 }
 
 impl App {
-  fn context() mut context::Context {
-    self.ctx
+  fn on_key(handler: fn(mut event::KeyEvent)) fn() {
+    self.root.state_ref.on_key(handler)
   }
 
-  private fn take_redraw_request() Bool {
-    let pending = self.wake.receiver()
-    select {
-      pending.recv() => true,
-      _ => false,
-    }
+  fn on_paste(handler: fn(mut event::PasteEvent)) fn() {
+    self.root.state_ref.on_paste(handler)
   }
 
-  private fn drain_redraw_requests() {
-    let pending = self.wake.receiver()
-    mut draining = true
-    while draining {
-      select {
-        pending.recv() => (),
-        _ => { draining = false },
-      }
-    }
+  fn terminal_focus() event::TerminalFocus? {
+    self.root.state_ref.terminal_focus()
   }
 
-  private fn mut paint(root: mut node::Renderable) {
-    let window = self.terminal.Window()
-    self.ctx.compute_layout(root, window.Width, window.Height)
-    self.focused.reconcile(root)
-    let focus_changed = self.focused.take_reveal_request()
-    if focus_changed or not self.suppress_focus_reveal {
-      match self.focused.focused() {
-        target => {
-          let _ = focus::reveal(root, target)
-        },
-        _ => (),
-      }
-    }
-    self.suppress_focus_reveal = false
-    let buffer = paint::new_buffer(window.Width, window.Height)
-    root.node().paint(buffer)
-
-    window.Clear()
-    self.terminal.HideCursor()
-    if buffer.width > 0 {
-      for cell, index in buffer.cells {
-        if cell.width > 0 {
-          let x = index % buffer.width
-          let y = index / buffer.width
-          window.SetCell(
-            x,
-            y,
-            raw::Cell{
-              Character: raw::Character{Grapheme: cell.grapheme, Width: cell.width},
-              Style: vaxis_style(cell.style),
-            },
-          )
-        }
-      }
-    }
-    match buffer.cursor {
-      cursor => {
-        match buffer.cell_at(cursor.x, cursor.y) {
-          cell => {
-            if cell.width > 0 {
-              window.ShowCursor(cursor.x, cursor.y, raw::CursorStyle::from(raw::CursorBeam))
-            }
-          },
-          _ => (),
-        }
-      },
-      _ => (),
-    }
-    self.terminal.Render()
-    self.drain_redraw_requests()
+  fn on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
+    self.root.state_ref.on_terminal_focus(handler)
   }
 
-  private fn mut route(
-    root: mut node::Renderable,
-    target: mut node::Node,
-    received: raw::Event,
-    pointer: router::Pointer?,
-  ) router::Outcome {
-    let outcome = router::dispatch(root, target, received, pointer, self.focused)
-    if outcome.preserve_focus_scroll {
-      self.suppress_focus_reveal = true
-    }
-    outcome
+  fn selection() selection::Selection? {
+    self.root.state_ref.current_selection()
   }
 
-  fn mut run(root: mut node::Renderable) Void!Error {
-    if self.destroyed {
-      panic("cannot run a destroyed retained App")
-    }
-    defer self.destroy()
-    self.ctx.begin_run()
-    defer self.ctx.end_run()
-    root.node().mount_root(self.ui_dispatch)
-    defer root.node().unmount_root()
-
-    self.paint(root)
-    let events = self.terminal.Events()
-    let redraws = self.wake.receiver()
-    let update_events = self.updates.events()
-    mut running = true
-    while running {
-      select {
-        redraws.recv() => self.paint(root),
-        update_events.recv() => {
-          mut changed = false
-          mut drained = 0
-          mut draining = true
-          while draining and drained < 64 {
-            match self.updates.pop() {
-              action => {
-                action()
-                changed = true
-                drained =+ 1
-              },
-              _ => { draining = false },
-            }
-          }
-          self.updates.wake_if_pending()
-          if changed {
-            self.paint(root)
-          }
-        },
-        let posted = events.recv() => {
-          match posted {
-            received => {
-              if self.take_redraw_request() {
-                self.paint(root)
-              } else {
-                self.focused.reconcile(root)
-              }
-              match received {
-                raw::Resize(size) => {
-                  self.terminal.Resize(size)
-                  self.paint(root)
-                },
-                raw::Redraw(_) => self.paint(root),
-                raw::SyncFunc(action) => {
-                  action()
-                  self.paint(root)
-                },
-                raw::QuitEvent(_) => { running = false },
-                raw::Mouse(mouse) => {
-                  match hit::test(root, mouse.Col, mouse.Row) {
-                    target => {
-                      mut redraw = false
-                      if mouse.Button == raw::MouseLeftButton and mouse.EventType == raw::EventPress {
-                        redraw = self.focused.focus(root, target.target)
-                      }
-                      let outcome = self.route(
-                        root,
-                        target.target,
-                        received,
-                        Maybe::new<router::Pointer>(router::Pointer{x: mouse.Col, y: mouse.Row}),
-                      )
-                      if redraw or outcome.redraw {
-                        self.paint(root)
-                      }
-                      if outcome.quit {
-                        running = false
-                      }
-                    },
-                    _ => (),
-                  }
-                },
-                raw::Key(key) => {
-                  if is_global_key(key) and key.MatchString("Shift+Tab") {
-                    self.focused.next(root, reverse: true)
-                    self.paint(root)
-                  } else if is_global_key(key) and key.MatchString("Tab") {
-                    self.focused.next(root)
-                    self.paint(root)
-                  } else if is_global_key(key) and key.MatchString("Ctrl+c") {
-                    running = false
-                  } else {
-                    let target = self.focused.focused().or(root.node())
-                    let outcome = self.route(root, target, received, Maybe::new<router::Pointer>())
-                    if outcome.redraw {
-                      self.paint(root)
-                    }
-                    if outcome.quit {
-                      running = false
-                    }
-                  }
-                },
-                _ => {
-                  let target = self.focused.focused().or(root.node())
-                  let outcome = self.route(root, target, received, Maybe::new<router::Pointer>())
-                  if outcome.redraw {
-                    self.paint(root)
-                  }
-                  if outcome.quit {
-                    running = false
-                  }
-                },
-              }
-            },
-            _ => { running = false },
-          }
-        },
-      }
-    }
-    Result::ok(())
+  fn clear_selection() {
+    self.root.state_ref.clear_selection()
   }
 
-  fn mut destroy() {
-    if self.ctx.running {
-      panic("cannot destroy a running retained App")
-    }
-    if not self.destroyed {
-      self.destroyed = true
-      self.updates.stop()
-      self.terminal.Close()
-      self.ctx.destroy()
-    }
+  fn on_selection_change(handler: fn(selection::Selection?)) fn() {
+    self.root.state_ref.on_selection_change(handler)
+  }
+
+  fn run() Void!Error {
+    let runtime = self.root.state_ref
+    runtime.run(self.context, self.root)
+  }
+
+  fn destroy() {
+    self.root.state_ref.destroy_live(self.context)
   }
 }

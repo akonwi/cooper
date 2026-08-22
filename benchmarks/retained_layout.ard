@@ -1,34 +1,35 @@
 use cooper/box
-use cooper/context
 use cooper/style
+use cooper/testing as cooper_testing
 use go:fmt
 use go:time
 
 private fn item_style(width: Int) style::Style {
-  style::new(width: style::cells(width), height: style::cells(1), shrink: 0.0)
+  style::new(width: style::cells(width), height: style::cells(1), flex_shrink: 0.0)
 }
 
 private fn responsive_item_style() style::Style {
-  style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0)
+  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
 }
 
 fn main() {
-  let ctx = context::new()
+  let application = cooper_testing::new(80, 1000)
   let root = box::new(
-    ctx,
-    initial_style: style::new(
-      flex_direction: style::Direction::column,
+    application.context,
+    styles: style::new(
+      flex_direction: style::FlexDirection::column,
       width: style::percent(100.0),
       height: style::percent(100.0),
       align_items: style::Align::start,
     ),
   )
+  application.root.add(root)
   let children = mut List::new<mut box::Box>()
 
   let construction_started = time::Now()
   mut index = 0
   while index < 1000 {
-    let child = box::new(ctx, initial_style: responsive_item_style())
+    let child = box::new(application.context, styles: responsive_item_style())
     root.add(child)
     children.push(child)
     index =+ 1
@@ -36,17 +37,17 @@ fn main() {
   let construction = time::Since(construction_started)
 
   let initial_started = time::Now()
-  ctx.compute_layout(root, 80, 1000)
+  application.render()
   let initial_layout = time::Since(initial_started)
 
   let target = children.at(500).expect("benchmark midpoint")
   let update_started = time::Now()
   target.set_style(item_style(40))
-  ctx.compute_layout(root, 80, 1000)
+  application.render()
   let single_update = time::Since(update_started)
 
   let resize_started = time::Now()
-  ctx.compute_layout(root, 40, 800)
+  application.resize(40, 800)
   let resize = time::Since(resize_started)
 
   fmt::Printf(
@@ -58,5 +59,5 @@ fn main() {
     root.layout().screen.width + root.layout().screen.height + target.layout().screen.width,
   )
 
-  root.destroy()
+  application.destroy()
 }

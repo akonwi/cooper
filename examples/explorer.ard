@@ -2,164 +2,50 @@ use ard/async
 
 use cooper/app
 use cooper/box
-use cooper/cell_style
+use cooper/color
 use cooper/context
-use cooper/event as framework_event
+use cooper/event
 use cooper/input
-use cooper/node
-use cooper/paint
-use cooper/scroll
+use cooper/scroll_box
 use cooper/style
 use cooper/text
-use go:go.rockorager.dev/vaxis
 use go:os
 use go:path/filepath
 use go:strings
 
-private struct EntryRow {
-  node_ref: mut node::Node,
+private fn row_style() style::Style {
+  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
+}
+
+private fn entry_row(
+  ctx: mut context::Context,
   label: Str,
   activate: fn(Str),
-}
-
-private fn entry_row(ctx: mut context::Context, label: Str, activate: fn(Str)) mut EntryRow {
-  let retained = ctx.create_node(
-    style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0),
-  )
-  let row = mut EntryRow{
-    node_ref: retained,
-    label: label,
-    activate: activate,
-  }
-  retained.bind(row)
-  retained.set_focusable(true)
-  retained.set_pointer_enabled(true)
+) mut box::Box {
+  let row = box::new(ctx, styles: row_style())
+  let label_text = text::new(ctx, content: "  {label}", styles: row_style())
+  row.add(label_text)
+  row.set_focusable(true)
+  let _ = row.on_focus(fn() {
+    label_text.set_content("> {label}")
+    label_text.set_text_style(text::style(bold: true, reverse: true))
+  })
+  let _ = row.on_blur(fn() {
+    label_text.set_content("  {label}")
+    label_text.set_text_style(text::style())
+  })
+  let _ = row.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release and received.matches("return") {
+      activate(label)
+      received.prevent_default()
+    }
+  })
+  let _ = row.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+      activate(label)
+    }
+  })
   row
-}
-
-impl node::Renderable for EntryRow {
-  fn node() mut node::Node {
-    self.node_ref
-  }
-
-  fn mount(ctx: node::MountContext) {}
-
-  fn paint(ctx: mut paint::Context) {
-    mut marker = " "
-    mut row_style = cell_style::new()
-    if self.node_ref.is_focused() {
-      marker = ">"
-      row_style = cell_style::new(bold: true, reverse: true)
-    }
-    ctx.write(0, 0, "{marker} {self.label}", text_style: row_style)
-  }
-
-  fn mut event(ctx: mut framework_event::Context) framework_event::EventResult {
-    if ctx.phase != framework_event::EventPhase::target {
-      framework_event::EventResult::ignored
-    } else {
-      mut activated = false
-      match ctx.terminal_event {
-        vaxis::Mouse(mouse) => {
-          if mouse.Button == vaxis::MouseLeftButton and mouse.EventType == vaxis::EventPress {
-            let _ = ctx.request_focus()
-            activated = true
-          }
-        },
-        vaxis::Key(key) => {
-          if key.EventType != vaxis::EventRelease and key.MatchString("Enter") {
-            activated = true
-          }
-        },
-        _ => (),
-      }
-      if activated {
-        self.activate(self.label)
-        ctx.request_redraw()
-        framework_event::EventResult::handled
-      } else {
-        framework_event::EventResult::ignored
-      }
-    }
-  }
-}
-
-private struct DirectoryLoader {
-  node_ref: mut node::Node,
-  ctx: mut context::Context,
-  path: Str,
-  loading: mut text::Text,
-  selection: mut text::Text,
-  loaded: Bool,
-}
-
-private fn directory_loader(ctx: mut context::Context, path: Str, selection: mut text::Text) mut DirectoryLoader {
-  let retained = ctx.create_node(
-    style::new(width: style::percent(100.0), align_items: style::Align::stretch),
-  )
-  let loading = text::new(ctx, content: "Loading directory…")
-  let loader = mut DirectoryLoader{
-    node_ref: retained,
-    ctx: ctx,
-    path: path,
-    loading: loading,
-    selection: selection,
-    loaded: false,
-  }
-  retained.bind(loader)
-  retained.add(loading.node())
-  loader
-}
-
-impl node::Renderable for DirectoryLoader {
-  fn node() mut node::Node {
-    self.node_ref
-  }
-
-  fn mut mount(ctx: node::MountContext) {
-    if not self.loaded {
-      let path = self.path
-      let cancellation = ctx.cancellation
-      let dispatch = ctx.dispatch
-      async::start(fn() {
-        let cancelled_before = select {
-          cancellation.recv() => true,
-          _ => false,
-        }
-        if not cancelled_before {
-          let loaded = read_names(path)
-          let cancelled_after = select {
-            cancellation.recv() => true,
-            _ => false,
-          }
-          if not cancelled_after {
-            let _ = dispatch(fn() {
-              let _ = self.node_ref.remove(self.loading.node())
-              self.loading.destroy()
-              let activate = fn(name: Str) {
-                self.selection.set_content("Selected: {name}")
-              }
-              match loaded {
-                ok(names) => {
-                  for name in names {
-                    self.node_ref.add(entry_row(self.ctx, name, activate).node())
-                  }
-                },
-                err(_) => self.node_ref.add(text::new(self.ctx, content: "Unable to read directory").node()),
-              }
-              self.loaded = true
-            })
-          }
-        }
-      })
-    }
-  }
-
-  fn paint(ctx: mut paint::Context) {}
-
-  fn event(ctx: mut framework_event::Context) framework_event::EventResult {
-    framework_event::EventResult::ignored
-  }
 }
 
 private fn alphabetic(left: Str, right: Str) Bool {
@@ -180,16 +66,60 @@ private fn read_names(path: Str) [Str]!Error {
   Result::ok(names.@)
 }
 
+private fn start_directory_load(
+  ctx: mut context::Context,
+  path: Str,
+  listing: mut scroll_box::ScrollBox,
+  loading: mut text::Text,
+  selection: mut text::Text,
+  rows: mut [mut box::Box],
+) {
+  let cancellation = ctx.cancellation
+  let dispatch = ctx.dispatch
+  async::start(fn() {
+    let cancelled_before = select {
+      cancellation.recv() => true,
+      _ => false,
+    }
+    if not cancelled_before {
+      let loaded = read_names(path)
+      let cancelled_after = select {
+        cancellation.recv() => true,
+        _ => false,
+      }
+      if not cancelled_after {
+        let _ = dispatch(fn() {
+          let _ = listing.remove(loading)
+          loading.destroy()
+          let activate = fn(name: Str) {
+            selection.set_content("Selected: {name}")
+          }
+          match loaded {
+            ok(names) => {
+              for name in names {
+                let row = entry_row(ctx, name, activate)
+                rows.push(row)
+                listing.add(row)
+              }
+            },
+            err(_) => listing.add(text::new(ctx, content: "Unable to read directory")),
+          }
+        })
+      }
+    }
+  })
+}
+
 fn main() {
-  let application = app::new().expect("create retained explorer app")
-  let ctx = application.context()
+  let application = app::new().expect("create Cooper explorer app")
+  let ctx = application.context
   let cwd = filepath::Abs(
     os::Getwd().expect("read current directory"),
   ).expect("resolve current directory")
 
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::percent(100.0),
       height: style::percent(100.0),
       align_items: style::Align::stretch,
@@ -198,22 +128,22 @@ fn main() {
   )
   let title = text::new(
     ctx,
-    content: "Retained Explorer — {cwd}",
-    initial_style: style::new(height: style::cells(1), shrink: 0.0),
-    text_style: cell_style::new(foreground: cell_style::rgb(90, 170, 255), bold: true),
+    content: "Cooper Explorer — {cwd}",
+    styles: style::new(height: style::cells(1), flex_shrink: 0.0),
+    text_style: text::style(foreground: color::rgb(90, 170, 255), bold: true),
   )
   let search = input::new(
     ctx,
-    placeholder: "Filter (retained input demo)",
-    initial_style: style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0),
+    placeholder: "Filter",
+    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
   )
   let panes = box::new(
     ctx,
-    initial_style: style::new(
-      flex_direction: style::Direction::row,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
       width: style::percent(100.0),
       height: style::cells(1),
-      grow: 1.0,
+      flex_grow: 1.0,
       align_items: style::Align::stretch,
       gap: style::cells(2),
     ),
@@ -221,35 +151,49 @@ fn main() {
   let details_style = mut style::new(
     width: style::percent(50.0),
     height: style::percent(100.0),
-    grow: 1.0,
+    flex_grow: 1.0,
     align_items: style::Align::start,
   )
   details_style.overflow = style::Overflow::hidden
-  let details = box::new(ctx, initial_style: details_style.@)
+  let details = box::new(ctx, styles: details_style.@)
   let details_title = text::new(
     ctx,
     content: "Details",
-    text_style: cell_style::new(bold: true, underline: true),
+    text_style: text::style(bold: true, underline: true),
   )
   let selection = text::new(ctx, content: "Select an entry with Enter or the mouse.")
   details.add(details_title)
   details.add(selection)
 
-  let entries = directory_loader(ctx, cwd, selection)
-  let listing = scroll::new(
+  let listing = scroll_box::new(
     ctx,
-    entries,
-    initial_style: style::new(
+    styles: style::new(
       width: style::percent(50.0),
       height: style::percent(100.0),
-      grow: 1.0,
+      flex_grow: 1.0,
     ),
   )
+  let loading = text::new(ctx, content: "Loading directory…", styles: row_style())
+  listing.add(loading)
+  let rows = mut List::new<mut box::Box>()
+  start_directory_load(ctx, cwd, listing, loading, selection, rows)
+
   panes.add(listing)
   panes.add(details)
   root.add(title)
   root.add(search)
   root.add(panes)
+  application.root.add(root)
 
-  application.run(root).expect("run retained explorer app")
+  search.focus()
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release and received.matches("tab") and search.is_focused() {
+      match rows.at(0) {
+        row => { let _ = row.focus() },
+        _ => (),
+      }
+      received.prevent_default()
+    }
+  })
+  application.run().expect("run Cooper explorer app")
 }

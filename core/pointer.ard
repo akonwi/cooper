@@ -1,0 +1,533 @@
+use cooper/core/focus
+use cooper/core/hit
+use cooper/core/node
+use cooper/core/router
+use cooper/core/selection_state
+use cooper/event
+
+struct AttachmentHandle {
+  target: mut node::Node,
+  root: mut node::Node,
+  generation: Int,
+}
+
+impl AttachmentHandle {
+  fn same(other: AttachmentHandle) Bool {
+    self.target == other.target and self.root == other.root and self.generation == other.generation
+  }
+
+  fn current() Bool {
+    if (not self.target.is_mounted()) or self.target.attachment_generation() != self.generation {
+      false
+    } else {
+      mut current = Maybe::new<mut node::Node>(self.target)
+      mut found_root = false
+      mut scanning = true
+      while scanning {
+        match current {
+          retained => {
+            if not retained.pointer_route_visible() {
+              scanning = false
+            } else if retained == self.root {
+              found_root = true
+              scanning = false
+            } else {
+              current = retained.parent
+            }
+          },
+          _ => { scanning = false },
+        }
+      }
+      found_root
+    }
+  }
+}
+
+struct State {
+  hovered: AttachmentHandle?,
+  observed: AttachmentHandle?,
+  pressed: AttachmentHandle?,
+  captured: AttachmentHandle?,
+  captured_button: event::MouseButton,
+  dragging: Bool,
+  has_pointer: Bool,
+  x: Int,
+  y: Int,
+  modifiers: event::Modifiers,
+}
+
+fn new() mut State {
+  (mut State{
+    hovered: Maybe::new<AttachmentHandle>(),
+    observed: Maybe::new<AttachmentHandle>(),
+    pressed: Maybe::new<AttachmentHandle>(),
+    captured: Maybe::new<AttachmentHandle>(),
+    captured_button: event::MouseButton::none,
+    dragging: false,
+    has_pointer: false,
+    x: 0,
+    y: 0,
+    modifiers: event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
+  })
+}
+
+private fn handle(root: mut node::Renderable, target: mut node::Node) AttachmentHandle {
+  AttachmentHandle{
+    target: target,
+    root: root.node(),
+    generation: target.attachment_generation(),
+  }
+}
+
+private fn hit_handle(root: mut node::Renderable, x: Int, y: Int) AttachmentHandle? {
+  match hit::test(root, x, y) {
+    found => Maybe::new<AttachmentHandle>(handle(root, found.target)),
+    _ => Maybe::new<AttachmentHandle>(),
+  }
+}
+
+private fn same_current(left: AttachmentHandle?, right: AttachmentHandle?) Bool {
+  match left {
+    previous => {
+      if not previous.current() {
+        false
+      } else {
+        match right {
+          next => next.current() and previous.same(next),
+          _ => false,
+        }
+      }
+    },
+    _ => not right.is_some(),
+  }
+}
+
+private fn derived(
+  received: mut event::MouseEvent,
+  event_type: event::MouseEventType,
+  is_dragging: Bool?,
+) mut event::MouseEvent {
+  event::mouse(
+    event_type,
+    received.button,
+    received.x,
+    received.y,
+    received.modifiers,
+    scroll_x: received.scroll_x,
+    scroll_y: received.scroll_y,
+    is_dragging: is_dragging.or(false),
+  )
+}
+
+private fn selection_target(value: AttachmentHandle?) (mut node::Node)? {
+  match value {
+    retained => {
+      if retained.current() {
+        Maybe::new<mut node::Node>(retained.target)
+      } else {
+        Maybe::new<mut node::Node>()
+      }
+    },
+    _ => Maybe::new<mut node::Node>(),
+  }
+}
+
+private fn with_redraw(value: router::Outcome) router::Outcome {
+  router::merge(
+    value,
+    router::Outcome{handled: false, redraw: true, quit: false, preserve_focus_scroll: false},
+  )
+}
+
+private fn physical_event(event_type: event::MouseEventType) Bool {
+  event_type == event::MouseEventType::down or event_type == event::MouseEventType::up or event_type == event::MouseEventType::move or event_type == event::MouseEventType::drag or event_type == event::MouseEventType::scroll
+}
+
+impl State {
+  private fn mut refresh_handles() {
+    match self.hovered {
+      retained => {
+        if not retained.current() {
+          self.hovered = Maybe::new<AttachmentHandle>()
+        }
+      },
+      _ => (),
+    }
+    match self.observed {
+      retained => {
+        if not retained.current() {
+          self.observed = Maybe::new<AttachmentHandle>()
+        }
+      },
+      _ => (),
+    }
+    match self.pressed {
+      retained => {
+        if not retained.current() {
+          self.pressed = Maybe::new<AttachmentHandle>()
+        }
+      },
+      _ => (),
+    }
+    match self.captured {
+      retained => {
+        if not retained.current() {
+          self.captured = Maybe::new<AttachmentHandle>()
+          self.captured_button = event::MouseButton::none
+          self.dragging = false
+        }
+      },
+      _ => (),
+    }
+  }
+
+  private fn route(
+    root: mut node::Renderable,
+    destination: AttachmentHandle,
+    received: mut event::MouseEvent,
+    focused: mut focus::State,
+  ) router::Outcome {
+    if destination.current() {
+      router::dispatch_mouse(root, destination.target, received, focused)
+    } else {
+      router::empty_outcome()
+    }
+  }
+
+  private fn mut transition_hover(
+    root: mut node::Renderable,
+    next: AttachmentHandle?,
+    basis: mut event::MouseEvent,
+    focused: mut focus::State,
+  ) router::Outcome {
+    self.refresh_handles()
+    if same_current(self.hovered, next) {
+      router::empty_outcome()
+    } else {
+      mut outcome = router::empty_outcome()
+      match self.hovered {
+        previous => {
+          mut captured_previous = false
+          match self.captured {
+            captured => { captured_previous = captured.current() and captured.same(previous) },
+            _ => (),
+          }
+          if not captured_previous {
+            outcome = router::merge(
+              outcome,
+              self.route(root, previous, derived(basis, event::MouseEventType::out), focused),
+            )
+          }
+        },
+        _ => (),
+      }
+
+      self.hovered = next
+      match next {
+        current => {
+          outcome = router::merge(
+            outcome,
+            self.route(root, current, derived(basis, event::MouseEventType::over), focused),
+          )
+        },
+        _ => (),
+      }
+      outcome
+    }
+  }
+
+  private fn mut release_capture(
+    root: mut node::Renderable,
+    physical: AttachmentHandle?,
+    received: mut event::MouseEvent,
+    focused: mut focus::State,
+  ) router::Outcome {
+    let source = try self.captured -> _ { router::empty_outcome() }
+    let release = event::mouse(
+      event::MouseEventType::up,
+      self.captured_button,
+      received.x,
+      received.y,
+      received.modifiers,
+      scroll_x: received.scroll_x,
+      scroll_y: received.scroll_y,
+    )
+    mut outcome = router::empty_outcome()
+    mut same_destination = false
+    match physical {
+      destination => {
+        same_destination = source.current() and destination.current() and source.same(destination)
+      },
+      _ => (),
+    }
+
+    outcome = router::merge(
+      outcome,
+      self.route(root, source, derived(release, event::MouseEventType::drag_end), focused),
+    )
+
+    if same_destination {
+      match physical {
+        destination => {
+          outcome = router::merge(
+            outcome,
+            self.route(root, destination, derived(release, event::MouseEventType::drop), focused),
+          )
+          outcome = router::merge(
+            outcome,
+            self.route(root, destination, derived(release, event::MouseEventType::up), focused),
+          )
+        },
+        _ => (),
+      }
+    } else {
+      outcome = router::merge(
+        outcome,
+        self.route(root, source, derived(release, event::MouseEventType::up), focused),
+      )
+      match physical {
+        destination => {
+          outcome = router::merge(
+            outcome,
+            self.route(root, destination, derived(release, event::MouseEventType::drop), focused),
+          )
+          outcome = router::merge(
+            outcome,
+            self.route(root, destination, derived(release, event::MouseEventType::up), focused),
+          )
+        },
+        _ => (),
+      }
+    }
+
+    self.captured = Maybe::new<AttachmentHandle>()
+    self.captured_button = event::MouseButton::none
+    self.pressed = Maybe::new<AttachmentHandle>()
+    self.dragging = false
+    self.observed = physical
+    router::merge(outcome, self.transition_hover(root, physical, received, focused))
+  }
+
+  fn mut process(
+    root: mut node::Renderable,
+    received: mut event::MouseEvent,
+    focused: mut focus::State,
+    selected: mut selection_state::State,
+    auto_focus: Bool,
+  ) router::Outcome {
+    if not physical_event(received.event_type) {
+      panic("pointer input accepts only physical mouse event kinds")
+    }
+    received.is_dragging = false
+    self.refresh_handles()
+    self.has_pointer = true
+    self.x = received.x
+    self.y = received.y
+    self.modifiers = received.modifiers
+    let physical = hit_handle(root, received.x, received.y)
+    self.observed = physical
+
+    if received.event_type == event::MouseEventType::scroll {
+      match physical {
+        destination => self.route(root, destination, received, focused),
+        _ => {
+          match focused.focused() {
+            destination => self.route(root, handle(root, destination), received, focused),
+            _ => router::empty_outcome(),
+          }
+        },
+      }
+    } else if received.event_type == event::MouseEventType::down {
+      mut consumes_extension = false
+      if received.button == event::MouseButton::left and received.modifiers.ctrl and selected.has_selection() {
+        consumes_extension = selected.update(selection_target(physical), received.x, received.y, edge_pan: true)
+      }
+      if consumes_extension {
+        self.pressed = Maybe::new<AttachmentHandle>()
+        self.captured = Maybe::new<AttachmentHandle>()
+        self.captured_button = event::MouseButton::none
+        self.dragging = false
+        with_redraw(router::empty_outcome())
+      } else {
+        mut selection_started = false
+        if received.button == event::MouseButton::left and (not received.modifiers.ctrl) {
+          match physical {
+            destination => { selection_started = selected.start(root, destination.target, received.x, received.y) },
+            _ => (),
+          }
+        }
+        if received.button == event::MouseButton::left {
+          self.captured = Maybe::new<AttachmentHandle>()
+          self.captured_button = event::MouseButton::none
+          self.dragging = false
+          if selection_started {
+            self.pressed = Maybe::new<AttachmentHandle>()
+          } else {
+            self.pressed = physical
+          }
+        }
+
+        mut autofocus = Maybe::new<focus::AutoFocusCandidate>()
+        mut outcome = router::empty_outcome()
+        match physical {
+          destination => {
+            if auto_focus and received.button == event::MouseButton::left {
+              autofocus = focus::capture_autofocus(root, destination.target)
+            }
+            outcome = self.route(root, destination, received, focused)
+          },
+          _ => (),
+        }
+        if not received.is_default_prevented() {
+          match autofocus {
+            candidate => {
+              if focused.autofocus(root, candidate) {
+                outcome = with_redraw(outcome)
+              }
+            },
+            _ => (),
+          }
+          if received.button == event::MouseButton::left and (not selection_started) and selected.clear() {
+            outcome = with_redraw(outcome)
+          }
+        }
+        if selection_started {
+          with_redraw(outcome)
+        } else {
+          outcome
+        }
+      }
+    } else if received.event_type == event::MouseEventType::drag {
+      if received.button == event::MouseButton::left and selected.is_dragging() {
+        mut outcome = self.transition_hover(root, physical, received, focused)
+        let _ = selected.update(selection_target(physical), received.x, received.y, edge_pan: true)
+        received.is_dragging = true
+        match physical {
+          destination => {
+            outcome = router::merge(outcome, self.route(root, destination, received, focused))
+          },
+          _ => (),
+        }
+        with_redraw(outcome)
+      } else {
+        if received.button == event::MouseButton::left and (not self.captured.is_some()) {
+          match self.pressed {
+            source => {
+              if source.current() {
+                self.captured = Maybe::new<AttachmentHandle>(source)
+                self.captured_button = event::MouseButton::left
+                self.dragging = true
+              }
+            },
+            _ => (),
+          }
+        }
+        mut outcome = self.transition_hover(root, physical, received, focused)
+        mut routed_to_capture = false
+        match self.captured {
+          source => {
+            if received.button == self.captured_button {
+              routed_to_capture = true
+              outcome = router::merge(outcome, self.route(root, source, received, focused))
+            }
+          },
+          _ => (),
+        }
+        if not routed_to_capture {
+          match physical {
+            destination => {
+              outcome = router::merge(outcome, self.route(root, destination, received, focused))
+            },
+            _ => (),
+          }
+        }
+        outcome
+      }
+    } else if received.event_type == event::MouseEventType::move {
+      mut outcome = self.transition_hover(root, physical, received, focused)
+      match physical {
+        destination => {
+          outcome = router::merge(outcome, self.route(root, destination, received, focused))
+        },
+        _ => (),
+      }
+      outcome
+    } else {
+      let finishes_selection = selected.is_dragging() and (received.button == event::MouseButton::left or received.button == event::MouseButton::none)
+      if finishes_selection {
+        let generation = selected.generation()
+        received.is_dragging = true
+        mut outcome = router::empty_outcome()
+        match physical {
+          destination => { outcome = self.route(root, destination, received, focused) },
+          _ => (),
+        }
+        match generation {
+          expected => {
+            if selected.finish(expected) {
+              outcome = with_redraw(outcome)
+            }
+          },
+          _ => (),
+        }
+        self.pressed = Maybe::new<AttachmentHandle>()
+        outcome
+      } else {
+        mut releases_capture = false
+        match self.captured {
+          source => {
+            releases_capture = received.button == self.captured_button or received.button == event::MouseButton::none
+          },
+          _ => (),
+        }
+        if releases_capture {
+          self.release_capture(root, physical, received, focused)
+        } else {
+          if received.button == event::MouseButton::left or received.button == event::MouseButton::none {
+            self.pressed = Maybe::new<AttachmentHandle>()
+          }
+          match physical {
+            destination => self.route(root, destination, received, focused),
+            _ => router::empty_outcome(),
+          }
+        }
+      }
+    }
+  }
+
+  fn mut reconcile(root: mut node::Renderable, focused: mut focus::State) router::Outcome {
+    if not self.has_pointer {
+      router::empty_outcome()
+    } else {
+      self.refresh_handles()
+      if self.captured.is_some() {
+        router::empty_outcome()
+      } else {
+        let current = hit_handle(root, self.x, self.y)
+        if same_current(self.observed, current) {
+          router::empty_outcome()
+        } else {
+          let basis = event::mouse(
+            event::MouseEventType::move,
+            event::MouseButton::none,
+            self.x,
+            self.y,
+            self.modifiers,
+          )
+          self.observed = current
+          self.transition_hover(root, current, basis, focused)
+        }
+      }
+    }
+  }
+
+  fn mut clear() {
+    self.hovered = Maybe::new<AttachmentHandle>()
+    self.observed = Maybe::new<AttachmentHandle>()
+    self.pressed = Maybe::new<AttachmentHandle>()
+    self.captured = Maybe::new<AttachmentHandle>()
+    self.captured_button = event::MouseButton::none
+    self.dragging = false
+    self.has_pointer = false
+  }
+}

@@ -1,8 +1,0 @@
-enum Justify {
-  start,
-  end,
-  center,
-  space_between,
-  space_around,
-  space_evenly,
-}

@@ -1,0 +1,23 @@
+use cooper/app
+use cooper/event
+use cooper/style
+use cooper/text
+
+fn main() {
+  let application = app::new(use_mouse: false).expect("create terminal-focus probe")
+  let status = text::new(
+    application.context,
+    content: "terminal: unknown",
+    styles: style::new(width: style::percent(100.0), height: style::cells(1)),
+    selectable: false,
+  )
+  application.root.add(status)
+  let _ = application.on_terminal_focus(fn(value: event::TerminalFocus) {
+    if value == event::TerminalFocus::gained {
+      status.set_content("terminal: focused")
+    } else {
+      status.set_content("terminal: blurred")
+    }
+  })
+  application.run().expect("run terminal-focus probe")
+}

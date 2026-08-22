@@ -1,5 +1,0 @@
-enum Position {
-  static,
-  relative,
-  absolute,
-}

@@ -1,106 +1,190 @@
-use go:go.rockorager.dev/vaxis
+use ard/unsafe
 
-enum EventResult {
-  ignored,
-  handled,
+private struct PropagationState {
+  propagation_stopped: Bool,
+  default_prevented: Bool,
 }
 
-enum EventPhase {
-  idle,
-  capture,
-  target,
-  bubble,
+private fn new_propagation_state() mut PropagationState {
+  (mut PropagationState{propagation_stopped: false, default_prevented: false})
+}
+
+private fn propagation_state(value: Any) mut PropagationState {
+  unsafe::cast<mut PropagationState>(value).expect("event state must be created by Cooper")
 }
 
 enum DispatchError {
   stopped,
 }
 
-private fn stopped_dispatch(action: fn()) Void!DispatchError {
-  Result::err(DispatchError::stopped)
+enum TerminalFocus {
+  gained,
+  lost,
 }
 
-private fn reject_focus() Bool {
-  false
+enum KeyEventType {
+  press,
+  repeat,
+  release,
 }
 
-struct State {
-  propagation_stopped: Bool,
-  handled: Bool,
-  redraw: Bool,
-  quit: Bool,
-  preserve_focus_scroll: Bool,
+struct Modifiers {
+  shift: Bool,
+  ctrl: Bool,
+  alt: Bool,
+  super: Bool,
 }
 
-fn new_state() mut State {
-  (mut State{
-    propagation_stopped: false,
-    handled: false,
-    redraw: false,
-    quit: false,
-    preserve_focus_scroll: false,
+struct KeyEvent {
+  name: Str,
+  text: Str,
+  event_type: KeyEventType,
+  modifiers: Modifiers,
+  internal_state: Any,
+}
+
+fn key(
+  name: Str,
+  text: Str,
+  event_type: KeyEventType,
+  modifiers: Modifiers,
+) mut KeyEvent {
+  (mut KeyEvent{
+    name: name,
+    text: text,
+    event_type: event_type,
+    modifiers: modifiers,
+    internal_state: new_propagation_state(),
   })
 }
 
-struct Context {
-  phase: EventPhase,
-  terminal_event: vaxis::Event,
-  local_x: Int?,
-  local_y: Int?,
-  focused: Bool,
-  state: mut State,
-  focus_request: fn() Bool,
-  dispatch: fn(fn()) Void!DispatchError,
+impl KeyEvent {
+  fn mut stop_propagation() {
+    propagation_state(self.internal_state).propagation_stopped = true
+  }
+
+  fn mut prevent_default() {
+    propagation_state(self.internal_state).default_prevented = true
+  }
+
+  fn is_propagation_stopped() Bool {
+    propagation_state(self.internal_state).propagation_stopped
+  }
+
+  fn is_default_prevented() Bool {
+    propagation_state(self.internal_state).default_prevented
+  }
+
+  fn matches(
+    name: Str,
+    shift: Bool?,
+    ctrl: Bool?,
+    alt: Bool?,
+    super: Bool?,
+  ) Bool {
+    self.name == name and self.modifiers.shift == shift.or(false) and self.modifiers.ctrl == ctrl.or(false) and self.modifiers.alt == alt.or(false) and self.modifiers.super == super.or(false)
+  }
 }
 
-fn context(
-  phase: EventPhase,
-  terminal_event: vaxis::Event,
-  local_x: Int?,
-  local_y: Int?,
-  focused: Bool,
-  state: mut State,
-  focus_request: (fn() Bool)?,
-  dispatch: (fn(fn()) Void!DispatchError)?,
-) mut Context {
-  (mut Context{
-    phase: phase,
-    terminal_event: terminal_event,
-    local_x: local_x,
-    local_y: local_y,
-    focused: focused,
-    state: state,
-    focus_request: focus_request.or(reject_focus),
-    dispatch: dispatch.or(stopped_dispatch),
+struct PasteEvent {
+  text: Str,
+  internal_state: Any,
+}
+
+fn paste(text: Str) mut PasteEvent {
+  (mut PasteEvent{text: text, internal_state: new_propagation_state()})
+}
+
+impl PasteEvent {
+  fn mut stop_propagation() {
+    propagation_state(self.internal_state).propagation_stopped = true
+  }
+
+  fn mut prevent_default() {
+    propagation_state(self.internal_state).default_prevented = true
+  }
+
+  fn is_propagation_stopped() Bool {
+    propagation_state(self.internal_state).propagation_stopped
+  }
+
+  fn is_default_prevented() Bool {
+    propagation_state(self.internal_state).default_prevented
+  }
+}
+
+enum MouseEventType {
+  down,
+  up,
+  move,
+  drag,
+  drag_end,
+  drop,
+  over,
+  out,
+  scroll,
+}
+
+enum MouseButton {
+  none,
+  left,
+  middle,
+  right,
+}
+
+struct MouseEvent {
+  event_type: MouseEventType,
+  button: MouseButton,
+  x: Int,
+  y: Int,
+  local_x: Int,
+  local_y: Int,
+  modifiers: Modifiers,
+  scroll_x: Int,
+  scroll_y: Int,
+  is_dragging: Bool,
+  internal_state: Any,
+}
+
+fn mouse(
+  event_type: MouseEventType,
+  button: MouseButton,
+  x: Int,
+  y: Int,
+  modifiers: Modifiers,
+  scroll_x: Int?,
+  scroll_y: Int?,
+  is_dragging: Bool?,
+) mut MouseEvent {
+  (mut MouseEvent{
+    event_type: event_type,
+    button: button,
+    x: x,
+    y: y,
+    local_x: x,
+    local_y: y,
+    modifiers: modifiers,
+    scroll_x: scroll_x.or(0),
+    scroll_y: scroll_y.or(0),
+    is_dragging: is_dragging.or(false),
+    internal_state: new_propagation_state(),
   })
 }
 
-impl Context {
-  fn stop_propagation() {
-    self.state.propagation_stopped = true
+impl MouseEvent {
+  fn mut stop_propagation() {
+    propagation_state(self.internal_state).propagation_stopped = true
   }
 
-  fn request_redraw() {
-    self.state.redraw = true
+  fn mut prevent_default() {
+    propagation_state(self.internal_state).default_prevented = true
   }
 
-  fn request_quit() {
-    self.state.quit = true
+  fn is_propagation_stopped() Bool {
+    propagation_state(self.internal_state).propagation_stopped
   }
 
-  fn request_focus() Bool {
-    self.focus_request()
-  }
-
-  fn was_handled() Bool {
-    self.state.handled
-  }
-
-  fn preserve_focus_scroll() {
-    self.state.preserve_focus_scroll = true
-  }
-
-  fn mark_handled() {
-    self.state.handled = true
+  fn is_default_prevented() Bool {
+    propagation_state(self.internal_state).default_prevented
   }
 }

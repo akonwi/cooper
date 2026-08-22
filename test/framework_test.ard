@@ -1,21 +1,21 @@
 use ard/testing
 
 use cooper/box
+use cooper/color
 use cooper/context
 use cooper/event as framework_event
-use cooper/event as retained_event
-use cooper/focus
+use cooper/core/event_delivery
+use cooper/core/focus
 use cooper/geometry
-use cooper/hit
+use cooper/core/hit
 use cooper/input
-use cooper/node
-use cooper/paint
-use cooper/router
-use cooper/runtime
-use cooper/scroll
+use cooper/core/node
+use cooper/core/paint
+use cooper/core/router
+use cooper/core/runtime
+use cooper/scroll_box
 use cooper/style
 use cooper/text
-use go:go.rockorager.dev/vaxis
 
 private fn immediate_dispatch(action: fn()) Void!framework_event::DispatchError {
   action()
@@ -23,16 +23,27 @@ private fn immediate_dispatch(action: fn()) Void!framework_event::DispatchError 
 }
 
 private fn fixed(width: Int, height: Int) style::Style {
-  style::new(width: style::cells(width), height: style::cells(height), shrink: 0.0)
+  style::new(width: style::cells(width), height: style::cells(height), flex_shrink: 0.0)
+}
+
+private fn wheel_down() mut framework_event::MouseEvent {
+  framework_event::mouse(
+    framework_event::MouseEventType::scroll,
+    framework_event::MouseButton::none,
+    0,
+    0,
+    framework_event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
+    scroll_y: 1,
+  )
 }
 
 private struct EventProbe {
   node_ref: mut node::Node,
-  phases: [framework_event::EventPhase],
-  focus_on_target: Bool,
-  stop_capture: Bool,
-  destroy_on_capture: (mut node::Node)?,
-  reparent_on_capture: (mut node::Node)?,
+  deliveries: Int,
+  focus_on_event: Bool,
+  stop_event: Bool,
+  destroy_on_event: (mut node::Node)?,
+  reparent_on_event: (mut node::Node)?,
   reparent_destination: (mut node::Node)?,
   last_local_x: Int?,
   mounts: Int,
@@ -45,16 +56,16 @@ private fn event_probe(
   ctx: mut context::Context,
   initial_style: style::Style,
   focus_on_target: Bool?,
-  stop_capture: Bool?,
+  stop_event: Bool?,
 ) mut EventProbe {
-  let retained = ctx.create_node(initial_style)
+  let retained = context::internal_state(ctx).create_node(initial_style)
   let probe = mut EventProbe{
     node_ref: retained,
-    phases: [],
-    focus_on_target: focus_on_target.or(false),
-    stop_capture: stop_capture.or(false),
-    destroy_on_capture: Maybe::new<mut node::Node>(),
-    reparent_on_capture: Maybe::new<mut node::Node>(),
+    deliveries: 0,
+    focus_on_event: focus_on_target.or(false),
+    stop_event: stop_event.or(false),
+    destroy_on_event: Maybe::new<mut node::Node>(),
+    reparent_on_event: Maybe::new<mut node::Node>(),
     reparent_destination: Maybe::new<mut node::Node>(),
     last_local_x: Maybe::new<Int>(),
     mounts: 0,
@@ -85,60 +96,58 @@ impl node::Renderable for EventProbe {
 
   fn paint(ctx: mut paint::Context) {}
 
-  fn mut event(ctx: mut retained_event::Context) framework_event::EventResult {
-    self.phases.push(ctx.phase)
+  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    self.deliveries =+ 1
     self.last_local_x = ctx.local_x
-    if ctx.phase == framework_event::EventPhase::capture {
-      match self.destroy_on_capture {
-        target => target.destroy(),
-        _ => (),
-      }
-      match self.reparent_on_capture {
-        target => {
-          match self.reparent_destination {
-            destination => destination.add(target),
-            _ => (),
-          }
-        },
-        _ => (),
-      }
-      if self.stop_capture {
-        ctx.stop_propagation()
-      }
+    match self.destroy_on_event {
+      target => target.destroy(),
+      _ => (),
     }
-    if self.focus_on_target and ctx.phase == framework_event::EventPhase::target {
+    match self.reparent_on_event {
+      target => {
+        match self.reparent_destination {
+          destination => destination.add(target),
+          _ => (),
+        }
+      },
+      _ => (),
+    }
+    if self.stop_event {
+      ctx.stop_propagation()
+    }
+    if self.focus_on_event {
       let _ = ctx.request_focus()
       ctx.request_redraw()
     }
-    framework_event::EventResult::handled
+    event_delivery::Disposition::handled
   }
 }
 
 impl EventProbe {
-  fn mut add(child: mut node::Renderable) {
-    self.node_ref.add(child.node())
+  fn mut add(child: mut node::Renderable, index: Int?) {
+    self.node_ref.add(child.node(), index)
   }
 }
 
 test fn retained_tree_mirrors_explicit_children_into_yoga() Void!Str {
   mut render_requests = 0
-  let ctx = context::new(fn() {
+  let ctx = context::internal_new(fn() {
     render_requests =+ 1
   })
   let root = box::new(
     ctx,
-    initial_style: style::new(
-      flex_direction: style::Direction::row,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
       width: style::cells(30),
       height: style::cells(10),
     ),
   )
-  let fixed_child = box::new(ctx, initial_style: fixed(10, 10))
-  let flexible_child = box::new(ctx, initial_style: style::new(height: style::cells(10), grow: 1.0))
+  let fixed_child = box::new(ctx, styles: fixed(10, 10))
+  let flexible_child = box::new(ctx, styles: style::new(height: style::cells(10), flex_grow: 1.0))
 
   root.add(fixed_child)
   root.add(flexible_child)
-  ctx.compute_layout(root, 30, 10)
+  context::internal_state(ctx).compute_layout(root, 30, 10)
 
   let fixed_layout = fixed_child.layout().local
   let flexible_layout = flexible_child.layout().local
@@ -147,14 +156,14 @@ test fn retained_tree_mirrors_explicit_children_into_yoga() Void!Str {
   try testing::assert(flexible_layout.x == 10, "Expected retained sibling position")
   try testing::assert(flexible_layout.width == 20, "Expected Yoga flex growth")
   try testing::assert(render_requests > 0, "Expected retained mutations to request rendering")
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(root.node().is_destroyed(), "Expected Context-owned native cleanup")
 }
 
 test fn retained_remove_detaches_and_readd_preserves_identity() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = box::new(ctx)
-  let child = box::new(ctx, initial_style: fixed(4, 2))
+  let child = box::new(ctx, styles: fixed(4, 2))
   let child_node = child.node()
 
   root.add(child)
@@ -169,18 +178,51 @@ test fn retained_remove_detaches_and_readd_preserves_identity() Void!Str {
   try testing::assert(root.child_count() == 1, "Expected detached renderable to be reusable")
   try testing::assert(child.node() == child_node, "Expected concrete renderable identity to persist")
   try testing::assert(child_node.parent.is_some(), "Expected parent reference after reattachment")
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(child_node.is_destroyed(), "Expected Context cleanup after reattachment")
+}
+
+test fn retained_indexed_add_inserts_and_reorders_in_final_order() Void!Str {
+  let ctx = context::internal_new()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
+      width: style::cells(3),
+      height: style::cells(1),
+    ),
+  )
+  let first = box::new(ctx, styles: fixed(1, 1))
+  let second = box::new(ctx, styles: fixed(1, 1))
+  let third = box::new(ctx, styles: fixed(1, 1))
+
+  parent.add(first)
+  parent.add(second)
+  parent.add(third, 1)
+  context::internal_state(ctx).compute_layout(parent, 3, 1)
+
+  try testing::assert(first.layout().local.x == 0, "Expected first child to remain first")
+  try testing::assert(third.layout().local.x == 1, "Expected indexed child insertion")
+  try testing::assert(second.layout().local.x == 2, "Expected second child to move after insertion")
+
+  parent.add(first, 2)
+  context::internal_state(ctx).compute_layout(parent, 3, 1)
+
+  try testing::assert(third.layout().local.x == 0, "Expected final-order reorder index")
+  try testing::assert(second.layout().local.x == 1, "Expected retained sibling order")
+  try testing::assert(first.layout().local.x == 2, "Expected same-parent move to the end")
+  context::internal_state(ctx).destroy()
+  testing::assert(first.node().is_destroyed(), "Expected indexed tree cleanup")
 }
 
 test fn retained_text_measurement_updates_without_rebuilding_identity() Void!Str {
   mut render_requests = 0
-  let ctx = context::new(fn() {
+  let ctx = context::internal_new(fn() {
     render_requests =+ 1
   })
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::cells(80),
       height: style::cells(10),
       align_items: style::Align::start,
@@ -190,12 +232,12 @@ test fn retained_text_measurement_updates_without_rebuilding_identity() Void!Str
   let original_node = label.node()
   root.add(label)
 
-  ctx.compute_layout(root, 80, 10)
+  context::internal_state(ctx).compute_layout(root, 80, 10)
   let initial = label.layout().local
   try testing::assert(initial.width == 3 and initial.height == 1, "Expected intrinsic text measurement")
 
   label.set_content("abcdef")
-  ctx.compute_layout(root, 80, 10)
+  context::internal_state(ctx).compute_layout(root, 80, 10)
   let updated = label.layout().local
 
   try testing::assert(updated.width == 6, "Expected dirty text remeasurement")
@@ -203,22 +245,22 @@ test fn retained_text_measurement_updates_without_rebuilding_identity() Void!Str
   try testing::assert(render_requests > 0, "Expected text mutation to request rendering")
 
   root.destroy()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(label.node().is_destroyed(), "Expected measured node cleanup")
 }
 
 test fn retained_tree_paints_directly_into_one_clipped_buffer() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root_style = mut style::new(
     width: style::cells(3),
     height: style::cells(1),
     align_items: style::Align::start,
   )
   root_style.overflow = style::Overflow::hidden
-  let root = box::new(ctx, initial_style: root_style.@)
-  let label = text::new(ctx, content: "hello", initial_style: style::new(shrink: 0.0))
+  let root = box::new(ctx, styles: root_style.@)
+  let label = text::new(ctx, content: "hello", styles: style::new(flex_shrink: 0.0))
   root.add(label)
-  ctx.compute_layout(root, 3, 1)
+  context::internal_state(ctx).compute_layout(root, 3, 1)
 
   let buffer = paint::new_buffer(5, 1)
   root.node().paint(buffer)
@@ -237,25 +279,25 @@ test fn retained_tree_paints_directly_into_one_clipped_buffer() Void!Str {
   )
 
   root.destroy()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(label.node().is_destroyed(), "Expected painted child cleanup")
 }
 
 test fn retained_node_overflow_clips_its_own_paint() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::cells(5),
       height: style::cells(1),
       align_items: style::Align::start,
     ),
   )
-  let label_style = mut style::new(width: style::cells(3), shrink: 0.0)
+  let label_style = mut style::new(width: style::cells(3), flex_shrink: 0.0)
   label_style.overflow = style::Overflow::hidden
-  let label = text::new(ctx, content: "hello", initial_style: label_style.@)
+  let label = text::new(ctx, content: "hello", styles: label_style.@)
   root.add(label)
-  ctx.compute_layout(root, 5, 1)
+  context::internal_state(ctx).compute_layout(root, 5, 1)
   let buffer = paint::new_buffer(5, 1)
   root.node().paint(buffer)
 
@@ -267,16 +309,16 @@ test fn retained_node_overflow_clips_its_own_paint() Void!Str {
     buffer.cell_at(3, 0).expect("outside own clip").grapheme == " ",
     "Expected own overflow clipping",
   )
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(label.node().is_destroyed(), "Expected clipped text cleanup")
 }
 
 test fn retained_display_none_skips_paint() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let hidden_style = mut style::new(width: style::cells(1), height: style::cells(1))
   hidden_style.display = style::Display::none
-  let label = text::new(ctx, content: "x", initial_style: hidden_style.@)
-  ctx.compute_layout(label, 1, 1)
+  let label = text::new(ctx, content: "x", styles: hidden_style.@)
+  context::internal_state(ctx).compute_layout(label, 1, 1)
   let buffer = paint::new_buffer(1, 1)
   label.node().paint(buffer)
 
@@ -284,29 +326,29 @@ test fn retained_display_none_skips_paint() Void!Str {
     buffer.cell_at(0, 0).expect("hidden cell").grapheme == " ",
     "Expected display none to skip paint",
   )
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(label.node().is_destroyed(), "Expected hidden text cleanup")
 }
 
 test fn retained_zero_bounds_remain_bounded() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = box::new(ctx)
 
-  ctx.compute_layout(root, 0, 0)
+  context::internal_state(ctx).compute_layout(root, 0, 0)
   let layout = root.layout().local
 
   try testing::assert(layout.width == 0 and layout.height == 0, "Expected bounded zero layout")
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(root.node().is_destroyed(), "Expected zero-sized tree cleanup")
 }
 
 test fn retained_text_uses_one_measurer_for_layout_and_paint() Void!Str {
-  let ctx = context::new(width_measurer: fn(_text: Str) Int {
+  let ctx = context::internal_new(width_measurer: fn(_text: Str) Int {
     2
   })
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::cells(4),
       height: style::cells(1),
       align_items: style::Align::start,
@@ -314,7 +356,7 @@ test fn retained_text_uses_one_measurer_for_layout_and_paint() Void!Str {
   )
   let label = text::new(ctx, content: "ab")
   root.add(label)
-  ctx.compute_layout(root, 4, 1)
+  context::internal_state(ctx).compute_layout(root, 4, 1)
   let buffer = paint::new_buffer(4, 1)
   root.node().paint(buffer)
 
@@ -339,31 +381,31 @@ test fn retained_text_uses_one_measurer_for_layout_and_paint() Void!Str {
     not label.node().can_have_children(),
     "Expected measured text to be a retained leaf",
   )
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(label.node().is_destroyed(), "Expected custom measured text cleanup")
 }
 
 test fn retained_style_replacement_clears_spacing() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let padded = mut style::new(
     width: style::cells(10),
     height: style::cells(3),
     align_items: style::Align::start,
   )
   padded.padding = style::edges(style::cells(2))
-  let root = box::new(ctx, initial_style: padded.@)
-  let child = box::new(ctx, initial_style: fixed(1, 1))
+  let root = box::new(ctx, styles: padded.@)
+  let child = box::new(ctx, styles: fixed(1, 1))
   root.add(child)
-  ctx.compute_layout(root, 10, 3)
+  context::internal_state(ctx).compute_layout(root, 10, 3)
   try testing::assert(child.layout().local.x == 2, "Expected initial retained padding")
 
   root.set_style(
     style::new(width: style::cells(10), height: style::cells(3), align_items: style::Align::start),
   )
-  ctx.compute_layout(root, 10, 3)
+  context::internal_state(ctx).compute_layout(root, 10, 3)
 
   try testing::assert(child.layout().local.x == 0, "Expected undefined padding to reset to zero")
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(root.node().is_destroyed(), "Expected spacing test cleanup")
 }
 
@@ -379,6 +421,8 @@ test fn retained_paint_clears_partially_clipped_wide_spans() Void!Str {
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
+    foreground: Maybe::new<color::Color>(),
+    background: Maybe::new<color::Color>(),
   }
   full.write(0, 0, "abc")
 
@@ -392,6 +436,8 @@ test fn retained_paint_clears_partially_clipped_wide_spans() Void!Str {
     buffer: buffer,
     bounds: bounds,
     clip: narrow,
+    foreground: Maybe::new<color::Color>(),
+    background: Maybe::new<color::Color>(),
   }
   clipped.write(0, 0, "界")
 
@@ -417,6 +463,8 @@ test fn retained_paint_clears_overwritten_wide_spans() Void!Str {
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
+    foreground: Maybe::new<color::Color>(),
+    background: Maybe::new<color::Color>(),
   }
 
   ctx.write(0, 0, "界")
@@ -437,59 +485,56 @@ test fn retained_paint_clears_overwritten_wide_spans() Void!Str {
 }
 
 test fn retained_hit_testing_returns_direct_node_and_local_coordinates() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = box::new(
     ctx,
-    initial_style: style::new(
-      flex_direction: style::Direction::row,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
       width: style::cells(10),
       height: style::cells(2),
       align_items: style::Align::start,
     ),
   )
-  let left = box::new(ctx, initial_style: fixed(4, 2))
-  let right = box::new(ctx, initial_style: fixed(4, 2))
-  left.set_pointer_enabled(true)
-  right.set_pointer_enabled(true)
+  let left = box::new(ctx, styles: fixed(4, 2))
+  let right = box::new(ctx, styles: fixed(4, 2))
   root.add(left)
   root.add(right)
-  ctx.compute_layout(root, 10, 2)
+  context::internal_state(ctx).compute_layout(root, 10, 2)
 
   let found = hit::test(root, 5, 1).expect("retained pointer target")
 
   try testing::assert(found.target == right.node(), "Expected direct retained hit identity")
   try testing::assert(found.local_x == 1 and found.local_y == 1, "Expected target-local hit coordinates")
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(right.node().is_destroyed(), "Expected hit tree cleanup")
 }
 
 test fn retained_hit_testing_uses_layout_viewport_for_visible_overflow() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::cells(2),
       height: style::cells(1),
       align_items: style::Align::start,
     ),
   )
-  let child = box::new(ctx, initial_style: fixed(4, 1))
-  child.set_pointer_enabled(true)
+  let child = box::new(ctx, styles: fixed(4, 1))
   root.add(child)
-  ctx.compute_layout(root, 5, 1)
+  context::internal_state(ctx).compute_layout(root, 5, 1)
 
   let found = hit::test(root, 3, 0).expect("visible overflow hit")
 
   try testing::assert(found.target == child.node(), "Expected painted overflow child hit")
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(child.node().is_destroyed(), "Expected overflow hit tree cleanup")
 }
 
 test fn retained_hit_testing_obeys_ancestor_clipping() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::cells(5),
       height: style::cells(1),
       align_items: style::Align::start,
@@ -497,55 +542,96 @@ test fn retained_hit_testing_obeys_ancestor_clipping() Void!Str {
   )
   let clipped_style = mut fixed(2, 1)
   clipped_style.overflow = style::Overflow::hidden
-  let clipped = box::new(ctx, initial_style: clipped_style.@)
-  let child = box::new(ctx, initial_style: fixed(4, 1))
-  child.set_pointer_enabled(true)
+  let clipped = box::new(ctx, styles: clipped_style.@)
+  let child = box::new(ctx, styles: fixed(4, 1))
   clipped.add(child)
   root.add(clipped)
-  ctx.compute_layout(root, 5, 1)
+  context::internal_state(ctx).compute_layout(root, 5, 1)
 
   try testing::assert(hit::test(root, 1, 0).is_some(), "Expected hit inside ancestor clip")
-  try testing::assert(not hit::test(root, 3, 0).is_some(), "Expected clipped pointer rejection")
-  ctx.destroy()
+  let outside_child = hit::test(root, 3, 0).expect("clipped ancestor fallback")
+  try testing::assert(outside_child.target == root.node(), "Expected clipped child to fall back to visible parent")
+  context::internal_state(ctx).destroy()
   testing::assert(child.node().is_destroyed(), "Expected clipped hit tree cleanup")
 }
 
 test fn retained_hit_testing_visits_later_overlapping_children_first() Void!Str {
-  let ctx = context::new()
-  let root = box::new(ctx, initial_style: fixed(2, 1))
+  let ctx = context::internal_new()
+  let root = box::new(ctx, styles: fixed(2, 1))
   let overlay_style = mut fixed(2, 1)
   overlay_style.position = style::Position::absolute
-  let first = box::new(ctx, initial_style: overlay_style.@)
-  let second = box::new(ctx, initial_style: overlay_style.@)
-  first.set_pointer_enabled(true)
-  second.set_pointer_enabled(true)
+  let first = box::new(ctx, styles: overlay_style.@)
+  let second = box::new(ctx, styles: overlay_style.@)
   root.add(first)
   root.add(second)
-  ctx.compute_layout(root, 2, 1)
+  context::internal_state(ctx).compute_layout(root, 2, 1)
 
   let found = hit::test(root, 0, 0).expect("overlapping retained hit")
 
   try testing::assert(found.target == second.node(), "Expected later painted child target")
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(second.node().is_destroyed(), "Expected overlapping hit cleanup")
 }
 
+test fn retained_z_index_controls_stable_paint_and_hit_order() Void!Str {
+  let ctx = context::internal_new()
+  let root = box::new(ctx, styles: fixed(2, 1))
+  let front_style = mut style::new(
+    position: style::Position::absolute,
+    width: style::cells(2),
+    height: style::cells(1),
+    background: color::rgb(200, 0, 0),
+    z_index: 2,
+  )
+  let back_style = mut style::new(
+    position: style::Position::absolute,
+    width: style::cells(2),
+    height: style::cells(1),
+    background: color::rgb(0, 0, 200),
+    z_index: 1,
+  )
+  let front = box::new(ctx, styles: front_style.@)
+  let back = box::new(ctx, styles: back_style.@)
+  root.add(front)
+  root.add(back)
+  context::internal_state(ctx).compute_layout(root, 2, 1)
+
+  let initial_hit = hit::test(root, 0, 0).expect("z-index hit")
+  try testing::assert(initial_hit.target == front.node(), "Expected higher z-index hit before later child")
+  let initial_buffer = paint::new_buffer(2, 1)
+  root.node().paint(initial_buffer)
+  let initial_background = initial_buffer.cell_at(0, 0).expect("z-index paint cell").style.background.expect("front background")
+  try testing::assert(initial_background.red == Uint8::from(200), "Expected higher z-index paint")
+
+  back_style.z_index = 3
+  back.set_style(back_style.@)
+  let raised_hit = hit::test(root, 0, 0).expect("raised z-index hit")
+  try testing::assert(raised_hit.target == back.node(), "Expected changed z-index to invalidate hit order")
+  let raised_buffer = paint::new_buffer(2, 1)
+  root.node().paint(raised_buffer)
+  let raised_background = raised_buffer.cell_at(0, 0).expect("raised paint cell").style.background.expect("back background")
+  try testing::assert(raised_background.blue == Uint8::from(200), "Expected changed z-index to invalidate paint order")
+
+  context::internal_state(ctx).destroy()
+  testing::assert(back.node().is_destroyed(), "Expected z-index tree cleanup")
+}
+
 test fn retained_focus_traverses_zero_sized_visible_overflow_ancestors() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::cells(5),
       height: style::cells(1),
       align_items: style::Align::start,
     ),
   )
-  let zero_parent = box::new(ctx, initial_style: fixed(0, 1))
-  let child = box::new(ctx, initial_style: fixed(2, 1))
+  let zero_parent = box::new(ctx, styles: fixed(0, 1))
+  let child = box::new(ctx, styles: fixed(2, 1))
   child.set_focusable(true)
   zero_parent.add(child)
   root.add(zero_parent)
-  ctx.compute_layout(root, 5, 1)
+  context::internal_state(ctx).compute_layout(root, 5, 1)
 
   let found = focus::targets(root)
 
@@ -554,54 +640,50 @@ test fn retained_focus_traverses_zero_sized_visible_overflow_ancestors() Void!St
     found.at(0).expect("overflow focus target") == child.node(),
     "Expected descendant identity",
   )
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(child.node().is_destroyed(), "Expected overflow focus tree cleanup")
 }
 
-test fn retained_focus_traversal_uses_persistent_node_identity() Void!Str {
-  let ctx = context::new()
+test fn retained_focus_is_explicit_and_has_no_fallback() Void!Str {
+  let ctx = context::internal_new()
   let root = box::new(
     ctx,
-    initial_style: style::new(
-      flex_direction: style::Direction::row,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
       width: style::cells(6),
       height: style::cells(1),
     ),
   )
-  let first = box::new(ctx, initial_style: fixed(2, 1))
-  let second = box::new(ctx, initial_style: fixed(2, 1))
-  let third = box::new(ctx, initial_style: fixed(2, 1))
+  let first = box::new(ctx, styles: fixed(2, 1))
+  let second = box::new(ctx, styles: fixed(2, 1))
+  let third = box::new(ctx, styles: fixed(2, 1))
   first.set_focusable(true)
   second.set_focusable(true)
   third.set_focusable(true)
   root.add(first)
   root.add(second)
   root.add(third)
-  ctx.compute_layout(root, 6, 1)
+  context::internal_state(ctx).compute_layout(root, 6, 1)
 
   let state = focus::new()
   state.reconcile(root)
-  try testing::assert(state.is_focused(first.node()), "Expected first retained focus target")
+  try testing::assert(not state.focused().is_some(), "Expected no initial focus")
 
-  state.next(root)
-  try testing::assert(state.is_focused(second.node()), "Expected forward retained focus")
-  state.next(root, reverse: true)
-  try testing::assert(state.is_focused(first.node()), "Expected reverse retained focus")
-  state.next(root, reverse: true)
-  try testing::assert(state.is_focused(third.node()), "Expected reverse focus wrapping")
+  try testing::assert(state.focus(root, second.node()), "Expected explicit focus")
+  try testing::assert(state.is_focused(second.node()), "Expected persistent focused identity")
 
-  root.remove(third)
-  ctx.compute_layout(root, 6, 1)
+  root.remove(second)
+  context::internal_state(ctx).compute_layout(root, 6, 1)
   state.reconcile(root)
-  try testing::assert(state.is_focused(second.node()), "Expected ordinal focus fallback after detach")
-  try testing::assert(not state.focus(root, third.node()), "Expected detached focus rejection")
+  try testing::assert(not state.focused().is_some(), "Expected detach to clear without fallback")
+  try testing::assert(not state.focus(root, second.node()), "Expected detached focus rejection")
 
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(first.node().is_destroyed(), "Expected focus tree cleanup")
 }
 
 test fn mount_callback_can_attach_child_without_double_mounting() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = event_probe(ctx, fixed(2, 1))
   let child = event_probe(ctx, fixed(2, 1))
   root.add_on_first_mount = Maybe::new<mut node::Node>(child.node())
@@ -613,12 +695,38 @@ test fn mount_callback_can_attach_child_without_double_mounting() Void!Str {
   try testing::assert(root.node().child_count() == 1, "Expected mount-time child attachment")
 
   root.node().unmount_root()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(child.node().is_destroyed(), "Expected mount-time child cleanup")
 }
 
+test fn retained_same_parent_reorder_preserves_attachment_scope() Void!Str {
+  let ctx = context::internal_new()
+  let root = event_probe(ctx, fixed(2, 1))
+  let first = event_probe(ctx, fixed(1, 1))
+  let second = event_probe(ctx, fixed(1, 1))
+  root.add(first)
+  root.add(second)
+  root.node().mount_root(immediate_dispatch)
+
+  let generation = first.node().attachment_generation()
+  let cancellation = first.cancellation.expect("first attachment cancellation")
+  root.add(first, 1)
+
+  let cancelled = select {
+    cancellation.recv() => true,
+    _ => false,
+  }
+  try testing::assert(first.mounts == 1, "Expected reorder without remount")
+  try testing::assert(first.node().attachment_generation() == generation, "Expected stable attachment generation")
+  try testing::assert(not cancelled, "Expected reorder to preserve attachment cancellation")
+
+  root.node().unmount_root()
+  context::internal_state(ctx).destroy()
+  testing::assert(first.node().is_destroyed(), "Expected reordered tree cleanup")
+}
+
 test fn retained_attachment_scopes_cancel_and_refresh_on_reattach() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = event_probe(ctx, fixed(2, 1))
   let child = event_probe(ctx, fixed(2, 1))
   root.add(child)
@@ -667,72 +775,69 @@ test fn retained_attachment_scopes_cancel_and_refresh_on_reattach() Void!Str {
   root.node().unmount_root()
   try testing::assert(fresh_dispatch(fn() {}).is_err(), "Expected root unmount cancellation")
   queue.stop()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(child.node().is_destroyed(), "Expected attachment tree cleanup")
 }
 
-test fn retained_router_delivers_capture_target_bubble_by_node_reference() Void!Str {
-  let ctx = context::new()
+test fn retained_router_delivers_mouse_target_then_bubbles_by_node_reference() Void!Str {
+  let ctx = context::internal_new()
   let root = event_probe(ctx, fixed(4, 1))
   let child = event_probe(ctx, fixed(4, 1), focus_on_target: true)
   child.node().set_focusable(true)
   root.add(child)
-  ctx.compute_layout(root, 4, 1)
+  context::internal_state(ctx).compute_layout(root, 4, 1)
   root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
-
-  let outcome = router::dispatch(
-    root,
-    child.node(),
-    vaxis::Key{Text: "x"},
-    Maybe::new<router::Pointer>(router::Pointer{x: 1, y: 0}),
-    focused,
+  let received = mut framework_event::mouse(
+    framework_event::MouseEventType::down,
+    framework_event::MouseButton::left,
+    1,
+    0,
+    framework_event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
   )
+
+  let outcome = router::dispatch_mouse(root, child.node(), received, focused)
 
   try testing::assert(outcome.handled and outcome.redraw, "Expected retained routed handling")
   try testing::assert(focused.is_focused(child.node()), "Expected direct focus request")
-  try testing::assert(root.phases.size() == 2, "Expected root capture and bubble")
-  try testing::assert(
-    root.phases.at(0).expect("capture phase") == framework_event::EventPhase::capture,
-    "Expected capture first",
-  )
-  try testing::assert(
-    root.phases.at(1).expect("bubble phase") == framework_event::EventPhase::bubble,
-    "Expected bubble last",
-  )
-  try testing::assert(child.phases.size() == 1, "Expected one target delivery")
-  try testing::assert(
-    child.phases.at(0).expect("target phase") == framework_event::EventPhase::target,
-    "Expected target phase",
-  )
+  try testing::assert(child.deliveries == 1, "Expected one target delivery")
+  try testing::assert(root.deliveries == 1, "Expected one ancestor bubble delivery")
   try testing::assert(child.last_local_x.or(-1) == 1, "Expected target-local routed pointer")
   root.node().unmount_root()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(child.node().is_destroyed(), "Expected routed tree cleanup")
 }
 
-test fn retained_router_survives_target_destruction_during_capture() Void!Str {
-  let ctx = context::new()
+test fn retained_router_stops_after_target_destruction() Void!Str {
+  let ctx = context::internal_new()
   let root = event_probe(ctx, fixed(2, 1))
   let child = event_probe(ctx, fixed(2, 1))
   root.add(child)
-  root.destroy_on_capture = Maybe::new<mut node::Node>(child.node())
-  ctx.compute_layout(root, 2, 1)
+  child.destroy_on_event = Maybe::new<mut node::Node>(child.node())
+  context::internal_state(ctx).compute_layout(root, 2, 1)
   root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
+  let received = mut framework_event::mouse(
+    framework_event::MouseEventType::down,
+    framework_event::MouseButton::left,
+    0,
+    0,
+    framework_event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
+  )
 
-  let outcome = router::dispatch(root, child.node(), vaxis::Key{Text: "x"}, focused: focused)
+  let outcome = router::dispatch_mouse(root, child.node(), received, focused)
 
-  try testing::assert(outcome.handled, "Expected surviving capture handling")
-  try testing::assert(child.node().is_destroyed(), "Expected capture-time target destruction")
-  try testing::assert(child.phases.size() == 0, "Expected destroyed target suppression")
+  try testing::assert(outcome.handled, "Expected target handling before destruction")
+  try testing::assert(child.node().is_destroyed(), "Expected event-time target destruction")
+  try testing::assert(child.deliveries == 1, "Expected target delivery")
+  try testing::assert(root.deliveries == 0, "Expected ancestor suppression after mutation")
   root.node().unmount_root()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(root.node().is_destroyed(), "Expected mutation route cleanup")
 }
 
-test fn retained_router_stops_when_capture_reparents_target_attachment() Void!Str {
-  let ctx = context::new()
+test fn retained_router_stops_when_bubble_reparents_target_attachment() Void!Str {
+  let ctx = context::internal_new()
   let root = event_probe(ctx, fixed(4, 1))
   let former_parent = event_probe(ctx, fixed(2, 1))
   let new_parent = event_probe(ctx, fixed(2, 1))
@@ -740,48 +845,63 @@ test fn retained_router_stops_when_capture_reparents_target_attachment() Void!St
   former_parent.add(child)
   root.add(former_parent)
   root.add(new_parent)
-  former_parent.reparent_on_capture = Maybe::new<mut node::Node>(child.node())
+  former_parent.reparent_on_event = Maybe::new<mut node::Node>(child.node())
   former_parent.reparent_destination = Maybe::new<mut node::Node>(new_parent.node())
-  ctx.compute_layout(root, 4, 1)
+  context::internal_state(ctx).compute_layout(root, 4, 1)
   root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
+  let received = mut framework_event::mouse(
+    framework_event::MouseEventType::down,
+    framework_event::MouseButton::left,
+    0,
+    0,
+    framework_event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
+  )
 
-  let outcome = router::dispatch(root, child.node(), vaxis::Key{Text: "x"}, focused: focused)
+  let outcome = router::dispatch_mouse(root, child.node(), received, focused)
 
-  try testing::assert(outcome.handled, "Expected capture handling before reparent")
-  try testing::assert(former_parent.phases.size() == 1, "Expected former-parent capture only")
-  try testing::assert(child.phases.size() == 0, "Expected reattached target suppression")
-  try testing::assert(new_parent.phases.size() == 0, "Expected no delivery on new route")
+  try testing::assert(outcome.handled, "Expected handling before reparent")
+  try testing::assert(child.deliveries == 1, "Expected target delivery before reparent")
+  try testing::assert(former_parent.deliveries == 1, "Expected former-parent bubble")
+  try testing::assert(root.deliveries == 0, "Expected route invalidation before Root")
+  try testing::assert(new_parent.deliveries == 0, "Expected no delivery on new route")
   try testing::assert(child.mounts == 2, "Expected a fresh target attachment")
 
   root.node().unmount_root()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(child.node().is_destroyed(), "Expected reparented route cleanup")
 }
 
-test fn retained_router_honors_capture_propagation_stop() Void!Str {
-  let ctx = context::new()
-  let root = event_probe(ctx, fixed(2, 1), stop_capture: true)
-  let child = event_probe(ctx, fixed(2, 1))
+test fn retained_router_honors_bubble_propagation_stop() Void!Str {
+  let ctx = context::internal_new()
+  let root = event_probe(ctx, fixed(2, 1))
+  let child = event_probe(ctx, fixed(2, 1), stop_event: true)
   root.add(child)
-  ctx.compute_layout(root, 2, 1)
+  context::internal_state(ctx).compute_layout(root, 2, 1)
   root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
+  let received = mut framework_event::mouse(
+    framework_event::MouseEventType::down,
+    framework_event::MouseButton::left,
+    0,
+    0,
+    framework_event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
+  )
 
-  let outcome = router::dispatch(root, child.node(), vaxis::Key{Text: "x"}, focused: focused)
+  let outcome = router::dispatch_mouse(root, child.node(), received, focused)
 
-  try testing::assert(outcome.handled, "Expected capture handling")
-  try testing::assert(root.phases.size() == 1, "Expected only stopped capture delivery")
-  try testing::assert(child.phases.size() == 0, "Expected target suppression")
+  try testing::assert(outcome.handled, "Expected target handling")
+  try testing::assert(child.deliveries == 1, "Expected stopped target delivery")
+  try testing::assert(root.deliveries == 0, "Expected ancestor suppression")
   root.node().unmount_root()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(child.node().is_destroyed(), "Expected stopped route cleanup")
 }
 
 test fn retained_input_clips_placeholder_to_its_layout_width() Void!Str {
-  let ctx = context::new()
-  let field = input::new(ctx, placeholder: "abcdef", initial_style: fixed(3, 1))
-  ctx.compute_layout(field, 5, 1)
+  let ctx = context::internal_new()
+  let field = input::new(ctx, placeholder: "abcdef", styles: fixed(3, 1))
+  context::internal_state(ctx).compute_layout(field, 5, 1)
   let buffer = paint::new_buffer(5, 1)
   field.node().paint(buffer)
 
@@ -793,43 +913,45 @@ test fn retained_input_clips_placeholder_to_its_layout_width() Void!Str {
     buffer.cell_at(3, 0).expect("outside placeholder").grapheme == " ",
     "Expected placeholder width clipping",
   )
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(field.node().is_destroyed(), "Expected placeholder input cleanup")
 }
 
 test fn retained_input_mutates_through_direct_routing_and_paints_cursor() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::cells(5),
       height: style::cells(1),
       align_items: style::Align::start,
     ),
   )
-  let field = input::new(ctx, value: "abc", placeholder: "type", initial_style: fixed(5, 1))
+  let field = input::new(ctx, value: "abc", placeholder: "type", styles: fixed(5, 1))
   root.add(field)
-  ctx.compute_layout(root, 5, 1)
+  context::internal_state(ctx).compute_layout(root, 5, 1)
   root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
 
-  let mouse = vaxis::Mouse{
-    Col: 0,
-    Row: 0,
-    Button: vaxis::MouseLeftButton,
-    EventType: vaxis::EventPress,
-  }
-  let clicked = router::dispatch(
-    root,
-    field.node(),
-    mouse,
-    Maybe::new<router::Pointer>(router::Pointer{x: 0, y: 0}),
-    focused,
+  let clicked_event = framework_event::mouse(
+    framework_event::MouseEventType::down,
+    framework_event::MouseButton::left,
+    0,
+    0,
+    framework_event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
   )
+  let clicked = router::dispatch_mouse(root, field.node(), clicked_event, focused)
   try testing::assert(clicked.handled, "Expected retained input click handling")
+  try testing::assert(focused.focus(root, field.node()), "Expected runtime mouse autofocus")
   try testing::assert(focused.is_focused(field.node()), "Expected retained input click focus")
 
-  let typed = router::dispatch(root, field.node(), vaxis::Key{Text: "X"}, focused: focused)
+  let typed_event = framework_event::key(
+    "x",
+    "X",
+    framework_event::KeyEventType::press,
+    framework_event::Modifiers{shift: true, ctrl: false, alt: false, super: false},
+  )
+  let typed = router::dispatch_key(field.node(), typed_event, focused)
   try testing::assert(typed.handled, "Expected retained input key handling")
   try testing::assert(field.value() == "Xabc", "Expected retained input mutation")
 
@@ -845,7 +967,7 @@ test fn retained_input_mutates_through_direct_routing_and_paints_cursor() Void!S
   )
 
   root.node().unmount_root()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(field.node().is_destroyed(), "Expected retained input cleanup")
 }
 
@@ -861,6 +983,8 @@ test fn retained_later_wide_paint_invalidates_cursor_on_continuation() Void!Str 
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
+    foreground: Maybe::new<color::Color>(),
+    background: Maybe::new<color::Color>(),
   }
   ctx.show_cursor(1, 0)
   ctx.write(0, 0, "界")
@@ -869,13 +993,13 @@ test fn retained_later_wide_paint_invalidates_cursor_on_continuation() Void!Str 
 }
 
 test fn retained_scroll_translates_clips_paint_and_hit_geometry() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let content = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::cells(3),
       height: style::cells(5),
-      shrink: 0.0,
+      flex_shrink: 0.0,
       align_items: style::Align::start,
     ),
   )
@@ -885,8 +1009,9 @@ test fn retained_scroll_translates_clips_paint_and_hit_geometry() Void!Str {
     labels.push(label)
     content.add(label)
   }
-  let view = scroll::new(ctx, content, initial_style: fixed(3, 2), wheel_step: 1)
-  ctx.compute_layout(view, 3, 2)
+  let view = scroll_box::new(ctx, styles: fixed(3, 2))
+  view.add(content)
+  context::internal_state(ctx).compute_layout(view, 3, 2)
 
   let before = paint::new_buffer(3, 2)
   view.node().paint(before)
@@ -899,7 +1024,7 @@ test fn retained_scroll_translates_clips_paint_and_hit_geometry() Void!Str {
     "Expected second initial row",
   )
 
-  try testing::assert(view.set_offset(2), "Expected retained scroll movement")
+  try testing::assert(view.scroll_to(2), "Expected retained scroll movement")
   let after = paint::new_buffer(3, 2)
   view.node().paint(after)
   try testing::assert(
@@ -917,97 +1042,75 @@ test fn retained_scroll_translates_clips_paint_and_hit_geometry() Void!Str {
 
   let target = hit::test(view, 0, 0).expect("scroll pointer target")
   try testing::assert(
-    target.target == view.node(),
-    "Expected blank descendant hit to resolve to ScrollView",
+    target.target == labels.at(2).expect("translated hit label").node_ref,
+    "Expected deepest visible descendant hit after scrolling",
   )
 
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(content.node().is_destroyed(), "Expected retained scroll cleanup")
 }
 
 test fn retained_scroll_preserves_requested_offset_across_layout_changes() Void!Str {
-  let ctx = context::new()
+  let ctx = context::internal_new()
   let content = box::new(
     ctx,
-    initial_style: style::new(width: style::cells(2), height: style::cells(5)),
+    styles: style::new(width: style::cells(2), height: style::cells(5)),
   )
-  let view = scroll::new(ctx, content, initial_style: fixed(2, 2))
+  let view = scroll_box::new(ctx, styles: fixed(2, 2))
+  view.add(content)
 
-  try testing::assert(not view.set_offset(3), "Expected pre-layout scroll request without movement")
-  ctx.compute_layout(view, 2, 2)
-  try testing::assert(view.offset() == 3, "Expected deferred retained scroll request")
+  try testing::assert(not view.scroll_to(3), "Expected pre-layout scroll request without movement")
+  context::internal_state(ctx).compute_layout(view, 2, 2)
+  try testing::assert(view.scroll_top() == 3, "Expected deferred retained scroll request")
 
   content.set_style(style::new(width: style::cells(2), height: style::cells(1)))
-  ctx.compute_layout(view, 2, 2)
-  try testing::assert(view.offset() == 0, "Expected temporary effective scroll clamp")
-  try testing::assert(view.requested_offset() == 3, "Expected retained desired scroll position")
+  context::internal_state(ctx).compute_layout(view, 2, 2)
+  try testing::assert(view.scroll_top() == 0, "Expected temporary effective scroll clamp")
+  try testing::assert(view.requested_scroll_top() == 3, "Expected retained desired scroll position")
 
   content.set_style(style::new(width: style::cells(2), height: style::cells(5)))
-  ctx.compute_layout(view, 2, 2)
-  try testing::assert(view.offset() == 3, "Expected restored retained scroll position")
+  context::internal_state(ctx).compute_layout(view, 2, 2)
+  try testing::assert(view.scroll_top() == 3, "Expected restored retained scroll position")
 
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(content.node().is_destroyed(), "Expected requested scroll cleanup")
 }
 
 test fn retained_scroll_wheel_bubbles_and_stops_at_boundaries() Void!Str {
-  let ctx = context::new()
-  let content = box::new(ctx, initial_style: fixed(2, 5))
-  let view = scroll::new(ctx, content, initial_style: fixed(2, 2), wheel_step: 2)
-  ctx.compute_layout(view, 2, 2)
+  let ctx = context::internal_new()
+  let content = box::new(ctx, styles: fixed(2, 8))
+  let view = scroll_box::new(ctx, styles: fixed(2, 2))
+  view.add(content)
+  context::internal_state(ctx).compute_layout(view, 2, 2)
   view.node().mount_root(immediate_dispatch)
   let focused = focus::new()
-  let wheel = vaxis::Mouse{
-    Col: 0,
-    Row: 0,
-    Button: vaxis::MouseWheelDown,
-    EventType: vaxis::EventPress,
-  }
+  let first = router::dispatch_mouse(view, view.node(), wheel_down(), focused)
+  try testing::assert(first.handled and view.scroll_top() == 3, "Expected wheel scroll handling")
 
-  let first = router::dispatch(
-    view,
-    view.node(),
-    wheel,
-    Maybe::new<router::Pointer>(router::Pointer{x: 0, y: 0}),
-    focused,
-  )
-  try testing::assert(first.handled and view.offset() == 2, "Expected wheel scroll handling")
+  let second = router::dispatch_mouse(view, view.node(), wheel_down(), focused)
+  try testing::assert(second.handled and view.scroll_top() == 6, "Expected second wheel movement")
 
-  let second = router::dispatch(
-    view,
-    view.node(),
-    wheel,
-    Maybe::new<router::Pointer>(router::Pointer{x: 0, y: 0}),
-    focused,
-  )
-  try testing::assert(second.handled and view.offset() == 3, "Expected wheel clamp at maximum")
-
-  let boundary = router::dispatch(
-    view,
-    view.node(),
-    wheel,
-    Maybe::new<router::Pointer>(router::Pointer{x: 0, y: 0}),
-    focused,
-  )
+  let boundary = router::dispatch_mouse(view, view.node(), wheel_down(), focused)
   try testing::assert(not boundary.handled, "Expected ignored wheel at boundary")
 
   view.node().unmount_root()
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(content.node().is_destroyed(), "Expected wheel scroll cleanup")
 }
 
 test fn retained_focus_reveal_scrolls_direct_descendant_identity() Void!Str {
-  let ctx = context::new()
-  let content = box::new(ctx, initial_style: fixed(2, 5))
+  let ctx = context::internal_new()
+  let content = box::new(ctx, styles: fixed(2, 5))
   let rows = mut List::new<mut box::Box>()
   for _index in 0..5 {
-    let row = box::new(ctx, initial_style: fixed(2, 1))
+    let row = box::new(ctx, styles: fixed(2, 1))
     row.set_focusable(true)
     rows.push(row)
     content.add(row)
   }
-  let view = scroll::new(ctx, content, initial_style: fixed(2, 2))
-  ctx.compute_layout(view, 2, 2)
+  let view = scroll_box::new(ctx, styles: fixed(2, 2))
+  view.add(content)
+  context::internal_state(ctx).compute_layout(view, 2, 2)
   let focused = focus::new()
   focused.reconcile(view)
   let _ = focused.take_reveal_request()
@@ -1016,56 +1119,81 @@ test fn retained_focus_reveal_scrolls_direct_descendant_identity() Void!Str {
   let target = focused.focused().expect("last retained focus row")
 
   try testing::assert(focus::reveal(view, target), "Expected retained focus reveal movement")
-  try testing::assert(view.offset() == 3, "Expected focused row reveal offset")
+  try testing::assert(view.scroll_top() == 3, "Expected focused row reveal offset")
   try testing::assert(target == last, "Expected persistent focus identity")
   try testing::assert(target.layout().screen.y == 1, "Expected revealed focused geometry")
 
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(content.node().is_destroyed(), "Expected focus reveal cleanup")
 }
 
 test fn retained_nested_scroll_reveal_settles_inside_out() Void!Str {
-  let ctx = context::new()
-  let inner_content = box::new(ctx, initial_style: fixed(2, 5))
+  let ctx = context::internal_new()
+  let inner_content = box::new(ctx, styles: fixed(2, 5))
   let rows = mut List::new<mut box::Box>()
   for _index in 0..5 {
-    let row = box::new(ctx, initial_style: fixed(2, 1))
+    let row = box::new(ctx, styles: fixed(2, 1))
     rows.push(row)
     inner_content.add(row)
   }
   let target = rows.at(4).expect("nested reveal target")
   target.set_focusable(true)
-  let inner = scroll::new(ctx, inner_content, initial_style: fixed(2, 2))
+  let inner = scroll_box::new(ctx, styles: fixed(2, 2))
+  inner.add(inner_content)
 
-  let outer_content = box::new(ctx, initial_style: fixed(2, 8))
-  outer_content.add(box::new(ctx, initial_style: fixed(2, 3)))
+  let outer_content = box::new(ctx, styles: fixed(2, 8))
+  outer_content.add(box::new(ctx, styles: fixed(2, 3)))
   outer_content.add(inner)
-  outer_content.add(box::new(ctx, initial_style: fixed(2, 3)))
-  let outer = scroll::new(ctx, outer_content, initial_style: fixed(2, 2))
-  ctx.compute_layout(outer, 2, 2)
+  outer_content.add(box::new(ctx, styles: fixed(2, 3)))
+  let outer = scroll_box::new(ctx, styles: fixed(2, 2))
+  outer.add(outer_content)
+  context::internal_state(ctx).compute_layout(outer, 2, 2)
 
   try testing::assert(focus::reveal(outer, target.node()), "Expected nested reveal movement")
-  try testing::assert(inner.offset() == 3, "Expected inner focused reveal")
-  try testing::assert(outer.offset() == 3, "Expected outer focused reveal")
+  try testing::assert(inner.scroll_top() == 3, "Expected inner focused reveal")
+  try testing::assert(outer.scroll_top() == 3, "Expected outer focused reveal")
   try testing::assert(target.layout().screen.y == 1, "Expected settled target geometry")
 
-  ctx.destroy()
+  context::internal_state(ctx).destroy()
   testing::assert(target.node().is_destroyed(), "Expected nested reveal cleanup")
 }
 
-test fn retained_destroy_releases_the_owned_tree() Void!Str {
-  let ctx = context::new()
-  let root = box::new(ctx)
+test fn retained_destroy_preserves_detached_children() Void!Str {
+  let ctx = context::internal_new()
+  let parent = box::new(ctx)
   let child = box::new(ctx)
-  root.add(child)
+  parent.add(child)
 
-  root.destroy()
+  parent.destroy()
 
-  try testing::assert(root.node().is_destroyed(), "Expected root destruction")
+  try testing::assert(parent.node().is_destroyed(), "Expected parent destruction")
+  try testing::assert(not child.node().is_destroyed(), "Expected child preservation")
+  try testing::assert(not child.node().parent.is_some(), "Expected preserved child detachment")
+  try testing::assert(context::internal_state(ctx).node_count() == 1, "Expected preserved child Context ownership")
+
+  let replacement = box::new(ctx)
+  replacement.add(child)
+  try testing::assert(child.node().parent.is_some(), "Expected preserved child reuse")
+
+  context::internal_state(ctx).destroy()
+  try testing::assert(context::internal_state(ctx).is_destroyed(), "Expected Context to become terminal")
+  testing::assert(child.node().is_destroyed(), "Expected Context-owned child cleanup")
+}
+
+test fn retained_destroy_with_recursive_option_releases_the_owned_tree() Void!Str {
+  let ctx = context::internal_new()
+  let parent = box::new(ctx)
+  let child = box::new(ctx)
+  let grandchild = box::new(ctx)
+  child.add(grandchild)
+  parent.add(child)
+
+  parent.destroy(recursive: true)
+
+  try testing::assert(parent.node().is_destroyed(), "Expected recursive parent destruction")
   try testing::assert(child.node().is_destroyed(), "Expected recursive child destruction")
-  try testing::assert(root.child_count() == 0, "Expected destroyed tree to release children")
-  try testing::assert(ctx.node_count() == 0, "Expected individual destruction to deregister the subtree")
-  ctx.destroy()
-  try testing::assert(ctx.is_destroyed(), "Expected Context to become terminal")
-  testing::assert(root.node().is_destroyed(), "Expected idempotent Context cleanup")
+  try testing::assert(grandchild.node().is_destroyed(), "Expected recursive grandchild destruction")
+  try testing::assert(context::internal_state(ctx).node_count() == 0, "Expected recursive deregistration")
+  context::internal_state(ctx).destroy()
+  testing::assert(parent.node().is_destroyed(), "Expected idempotent Context cleanup")
 }

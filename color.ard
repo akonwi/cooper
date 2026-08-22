@@ -1,0 +1,70 @@
+use ard/testing
+
+struct Color {
+  red: Uint8,
+  green: Uint8,
+  blue: Uint8,
+}
+
+private fn channel(value: Int) Uint8 {
+  if value < 0 or value > 255 {
+    panic("color component must be between 0 and 255")
+  }
+  Uint8::from(value)
+}
+
+fn rgb(red: Int, green: Int, blue: Int) Color {
+  Color{
+    red: channel(red),
+    green: channel(green),
+    blue: channel(blue),
+  }
+}
+
+private fn hex_digit(value: Rune) Int {
+  if value >= '0' and value <= '9' {
+    value.to_int() - '0'.to_int()
+  } else if value >= 'a' and value <= 'f' {
+    value.to_int() - 'a'.to_int() + 10
+  } else if value >= 'A' and value <= 'F' {
+    value.to_int() - 'A'.to_int() + 10
+  } else {
+    panic("hex color must contain only hexadecimal digits")
+  }
+}
+
+private fn hex_pair(digits: [Rune], start: Int) Uint8 {
+  let high = hex_digit(digits.at(start).expect("validated hex color"))
+  let low = hex_digit(digits.at(start + 1).expect("validated hex color"))
+  channel(high * 16 + low)
+}
+
+fn hex(value: Str) Color {
+  mut encoded = value
+  if encoded.starts_with("#") {
+    encoded = encoded.slice(start: 1).expect("hash is a byte boundary")
+  }
+
+  let digits = encoded.runes()
+  if digits.size() != 6 {
+    panic("hex color must be RRGGBB or #RRGGBB")
+  }
+
+  Color{
+    red: hex_pair(digits, 0),
+    green: hex_pair(digits, 2),
+    blue: hex_pair(digits, 4),
+  }
+}
+
+test fn color_hex_accepts_prefixed_plain_and_mixed_case_values() Void!Str {
+  let prefixed = hex("#1aB2fF")
+  try testing::assert(prefixed.red == Uint8::from(26), "Expected parsed red channel")
+  try testing::assert(prefixed.green == Uint8::from(178), "Expected parsed green channel")
+  try testing::assert(prefixed.blue == Uint8::from(255), "Expected parsed blue channel")
+
+  let plain = hex("2947F0")
+  try testing::assert(plain.red == Uint8::from(41), "Expected plain red channel")
+  try testing::assert(plain.green == Uint8::from(71), "Expected plain green channel")
+  testing::assert(plain.blue == Uint8::from(240), "Expected plain blue channel")
+}

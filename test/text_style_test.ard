@@ -1,0 +1,120 @@
+use ard/testing
+
+use cooper/color
+use cooper/core/paint
+use cooper/geometry
+use cooper/text
+
+private fn styled_cell() paint::CellStyle {
+  paint::style(
+    foreground: color::rgb(12, 34, 56),
+    background: color::rgb(78, 90, 123),
+    bold: true,
+    italic: true,
+    underline: true,
+    reverse: true,
+  )
+}
+
+test fn text_style_defaults_rgb_and_defaults_attributes() Void!Str {
+  let rgb = color::rgb(12, 34, 56)
+  let plain = text::style(foreground: rgb)
+
+  try testing::assert(rgb.red == Uint8::from(12), "Expected red channel")
+  try testing::assert(rgb.green == Uint8::from(34), "Expected green channel")
+  try testing::assert(rgb.blue == Uint8::from(56), "Expected blue channel")
+  testing::assert(
+    (not plain.bold) and (not plain.dim) and (not plain.italic) and (not plain.underline) and (not plain.blink) and (not plain.reverse) and (not plain.strike),
+    "Expected default cell attributes",
+  )
+}
+
+test fn painted_cells_preserve_and_clear_style_across_wide_spans() Void!Str {
+  let buffer = paint::new_buffer(3, 1)
+  let bounds = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 3,
+    height: 1,
+  }
+  let ctx = mut paint::Context{
+    buffer: buffer,
+    bounds: bounds,
+    clip: bounds,
+    foreground: color::rgb(12, 34, 56),
+    background: color::rgb(78, 90, 123),
+  }
+  ctx.write(0, 0, "界", text_style: styled_cell())
+
+  let lead = buffer.cell_at(0, 0).expect("styled lead")
+  let continuation = buffer.cell_at(1, 0).expect("styled continuation")
+  try testing::assert(
+    lead.style.background.expect("background").blue == Uint8::from(123),
+    "Expected painted background",
+  )
+  try testing::assert(
+    continuation.width == 0 and continuation.style.reverse,
+    "Expected styled continuation",
+  )
+
+  ctx.write(1, 0, "x")
+  try testing::assert(
+    not buffer.cell_at(0, 0).expect("cleared lead").style.bold,
+    "Expected cleared style",
+  )
+  try testing::assert(
+    buffer.cell_at(1, 0).expect("plain overwrite").style.foreground.expect("inherited foreground").red == Uint8::from(12),
+    "Expected a plain overwrite to inherit the wide span foreground",
+  )
+  try testing::assert(
+    buffer.cell_at(
+      0,
+      0,
+    ).expect("cleared lead background").style.background.expect("preserved background").blue == Uint8::from(123),
+    "Expected clearing an overlapped wide lead to preserve its background",
+  )
+  testing::assert(
+    buffer.cell_at(
+      1,
+      0,
+    ).expect("plain overwrite background").style.background.expect("inherited background").blue == Uint8::from(123),
+    "Expected a plain overwrite to inherit the wide span background",
+  )
+}
+
+test fn clipped_wide_text_preserves_existing_background() Void!Str {
+  let buffer = paint::new_buffer(2, 1)
+  let bounds = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 2,
+    height: 1,
+  }
+  let full = mut paint::Context{
+    buffer: buffer,
+    bounds: bounds,
+    clip: bounds,
+    foreground: Maybe::new<color::Color>(),
+    background: color::rgb(7, 8, 9),
+  }
+  full.fill(paint::style(background: color::rgb(7, 8, 9)))
+
+  let clipped = mut paint::Context{
+    buffer: buffer,
+    bounds: bounds,
+    clip: geometry::Rect{
+      x: 1,
+      y: 0,
+      width: 1,
+      height: 1,
+    },
+    foreground: Maybe::new<color::Color>(),
+    background: color::rgb(7, 8, 9),
+  }
+  clipped.write(0, 0, "界")
+
+  testing::assert(
+    buffer.cell_at(1, 0).expect("clipped cell").style.background.expect("preserved background").blue == Uint8::from(9),
+    "Expected clipped wide text not to erase the existing background",
+  )
+}

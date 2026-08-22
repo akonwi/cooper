@@ -1,0 +1,157 @@
+use ard/testing
+
+use cooper/box
+use cooper/color
+use cooper/style
+use cooper/testing as cooper_testing
+use cooper/text
+
+test fn text_wraps_words_and_explicit_lines_with_terminal_widths() Void!Str {
+  let application = cooper_testing::new(6, 4)
+  let label = text::new(
+    application.context,
+    content: "one two\n🙂x",
+    wrap: text::TextWrap::word,
+    styles: style::new(width: style::cells(5)),
+  )
+  application.root.add(label)
+  application.render()
+
+  try testing::assert(label.layout().screen.height == 3, "Expected wrapped and explicit lines")
+  try testing::assert(application.frame().cell(0, 0).expect("word lead").grapheme == "o", "Expected first word")
+  try testing::assert(application.frame().cell(0, 1).expect("wrapped lead").grapheme == "t", "Expected second wrapped word")
+  try testing::assert(application.frame().cell(0, 2).expect("wide lead").grapheme == "🙂", "Expected explicit wide line")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected wrapped Text cleanup")
+}
+
+test fn text_character_wrap_never_splits_a_grapheme() Void!Str {
+  let application = cooper_testing::new(3, 3)
+  let label = text::new(
+    application.context,
+    content: "ab🙂",
+    wrap: text::TextWrap::character,
+    styles: style::new(width: style::cells(3)),
+  )
+  application.root.add(label)
+  application.render()
+
+  try testing::assert(label.layout().screen.height == 2, "Expected character wrap height")
+  try testing::assert(application.frame().cell(1, 0).expect("first line end").grapheme == "b", "Expected first line")
+  try testing::assert(application.frame().cell(0, 1).expect("second line lead").grapheme == "🙂", "Expected intact grapheme")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected character Text cleanup")
+}
+
+test fn common_colors_follow_tree_inheritance_not_sibling_paint_order() Void!Str {
+  let application = cooper_testing::new(1, 1)
+  let parent = box::new(
+    application.context,
+    styles: style::new(width: style::cells(1), height: style::cells(1)),
+  )
+  let behind = text::new(
+    application.context,
+    content: "a",
+    styles: style::new(
+      foreground: color::rgb(1, 2, 3),
+      background: color::rgb(4, 5, 6),
+      position: style::Position::absolute,
+      width: style::cells(1),
+      height: style::cells(1),
+    ),
+  )
+  let front = text::new(
+    application.context,
+    content: "b",
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(1),
+      height: style::cells(1),
+    ),
+  )
+  parent.add(behind)
+  parent.add(front)
+  application.root.add(parent)
+  application.render()
+
+  let painted = application.frame().cell(0, 0).expect("overlapping Text")
+  try testing::assert(painted.grapheme == "b", "Expected later sibling paint")
+  try testing::assert(not painted.style.foreground.is_some(), "Expected no foreground leakage between siblings")
+  try testing::assert(not painted.style.background.is_some(), "Expected no background leakage between siblings")
+
+  application.destroy()
+  testing::assert(front.node_ref.is_destroyed(), "Expected overlapping Text cleanup")
+}
+
+test fn common_colors_inherit_through_visible_overflow() Void!Str {
+  let application = cooper_testing::new(2, 1)
+  let parent = box::new(
+    application.context,
+    styles: style::new(
+      foreground: color::rgb(7, 8, 9),
+      background: color::rgb(10, 11, 12),
+      width: style::cells(1),
+      height: style::cells(1),
+      overflow: style::Overflow::visible,
+    ),
+  )
+  let child = text::new(
+    application.context,
+    content: "x",
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(1),
+      width: style::cells(1),
+      height: style::cells(1),
+    ),
+  )
+  parent.add(child)
+  application.root.add(parent)
+  application.render()
+
+  let painted = application.frame().cell(1, 0).expect("overflowing Text")
+  try testing::assert(painted.grapheme == "x", "Expected visible overflow paint")
+  try testing::assert(painted.style.foreground.expect("inherited foreground").blue == Uint8::from(9), "Expected foreground inheritance outside parent bounds")
+  try testing::assert(painted.style.background.expect("inherited background").blue == Uint8::from(12), "Expected background inheritance outside parent bounds")
+
+  application.destroy()
+  testing::assert(child.node_ref.is_destroyed(), "Expected overflowing Text cleanup")
+}
+
+test fn text_exposes_styles_content_wrapping_and_common_api() Void!Str {
+  let application = cooper_testing::new(5, 2)
+  let red = color::rgb(200, 10, 20)
+  let common_foreground = color::rgb(20, 30, 40)
+  let common_background = color::rgb(50, 60, 70)
+  let label = text::new(
+    application.context,
+    content: "old",
+    text_style: text::style(foreground: red, bold: true),
+  )
+  application.root.add(label)
+  label.set_content("new")
+  label.set_wrap(text::TextWrap::character)
+  label.set_style(
+    style::new(
+      foreground: common_foreground,
+      background: common_background,
+      width: style::cells(3),
+    ),
+  )
+  application.render()
+
+  try testing::assert(label.content() == "new", "Expected Text content getter")
+  try testing::assert(label.wrap() == text::TextWrap::character, "Expected Text wrap getter")
+  try testing::assert(label.text_style().bold, "Expected TextStyle getter")
+  try testing::assert(label.style().width.kind == style::LengthKind::cells, "Expected common style getter")
+  try testing::assert(label.style().foreground.expect("common foreground").green == Uint8::from(30), "Expected color in common Style")
+  let painted = application.frame().cell(0, 0).expect("styled Text cell")
+  try testing::assert(painted.style.bold, "Expected bold Text paint")
+  try testing::assert(painted.style.foreground.expect("Text foreground override").red == Uint8::from(200), "Expected TextStyle to override common foreground")
+  try testing::assert(painted.style.background.expect("common background").blue == Uint8::from(70), "Expected inherited common background")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected styled Text cleanup")
+}

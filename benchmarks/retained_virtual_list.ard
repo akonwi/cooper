@@ -1,14 +1,13 @@
 use cooper/box
-use cooper/context
-use cooper/paint
-use cooper/scroll
+use cooper/scroll_box
 use cooper/style
+use cooper/testing as cooper_testing
 use cooper/text
 use go:fmt
 use go:time
 
 private fn sized(width: Int, height: Int) style::Style {
-  style::new(width: style::cells(width), height: style::cells(height), shrink: 0.0)
+  style::new(width: style::cells(width), height: style::cells(height), flex_shrink: 0.0)
 }
 
 private fn update_window(
@@ -36,52 +35,52 @@ fn main() {
   let logical_construction = time::Since(logical_started)
 
   let retained_started = time::Now()
-  let ctx = context::new()
+  let application = cooper_testing::new(80, 24)
   let content = box::new(
-    ctx,
-    initial_style: style::new(width: style::cells(80), align_items: style::Align::stretch),
+    application.context,
+    styles: style::new(width: style::cells(80), align_items: style::Align::stretch),
   )
-  let top = box::new(ctx, initial_style: sized(80, 0))
-  let bottom = box::new(ctx, initial_style: sized(80, data.size() - 64))
+  let top = box::new(application.context, styles: sized(80, 0))
+  let bottom = box::new(application.context, styles: sized(80, data.size() - 64))
   let rows = mut List::new<mut text::Text>()
   content.add(top)
   index = 0
   while index < 64 {
     let row = text::new(
-      ctx,
+      application.context,
       content: data.at(index).expect("initial virtual row"),
-      initial_style: sized(80, 1),
+      styles: sized(80, 1),
     )
     rows.push(row)
     content.add(row)
     index =+ 1
   }
   content.add(bottom)
-  let view = scroll::new(
-    ctx,
-    content,
-    initial_style: style::new(
+  let view = scroll_box::new(
+    application.context,
+    styles: style::new(
       width: style::percent(100.0),
       height: style::percent(100.0),
-      shrink: 0.0,
+      flex_shrink: 0.0,
     ),
-    wheel_step: 3,
   )
+  view.add(content)
+  application.root.add(view)
   let retained_construction = time::Since(retained_started)
 
   let initial_started = time::Now()
-  ctx.compute_layout(view, 80, 24)
+  application.render()
   let initial_layout = time::Since(initial_started)
 
   let jump_started = time::Now()
   update_window(top, bottom, rows.@, data.@, 5000)
-  let _ = view.set_offset(5000)
-  ctx.compute_layout(view, 80, 24)
+  let _ = view.scroll_to(5000)
+  application.render()
   let jump_layout = time::Since(jump_started)
 
   let update_started = time::Now()
   rows.at(12).expect("visible update row").set_content("row 5012 changed")
-  ctx.compute_layout(view, 80, 24)
+  application.render()
   let single_row_update = time::Since(update_started)
 
   let shifts_started = time::Now()
@@ -89,19 +88,18 @@ fn main() {
   while index < 100 {
     let start = 5001 + index
     update_window(top, bottom, rows.@, data.@, start)
-    let _ = view.set_offset(start)
-    ctx.compute_layout(view, 80, 24)
+    let _ = view.scroll_to(start)
+    application.render()
     index =+ 1
   }
   let shifts = time::Since(shifts_started)
 
   let resize_started = time::Now()
-  ctx.compute_layout(view, 100, 40)
+  application.resize(100, 40)
   let resize = time::Since(resize_started)
 
   let paint_started = time::Now()
-  let buffer = paint::new_buffer(100, 40)
-  view.node().paint(buffer)
+  application.render()
   let painted = time::Since(paint_started)
 
   fmt::Printf(
@@ -114,10 +112,10 @@ fn main() {
     shifts.Microseconds() / 100,
     resize.Microseconds(),
     painted.Microseconds(),
-    view.node().layout().screen.width,
-    view.node().layout().screen.height,
-    buffer.cell_at(0, 0).expect("painted virtual cell").grapheme,
+    view.layout().screen.width,
+    view.layout().screen.height,
+    application.frame().cell(0, 0).expect("painted virtual cell").grapheme,
   )
 
-  view.destroy()
+  application.destroy()
 }

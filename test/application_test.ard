@@ -1,0 +1,139 @@
+use ard/testing
+
+use cooper/context
+use cooper/event
+use cooper/input
+use cooper/testing as cooper_testing
+use cooper/text
+
+private fn cancelled(signal: Receiver<Void>) Bool {
+  select {
+    signal.recv() => true,
+    _ => false,
+  }
+}
+
+test fn test_app_renders_the_permanent_root_tree() Void!Str {
+  let application = cooper_testing::new(12, 2)
+  let message = text::new(application.context, content: "Hello")
+  application.root.add(message)
+
+  application.render()
+  let frame = application.frame()
+
+  try testing::assert(application.root.child_count() == 1, "Expected one Root child")
+  try testing::assert(frame.width() == 12 and frame.height() == 2, "Expected configured frame size")
+  try cooper_testing::assert_contains(frame.text(), "Hello")
+  application.destroy()
+  testing::assert(context::internal_state(application.context).is_destroyed(), "Expected TestApp Context cleanup")
+}
+
+test fn test_app_flushes_app_lifetime_dispatch_and_scheduled_frames() Void!Str {
+  let application = cooper_testing::new(10, 1)
+  let message = text::new(application.context, content: "Before")
+  application.root.add(message)
+  application.render()
+
+  let accepted = application.context.dispatch(fn() {
+    message.set_content("After")
+  })
+  let drained = application.flush()
+
+  try testing::assert(accepted.is_ok(), "Expected live Context dispatch")
+  try testing::assert(drained == 1, "Expected one flushed action")
+  try cooper_testing::assert_contains(application.frame().text(), "After")
+  application.destroy()
+  testing::assert(
+    application.context.dispatch(fn() {}).is_err(),
+    "Expected dispatch rejection after TestApp destruction",
+  )
+}
+
+test fn test_app_destroy_from_dispatch_stops_at_the_action_boundary() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  let message = text::new(application.context, content: "Before")
+  application.root.add(message)
+  application.render()
+  mut later_action_ran = false
+  let _ = application.context.dispatch(fn() {
+    message.set_content("After")
+    application.destroy()
+  })
+  let _ = application.context.dispatch(fn() {
+    later_action_ran = true
+  })
+
+  let drained = application.flush()
+
+  try testing::assert(drained == 1, "Expected only the destroying action to run")
+  try testing::assert(not later_action_ran, "Expected queued work after destruction to be suppressed")
+  try cooper_testing::assert_contains(application.frame().text(), "After")
+  testing::assert(context::internal_state(application.context).is_destroyed(), "Expected deferred TestApp cleanup")
+}
+
+test fn terminal_focus_is_deduplicated_and_independent_of_control_focus() Void!Str {
+  let application = cooper_testing::new(16, 2)
+  let field = input::new(application.context)
+  let status = text::new(application.context, content: "unknown")
+  application.root.add(field)
+  application.root.add(status)
+  application.render()
+  field.focus()
+  mut calls = 0
+  let remove = application.on_terminal_focus(fn(value: event::TerminalFocus) {
+    calls =+ 1
+    if value == event::TerminalFocus::gained {
+      status.set_content("terminal:gained")
+    } else {
+      status.set_content("terminal:lost")
+    }
+  })
+
+  try testing::assert(not application.terminal_focus().is_some(), "Expected initially unknown terminal focus")
+  application.set_terminal_focus(event::TerminalFocus::gained)
+  application.set_terminal_focus(event::TerminalFocus::gained)
+  try testing::assert(calls == 1, "Expected duplicate terminal focus coalescing")
+  try testing::assert(field.is_focused(), "Expected terminal focus not to alter control focus")
+  try cooper_testing::assert_contains(application.frame().text(), "terminal:gained")
+
+  application.set_terminal_focus(event::TerminalFocus::lost)
+  try testing::assert(calls == 2 and application.terminal_focus().or(event::TerminalFocus::gained) == event::TerminalFocus::lost, "Expected terminal blur state")
+  try testing::assert(field.is_focused(), "Expected terminal blur not to blur control")
+  try cooper_testing::assert_contains(application.frame().text(), "terminal:lost")
+
+  remove()
+  remove()
+  application.set_terminal_focus(event::TerminalFocus::gained)
+  try testing::assert(calls == 2, "Expected idempotent terminal focus listener removal")
+  application.destroy()
+  testing::assert(status.node_ref.is_destroyed(), "Expected terminal focus cleanup")
+}
+
+test fn terminal_focus_listener_can_destroy_test_app_safely() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  application.root.add(text::new(application.context, content: "active"))
+  application.render()
+  let _ = application.on_terminal_focus(fn(value: event::TerminalFocus) {
+    application.destroy()
+  })
+
+  application.set_terminal_focus(event::TerminalFocus::lost)
+
+  testing::assert(context::internal_state(application.context).is_destroyed(), "Expected terminal-focus destruction at callback boundary")
+}
+
+test fn test_app_resize_and_destruction_are_deterministic() Void!Str {
+  let application = cooper_testing::new(4, 1)
+  let cancellation = application.context.cancellation
+  application.root.add(text::new(application.context, content: "resize"))
+
+  application.resize(8, 2)
+  try testing::assert(
+    application.frame().width() == 8 and application.frame().height() == 2,
+    "Expected resized headless frame",
+  )
+
+  application.destroy()
+  application.destroy()
+  testing::assert(cancelled(cancellation), "Expected App-lifetime cancellation")
+}

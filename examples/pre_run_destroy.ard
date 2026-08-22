@@ -1,0 +1,7 @@
+use cooper/app
+
+fn main() {
+  let application = app::new().expect("create Cooper app")
+  application.destroy()
+  application.destroy()
+}

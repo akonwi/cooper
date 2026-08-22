@@ -1,0 +1,403 @@
+use ard/testing
+
+use cooper/context
+use cooper/box
+use cooper/event
+use cooper/input
+use cooper/style
+use cooper/testing as cooper_testing
+
+private fn modifiers() event::Modifiers {
+  event::Modifiers{shift: false, ctrl: false, alt: false, super: false}
+}
+
+private fn key(name: Str, text: Str) mut event::KeyEvent {
+  event::key(name, text, event::KeyEventType::press, modifiers())
+}
+
+test fn key_events_match_and_share_propagation_state() Void!Str {
+  let received = key("a", "a")
+  try testing::assert(received.matches("a"), "Expected canonical key match")
+  try testing::assert(not received.matches("a", ctrl: true), "Expected exact modifiers")
+
+  received.prevent_default()
+  received.stop_propagation()
+
+  try testing::assert(received.is_default_prevented(), "Expected shared default state")
+  testing::assert(received.is_propagation_stopped(), "Expected shared propagation state")
+}
+
+test fn app_and_control_key_listeners_run_in_order_and_dispose() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  let field = input::new(application.context, value: "")
+  application.root.add(field)
+  application.render()
+  try testing::assert(field.focus(), "Expected explicit Input focus")
+
+  mut calls: mut [Str] = mut []
+  let remove_first = application.on_key(fn(received: mut event::KeyEvent) {
+    calls.push("app-first")
+  })
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    calls.push("app-second")
+  })
+  let _ = field.on_key(fn(received: mut event::KeyEvent) {
+    calls.push("field")
+    received.prevent_default()
+  })
+
+  application.key(key("x", "x"))
+  try testing::assert(
+    calls.size() == 3 and calls.at(0).or("") == "app-first" and calls.at(1).or("") == "app-second" and calls.at(2).or("") == "field",
+    "Expected listener order",
+  )
+  try testing::assert(field.value() == "", "Expected prevented Input default")
+
+  remove_first()
+  remove_first()
+  application.key(key("y", "y"))
+  try testing::assert(
+    calls.size() == 5 and calls.at(3).or("") == "app-second" and calls.at(4).or("") == "field",
+    "Expected idempotent listener removal",
+  )
+
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    received.stop_propagation()
+  })
+  application.key(key("z", "z"))
+  try testing::assert(calls.size() == 6 and calls.at(5).or("") == "app-second", "Expected App stop to suppress focused delivery")
+  application.destroy()
+  testing::assert(context::internal_state(application.context).is_destroyed(), "Expected listener test cleanup")
+}
+
+test fn paste_uses_separate_app_and_control_delivery() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  let field = input::new(application.context)
+  application.root.add(field)
+  application.render()
+  field.focus()
+  mut app_pastes = 0
+  let remove = application.on_paste(fn(received: mut event::PasteEvent) {
+    app_pastes =+ 1
+    received.prevent_default()
+  })
+
+  application.paste(event::paste("first"))
+  try testing::assert(app_pastes == 1 and field.value() == "", "Expected prevented App paste")
+
+  remove()
+  application.paste(event::paste("second"))
+  try testing::assert(field.value() == "second", "Expected focused Input paste default")
+  application.destroy()
+  testing::assert(field.node_ref.is_destroyed(), "Expected paste listener cleanup")
+}
+
+test fn stop_propagation_does_not_prevent_control_default() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  let field = input::new(application.context)
+  application.root.add(field)
+  application.render()
+  field.focus()
+  let _ = field.on_key(fn(received: mut event::KeyEvent) {
+    received.stop_propagation()
+  })
+
+  application.key(key("x", "x"))
+
+  try testing::assert(field.value() == "x", "Expected default behavior without prevent_default")
+  application.destroy()
+  testing::assert(field.node_ref.is_destroyed(), "Expected propagation test cleanup")
+}
+
+test fn app_listener_hiding_focused_control_clears_before_delivery() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  let field = input::new(application.context)
+  application.root.add(field)
+  application.render()
+  field.focus()
+  mut refocused = true
+  let _ = field.on_blur(fn() {
+    refocused = field.focus()
+  })
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    field.node_ref.apply_style(style::new(display: style::Display::none))
+  })
+
+  application.key(key("x", "x"))
+
+  try testing::assert(not field.is_focused(), "Expected hidden focused control to blur")
+  try testing::assert(not refocused, "Expected hidden subtree to reject blur-listener refocus")
+  try testing::assert(field.value() == "", "Expected hidden control delivery suppression")
+  application.destroy()
+  testing::assert(field.node_ref.is_destroyed(), "Expected hidden focus cleanup")
+}
+
+test fn mouse_listeners_target_then_bubble_with_local_coordinates() Void!Str {
+  let application = cooper_testing::new(6, 2)
+  let parent = box::new(
+    application.context,
+    styles: style::new(
+      width: style::cells(6),
+      height: style::cells(2),
+      padding: style::Edges{
+        top: style::cells(0),
+        right: style::cells(0),
+        bottom: style::cells(0),
+        left: style::cells(1),
+      },
+    ),
+  )
+  let child = box::new(
+    application.context,
+    styles: style::new(width: style::cells(2), height: style::cells(1)),
+  )
+  parent.add(child)
+  application.root.add(parent)
+  mut calls: mut [Str] = mut []
+  let _ = child.on_mouse(fn(received: mut event::MouseEvent) {
+    calls.push("child:first:{received.local_x}")
+    received.local_x = 99
+  })
+  let _ = child.on_mouse(fn(received: mut event::MouseEvent) {
+    calls.push("child:second:{received.local_x}")
+  })
+  let _ = parent.on_mouse(fn(received: mut event::MouseEvent) {
+    calls.push("parent:{received.local_x}")
+  })
+  application.render()
+
+  application.mouse(
+    event::mouse(
+      event::MouseEventType::down,
+      event::MouseButton::left,
+      2,
+      0,
+      modifiers(),
+    ),
+  )
+
+  try testing::assert(
+    calls.size() == 3 and calls.at(0).or("") == "child:first:1" and calls.at(1).or("") == "child:second:1" and calls.at(2).or("") == "parent:2",
+    "Expected rebound target-first mouse bubbling",
+  )
+  application.destroy()
+  testing::assert(child.node_ref.is_destroyed(), "Expected mouse listener cleanup")
+}
+
+test fn mouse_autofocus_uses_left_button_and_nearest_focusable_ancestor() Void!Str {
+  let application = cooper_testing::new(6, 1)
+  let parent = box::new(application.context, styles: style::new(width: style::cells(6), height: style::cells(1)))
+  let child = box::new(application.context, styles: style::new(width: style::cells(3), height: style::cells(1)))
+  parent.set_focusable(true)
+  parent.add(child)
+  application.root.add(parent)
+  application.render()
+
+  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::right, 0, 0, modifiers()))
+  try testing::assert(not parent.is_focused(), "Expected right button not to autofocus")
+
+  let remove_prevention = child.on_mouse(fn(received: mut event::MouseEvent) {
+    received.prevent_default()
+  })
+  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+  try testing::assert(not parent.is_focused(), "Expected prevented ancestor autofocus")
+
+  remove_prevention()
+  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+  try testing::assert(parent.is_focused(), "Expected nearest focusable ancestor")
+
+  application.destroy()
+  testing::assert(child.node_ref.is_destroyed(), "Expected ancestor autofocus cleanup")
+}
+
+test fn mouse_autofocus_rejects_reparented_original_route() Void!Str {
+  let application = cooper_testing::new(6, 1)
+  let first = box::new(application.context, styles: style::new(width: style::cells(3), height: style::cells(1)))
+  let second = box::new(application.context, styles: style::new(width: style::cells(3), height: style::cells(1)))
+  let child = box::new(application.context, styles: style::new(width: style::cells(3), height: style::cells(1)))
+  first.set_focusable(true)
+  second.set_focusable(true)
+  first.add(child)
+  application.root.add(first)
+  application.root.add(second)
+  let _ = child.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down {
+      second.add(child)
+    }
+  })
+  application.render()
+
+  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+
+  try testing::assert(not first.is_focused(), "Expected stale original ancestor not to focus")
+  try testing::assert(not second.is_focused(), "Expected reparent destination not to replace captured ancestor")
+  application.destroy()
+  testing::assert(child.node_ref.is_destroyed(), "Expected reparented autofocus cleanup")
+}
+
+test fn mouse_listener_cannot_corrupt_input_local_default() Void!Str {
+  let application = cooper_testing::new(5, 1)
+  let field = input::new(application.context, value: "hello", styles: style::new(width: style::cells(5), height: style::cells(1)))
+  application.root.add(field)
+  let _ = field.on_mouse(fn(received: mut event::MouseEvent) {
+    received.local_x = 99
+  })
+  application.render()
+
+  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+  application.key(key("x", "X"))
+
+  try testing::assert(field.value() == "hXello", "Expected built-in mouse default to receive rebound local coordinates, got {field.value()}")
+  application.destroy()
+  testing::assert(field.node_ref.is_destroyed(), "Expected local default cleanup")
+}
+
+test fn mouse_default_reloads_geometry_after_listener_layout_mutation() Void!Str {
+  let application = cooper_testing::new(5, 1)
+  let parent = box::new(application.context, styles: style::new(width: style::cells(5), height: style::cells(1)))
+  let field = input::new(
+    application.context,
+    value: "abc",
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(4),
+      height: style::cells(1),
+      left: style::cells(0),
+    ),
+  )
+  parent.add(field)
+  application.root.add(parent)
+  let _ = field.on_mouse(fn(received: mut event::MouseEvent) {
+    field.set_style(
+      style::new(
+        position: style::Position::absolute,
+        width: style::cells(4),
+        height: style::cells(1),
+        left: style::cells(1),
+      ),
+    )
+    context::internal_state(application.context).compute_layout(application.root, 5, 1)
+  })
+  application.render()
+
+  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 1, 0, modifiers()))
+  application.key(key("x", "X"))
+
+  try testing::assert(field.value() == "Xabc", "Expected default to use post-listener geometry, got {field.value()}")
+  application.destroy()
+  testing::assert(field.node_ref.is_destroyed(), "Expected geometry mutation cleanup")
+}
+
+test fn hidden_ancestor_suppresses_target_mouse_default() Void!Str {
+  let application = cooper_testing::new(6, 1)
+  let parent = box::new(application.context, styles: style::new(width: style::cells(6), height: style::cells(1)))
+  let field = input::new(application.context, value: "hello", styles: style::new(width: style::cells(6), height: style::cells(1)))
+  parent.add(field)
+  application.root.add(parent)
+  let _ = field.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down {
+      parent.set_style(style::new(display: style::Display::none))
+    }
+  })
+  application.render()
+
+  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+  parent.set_style(style::new(width: style::cells(6), height: style::cells(1)))
+  application.render()
+  field.focus()
+  application.key(key("x", "X"))
+
+  try testing::assert(field.value() == "helloX", "Expected hidden ancestor to suppress stale target default, got {field.value()}")
+  application.destroy()
+  testing::assert(field.node_ref.is_destroyed(), "Expected hidden route cleanup")
+}
+
+test fn blur_listener_can_destroy_its_own_control_safely() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let first = input::new(application.context)
+  let second = input::new(application.context)
+  application.root.add(first)
+  application.root.add(second)
+  application.render()
+  first.focus()
+  let _ = first.on_blur(fn() {
+    first.destroy()
+  })
+
+  let accepted = second.focus()
+
+  try testing::assert(accepted and second.is_focused(), "Expected focus after reentrant destruction")
+  try testing::assert(first.node_ref.is_destroyed(), "Expected one safe destruction")
+  application.destroy()
+  testing::assert(second.node_ref.is_destroyed(), "Expected reentrant destruction cleanup")
+}
+
+test fn blur_listener_destroying_pending_target_rejects_focus() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let first = input::new(application.context)
+  let second = input::new(application.context)
+  application.root.add(first)
+  application.root.add(second)
+  application.render()
+  first.focus()
+  let _ = first.on_blur(fn() {
+    second.destroy()
+  })
+
+  let accepted = second.focus()
+
+  try testing::assert(not accepted, "Expected destroyed pending target rejection")
+  try testing::assert(not first.is_focused() and not second.is_focused(), "Expected focus to clear")
+  application.destroy()
+  testing::assert(first.node_ref.is_destroyed(), "Expected pending target cleanup")
+}
+
+test fn reentrant_blur_listener_preserves_one_focused_control() Void!Str {
+  let application = cooper_testing::new(8, 3)
+  let first = input::new(application.context)
+  let second = input::new(application.context)
+  let third = input::new(application.context)
+  application.root.add(first)
+  application.root.add(second)
+  application.root.add(third)
+  application.render()
+  first.focus()
+  let _ = first.on_blur(fn() {
+    third.focus()
+  })
+
+  let accepted = second.focus()
+
+  try testing::assert(not accepted, "Expected redirected focus request to report false")
+  try testing::assert(third.is_focused(), "Expected reentrant focus target")
+  try testing::assert(not first.is_focused() and not second.is_focused(), "Expected exactly one focused control")
+  application.destroy()
+  testing::assert(third.node_ref.is_destroyed(), "Expected reentrant focus cleanup")
+}
+
+test fn focus_is_explicit_and_detach_clears_without_fallback() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let parent = box::new(application.context)
+  let first = input::new(application.context)
+  let second = input::new(application.context)
+  parent.add(first)
+  parent.add(second)
+  application.root.add(parent)
+  application.render()
+
+  mut focused = 0
+  mut blurred = 0
+  let _ = second.on_focus(fn() { focused =+ 1 })
+  let _ = second.on_blur(fn() { blurred =+ 1 })
+
+  try testing::assert(not first.is_focused() and not second.is_focused(), "Expected no initial focus")
+  try testing::assert(second.focus(), "Expected explicit focus")
+  try testing::assert(second.is_focused() and focused == 1, "Expected focus listener")
+
+  parent.remove(second)
+  try testing::assert(not second.is_focused() and blurred == 1, "Expected detach blur")
+  try testing::assert(not first.is_focused(), "Expected no focus fallback")
+
+  application.destroy()
+  testing::assert(first.node_ref.is_destroyed(), "Expected focus listener cleanup")
+}

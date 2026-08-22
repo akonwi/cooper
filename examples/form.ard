@@ -1,19 +1,20 @@
 use cooper/app
 use cooper/box
+use cooper/event
 use cooper/input
 use cooper/style
 use cooper/text
 
 private fn line() style::Style {
-  style::new(width: style::percent(100.0), height: style::cells(1), shrink: 0.0)
+  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
 }
 
 fn main() {
   let application = app::new().expect("create Cooper app")
-  let ctx = application.context()
+  let ctx = application.context
   let root = box::new(
     ctx,
-    initial_style: style::new(
+    styles: style::new(
       width: style::percent(100.0),
       height: style::percent(100.0),
       align_items: style::Align::start,
@@ -23,15 +24,41 @@ fn main() {
     text::new(
       ctx,
       content: "Only the focused field receives keyboard input.",
-      initial_style: line(),
+      styles: line(),
     ),
   )
-  root.add(text::new(ctx, content: "Name", initial_style: line()))
-  root.add(input::new(ctx, placeholder: "name", initial_style: line()))
-  root.add(text::new(ctx, content: "Email", initial_style: line()))
-  root.add(input::new(ctx, placeholder: "email", initial_style: line()))
-  root.add(text::new(ctx, content: "City", initial_style: line()))
-  root.add(input::new(ctx, placeholder: "city", initial_style: line()))
+  let name = input::new(ctx, placeholder: "name", styles: line())
+  let email = input::new(ctx, placeholder: "email", styles: line())
+  let city = input::new(ctx, placeholder: "city", styles: line())
+  root.add(text::new(ctx, content: "Name", styles: line()))
+  root.add(name)
+  root.add(text::new(ctx, content: "Email", styles: line()))
+  root.add(email)
+  root.add(text::new(ctx, content: "City", styles: line()))
+  root.add(city)
 
-  application.run(root).expect("run Cooper form")
+  application.root.add(root)
+  name.focus()
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release and received.matches("tab", shift: true) {
+      if name.is_focused() {
+        city.focus()
+      } else if city.is_focused() {
+        email.focus()
+      } else {
+        name.focus()
+      }
+      received.prevent_default()
+    } else if received.event_type != event::KeyEventType::release and received.matches("tab") {
+      if name.is_focused() {
+        email.focus()
+      } else if email.is_focused() {
+        city.focus()
+      } else {
+        name.focus()
+      }
+      received.prevent_default()
+    }
+  })
+  application.run().expect("run Cooper form")
 }

@@ -1,3 +1,8 @@
+struct Point {
+  x: Int,
+  y: Int,
+}
+
 struct Rect {
   x: Int,
   y: Int,

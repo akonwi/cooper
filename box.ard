@@ -1,19 +1,94 @@
+use cooper/color
 use cooper/context
-use cooper/event as framework_event
-use cooper/event as retained_event
+use cooper/core/event_delivery
+use cooper/core/node
+use cooper/core/paint
+use cooper/event
 use cooper/geometry
-use cooper/node
-use cooper/paint
-use cooper/style
+use cooper/style as layout_style
+
+type Border = layout_style::Border
+
+private struct BorderGlyphs {
+  top_left: Str,
+  top_right: Str,
+  bottom_left: Str,
+  bottom_right: Str,
+  horizontal: Str,
+  vertical: Str,
+}
+
+private fn glyphs(border: Border) BorderGlyphs {
+  match border {
+    layout_style::Border::double => {
+      BorderGlyphs{
+        top_left: "╔",
+        top_right: "╗",
+        bottom_left: "╚",
+        bottom_right: "╝",
+        horizontal: "═",
+        vertical: "║",
+      }
+    },
+    layout_style::Border::rounded => {
+      BorderGlyphs{
+        top_left: "╭",
+        top_right: "╮",
+        bottom_left: "╰",
+        bottom_right: "╯",
+        horizontal: "─",
+        vertical: "│",
+      }
+    },
+    layout_style::Border::heavy => {
+      BorderGlyphs{
+        top_left: "┏",
+        top_right: "┓",
+        bottom_left: "┗",
+        bottom_right: "┛",
+        horizontal: "━",
+        vertical: "┃",
+      }
+    },
+    _ => {
+      BorderGlyphs{
+        top_left: "┌",
+        top_right: "┐",
+        bottom_left: "└",
+        bottom_right: "┘",
+        horizontal: "─",
+        vertical: "│",
+      }
+    },
+  }
+}
+
+private fn same_color(left: color::Color?, right: color::Color?) Bool {
+  match left {
+    left_color => {
+      match right {
+        right_color => {
+          left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue
+        },
+        _ => false,
+      }
+    },
+    _ => not right.is_some(),
+  }
+}
 
 struct Box {
   node_ref: mut node::Node,
+  title_text: Str,
 }
 
-fn new(ctx: mut context::Context, initial_style: style::Style?) mut Box {
-  let retained = ctx.create_node(initial_style.or(style::new()))
-  let box = mut Box{node_ref: retained}
+fn new(ctx: mut context::Context, styles: layout_style::Style?, title: Str?) mut Box {
+  let retained = context::internal_state(ctx).create_node(styles.or(layout_style::new()))
+  let box = mut Box{node_ref: retained, title_text: title.or("")}
   retained.bind(box)
+  if retained.style().border != layout_style::Border::none {
+    retained.set_border_width(1)
+  }
   box
 }
 
@@ -24,43 +99,181 @@ impl node::Renderable for Box {
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {}
+  fn paint(ctx: mut paint::Context) {
+    let configured_style = self.node_ref.style()
+    if configured_style.border != layout_style::Border::none {
+      let width = self.node_ref.layout().screen.width
+      let height = self.node_ref.layout().screen.height
+      if width > 0 and height > 0 {
+        let border_style = paint::style(
+          foreground: configured_style.border_color,
+          background: configured_style.background,
+        )
+        let border_glyphs = glyphs(configured_style.border)
+        let visible = geometry::intersect(ctx.bounds, ctx.clip)
+        let start_x = visible.x - ctx.bounds.x
+        let end_x = start_x + visible.width
+        let start_y = visible.y - ctx.bounds.y
+        let end_y = start_y + visible.height
+        if start_y <= 0 and end_y > 0 {
+          mut x = start_x
+          while x < end_x {
+            ctx.write_overlay(x, 0, border_glyphs.horizontal, text_style: border_style)
+            x =+ 1
+          }
+        }
+        if height > 1 and start_y <= height - 1 and end_y > height - 1 {
+          mut x = start_x
+          while x < end_x {
+            ctx.write_overlay(x, height - 1, border_glyphs.horizontal, text_style: border_style)
+            x =+ 1
+          }
+        }
+        if start_x <= 0 and end_x > 0 {
+          mut y = start_y
+          while y < end_y {
+            ctx.write_overlay(0, y, border_glyphs.vertical, text_style: border_style)
+            y =+ 1
+          }
+        }
+        if width > 1 and start_x <= width - 1 and end_x > width - 1 {
+          mut y = start_y
+          while y < end_y {
+            ctx.write_overlay(width - 1, y, border_glyphs.vertical, text_style: border_style)
+            y =+ 1
+          }
+        }
+        ctx.write_overlay(0, 0, border_glyphs.top_left, text_style: border_style)
+        if width > 1 {
+          ctx.write_overlay(width - 1, 0, border_glyphs.top_right, text_style: border_style)
+        }
+        if height > 1 {
+          ctx.write_overlay(0, height - 1, border_glyphs.bottom_left, text_style: border_style)
+          if width > 1 {
+            ctx.write_overlay(
+              width - 1,
+              height - 1,
+              border_glyphs.bottom_right,
+              text_style: border_style,
+            )
+          }
+        }
+        if not self.title_text.is_empty() and width > 4 {
+          ctx.write_overlay(2, 0, " {self.title_text} ", text_style: border_style)
+          ctx.write_overlay(width - 1, 0, border_glyphs.top_right, text_style: border_style)
+        }
+      }
+    }
+  }
 
-  fn event(ctx: mut retained_event::Context) framework_event::EventResult {
-    framework_event::EventResult::ignored
+  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    event_delivery::Disposition::ignored
   }
 }
 
 impl Box {
-  fn mut add(child: mut node::Renderable) {
-    self.node_ref.add(child.node())
+  fn mut add(child: mut node::Renderable, index: Int?) {
+    self.node_ref.add(child.node(), index)
   }
 
   fn mut remove(child: mut node::Renderable) Bool {
     self.node_ref.remove(child.node())
   }
 
-  fn mut set_style(next: style::Style) {
+  fn child_count() Int {
+    self.node_ref.child_count()
+  }
+
+  fn border() Border {
+    self.node_ref.style().border
+  }
+
+  fn mut set_border(value: Border) {
+    let updated = mut self.node_ref.style()
+    if updated.border != value {
+      updated.border = value
+      self.set_style(updated.@)
+    }
+  }
+
+  fn border_color() color::Color? {
+    self.node_ref.style().border_color
+  }
+
+  fn mut set_border_color(value: color::Color?) {
+    let updated = mut self.node_ref.style()
+    if not same_color(updated.border_color, value) {
+      updated.border_color = value
+      self.set_style(updated.@)
+    }
+  }
+
+  fn title() Str {
+    self.title_text
+  }
+
+  fn mut set_title(value: Str) {
+    self.node_ref.require_live()
+    if self.title_text != value {
+      self.title_text = value
+      self.node_ref.request_redraw()
+    }
+  }
+
+  fn style() layout_style::Style {
+    self.node_ref.style()
+  }
+
+  fn mut set_style(next: layout_style::Style) {
     self.node_ref.apply_style(next)
+    mut width = 1
+    if next.border == layout_style::Border::none {
+      width = 0
+    }
+    self.node_ref.set_border_width(width)
   }
 
   fn mut set_focusable(value: Bool) {
     self.node_ref.set_focusable(value)
   }
 
-  fn mut set_pointer_enabled(value: Bool) {
-    self.node_ref.set_pointer_enabled(value)
+  fn mut focus() Bool {
+    self.node_ref.focus()
+  }
+
+  fn mut blur() {
+    self.node_ref.blur()
+  }
+
+  fn is_focused() Bool {
+    self.node_ref.is_focused()
+  }
+
+  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+    self.node_ref.on_key(handler)
+  }
+
+  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+    self.node_ref.on_paste(handler)
+  }
+
+  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+    self.node_ref.on_mouse(handler)
+  }
+
+  fn mut on_focus(handler: fn()) fn() {
+    self.node_ref.on_focus(handler)
+  }
+
+  fn mut on_blur(handler: fn()) fn() {
+    self.node_ref.on_blur(handler)
   }
 
   fn layout() geometry::Geometry {
     self.node_ref.layout()
   }
 
-  fn child_count() Int {
-    self.node_ref.child_count()
-  }
-
-  fn mut destroy() {
-    self.node_ref.destroy()
+  fn mut destroy(recursive: Bool?) {
+    self.node_ref.destroy(recursive)
   }
 }

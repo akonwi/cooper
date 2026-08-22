@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke test for Cooper's retained vertical ScrollView."""
+"""Smoke test for Cooper's multi-child vertical ScrollBox."""
 
 import os
 import signal
@@ -19,7 +19,7 @@ def main():
         wait_for(fd, screen, "Scrollable retained form")
         wait_for(fd, screen, "Field 3")
 
-        # Focus traversal reveals the fourth Input at the bottom of the viewport.
+        # Focus traversal reveals a direct ScrollBox child at the viewport bottom.
         send(fd, "\t")
         send(fd, "\t")
         send(fd, "\t")
@@ -39,10 +39,10 @@ def main():
         wait_for(fd, screen, "four")
 
         # Wheel movement preserves manual scroll, and clicking translated
-        # geometry focuses the Input now occupying screen row one.
+        # geometry focuses the visible fifth Input.
         wheel(fd, down=True, col=0, row=3)
-        wait_for(fd, screen, "Field 5")
-        click(fd, col=0, row=1)
+        wait_for(fd, screen, "Field 6")
+        click(fd, col=0, row=4)
         send(fd, "three")
         wait_for(fd, screen, "three")
 

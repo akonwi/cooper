@@ -1,60 +1,33 @@
 use ard/async
 
 use cooper/app
-use cooper/context
-use cooper/event
-use cooper/node
-use cooper/paint
 use cooper/style
+use cooper/text
 use go:time
-
-struct AsyncStatus {
-  node_ref: mut node::Node,
-  message: Str,
-}
-
-fn new(ctx: mut context::Context) mut AsyncStatus {
-  let retained = ctx.create_node(
-    style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      align_items: style::Align::start,
-    ),
-  )
-  let status = mut AsyncStatus{node_ref: retained, message: "Loading asynchronously..."}
-  retained.bind(status)
-  status
-}
-
-impl node::Renderable for AsyncStatus {
-  fn node() mut node::Node {
-    self.node_ref
-  }
-
-  fn mut mount(ctx: node::MountContext) {
-    async::start(fn() {
-      select {
-        ctx.cancellation.recv() => (),
-        time::After(300 * time::Millisecond).recv() => {
-          let _ = ctx.dispatch(fn() {
-            self.message = "Loaded on the UI thread. Press Ctrl+C to quit."
-          })
-        },
-      }
-    })
-  }
-
-  fn paint(ctx: mut paint::Context) {
-    ctx.write(0, 0, self.message)
-  }
-
-  fn event(ctx: mut event::Context) event::EventResult {
-    event::EventResult::ignored
-  }
-}
 
 fn main() {
   let application = app::new().expect("create Cooper app")
-  let status = new(application.context())
-  application.run(status).expect("run Cooper async example")
+  let status = text::new(
+    application.context,
+    content: "Loading asynchronously...",
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+  )
+  application.root.add(status)
+
+  let cancellation = application.context.cancellation
+  let dispatch = application.context.dispatch
+  async::start(fn() {
+    select {
+      cancellation.recv() => (),
+      time::After(300 * time::Millisecond).recv() => {
+        let _ = dispatch(fn() {
+          status.set_content("Loaded on the UI thread.")
+          application.destroy()
+        })
+      },
+    }
+  })
+
+  application.run().expect("run Cooper async example")
+  application.destroy()
 }

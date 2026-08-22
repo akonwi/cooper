@@ -8,6 +8,18 @@ import (
 	tess "github.com/AnatoleLucet/tess"
 )
 
+// MeasureLimit converts Yoga's non-negative floating-point constraints into
+// terminal cell counts without exposing that conversion to public Ard APIs.
+func MeasureLimit(value float32) int {
+	if value <= 0 || math.IsNaN(float64(value)) {
+		return 0
+	}
+	if math.IsInf(float64(value), 1) || float64(value) >= float64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(value)
+}
+
 type Value struct {
 	Kind  int
 	Value float32
@@ -36,12 +48,17 @@ type Style struct {
 	MinHeight Value
 	MaxWidth  Value
 	MaxHeight Value
+	Top       Value
+	Right     Value
+	Bottom    Value
+	Left      Value
 	Basis     Value
 	Grow      float32
 	Shrink    float32
 	Padding   Edges
 	Margin    Edges
 	Gap       Value
+	Border    int
 }
 
 type Layout struct {
@@ -79,7 +96,10 @@ func must(err error) {
 func valueOf(value Value) tess.Value {
 	switch value.Kind {
 	case 0:
-		return tess.Undefined()
+		// Tess ignores Undefined in several setters instead of clearing the
+		// previous Yoga value. A point NaN reaches Yoga's normal undefined
+		// representation and resets dimensions, constraints, basis, and offsets.
+		return tess.Point(float32(math.NaN()))
 	case 1:
 		return tess.Auto()
 	case 2:
@@ -248,12 +268,17 @@ func (n *Node) Apply(style Style) {
 	must(n.node.SetMinHeight(valueOf(style.MinHeight)))
 	must(n.node.SetMaxWidth(valueOf(style.MaxWidth)))
 	must(n.node.SetMaxHeight(valueOf(style.MaxHeight)))
+	must(n.node.SetTop(valueOf(style.Top)))
+	must(n.node.SetRight(valueOf(style.Right)))
+	must(n.node.SetBottom(valueOf(style.Bottom)))
+	must(n.node.SetLeft(valueOf(style.Left)))
 	must(n.node.SetFlexBasis(valueOf(style.Basis)))
 	must(n.node.SetFlexGrow(style.Grow))
 	must(n.node.SetFlexShrink(style.Shrink))
 	must(n.node.SetPadding(edgesOf(style.Padding, false)))
 	must(n.node.SetMargin(edgesOf(style.Margin, true)))
 	must(n.node.SetGap(tess.Gap{All: spacingValueOf(style.Gap, false)}))
+	must(n.node.SetBorder(tess.Edges{All: tess.Point(float32(style.Border))}))
 }
 
 func (n *Node) SetMeasureFunc(measure MeasureFunc) {
@@ -269,6 +294,10 @@ func (n *Node) MarkDirty() {
 
 func (n *Node) AppendChild(child *Node) {
 	n.node.AppendChild(child.node)
+}
+
+func (n *Node) InsertChild(child *Node, index int) {
+	n.node.InsertChild(child.node, index)
 }
 
 func (n *Node) RemoveChild(child *Node) {

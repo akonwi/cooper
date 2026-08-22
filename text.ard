@@ -1,18 +1,454 @@
-use cooper/cell_style
+use cooper/color
 use cooper/context
-use cooper/event as framework_event
-use cooper/event as retained_event
+use cooper/core/event_delivery
+use cooper/core/node
+use cooper/core/paint
+use cooper/event
 use cooper/geometry
-use cooper/node
-use cooper/paint
-use cooper/style
+use cooper/selection
+use cooper/style as layout_style
+use go:github.com/rockorager/go-uucode as unicode
 use go:go.rockorager.dev/vaxis
+use go:strings
 
-struct Text {
-  node_ref: mut node::Node,
-  content: Str,
-  text_style: cell_style::Style,
-  width_measurer: fn(Str) Int,
+struct TextStyle {
+  foreground: color::Color?,
+  background: color::Color?,
+  bold: Bool,
+  dim: Bool,
+  italic: Bool,
+  underline: Bool,
+  blink: Bool,
+  reverse: Bool,
+  strike: Bool,
+}
+
+enum TextWrap {
+  none,
+  character,
+  word,
+}
+
+fn style(
+  foreground: color::Color?,
+  background: color::Color?,
+  bold: Bool?,
+  dim: Bool?,
+  italic: Bool?,
+  underline: Bool?,
+  blink: Bool?,
+  reverse: Bool?,
+  strike: Bool?,
+) TextStyle {
+  TextStyle{
+    foreground: foreground,
+    background: background,
+    bold: bold.or(false),
+    dim: dim.or(false),
+    italic: italic.or(false),
+    underline: underline.or(false),
+    blink: blink.or(false),
+    reverse: reverse.or(false),
+    strike: strike.or(false),
+  }
+}
+
+let default_style = style()
+
+private fn default_selection_style(value: mut TextStyle) {
+  value.reverse = not value.reverse
+}
+
+private fn apply_style_patch(base: TextStyle, patch: fn(mut TextStyle)) TextStyle {
+  let selected = mut base
+  patch(selected)
+  selected.@
+}
+
+private fn cell_style(value: TextStyle) paint::CellStyle {
+  paint::style(
+    foreground: value.foreground,
+    background: value.background,
+    bold: value.bold,
+    dim: value.dim,
+    italic: value.italic,
+    underline: value.underline,
+    blink: value.blink,
+    reverse: value.reverse,
+    strike: value.strike,
+  )
+}
+
+private fn same_color(left: color::Color?, right: color::Color?) Bool {
+  match left.is_none() and right.is_none() {
+    true => true,
+    false => {
+      let left_color = try left -> _ { false }
+      let right_color = try right -> _ { false }
+
+      left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue
+    },
+  }
+}
+
+private fn same_text_style(left: TextStyle, right: TextStyle) Bool {
+  same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike
+}
+
+private struct Line {
+  text: Str,
+  width: Int,
+}
+
+private struct Layout {
+  lines: [Line],
+  width: Int,
+  height: Int,
+}
+
+private struct SourceGlyph {
+  text: Str,
+  width: Int,
+  source_start: Int,
+  source_end: Int,
+  offset_start: Int,
+  offset_end: Int,
+  newline: Bool,
+}
+
+private struct VisualGlyph {
+  text: Str,
+  width: Int,
+  source_start: Int,
+  source_end: Int,
+  offset_start: Int,
+  offset_end: Int,
+  x: Int,
+  y: Int,
+}
+
+struct SelectedGlyph {
+  text: Str,
+  x: Int,
+  y: Int,
+  width: Int,
+}
+
+private fn source_glyphs(content: Str, measure: fn(Str) Int) [SourceGlyph] {
+  let iterator = mut unicode::NewGraphemeIterator(content)
+  let output = mut List::new<SourceGlyph>()
+  mut offset = 0
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      grapheme => {
+        let value = content.slice(start: grapheme.Start, end: grapheme.End).or("")
+        let line_break = newline(value)
+        if line_break {
+          output.push(
+            SourceGlyph{
+              text: value,
+              width: 1,
+              source_start: grapheme.Start,
+              source_end: grapheme.End,
+              offset_start: offset,
+              offset_end: offset + 1,
+              newline: true,
+            },
+          )
+          offset =+ 1
+        } else {
+          for character in vaxis::Characters(value) {
+            mut width = measure(character.Grapheme)
+            if width < 0 {
+              width = 0
+            }
+            output.push(
+              SourceGlyph{
+                text: character.Grapheme,
+                width: width,
+                source_start: grapheme.Start,
+                source_end: grapheme.End,
+                offset_start: offset,
+                offset_end: offset + width,
+                newline: false,
+              },
+            )
+            offset = offset + width
+          }
+        }
+      },
+      _ => { reading = false },
+    }
+  }
+  output.@
+}
+
+private fn visual_glyphs(content: Str, layout: Layout, measure: fn(Str) Int) [VisualGlyph] {
+  let source = source_glyphs(content, measure)
+  let output = mut List::new<VisualGlyph>()
+  mut source_index = 0
+  for line, y in layout.lines {
+    let iterator = mut unicode::NewGraphemeIterator(line.text)
+    mut x = 0
+    mut reading = true
+    while reading {
+      match iterator.Next() {
+        displayed => {
+          let value = line.text.slice(start: displayed.Start, end: displayed.End).or("")
+          mut matched = Maybe::new<SourceGlyph>()
+          while source_index < source.size() and (not matched.is_some()) {
+            let candidate = source.at(source_index).expect("source glyph mapping")
+            source_index =+ 1
+            if (not candidate.newline) and candidate.text == value {
+              matched = Maybe::new<SourceGlyph>(candidate)
+            }
+          }
+          match matched {
+            candidate => {
+              output.push(
+                VisualGlyph{
+                  text: value,
+                  width: candidate.width,
+                  source_start: candidate.source_start,
+                  source_end: candidate.source_end,
+                  offset_start: candidate.offset_start,
+                  offset_end: candidate.offset_end,
+                  x: x,
+                  y: y,
+                },
+              )
+              x = x + candidate.width
+            },
+            _ => { reading = false },
+          }
+        },
+        _ => { reading = false },
+      }
+    }
+  }
+  output.@
+}
+
+private struct Token {
+  text: Str,
+  width: Int,
+  whitespace: Bool,
+  newline: Bool,
+}
+
+private fn newline(grapheme: Str) Bool {
+  grapheme == "\n" or grapheme == "\r" or grapheme == "\r\n"
+}
+
+private fn tokens(content: Str, measure: fn(Str) Int) [Token] {
+  let output = mut List::new<Token>()
+  mut current = ""
+  mut current_width = 0
+  mut current_whitespace = false
+  mut started = false
+  for character in vaxis::Characters(content) {
+    let grapheme = character.Grapheme
+    if newline(grapheme) {
+      if started {
+        output.push(
+          Token{
+            text: current,
+            width: current_width,
+            whitespace: current_whitespace,
+            newline: false,
+          },
+        )
+      }
+      output.push(
+        Token{
+          text: "",
+          width: 0,
+          whitespace: false,
+          newline: true,
+        },
+      )
+      current = ""
+      current_width = 0
+      started = false
+    } else {
+      let whitespace = strings::TrimSpace(grapheme).is_empty()
+      if started and whitespace != current_whitespace {
+        output.push(
+          Token{
+            text: current,
+            width: current_width,
+            whitespace: current_whitespace,
+            newline: false,
+          },
+        )
+        current = ""
+        current_width = 0
+        started = false
+      }
+      if not started {
+        current_whitespace = whitespace
+        started = true
+      }
+      current = "{current}{grapheme}"
+      current_width = current_width + measure(grapheme)
+    }
+  }
+  if started {
+    output.push(
+      Token{
+        text: current,
+        width: current_width,
+        whitespace: current_whitespace,
+        newline: false,
+      },
+    )
+  }
+  output.@
+}
+
+private fn push_line(lines: mut [Line], text: Str, width: Int) {
+  lines.push(Line{text: text, width: width})
+}
+
+private fn finish(lines: mut [Line]) Layout {
+  if lines.size() == 0 {
+    push_line(lines, "", 0)
+  }
+  mut width = 0
+  for line in lines {
+    if line.width > width {
+      width = line.width
+    }
+  }
+  Layout{
+    lines: lines.@,
+    width: width,
+    height: lines.size(),
+  }
+}
+
+private fn unwrapped(content: Str, measure: fn(Str) Int) Layout {
+  let lines = mut List::new<Line>()
+  mut current = ""
+  mut width = 0
+  for character in vaxis::Characters(content) {
+    let grapheme = character.Grapheme
+    if newline(grapheme) {
+      push_line(lines, current, width)
+      current = ""
+      width = 0
+    } else {
+      current = "{current}{grapheme}"
+      width = width + measure(grapheme)
+    }
+  }
+  push_line(lines, current, width)
+  finish(lines)
+}
+
+private fn character_wrapped(content: Str, requested_limit: Int, measure: fn(Str) Int) Layout {
+  mut limit = requested_limit
+  if limit < 1 {
+    limit = 1
+  }
+  let lines = mut List::new<Line>()
+  mut current = ""
+  mut width = 0
+  for character in vaxis::Characters(content) {
+    let grapheme = character.Grapheme
+    if newline(grapheme) {
+      push_line(lines, current, width)
+      current = ""
+      width = 0
+    } else {
+      let grapheme_width = measure(grapheme)
+      if width > 0 and width + grapheme_width > limit {
+        push_line(lines, current, width)
+        current = ""
+        width = 0
+      }
+      current = "{current}{grapheme}"
+      width = width + grapheme_width
+    }
+  }
+  push_line(lines, current, width)
+  finish(lines)
+}
+
+private fn word_wrapped(content: Str, requested_limit: Int, measure: fn(Str) Int) Layout {
+  mut limit = requested_limit
+  if limit < 1 {
+    limit = 1
+  }
+  let lines = mut List::new<Line>()
+  mut current = ""
+  mut width = 0
+  mut pending_space = ""
+  mut pending_width = 0
+  for token in tokens(content, measure) {
+    if token.newline {
+      if width + pending_width <= limit {
+        current = "{current}{pending_space}"
+        width = width + pending_width
+      }
+      push_line(lines, current, width)
+      current = ""
+      width = 0
+      pending_space = ""
+      pending_width = 0
+    } else if token.whitespace {
+      pending_space = token.text
+      pending_width = token.width
+    } else if width > 0 and width + pending_width + token.width <= limit {
+      current = "{current}{pending_space}{token.text}"
+      width = width + pending_width + token.width
+      pending_space = ""
+      pending_width = 0
+    } else {
+      if width > 0 {
+        push_line(lines, current, width)
+        current = ""
+        width = 0
+      }
+      pending_space = ""
+      pending_width = 0
+      if token.width <= limit {
+        current = token.text
+        width = token.width
+      } else {
+        for character in vaxis::Characters(token.text) {
+          let grapheme = character.Grapheme
+          let grapheme_width = measure(grapheme)
+          if width > 0 and width + grapheme_width > limit {
+            push_line(lines, current, width)
+            current = ""
+            width = 0
+          }
+          current = "{current}{grapheme}"
+          width = width + grapheme_width
+        }
+      }
+    }
+  }
+  if width + pending_width <= limit {
+    current = "{current}{pending_space}"
+    width = width + pending_width
+  }
+  push_line(lines, current, width)
+  finish(lines)
+}
+
+private fn layout_text(content: Str, wrap: TextWrap, width: Int, measure: fn(Str) Int) Layout {
+  match wrap {
+    TextWrap::none => unwrapped(content, measure),
+    TextWrap::character => character_wrapped(content, width, measure),
+    TextWrap::word => word_wrapped(content, width, measure),
+  }
+}
+
+private fn point_before(left_x: Int, left_y: Int, right_x: Int, right_y: Int) Bool {
+  left_y < right_y or (left_y == right_y and left_x <= right_x)
 }
 
 private fn constrained(value: Float32, available: Float32, mode: node::MeasureMode) Float32 {
@@ -29,32 +465,58 @@ private fn constrained(value: Float32, available: Float32, mode: node::MeasureMo
   }
 }
 
+struct Text {
+  node_ref: mut node::Node,
+  content: Str,
+  wrap_mode: TextWrap,
+  text_style: TextStyle,
+  selection_patch: fn(mut TextStyle),
+  selected_style: TextStyle,
+  selected_range: selection::Range?,
+  selected_text_value: Str,
+  selected_glyphs: [SelectedGlyph],
+  width_measurer: fn(Str) Int,
+}
+
 fn new(
   ctx: mut context::Context,
   content: Str,
-  initial_style: style::Style?,
-  text_style: cell_style::Style?,
+  wrap: TextWrap?,
+  styles: layout_style::Style?,
+  text_style: TextStyle?,
+  selectable: Bool?,
+  selection_style: (fn(mut TextStyle))?,
 ) mut Text {
-  let retained = ctx.create_node(initial_style.or(style::new()))
+  let retained = context::internal_state(ctx).create_node(styles.or(layout_style::new()))
+  let base_style = text_style.or(default_style)
+  let patch = selection_style.or(default_selection_style)
   let text = mut Text{
     node_ref: retained,
     content: content,
-    text_style: text_style.or(cell_style::new()),
-    width_measurer: ctx.width_measurer,
+    wrap_mode: wrap.or(TextWrap::none),
+    text_style: base_style,
+    selection_patch: patch,
+    selected_style: apply_style_patch(base_style, patch),
+    selected_range: Maybe::new<selection::Range>(),
+    selected_text_value: "",
+    selected_glyphs: [],
+    width_measurer: context::internal_state(ctx).width_measurer,
   }
   retained.bind(text)
   retained.set_measure(fn(input: node::MeasureInput) node::MeasureSize {
-    mut measured_width = 0
-    for character in vaxis::Characters(text.content) {
-      measured_width = measured_width + text.width_measurer(character.Grapheme)
+    mut width_limit = 1
+    if input.width_mode != node::MeasureMode::undefined {
+      width_limit = node::measure_limit(input.width)
     }
-    let desired_width = Float32::from(measured_width)
-    let desired_height: Float32 = 1.0
+    let measured = layout_text(text.content, text.wrap_mode, width_limit, text.width_measurer)
     node::MeasureSize{
-      width: constrained(desired_width, input.width, input.width_mode),
-      height: constrained(desired_height, input.height, input.height_mode),
+      width: constrained(Float32::from(measured.width), input.width, input.width_mode),
+      height: constrained(Float32::from(measured.height), input.height, input.height_mode),
     }
   })
+  if selectable.or(true) {
+    text.enable_selection()
+  }
   text
 }
 
@@ -66,36 +528,229 @@ impl node::Renderable for Text {
   fn mount(ctx: node::MountContext) {}
 
   fn paint(ctx: mut paint::Context) {
-    ctx.write_measured(0, 0, self.content, self.width_measurer, text_style: self.text_style)
+    let measured = layout_text(
+      self.content,
+      self.wrap_mode,
+      self.node_ref.layout().screen.width,
+      self.width_measurer,
+    )
+    for line, y in measured.lines {
+      ctx.write_measured(
+        0,
+        y,
+        line.text,
+        self.width_measurer,
+        text_style: cell_style(self.text_style),
+      )
+    }
+    if self.selected_glyphs.size() > 0 {
+      for glyph in self.selected_glyphs {
+        ctx.write_measured(
+          glyph.x,
+          glyph.y,
+          glyph.text,
+          self.width_measurer,
+          text_style: cell_style(self.selected_style),
+        )
+      }
+    }
   }
 
-  fn event(ctx: mut retained_event::Context) framework_event::EventResult {
-    framework_event::EventResult::ignored
+  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    event_delivery::Disposition::ignored
   }
 }
 
 impl Text {
+  private fn mut clear_local_selection() node::SelectionResult {
+    self.selected_range = Maybe::new<selection::Range>()
+    self.selected_text_value = ""
+    self.selected_glyphs = []
+    node::empty_selection_result()
+  }
+
+  private fn selection_accepts(local_x: Int, local_y: Int) Bool {
+    let measured = layout_text(
+      self.content,
+      self.wrap_mode,
+      self.node_ref.layout().screen.width,
+      self.width_measurer,
+    )
+    mut accepted = false
+    for glyph in visual_glyphs(self.content, measured, self.width_measurer) {
+      if glyph.y == local_y and local_x >= glyph.x and local_x < glyph.x + glyph.width {
+        accepted = true
+        break
+      }
+    }
+    accepted
+  }
+
+  private fn mut apply_local_selection(value: node::LocalSelection?) node::SelectionResult {
+    let local = try value -> _ { self.clear_local_selection() }
+    if (not local.is_active) or (local.anchor_x == local.focus_x and local.anchor_y == local.focus_y) {
+      self.clear_local_selection()
+    } else {
+      mut start_x = local.anchor_x
+      mut start_y = local.anchor_y
+      mut end_x = local.focus_x
+      mut end_y = local.focus_y
+      if not point_before(start_x, start_y, end_x, end_y) {
+        start_x = local.focus_x
+        start_y = local.focus_y
+        end_x = local.anchor_x
+        end_y = local.anchor_y
+      }
+      let measured = layout_text(
+        self.content,
+        self.wrap_mode,
+        self.node_ref.layout().screen.width,
+        self.width_measurer,
+      )
+      let selected = mut List::new<SelectedGlyph>()
+      let fragments = mut List::new<node::SelectionFragment>()
+      mut first_source = 0
+      mut last_source = 0
+      mut start_offset = 0
+      mut end_offset = 0
+      mut started = false
+      let screen = self.node_ref.layout().screen
+      for glyph in visual_glyphs(self.content, measured, self.width_measurer) {
+        let glyph_end = glyph.x + glyph.width
+        let clip_end = local.clip.x + local.clip.width
+        let visible = glyph.y >= local.clip.y and glyph.y < local.clip.y + local.clip.height and glyph.x >= local.clip.x and glyph_end <= clip_end
+        let after_start = glyph.y > start_y or (glyph.y == start_y and glyph_end > start_x)
+        let before_end = glyph.y < end_y or (glyph.y == end_y and glyph.x <= end_x)
+        if after_start and before_end {
+          selected.push(SelectedGlyph{text: glyph.text, x: glyph.x, y: glyph.y, width: glyph.width})
+          if visible {
+            fragments.push(
+              node::SelectionFragment{
+                screen_x: screen.x + glyph.x,
+                screen_y: screen.y + glyph.y,
+                cell_width: glyph.width,
+                text: glyph.text,
+              },
+            )
+          }
+          if not started {
+            first_source = glyph.source_start
+            start_offset = glyph.offset_start
+            started = true
+          }
+          last_source = glyph.source_end
+          end_offset = glyph.offset_end
+        }
+      }
+      if not started {
+        self.clear_local_selection()
+      } else {
+        self.selected_range = Maybe::new<selection::Range>(selection::Range{start: start_offset, end: end_offset})
+        self.selected_text_value = self.content.slice(start: first_source, end: last_source).or("")
+        self.selected_glyphs = selected.@
+        node::SelectionResult{
+          has_selection: true,
+          start: start_offset,
+          end: end_offset,
+          fragments: fragments.@,
+        }
+      }
+    }
+  }
+
+  private fn mut enable_selection() {
+    self.node_ref.set_selection_callbacks(
+      fn(local_x: Int, local_y: Int) Bool {
+        self.selection_accepts(local_x, local_y)
+      },
+      fn(value: node::LocalSelection?) node::SelectionResult {
+        self.apply_local_selection(value)
+      },
+    )
+  }
+
+  fn content() Str {
+    self.content
+  }
+
   fn mut set_content(content: Str) {
+    self.node_ref.require_live()
     if self.content != content {
       self.content = content
       self.node_ref.mark_measure_dirty()
     }
   }
 
-  fn mut set_text_style(next: cell_style::Style) {
-    self.text_style = next
+  fn wrap() TextWrap {
+    self.wrap_mode
+  }
+
+  fn mut set_wrap(value: TextWrap) {
+    self.node_ref.require_live()
+    if self.wrap_mode != value {
+      self.wrap_mode = value
+      self.node_ref.mark_measure_dirty()
+    }
+  }
+
+  fn text_style() TextStyle {
+    self.text_style
+  }
+
+  fn selectable() Bool {
+    self.node_ref.is_selectable()
+  }
+
+  fn mut set_selectable(value: Bool) {
+    self.node_ref.require_live()
+    if value and (not self.node_ref.is_selectable()) {
+      self.enable_selection()
+    } else if (not value) and self.node_ref.is_selectable() {
+      self.node_ref.clear_selection_callbacks()
+    }
+  }
+
+  fn selection() selection::Range? {
+    self.selected_range
+  }
+
+  fn selected_text() Str {
+    self.selected_text_value
+  }
+
+  fn mut set_selection_style(patch: fn(mut TextStyle)) {
+    self.node_ref.require_live()
+    self.selection_patch = patch
+    self.selected_style = apply_style_patch(self.text_style, patch)
     self.node_ref.request_redraw()
+  }
+
+  fn mut set_text_style(next: TextStyle) {
+    self.node_ref.require_live()
+    if not same_text_style(self.text_style, next) {
+      self.text_style = next
+      self.selected_style = apply_style_patch(next, self.selection_patch)
+      self.node_ref.request_redraw()
+    }
+  }
+
+  fn style() layout_style::Style {
+    self.node_ref.style()
+  }
+
+  fn mut set_style(next: layout_style::Style) {
+    self.node_ref.apply_style(next)
   }
 
   fn layout() geometry::Geometry {
     self.node_ref.layout()
   }
 
-  fn mut set_style(next: style::Style) {
-    self.node_ref.apply_style(next)
+  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+    self.node_ref.on_mouse(handler)
   }
 
-  fn mut destroy() {
-    self.node_ref.destroy()
+  fn mut destroy(recursive: Bool?) {
+    self.node_ref.destroy(recursive)
   }
 }

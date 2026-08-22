@@ -107,8 +107,8 @@ Tree placement and destruction ownership are separate:
 - moving within one parent preserves attachment;
 - moving between parents detaches and reattaches with a fresh scope;
 - `remove` detaches a direct child without destroying it;
-- `destroy` destroys one control and detaches its children;
-- `destroy_recursively` destroys descendants first, then the control;
+- `destroy()` destroys one control and detaches its children;
+- `destroy(recursive: true)` destroys descendants first, then the control;
 - App teardown destroys all remaining Context-owned controls.
 
 Child order controls layout, drawing, and hit testing. Applications retain
@@ -122,8 +122,7 @@ Every visual control exposes:
 fn style() style::Style
 fn mut set_style(value: style::Style)
 fn layout() geometry::Geometry
-fn mut destroy()
-fn mut destroy_recursively()
+fn mut destroy(recursive: Bool?)
 ```
 
 Interactive controls additionally expose:
@@ -140,7 +139,8 @@ fn mut on_blur(handler: fn()) fn()
 ```
 
 Control constructors return mutable references so the tree and application
-share one persistent identity. Effective setter changes request a frame.
+share one persistent identity. Their shared `styles` named argument accepts the
+common `style::Style` value. Effective setter changes request a frame.
 
 ### Style and geometry
 
@@ -148,6 +148,10 @@ Style is open value data. It has the standard Flexbox/OpenTUI vocabulary:
 
 ```ard
 struct Style {
+  foreground: color::Color?,
+  background: color::Color?,
+  border: Border,
+  border_color: color::Color?,
   display: Display,
   position: Position,
   overflow: Overflow,
@@ -177,8 +181,10 @@ struct Style {
 
 `style::new` accepts every field as a named optional parameter. Length helpers
 are `cells`, `percent`, `auto`, `undefined`, `max_content`, `fit_content`, and
-`stretch`. `set_style` validates the complete value. Absolute positioning is
-exposed only with working edge offsets.
+`stretch`. Foreground and background colors inherit through the retained tree;
+an explicitly configured child color overrides its inherited color. A background
+fills the complete node bounds. `set_style` validates the complete value.
+Absolute positioning is exposed only with working edge offsets.
 
 ```ard
 struct Rect {
@@ -243,15 +249,16 @@ text::new(
   application.context,
   content: "Important",
   wrap: text::TextWrap::word,
-  style: style::new(width: style::cells(30)),
+  styles: style::new(width: style::cells(30)),
   text_style: text::style(bold: true),
 )
 ```
 
 Text exposes content, wrapping, TextStyle, corresponding setters, and the common
-control API. It supports explicit newlines and terminal-width-aware word or
-grapheme wrapping. Graphemes are never split. Rich spans, selection, links,
-truncation, Markdown, and Code are deferred.
+control API. Common Style colors provide inherited element colors; explicitly
+configured TextStyle colors override them for painted text. It supports explicit
+newlines and terminal-width-aware word or grapheme wrapping. Graphemes are never
+split. Rich spans, selection, links, truncation, Markdown, and Code are deferred.
 
 ### Box
 
@@ -263,11 +270,21 @@ enum Border {
   rounded,
   heavy,
 }
+
+box::new(
+  application.context,
+  styles: style::new(
+    border: style::Border::rounded,
+    border_color: color::rgb(80, 120, 155),
+  ),
+  title: "Panel",
+)
 ```
 
 Box exposes indexed `add`, `remove`, `child_count`, the common control API, and
-getters/setters for background, border, border color, and title. A border uses
-one terminal cell and reduces the child content area through layout.
+a title getter/setter. Border kind and color are part of the common Style;
+Box's border convenience getters/setters update that Style. A border uses one
+terminal cell and reduces the child content area through layout.
 
 Box is not focusable by default. `set_focusable(true)` enables explicit focus
 and keyboard listeners. Registering its first mouse listener enables hit
@@ -285,7 +302,7 @@ input::new(
   placeholder: "Name",
   min_length: 1,
   max_length: 80,
-  style: style::new(width: style::cells(30)),
+  styles: style::new(width: style::cells(30)),
   text_style: text::style(),
   placeholder_style: text::style(dim: true),
 )
@@ -413,12 +430,19 @@ Documented application modules are:
 
 ```text
 app  box  color  context  event  geometry
-input  root  scroll_box  style  testing  text
+input  root  scroll_box  style  testing  text  ui
 ```
 
-Node, paint, focus, routing, scheduling, layout, and backend implementation
-modules are nested under `core/`. Ard does not enforce package-private imports,
-so that path communicates the support boundary rather than enforcing it.
+`ui` provides direct constructor and type aliases for built-in controls, such
+as `ui::input`, `ui::text`, and `ui::box`, so applications can import controls
+through one module. The control modules remain available individually.
+
+Public modules own their complete Ard domain model and supporting logic. Only
+unsupported runtime mechanisms with no public counterpart—Node, paint, focus,
+hit testing, routing, scheduling, and application runtime—remain under `core/`.
+Backend bindings remain under `ffi/core/backend/`. Ard does not enforce
+package-private imports, so these paths communicate support boundaries rather
+than enforcing them.
 
 ### OpenTUI correspondence
 

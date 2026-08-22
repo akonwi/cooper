@@ -1,0 +1,1442 @@
+use ard/unsafe
+
+use cooper/color
+use cooper/event
+use cooper/core/event_delivery
+use go:github.com/akonwi/cooper/ffi/core/backend/retainedyoga as yoga
+use cooper/geometry
+use cooper/core/paint
+use cooper/core/runtime
+use cooper/style
+use go:math
+
+enum MeasureMode {
+  undefined,
+  exactly,
+  at_most,
+}
+
+struct MeasureInput {
+  width: Float32,
+  width_mode: MeasureMode,
+  height: Float32,
+  height_mode: MeasureMode,
+}
+
+struct MeasureSize {
+  width: Float32,
+  height: Float32,
+}
+
+fn measure_limit(value: Float32) Int {
+  yoga::MeasureLimit(value)
+}
+
+struct MountContext {
+  dispatch: fn(fn()) Void!event::DispatchError,
+  cancellation: Receiver<Void>,
+}
+
+impl MountContext {
+  fn is_cancelled() Bool {
+    select {
+      self.cancellation.recv() => true,
+      _ => false,
+    }
+  }
+}
+
+trait Renderable {
+  fn node() mut Node
+
+  fn mut mount(ctx: MountContext)
+
+  fn paint(ctx: mut paint::Context)
+
+  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition
+}
+
+struct ContextToken {
+  marker: Int,
+  attachment_version: Int,
+  active_routes: Int,
+  route_invalidated: Bool,
+  route_stoppers: [fn()],
+}
+
+fn new_context_token() mut ContextToken {
+  (mut ContextToken{
+    marker: 1,
+    attachment_version: 0,
+    active_routes: 0,
+    route_invalidated: false,
+    route_stoppers: [],
+  })
+}
+
+private fn stopped_dispatch(action: fn()) Void!event::DispatchError {
+  Result::err(event::DispatchError::stopped)
+}
+
+private fn reject_focus(target_id: Int) Bool {
+  false
+}
+
+private fn ignore_blur(target_id: Int) {}
+
+private fn reject_selection_start(target_id: Int, local_x: Int, local_y: Int) Bool {
+  false
+}
+
+private fn reject_selection_update(target_id: Int, local_x: Int, local_y: Int, finish: Bool) Bool {
+  false
+}
+
+private fn ignore_selection_clear() {}
+
+private fn effective_color(configured: color::Color?, inherited: color::Color?) color::Color? {
+  match configured {
+    value => Maybe::new<color::Color>(value),
+    _ => inherited,
+  }
+}
+
+struct KeyListener {
+  id: Int,
+  handler: fn(mut event::KeyEvent),
+}
+
+struct PasteListener {
+  id: Int,
+  handler: fn(mut event::PasteEvent),
+}
+
+struct MouseListener {
+  id: Int,
+  handler: fn(mut event::MouseEvent),
+}
+
+struct VoidListener {
+  id: Int,
+  handler: fn(),
+}
+
+struct ValueListener {
+  id: Int,
+  kind: Int,
+  handler: fn(Str),
+}
+
+struct LocalSelection {
+  anchor_x: Int,
+  anchor_y: Int,
+  focus_x: Int,
+  focus_y: Int,
+  clip: geometry::Rect,
+  is_active: Bool,
+  is_dragging: Bool,
+  allow_edge_pan: Bool,
+  generation: Int,
+  version: Int,
+}
+
+struct SelectionFragment {
+  screen_x: Int,
+  screen_y: Int,
+  cell_width: Int,
+  text: Str,
+}
+
+struct SelectionResult {
+  has_selection: Bool,
+  start: Int,
+  end: Int,
+  fragments: [SelectionFragment],
+}
+
+fn empty_selection_result() SelectionResult {
+  SelectionResult{has_selection: false, start: 0, end: 0, fragments: []}
+}
+
+struct Node {
+  id: Int,
+  context_token: mut ContextToken,
+  owner: Any?,
+  parent: (mut Node)?,
+  children: [mut Node],
+  stacking_children: [mut Node],
+  stacking_dirty: Bool,
+  yoga: mut yoga::Node,
+  current_style: style::Style,
+  border_width: Int,
+  geometry: geometry::Geometry,
+  viewport: geometry::Rect,
+  destroyed: Bool,
+  destroying: Bool,
+  measured: Bool,
+  focusable: Bool,
+  focused: Bool,
+  mounted_root: Bool,
+  application_root: Bool,
+  mount_generation: Int,
+  mount_scope: (mut runtime::MountScope)?,
+  mount_dispatch_base: (fn(fn()) Void!event::DispatchError)?,
+  mount_focus_base: (fn(Int) Bool)?,
+  mount_blur_base: (fn(Int))?,
+  selection_start_base: fn(Int, Int, Int) Bool,
+  selection_update_base: fn(Int, Int, Int, Bool) Bool,
+  selection_owns_base: fn(Int) Bool,
+  selection_clear_base: fn(),
+  next_listener_id: Int,
+  key_listeners: [KeyListener],
+  paste_listeners: [PasteListener],
+  mouse_listeners: [MouseListener],
+  focus_listeners: [VoidListener],
+  blur_listeners: [VoidListener],
+  value_listeners: [ValueListener],
+  selection_hit: (fn(Int, Int) Bool)?,
+  selection_update: (fn(LocalSelection?) SelectionResult)?,
+  requested_scroll_y: Int,
+  children_offset_y: Int,
+  request_render: fn(),
+  on_destroy: fn(Int),
+}
+
+private fn saturating_add(left: Int, right: Int) Int {
+  if right > 0 and left > math::MaxInt - right {
+    math::MaxInt
+  } else if right < 0 and left < math::MinInt - right {
+    math::MinInt
+  } else {
+    left + right
+  }
+}
+
+private fn saturating_subtract(left: Int, right: Int) Int {
+  if right > 0 and left < math::MinInt + right {
+    math::MinInt
+  } else if right < 0 and left > math::MaxInt + right {
+    math::MaxInt
+  } else {
+    left - right
+  }
+}
+
+private fn measure_mode(code: Int) MeasureMode {
+  match code {
+    1 => MeasureMode::exactly,
+    2 => MeasureMode::at_most,
+    _ => MeasureMode::undefined,
+  }
+}
+
+private fn to_value(length: style::Length) yoga::Value {
+  let kind = match length.kind {
+    style::LengthKind::undefined => 0,
+    style::LengthKind::auto => 1,
+    style::LengthKind::cells => 2,
+    style::LengthKind::percent => 3,
+    style::LengthKind::max_content => 4,
+    style::LengthKind::fit_content => 5,
+    style::LengthKind::stretch => 6,
+  }
+  yoga::Value{Kind: kind, Value: length.value}
+}
+
+private fn direction_code(direction: style::FlexDirection) Int {
+  match direction {
+    style::FlexDirection::column => 0,
+    style::FlexDirection::column_reverse => 1,
+    style::FlexDirection::row => 2,
+    style::FlexDirection::row_reverse => 3,
+  }
+}
+
+private fn align_code(align: style::Align) Int {
+  match align {
+    style::Align::auto => 0,
+    style::Align::stretch => 1,
+    style::Align::baseline => 2,
+    style::Align::start => 3,
+    style::Align::end => 4,
+    style::Align::center => 5,
+    style::Align::space_between => 6,
+    style::Align::space_around => 7,
+    style::Align::space_evenly => 8,
+  }
+}
+
+private fn justify_code(justify: style::Justify) Int {
+  match justify {
+    style::Justify::start => 0,
+    style::Justify::end => 1,
+    style::Justify::center => 2,
+    style::Justify::space_between => 3,
+    style::Justify::space_around => 4,
+    style::Justify::space_evenly => 5,
+  }
+}
+
+private fn wrap_code(wrap: style::FlexWrap) Int {
+  match wrap {
+    style::FlexWrap::no_wrap => 0,
+    style::FlexWrap::wrap => 1,
+    style::FlexWrap::wrap_reverse => 2,
+  }
+}
+
+private fn position_code(position: style::Position) Int {
+  match position {
+    style::Position::static => 0,
+    style::Position::relative => 1,
+    style::Position::absolute => 2,
+  }
+}
+
+private fn overflow_code(overflow: style::Overflow) Int {
+  match overflow {
+    style::Overflow::visible => 0,
+    style::Overflow::hidden => 1,
+    style::Overflow::scroll => 2,
+  }
+}
+
+private fn display_code(display: style::Display) Int {
+  match display {
+    style::Display::flex => 0,
+    style::Display::contents => 1,
+    style::Display::none => 2,
+  }
+}
+
+private fn to_edges(edges: style::Edges) yoga::Edges {
+  yoga::Edges{
+    Top: to_value(edges.top),
+    Right: to_value(edges.right),
+    Bottom: to_value(edges.bottom),
+    Left: to_value(edges.left),
+  }
+}
+
+private fn to_backend_style(value: style::Style, border_width: Int) yoga::Style {
+  yoga::Style{
+    Display: display_code(value.display),
+    Direction: direction_code(value.flex_direction),
+    AlignItems: align_code(value.align_items),
+    AlignSelf: align_code(value.align_self),
+    Justify: justify_code(value.justify_content),
+    Wrap: wrap_code(value.flex_wrap),
+    Position: position_code(value.position),
+    Overflow: overflow_code(value.overflow),
+    Width: to_value(value.width),
+    Height: to_value(value.height),
+    MinWidth: to_value(value.min_width),
+    MinHeight: to_value(value.min_height),
+    MaxWidth: to_value(value.max_width),
+    MaxHeight: to_value(value.max_height),
+    Top: to_value(value.top),
+    Right: to_value(value.right),
+    Bottom: to_value(value.bottom),
+    Left: to_value(value.left),
+    Basis: to_value(value.flex_basis),
+    Grow: value.flex_grow,
+    Shrink: value.flex_shrink,
+    Padding: to_edges(value.padding),
+    Margin: to_edges(value.margin),
+    Gap: to_value(value.gap),
+    Border: border_width,
+  }
+}
+
+fn create(
+  id: Int,
+  context_token: mut ContextToken,
+  initial_style: style::Style,
+  request_render: fn(),
+  focus_request: fn(Int) Bool,
+  blur_request: fn(Int),
+  selection_start: fn(Int, Int, Int) Bool,
+  selection_update: fn(Int, Int, Int, Bool) Bool,
+  selection_owns: fn(Int) Bool,
+  selection_clear: fn(),
+  on_destroy: fn(Int),
+) mut Node {
+  let empty = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  }
+  let node = mut Node{
+    id: id,
+    context_token: context_token,
+    owner: Maybe::new<Any>(),
+    parent: Maybe::new<mut Node>(),
+    children: [],
+    stacking_children: [],
+    stacking_dirty: true,
+    yoga: yoga::NewNode(),
+    current_style: initial_style,
+    border_width: 0,
+    geometry: geometry::Geometry{local: empty, screen: empty},
+    viewport: empty,
+    destroyed: false,
+    destroying: false,
+    measured: false,
+    focusable: false,
+    focused: false,
+    mounted_root: false,
+    application_root: false,
+    mount_generation: 0,
+    mount_scope: Maybe::new<mut runtime::MountScope>(),
+    mount_dispatch_base: Maybe::new<fn(fn()) Void!event::DispatchError>(),
+    mount_focus_base: Maybe::new<fn(Int) Bool>(focus_request),
+    mount_blur_base: Maybe::new<fn(Int)>(blur_request),
+    selection_start_base: selection_start,
+    selection_update_base: selection_update,
+    selection_owns_base: selection_owns,
+    selection_clear_base: selection_clear,
+    next_listener_id: 1,
+    key_listeners: [],
+    paste_listeners: [],
+    mouse_listeners: [],
+    focus_listeners: [],
+    blur_listeners: [],
+    value_listeners: [],
+    selection_hit: Maybe::new<fn(Int, Int) Bool>(),
+    selection_update: Maybe::new<fn(LocalSelection?) SelectionResult>(),
+    requested_scroll_y: 0,
+    children_offset_y: 0,
+    request_render: request_render,
+    on_destroy: on_destroy,
+  }
+  node.apply_style(initial_style)
+  node
+}
+
+impl Node {
+  fn mut bind(owner: Any) {
+    if self.owner.is_some() {
+      panic("retained Node owner is already bound")
+    }
+    self.owner = Maybe::new<Any>(owner)
+  }
+
+  fn owner_as_renderable() mut Renderable {
+    let opaque = self.owner.expect("retained Node owner")
+    unsafe::cast<mut Renderable>(opaque).expect("retained Node owner must be mut Renderable")
+  }
+
+  fn child_count() Int {
+    self.children.size()
+  }
+
+  fn mut find(target_id: Int) (mut Node)? {
+    if self.id == target_id {
+      Maybe::new<mut Node>(self)
+    } else {
+      mut found = Maybe::new<mut Node>()
+      for child in self.children {
+        if not found.is_some() {
+          found = child.find(target_id)
+        }
+      }
+      found
+    }
+  }
+
+  fn mut mark_application_root() {
+    if self.application_root or self.destroyed or self.parent.is_some() or self.mounted_root {
+      panic("only a live detached retained Node can become the application Root")
+    }
+    self.application_root = true
+  }
+
+  fn can_have_children() Bool {
+    (not self.measured) and (not self.destroyed)
+  }
+
+  fn is_focusable() Bool {
+    self.focusable and (not self.destroyed) and (not self.destroying)
+  }
+
+  fn is_focused() Bool {
+    self.focused and (not self.destroyed)
+  }
+
+  fn mut set_focused(value: Bool) {
+    if self.focused != value {
+      self.focused = value
+      let listeners = match value {
+        true => self.focus_listeners,
+        false => self.blur_listeners,
+      }
+      for listener in listeners {
+        listener.handler()
+      }
+      self.request_redraw()
+    }
+  }
+
+  fn mut focus() Bool {
+    if self.destroyed or (not self.focusable) {
+      false
+    } else {
+      (self.mount_focus_base.or(reject_focus))(self.id)
+    }
+  }
+
+  fn mut blur() {
+    if self.focused {
+      (self.mount_blur_base.or(ignore_blur))(self.id)
+    }
+  }
+
+  fn accepts_pointer() Bool {
+    (not self.application_root) and (not self.destroyed) and (not self.destroying) and self.owner.is_some()
+  }
+
+  fn mut stacking_order() [mut Node] {
+    if self.stacking_dirty {
+      let ordered = mut List::new<mut Node>()
+      for child in self.children {
+        ordered.push(child)
+      }
+      ordered.sort(fn(left: mut Node, right: mut Node) Bool {
+        left.current_style.z_index < right.current_style.z_index
+      })
+      self.stacking_children = ordered.@
+      self.stacking_dirty = false
+    }
+    self.stacking_children
+  }
+
+  private fn mut invalidate_stacking() {
+    self.stacking_children = []
+    self.stacking_dirty = true
+  }
+
+  fn is_selectable() Bool {
+    self.selection_hit.is_some() and self.selection_update.is_some() and (not self.destroyed) and (not self.destroying)
+  }
+
+  fn mut start_selection(local_x: Int, local_y: Int) Bool {
+    (self.selection_start_base)(self.id, local_x, local_y)
+  }
+
+  fn mut update_selection(local_x: Int, local_y: Int, finish: Bool) Bool {
+    (self.selection_update_base)(self.id, local_x, local_y, finish)
+  }
+
+  fn owns_global_selection() Bool {
+    (self.selection_owns_base)(self.id)
+  }
+
+  fn clear_global_selection() {
+    (self.selection_clear_base)()
+  }
+
+  fn selection_accepts(local_x: Int, local_y: Int) Bool {
+    match self.selection_hit {
+      accepts => accepts(local_x, local_y),
+      _ => false,
+    }
+  }
+
+  fn apply_selection(value: LocalSelection?) SelectionResult {
+    match self.selection_update {
+      update => update(value),
+      _ => empty_selection_result(),
+    }
+  }
+
+  fn mut set_selection_callbacks(
+    accepts: fn(Int, Int) Bool,
+    update: fn(LocalSelection?) SelectionResult,
+  ) {
+    if self.destroyed or self.destroying {
+      panic("cannot configure selection on a destroying or destroyed retained Node")
+    }
+    self.clear_selection_callbacks()
+    self.selection_hit = Maybe::new<fn(Int, Int) Bool>(accepts)
+    self.selection_update = Maybe::new<fn(LocalSelection?) SelectionResult>(update)
+    self.request_render()
+  }
+
+  fn mut clear_selection_callbacks() {
+    match self.selection_update {
+      update => { let _ = update(Maybe::new<LocalSelection>()) },
+      _ => (),
+    }
+    self.selection_hit = Maybe::new<fn(Int, Int) Bool>()
+    self.selection_update = Maybe::new<fn(LocalSelection?) SelectionResult>()
+    self.request_render()
+  }
+
+  private fn mut next_listener() Int {
+    if self.destroyed {
+      panic("cannot register a listener on a destroyed retained Node")
+    }
+    if self.next_listener_id == math::MaxInt {
+      panic("retained listener identity overflow")
+    }
+    let id = self.next_listener_id
+    self.next_listener_id =+ 1
+    id
+  }
+
+  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+    let id = self.next_listener()
+    self.key_listeners.push(KeyListener{id: id, handler: handler})
+    fn() { self.remove_key_listener(id) }
+  }
+
+  private fn mut remove_key_listener(id: Int) {
+    let retained = mut List::new<KeyListener>()
+    for listener in self.key_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.key_listeners = retained.@
+  }
+
+  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+    let id = self.next_listener()
+    self.paste_listeners.push(PasteListener{id: id, handler: handler})
+    fn() { self.remove_paste_listener(id) }
+  }
+
+  private fn mut remove_paste_listener(id: Int) {
+    let retained = mut List::new<PasteListener>()
+    for listener in self.paste_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.paste_listeners = retained.@
+  }
+
+  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+    let id = self.next_listener()
+    let was_empty = self.mouse_listeners.size() == 0
+    self.mouse_listeners.push(MouseListener{id: id, handler: handler})
+    if was_empty {
+      self.request_redraw()
+    }
+    fn() { self.remove_mouse_listener(id) }
+  }
+
+  private fn mut remove_mouse_listener(id: Int) {
+    let had_listeners = self.mouse_listeners.size() > 0
+    let retained = mut List::new<MouseListener>()
+    for listener in self.mouse_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.mouse_listeners = retained.@
+    if had_listeners and self.mouse_listeners.size() == 0 {
+      self.request_redraw()
+    }
+  }
+
+  fn mut on_focus(handler: fn()) fn() {
+    let id = self.next_listener()
+    self.focus_listeners.push(VoidListener{id: id, handler: handler})
+    fn() { self.remove_focus_listener(id) }
+  }
+
+  private fn mut remove_focus_listener(id: Int) {
+    let retained = mut List::new<VoidListener>()
+    for listener in self.focus_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.focus_listeners = retained.@
+  }
+
+  fn mut on_blur(handler: fn()) fn() {
+    let id = self.next_listener()
+    self.blur_listeners.push(VoidListener{id: id, handler: handler})
+    fn() { self.remove_blur_listener(id) }
+  }
+
+  private fn mut remove_blur_listener(id: Int) {
+    let retained = mut List::new<VoidListener>()
+    for listener in self.blur_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.blur_listeners = retained.@
+  }
+
+  fn mut on_value(kind: Int, handler: fn(Str)) fn() {
+    let id = self.next_listener()
+    self.value_listeners.push(ValueListener{id: id, kind: kind, handler: handler})
+    fn() { self.remove_value_listener(id) }
+  }
+
+  private fn mut remove_value_listener(id: Int) {
+    let retained = mut List::new<ValueListener>()
+    for listener in self.value_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.value_listeners = retained.@
+  }
+
+  fn emit_value(kind: Int, value: Str) {
+    let listeners = self.value_listeners
+    for listener in listeners {
+      if listener.kind == kind {
+        listener.handler(value)
+      }
+    }
+  }
+
+  fn emit_key(received: mut event::KeyEvent) {
+    let listeners = self.key_listeners
+    for listener in listeners {
+      if not received.is_propagation_stopped() {
+        listener.handler(received)
+      }
+    }
+  }
+
+  fn emit_paste(received: mut event::PasteEvent) {
+    let listeners = self.paste_listeners
+    for listener in listeners {
+      if not received.is_propagation_stopped() {
+        listener.handler(received)
+      }
+    }
+  }
+
+  fn emit_mouse(received: mut event::MouseEvent) {
+    let listeners = self.mouse_listeners
+    for listener in listeners {
+      if not received.is_propagation_stopped() {
+        received.local_x = received.x - self.geometry.screen.x
+        received.local_y = received.y - self.geometry.screen.y
+        listener.handler(received)
+      }
+    }
+  }
+
+  fn can_receive_events() Bool {
+    (not self.destroyed) and (not self.destroying) and self.owner.is_some() and self.mount_scope.is_some()
+  }
+
+  fn can_receive_pointer_events() Bool {
+    self.can_receive_events() and self.pointer_route_visible()
+  }
+
+  fn pointer_route_visible() Bool {
+    (not self.destroyed) and (not self.destroying) and self.current_style.display != style::Display::none
+  }
+
+  fn is_mounted() Bool {
+    self.mount_scope.is_some()
+  }
+
+  fn attachment_generation() Int {
+    self.mount_generation
+  }
+
+  fn attachment_tree_version() Int {
+    self.context_token.attachment_version
+  }
+
+  private fn mut bump_attachment_tree_version() {
+    if self.context_token.attachment_version == math::MaxInt {
+      panic("retained attachment tree version overflow")
+    }
+    self.context_token.attachment_version =+ 1
+    if self.context_token.active_routes > 0 {
+      self.context_token.route_invalidated = true
+      for stop in self.context_token.route_stoppers {
+        stop()
+      }
+    }
+  }
+
+  fn mut begin_event_route(stop: fn()) {
+    if self.context_token.active_routes == math::MaxInt {
+      panic("retained event route depth overflow")
+    }
+    if self.context_token.active_routes == 0 {
+      self.context_token.route_invalidated = false
+    }
+    self.context_token.active_routes =+ 1
+    self.context_token.route_stoppers.push(stop)
+  }
+
+  fn event_route_invalidated() Bool {
+    self.context_token.route_invalidated
+  }
+
+  fn mut end_event_route() {
+    if self.context_token.active_routes < 1 {
+      panic("retained event route is not active")
+    }
+    self.context_token.active_routes =- 1
+    let retained = mut List::new<fn()>()
+    mut index = 0
+    while index < self.context_token.route_stoppers.size() - 1 {
+      retained.push(self.context_token.route_stoppers.at(index).expect("active route stopper"))
+      index =+ 1
+    }
+    self.context_token.route_stoppers = retained.@
+    if self.context_token.active_routes == 0 {
+      self.context_token.route_invalidated = false
+    }
+  }
+
+  fn attachment_dispatch() fn(fn()) Void!event::DispatchError {
+    let scope = try self.mount_scope -> _ { stopped_dispatch }
+    let base = try self.mount_dispatch_base -> _ { stopped_dispatch }
+    runtime::scoped_dispatch(base, scope)
+  }
+
+  fn mut set_focusable(value: Bool) {
+    if self.destroyed {
+      panic("cannot change focusability of a destroyed retained Node")
+    }
+    if self.application_root {
+      panic("the application Root cannot be focused")
+    }
+    if self.focusable != value {
+      self.focusable = value
+      if not value and self.focused {
+        (self.mount_blur_base.or(ignore_blur))(self.id)
+      }
+      self.request_render()
+    }
+  }
+
+  private fn mut blur_focused_subtree() {
+    if self.focused {
+      (self.mount_blur_base.or(ignore_blur))(self.id)
+    }
+    for child in self.children {
+      child.blur_focused_subtree()
+    }
+  }
+
+  fn request_redraw() {
+    if not self.destroyed {
+      self.request_render()
+    }
+  }
+
+  private fn has_mount_scope(expected: mut runtime::MountScope) Bool {
+    match self.mount_scope {
+      current => current == expected,
+      _ => false,
+    }
+  }
+
+  private fn is_direct_child(child: mut Node) Bool {
+    match child.parent {
+      current_parent => current_parent.id == self.id,
+      _ => false,
+    }
+  }
+
+  private fn mut mount_subtree(base: fn(fn()) Void!event::DispatchError) {
+    if self.destroyed {
+      panic("cannot mount a destroyed retained Node")
+    }
+    if not self.mount_scope.is_some() {
+      if not self.owner.is_some() {
+        panic("cannot mount an unbound retained Node")
+      }
+      if self.mount_generation == math::MaxInt {
+        panic("retained Node attachment generation overflow")
+      }
+      self.mount_generation =+ 1
+      self.bump_attachment_tree_version()
+      let scope = runtime::new_mount_scope()
+      self.mount_dispatch_base = Maybe::new<fn(fn()) Void!event::DispatchError>(base)
+      self.mount_scope = Maybe::new<mut runtime::MountScope>(scope)
+      self.owner_as_renderable().mount(
+        MountContext{dispatch: runtime::scoped_dispatch(base, scope), cancellation: scope.cancellation()},
+      )
+
+      if self.has_mount_scope(scope) {
+        let pending = mut List::new<mut Node>()
+        for child in self.children {
+          pending.push(child)
+        }
+        for child in pending {
+          if self.has_mount_scope(scope) and self.is_direct_child(child) {
+            child.mount_subtree(base)
+          }
+        }
+      }
+    }
+  }
+
+  private fn mut unmount_subtree() {
+    if self.focused {
+      (self.mount_blur_base.or(ignore_blur))(self.id)
+    }
+    match self.mount_scope {
+      scope => {
+        scope.stop()
+        self.bump_attachment_tree_version()
+      },
+      _ => (),
+    }
+    self.mount_scope = Maybe::new<mut runtime::MountScope>()
+    self.mount_dispatch_base = Maybe::new<fn(fn()) Void!event::DispatchError>()
+
+    let pending = mut List::new<mut Node>()
+    for child in self.children {
+      pending.push(child)
+    }
+    for child in pending {
+      child.unmount_subtree()
+    }
+  }
+
+  fn mut mount_root(base: fn(fn()) Void!event::DispatchError) {
+    if self.destroyed or self.parent.is_some() or self.mounted_root {
+      panic("only a live detached retained Node can become the mounted root")
+    }
+    self.mounted_root = true
+    self.mount_subtree(base)
+    if (not self.mounted_root) or (not self.mount_scope.is_some()) {
+      panic("retained root was unmounted while mounting")
+    }
+  }
+
+  fn mut unmount_root() {
+    if (not self.mounted_root) or self.parent.is_some() {
+      panic("only the mounted retained root can be unmounted as root")
+    }
+    self.unmount_subtree()
+    self.mounted_root = false
+  }
+
+  fn layout() geometry::Geometry {
+    self.geometry
+  }
+
+  fn layout_viewport() geometry::Rect {
+    self.viewport
+  }
+
+  fn scroll_y() Int {
+    0 - self.children_offset_y
+  }
+
+  fn requested_scroll_y() Int {
+    self.requested_scroll_y
+  }
+
+  fn scroll_height() Int {
+    mut content_height = 0
+    for child in self.children {
+      let local = child.layout().local
+      let extent = saturating_add(local.y, local.height)
+      if extent > content_height {
+        content_height = extent
+      }
+    }
+    content_height
+  }
+
+  fn max_scroll_y() Int {
+    let content_height = self.scroll_height()
+    if content_height > self.geometry.screen.height {
+      content_height - self.geometry.screen.height
+    } else {
+      0
+    }
+  }
+
+  fn mut scroll_node_into_view(target: mut Node) Bool {
+    mut ancestor = target.parent
+    mut found = false
+    mut scanning = true
+    while scanning {
+      match ancestor {
+        current => {
+          if current == self {
+            found = true
+            scanning = false
+          } else {
+            ancestor = current.parent
+          }
+        },
+        _ => { scanning = false },
+      }
+    }
+    if not found {
+      panic("scroll target must be a descendant")
+    }
+
+    let viewport = self.geometry.screen
+    let bounds = target.geometry.screen
+    mut requested = self.scroll_y()
+    if bounds.y < viewport.y {
+      requested = saturating_subtract(requested, saturating_subtract(viewport.y, bounds.y))
+    } else {
+      let viewport_bottom = saturating_add(viewport.y, viewport.height)
+      let target_bottom = saturating_add(bounds.y, bounds.height)
+      if target_bottom > viewport_bottom {
+        requested = saturating_add(requested, saturating_subtract(target_bottom, viewport_bottom))
+      }
+    }
+    self.set_scroll_y(requested)
+  }
+
+  fn mut set_scroll_y(requested: Int) Bool {
+    if self.destroyed {
+      panic("cannot scroll a destroyed retained Node")
+    }
+    self.requested_scroll_y = requested
+    if self.requested_scroll_y < 0 {
+      self.requested_scroll_y = 0
+    }
+    mut effective = self.requested_scroll_y
+    let maximum = self.max_scroll_y()
+    if effective > maximum {
+      effective = maximum
+    }
+    let translated = 0 - effective
+    let moved = translated != self.children_offset_y
+    if moved {
+      self.children_offset_y = translated
+      self.sync_children_geometry()
+      self.request_redraw()
+    }
+    moved
+  }
+
+  fn mut scroll_by(delta: Int) Bool {
+    let current = self.scroll_y()
+    mut requested = current
+    if delta > 0 and current > math::MaxInt - delta {
+      requested = math::MaxInt
+    } else if delta < 0 and current < math::MinInt - delta {
+      requested = math::MinInt
+    } else {
+      requested = current + delta
+    }
+    self.set_scroll_y(requested)
+  }
+
+  fn is_destroyed() Bool {
+    self.destroyed
+  }
+
+  fn require_live() {
+    if self.destroyed or self.destroying {
+      panic("cannot use a destroying or destroyed retained Node")
+    }
+  }
+
+  fn style() style::Style {
+    self.current_style
+  }
+
+  private fn mut apply_backend_style(next: style::Style) {
+    let effective = mut next
+    match self.parent {
+      parent => {
+        if parent.current_style.overflow == style::Overflow::scroll {
+          effective.flex_shrink = 0.0
+        }
+      },
+      _ => (),
+    }
+    self.yoga.Apply(to_backend_style(effective.@, self.border_width))
+  }
+
+  fn mut set_border_width(value: Int) {
+    if self.destroyed or self.destroying {
+      panic("cannot decorate a destroying or destroyed retained Node")
+    }
+    if value < 0 or value > 1 {
+      panic("retained border width must be zero or one cell")
+    }
+    if self.border_width != value {
+      self.border_width = value
+      self.apply_backend_style(self.current_style)
+      self.request_render()
+    }
+  }
+
+  fn mut apply_style(next: style::Style) {
+    if self.destroyed {
+      panic("cannot style a destroyed retained Node")
+    }
+    if self.application_root {
+      panic("the application Root cannot be styled")
+    }
+    style::internal_validate(next)
+    let hiding = next.display == style::Display::none and self.current_style.display != style::Display::none
+    let stacking_changed = next.z_index != self.current_style.z_index
+    if hiding {
+      self.current_style = next
+      self.blur_focused_subtree()
+    }
+    self.apply_backend_style(next)
+    self.current_style = next
+    if stacking_changed {
+      match self.parent {
+        current_parent => current_parent.invalidate_stacking(),
+        _ => (),
+      }
+    }
+    if next.overflow != style::Overflow::scroll {
+      self.requested_scroll_y = 0
+      self.children_offset_y = 0
+    }
+    for child in self.children {
+      child.apply_backend_style(child.current_style)
+    }
+    self.request_render()
+  }
+
+  fn mut add(child: mut Node, index: Int?) {
+    if self.destroyed or self.destroying or child.destroyed or child.destroying {
+      panic("cannot attach a destroying or destroyed retained Node")
+    }
+    if self.measured {
+      panic("a measured retained Node cannot contain children")
+    }
+    if child.mounted_root or child.application_root {
+      panic("an application Root cannot be attached")
+    }
+    if self.context_token != child.context_token {
+      panic("retained Nodes from different contexts cannot be attached")
+    }
+    if self == child {
+      panic("a retained Node cannot contain itself")
+    }
+
+    mut ancestor = Maybe::new<mut Node>(self)
+    mut checking = true
+    while checking {
+      match ancestor {
+        current => {
+          if current == child {
+            panic("attaching this retained Node would create a cycle")
+          }
+          ancestor = current.parent
+        },
+        _ => { checking = false },
+      }
+    }
+
+    mut same_parent = false
+    match child.parent {
+      current_parent => { same_parent = current_parent == self },
+      _ => (),
+    }
+    let remaining = mut List::new<mut Node>()
+    mut old_index = -1
+    for current, current_index in self.children {
+      if current == child {
+        old_index = current_index
+      } else {
+        remaining.push(current)
+      }
+    }
+    if same_parent and old_index < 0 {
+      panic("retained child parent and child list disagree")
+    }
+
+    let target_index = index.or(remaining.size())
+    if target_index < 0 or target_index > remaining.size() {
+      panic("retained child index is out of bounds")
+    }
+    if same_parent and target_index == old_index {
+      ()
+    } else {
+      if same_parent {
+        self.yoga.RemoveChild(child.yoga)
+      } else {
+        match child.parent {
+          current_parent => {
+            if not current_parent.remove(child) {
+              panic("retained child parent and child list disagree")
+            }
+          },
+          _ => (),
+        }
+        child.parent = Maybe::new<mut Node>(self)
+        child.apply_backend_style(child.current_style)
+      }
+
+      let ordered = mut List::new<mut Node>()
+      for current, current_index in remaining {
+        if current_index == target_index {
+          ordered.push(child)
+        }
+        ordered.push(current)
+      }
+      if target_index == remaining.size() {
+        ordered.push(child)
+      }
+      self.children = ordered.@
+      self.invalidate_stacking()
+      self.yoga.InsertChild(child.yoga, target_index)
+      if not same_parent {
+        match self.mount_dispatch_base {
+          base => child.mount_subtree(base),
+          _ => (),
+        }
+      }
+      self.request_render()
+    }
+  }
+
+  fn mut remove(child: mut Node) Bool {
+    if self.destroyed {
+      panic("cannot detach from a destroyed retained Node")
+    }
+    mut removed = false
+    let retained = mut List::new<mut Node>()
+    for current in self.children {
+      if current == child {
+        removed = true
+      } else {
+        retained.push(current)
+      }
+    }
+
+    if removed {
+      self.children = retained.@
+      self.invalidate_stacking()
+      self.yoga.RemoveChild(child.yoga)
+      child.parent = Maybe::new<mut Node>()
+      child.unmount_subtree()
+      child.apply_backend_style(child.current_style)
+      self.request_render()
+    }
+    removed
+  }
+
+  fn mut set_measure(measure: fn(MeasureInput) MeasureSize) {
+    if self.destroyed {
+      panic("cannot measure a destroyed retained Node")
+    }
+    if self.application_root {
+      panic("the application Root cannot be measured")
+    }
+    if self.children.size() > 0 {
+      panic("a retained Node with children cannot become measured")
+    }
+    self.measured = true
+    self.yoga.SetMeasureFunc(
+      fn(width: Float32, width_mode: Int, height: Float32, height_mode: Int) yoga::Size {
+        let measured = measure(
+          MeasureInput{
+            width: width,
+            width_mode: measure_mode(width_mode),
+            height: height,
+            height_mode: measure_mode(height_mode),
+          },
+        )
+        yoga::Size{Width: measured.width, Height: measured.height}
+      },
+    )
+  }
+
+  fn mut mark_measure_dirty() {
+    if self.destroyed or (not self.measured) {
+      panic("only a live measured retained Node can be marked dirty")
+    }
+    self.yoga.MarkDirty()
+    self.request_render()
+  }
+
+  fn mut compute(width: Int, height: Int) {
+    if self.destroyed {
+      panic("cannot lay out a destroyed retained Node")
+    }
+    if width < 0 or height < 0 {
+      panic("retained layout bounds must be non-negative")
+    }
+    self.yoga.Compute(width, height)
+    self.viewport = geometry::Rect{
+      x: 0,
+      y: 0,
+      width: width,
+      height: height,
+    }
+    self.sync_geometry(0, 0)
+  }
+
+  private fn mut sync_geometry(parent_x: Int, parent_y: Int) {
+    let computed = self.yoga.Layout()
+    let local = geometry::Rect{
+      x: computed.Left,
+      y: computed.Top,
+      width: computed.Width,
+      height: computed.Height,
+    }
+    let screen = geometry::Rect{
+      x: parent_x + local.x,
+      y: parent_y + local.y,
+      width: local.width,
+      height: local.height,
+    }
+    self.geometry = geometry::Geometry{local: local, screen: screen}
+    self.sync_children_geometry()
+
+    if self.current_style.overflow == style::Overflow::scroll {
+      mut effective = self.requested_scroll_y
+      let maximum = self.max_scroll_y()
+      if effective > maximum {
+        effective = maximum
+      }
+      let translated = 0 - effective
+      if translated != self.children_offset_y {
+        self.children_offset_y = translated
+        self.sync_children_geometry()
+      }
+    } else if self.children_offset_y != 0 or self.requested_scroll_y != 0 {
+      self.requested_scroll_y = 0
+      self.children_offset_y = 0
+      self.sync_children_geometry()
+    }
+  }
+
+  private fn mut sync_children_geometry() {
+    let screen = self.geometry.screen
+    let translated_y = saturating_add(screen.y, self.children_offset_y)
+    for child in self.children {
+      child.sync_geometry(screen.x, translated_y)
+    }
+  }
+
+  fn mut paint(buffer: mut paint::Buffer) {
+    let root_clip = geometry::Rect{
+      x: 0,
+      y: 0,
+      width: buffer.width,
+      height: buffer.height,
+    }
+    self.paint_with_clip(
+      buffer,
+      root_clip,
+      Maybe::new<color::Color>(),
+      Maybe::new<color::Color>(),
+    )
+  }
+
+  private fn mut paint_with_clip(
+    buffer: mut paint::Buffer,
+    inherited_clip: geometry::Rect,
+    inherited_foreground: color::Color?,
+    inherited_background: color::Color?,
+  ) {
+    if (not self.destroyed) and self.current_style.display != style::Display::none {
+      let foreground = effective_color(self.current_style.foreground, inherited_foreground)
+      let background = effective_color(self.current_style.background, inherited_background)
+      let bounds = self.geometry.screen
+      let node_clip = match self.current_style.overflow {
+        style::Overflow::hidden => geometry::intersect(inherited_clip, bounds),
+        style::Overflow::scroll => geometry::intersect(inherited_clip, bounds),
+        _ => inherited_clip,
+      }
+      let ctx = mut paint::Context{
+        buffer: buffer,
+        bounds: bounds,
+        clip: node_clip,
+        foreground: foreground,
+        background: background,
+      }
+      if self.current_style.background.is_some() {
+        ctx.fill(paint::style(foreground: foreground, background: background))
+      }
+      self.owner_as_renderable().paint(ctx)
+
+      let child_clip = node_clip
+      for child in self.stacking_order() {
+        child.paint_with_clip(buffer, child_clip, foreground, background)
+      }
+    }
+  }
+
+  private fn mut destroy_owned(allow_application_root: Bool, already_destroying: Bool?) {
+    if self.mounted_root {
+      panic("cannot destroy a mounted retained root")
+    }
+    if self.application_root and (not allow_application_root) {
+      panic("the application Root cannot be directly destroyed")
+    }
+    if self.destroyed or (self.destroying and (not already_destroying.or(false))) {
+      ()
+    } else {
+      self.destroying = true
+      match self.parent {
+        current_parent => {
+          let _ = current_parent.remove(self)
+        },
+        _ => self.unmount_subtree(),
+      }
+      self.destroyed = true
+
+      let preserved = self.children
+      self.children = []
+      self.stacking_children = []
+      self.stacking_dirty = false
+      for child in preserved {
+        self.yoga.RemoveChild(child.yoga)
+        child.parent = Maybe::new<mut Node>()
+        child.apply_backend_style(child.current_style)
+      }
+      self.clear_selection_callbacks()
+      self.key_listeners = []
+      self.paste_listeners = []
+      self.mouse_listeners = []
+      self.focus_listeners = []
+      self.blur_listeners = []
+      self.value_listeners = []
+      self.owner = Maybe::new<Any>()
+      self.yoga.Free()
+      self.destroying = false
+      self.on_destroy(self.id)
+      self.request_render()
+    }
+  }
+
+  private fn mut destroy_recursively_owned(allow_application_root: Bool) {
+    if self.mounted_root {
+      panic("cannot destroy a mounted retained root")
+    }
+    if self.application_root and (not allow_application_root) {
+      panic("the application Root cannot be directly destroyed")
+    }
+    if (not self.destroyed) and (not self.destroying) {
+      self.destroying = true
+      let owned = self.children
+      for child in owned {
+        child.destroy_recursively_owned(false)
+      }
+      self.destroy_owned(allow_application_root, already_destroying: true)
+    }
+  }
+
+  fn mut destroy(recursive: Bool?) {
+    if recursive.or(false) {
+      self.destroy_recursively_owned(false)
+    } else {
+      self.destroy_owned(false)
+    }
+  }
+
+  fn mut destroy_from_context() {
+    self.destroy_recursively_owned(true)
+  }
+}

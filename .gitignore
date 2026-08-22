@@ -6,3 +6,6 @@ ard-out/
 /examples/scroll_form
 /examples/async
 /examples/explorer
+/examples/interaction_lab
+/examples/terminal_focus
+/examples/pre_run_destroy

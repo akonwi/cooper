@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Shared PTY test harness for Cooper example smoke tests."""
 
+import codecs
 import fcntl
 import os
 import pty
@@ -27,6 +28,8 @@ class Screen:
         self.row = 0
         self.col = 0
         self.cells = [[" " for _ in range(cols)] for _ in range(rows)]
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+        self._pending = ""
 
     def text(self):
         return "\n".join("".join(row).rstrip() for row in self.cells)
@@ -36,12 +39,17 @@ class Screen:
         return "".join(self.cells[n]).rstrip()
 
     def feed(self, data):
-        text = data.decode("utf-8", errors="ignore").replace("\x00", "")
+        text = self._pending + self._decoder.decode(data).replace("\x00", "")
+        self._pending = ""
         i = 0
         while i < len(text):
             ch = text[i]
             if ch == "\x1b":
-                i = self._escape(text, i + 1)
+                escaped = self._escape(text, i + 1)
+                if escaped is None:
+                    self._pending = text[i:]
+                    break
+                i = escaped
                 continue
             if ch == "\r":
                 self.col = 0
@@ -61,14 +69,14 @@ class Screen:
 
     def _escape(self, text, i):
         if i >= len(text):
-            return i
+            return None
         kind = text[i]
         if kind == "[":
             j = i + 1
             while j < len(text) and not ("@" <= text[j] <= "~"):
                 j += 1
             if j >= len(text):
-                return j
+                return None
             body = text[i + 1 : j]
             final = text[j]
             self._csi(body, final)
@@ -77,7 +85,7 @@ class Screen:
             end = text.find("\x1b\\", i + 1)
             if end == -1:
                 bel = text.find("\a", i + 1)
-                return len(text) if bel == -1 else bel + 1
+                return None if bel == -1 else bel + 1
             return end + 2
         return i + 1
 

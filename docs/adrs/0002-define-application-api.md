@@ -259,6 +259,9 @@ control API. Common Style colors provide inherited element colors; explicitly
 configured TextStyle colors override them for painted text. It supports explicit
 newlines and terminal-width-aware word or grapheme wrapping. Graphemes are never
 split. Rich spans, selection, links, truncation, Markdown, and Code are deferred.
+ADR 0003 later adopts read-only selection; ADR 0005 adopts rich spans, links,
+truncation, Unicode wrapping, and double-click word selection while keeping
+Markdown and Code separate.
 
 ### Box
 

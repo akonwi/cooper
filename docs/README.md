@@ -11,6 +11,8 @@ Design decisions for Cooper's Ard-native retained-mode framework.
   pointer, focus, terminal-focus, and selection semantics.
 - [ADR 0004](./adrs/0004-define-input-editor-and-keybindings.md) — accepted
   Ard-native editor state, actions, and default CLI keybindings.
+- [ADR 0005](./adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md) — accepted
+  rich Text spans, Unicode wrapping, overflow, links, and double-click selection.
 
 ## Architecture Decision Records
 
@@ -22,6 +24,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0002](./adrs/0002-define-application-api.md) | Accepted | Define the application API |
 | [0003](./adrs/0003-define-interaction-focus-and-selection.md) | Accepted | Define interaction, focus, and selection |
 | [0004](./adrs/0004-define-input-editor-and-keybindings.md) | Accepted | Define Input editor state and CLI keybindings |
+| [0005](./adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md) | Accepted | Define rich Text, wrapping, and multi-click selection |
 
 ### Add an ADR
 

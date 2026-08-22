@@ -16,8 +16,9 @@ runnable examples are implemented.
 
 The canonical design is defined by the accepted
 [application API ADR](./docs/adrs/0002-define-application-api.md),
-[interaction ADR](./docs/adrs/0003-define-interaction-focus-and-selection.md), and
-[input editor ADR](./docs/adrs/0004-define-input-editor-and-keybindings.md).
+[interaction ADR](./docs/adrs/0003-define-interaction-focus-and-selection.md),
+[input editor ADR](./docs/adrs/0004-define-input-editor-and-keybindings.md), and
+[rich Text ADR](./docs/adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape

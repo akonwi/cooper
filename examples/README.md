@@ -1,7 +1,13 @@
 # Cooper examples
 
-These applications use the canonical persistent-Node API and currently require
-`ard-dev` from Ard main (or Ard v0.38.0 once released).
+These applications currently exercise the retained implementation baseline and
+require `ard-dev` from Ard main (or Ard v0.38.0 once released). They have not yet
+been migrated to the accepted application API and are not canonical API
+examples during the cutover.
+
+The migration will move them to `App.context`, `App.root`, blocking `run()`,
+listener-based input, explicit focus policy, Context dispatch, and multi-child
+ScrollBox. Until then, the behavior below describes the runnable baseline.
 
 ## Input
 

@@ -19,9 +19,8 @@ the nearest-rank tail value as `max` instead.
 - `retained_stress.ard`: 1,000 detach/re-attach/layout cycles plus 100-level
   clipped trees exercised by repeated hit tests and direct paints.
 
-The superseded Surface implementation was removed after the architecture-level
-comparison established the retained direction. A future Ard-native Yoga backend
-should use these same retained workloads for a backend-only comparison.
+A future Ard-native Yoga backend should use these same retained workloads for a
+backend-only comparison.
 
 The virtual-list benchmark measures initial layout, a jump to row 5,000, one
 visible-row update, 100 one-row window shifts, resize, and direct clipped paint.

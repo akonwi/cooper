@@ -1,13 +1,35 @@
 # Cooper docs
 
-Design notes and investigations for Cooper's Ard-native retained-mode framework.
+Design decisions for Cooper's Ard-native retained-mode framework.
 
-## Architecture
+## Canonical design
 
-- [architecture.md](./architecture.md) — accepted retained render tree,
-  lifecycle, layout, painting, event routing, and runtime responsibilities.
-- [api-proposal.md](./api-proposal.md) — proposed imperative application API,
-  its OpenTUI lineage, and intentionally deferred extension surfaces.
+- [ADR 0002](./adrs/0002-define-application-api.md) — accepted imperative
+  application API, runtime model, OpenTUI lineage, and intentionally deferred
+  extension surfaces.
+
+## Architecture Decision Records
+
+Significant architecture decisions are recorded in [`adrs/`](./adrs/).
+
+| ADR | Status | Decision |
+| --- | --- | --- |
+| [0001](./adrs/0001-record-architecture-decisions.md) | Accepted | Record architecture decisions |
+| [0002](./adrs/0002-define-application-api.md) | Accepted | Define the application API |
+
+### Add an ADR
+
+1. Choose the next four-digit sequence number.
+2. Create `docs/adrs/NNNN-short-title.md`.
+3. Use the headings `Status`, `Context`, `Decision`, `Consequences`, and
+   `Related`.
+4. Start unresolved decisions as `Proposed` and update their status when
+   resolved.
+5. Add the ADR to the table above.
+
+Accepted ADRs preserve the rationale at the time of the decision. Replace an
+accepted decision with a new ADR whose `Related` section links to the ADR it
+supersedes.
 
 ## Conventions
 

@@ -1,113 +1,40 @@
 # Cooper
 
-An Ard-native retained-mode TUI framework using
+An Ard-native imperative retained-mode TUI framework using
 [Vaxis](https://github.com/rockorager/vaxis) as its terminal backend.
 
-## Architecture
+## Vision
 
-The accepted clean-break direction is documented in
-[`docs/architecture.md`](./docs/architecture.md). Read it before changing the
-framework model.
+See [`ADR 0002`](./docs/adrs/0002-define-application-api.md).
 
-The persistent Node tree is the framework. The old `Widget.render() -> Surface`
-runtime, discovery rendering, route indexes, and mount reconciliation are
-superseded and are being removed rather than preserved for compatibility.
+- Before adopting unfamiliar Ard syntax or interop behavior, use the `ard-expert`
+sub-agent and verify the smallest shape with the current compiler.
 
-## Renderable contract
+## Ard owns framework behavior
 
-```ard
-trait Renderable {
-  fn node() mut Node
-  fn mut mount(ctx: MountContext)
-  fn paint(ctx: mut PaintContext)
-  fn mut event(ctx: mut EventContext) EventResult
-}
-```
+Implement Nodes, styles, colors, cells, layout semantics, geometry, focus,
+events, listeners, scrolling, controls, and application helpers in Ard. Direct
+Go interop is limited to Vaxis and the internal layout backend. Tess/Yoga types
+and fallible setters must remain hidden behind Cooper's validated API and remain
+replaceable by an Ard-native implementation.
 
-- Every renderable owns one persistent Node.
-- A non-mutating implementation may satisfy a mutating contract.
-- `paint` observes retained state and writes directly into the root cell buffer.
-- `mount` runs once per structural attachment to a running root.
-- Detach cancels attachment-scoped work; reattach receives a fresh scope.
-- There is no general unmount callback.
-
-Before adopting unfamiliar Ard syntax or interop behavior, use the
-`ard-expert` sub-agent and verify the smallest shape with the current compiler.
-
-## Architecture rules
-
-### Persistent hierarchy is authoritative
-
-Construct detached concrete renderables with application Context. Change the
-tree only through `add`, `remove`, reparent, and `destroy`. Removal permits reuse;
-destruction recursively releases resources and is permanent.
-
-Application state lives directly in long-lived Ard renderable structs. Do not
-introduce immutable widget-description rebuilding, owner discovery renders, or a
-generic external state registry.
-
-### Ard owns framework behavior
-
-Implement Nodes, styles, cells, layout semantics, geometry, focus, events,
-scrolling, and application helpers in Ard. Direct Go interop is limited to Vaxis
-and the internal layout backend. Tess/Yoga must remain hidden behind Cooper's
-validated Ard API and be replaceable by an Ard-native implementation.
-
-### Paint directly
-
-Layout mutates cached Node geometry. Paint traverses persistent Nodes in child
-order into one Ard cell buffer. Vaxis only receives the completed cells and
-handles terminal diffing. Do not reintroduce compositional Surface trees.
-
-Use one frame-consistent text measurer for layout, grapheme spans, paint, and
-cursor positions. Preserve wide-cell and style invariants when clipping or
-overwriting.
-
-### Events and focus use Node references
-
-Derive capture/target/bubble paths, hit targets, and focus order from the
-attached Node tree and cached geometry. Revalidate every owner before delivery
-because handlers may mutate structure.
-
-`EventResult::handled` records handling but does not stop propagation. Call
-`ctx.stop_propagation()` explicitly. Wheel fallback depends on this distinction.
-
-Focus stores direct Node identity. Scrolling translates cached descendant
-geometry so paint, hit testing, cursor placement, and focus reveal agree.
-
-### Effects are attachment-scoped
-
-Tree mutation and retained state mutation are UI-thread-only. Background work
-must use the current `MountContext.dispatch` and cooperatively observe
-`MountContext.cancellation`.
-
-Detach and destroy reject later scoped posts and suppress already queued stale
-actions. Reattachment creates a fresh scope; old dispatch functions remain
-stopped forever.
-
-### Keep scheduling simple
-
-Coalesce redraw requests, compute the attached layout, and repaint the complete
-logical cell buffer. Let Vaxis diff terminal cells. Add incremental layout or
-partial paint only in response to measured problems.
-
-## Clean-break status
-
-The retained cutover is complete: attachment scopes are active, modules use
-canonical package paths, examples/tests use persistent Nodes, and the old
-Surface runtime has been deleted. This project has no compatibility constraint.
-Prefer deletion and a coherent API over aliases, adapters, or deprecation
-layers.
+Public application modules stay at the package root. Move Node, paint, focus,
+hit testing, routing, scheduling, layout, and backend bindings beneath `core/`
+to communicate their unsupported status.
 
 ## API principles
 
 - Prefer one configurable primitive over many single-purpose variants.
 - Primitive constructors are infallible; application/terminal creation may fail.
-- Use Ard-native public structs and enums; convert backend values at boundaries.
-- Keep application-specific loaders, searchable lists, and virtualization local
-  until repetition demonstrates a stable reusable shape.
-- Use Ard `Int` for geometry and indexes, and validate non-negative sizes at
-  constructors and boundaries.
+- Use Ard-native public structs and enums and convert backend values at
+  boundaries.
+- Use Ard `Int` for geometry and indexes and validate non-negative sizes.
+- Style is open value data validated when applied.
+- Expected conditional outcomes use Bool; recoverable runtime failures use
+  Result; programmer contract violations panic.
+- Cleanup and listener removal functions are idempotent.
+- Keep app-specific loaders, searchable lists, and virtualization local until
+  repetition demonstrates a stable reusable shape.
 
 ## Verification
 
@@ -115,16 +42,16 @@ Run formatting and compiler validation on every changed Ard file.
 
 Prefer deterministic headless tests for:
 
-- persistent identity and hierarchy mutation;
-- attachment cancellation and stale dispatch suppression;
-- layout, clipping, scrolling, and translated geometry;
-- direct cell painting, styles, wide spans, and cursor placement;
-- focus order, hit testing, and phased event routing;
-- recursive destruction and Context ownership.
+- App/Root lifecycle, dispatch, cancellation, and Context ownership;
+- persistent identity, indexed reorder/reparent, detach, and destruction;
+- layout, clipping, scrolling, wrapping, and translated geometry;
+- direct cells, text styles, wide spans, and cursor placement;
+- listener order, event prevention, bubbling, and structural mutation;
+- explicit focus, no-fallback behavior, hit testing, and reveal;
+- Input editing/commit callbacks and nested ScrollBox fallback.
 
-Use PTY tests for terminal startup/restoration, keyboard and mouse input,
-scrolling, resize, cursor placement, asynchronous dispatch, explorer behavior,
-and clean quit.
+Use PTY tests for terminal startup/restoration, raw keyboard/mouse/paste input,
+resize, cursor placement, asynchronous dispatch, examples, and clean quit.
 
 Current validation entry points:
 
@@ -144,7 +71,6 @@ ARD=ard-dev python3 benchmarks/run.py
 
 ## References
 
-- Architecture: [`docs/architecture.md`](./docs/architecture.md)
-- Vaxis source: `../vaxis` or `go.rockorager.dev/vaxis`
-- Ard compiler source: `../ard`
-- Ard docs: <https://ard.run>
+- Application API: [`ADR 0002`](./docs/adrs/0002-define-application-api.md)
+- Vaxis source: `go.rockorager.dev/vaxis`
+- Ard docs: https://ard.run

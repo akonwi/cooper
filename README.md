@@ -1,38 +1,27 @@
 # Cooper
 
-**An Ard-native retained-mode TUI framework** powered by
+**An Ard-native imperative retained-mode TUI framework** powered by
 [Vaxis](https://github.com/rockorager/vaxis).
 
-Cooper keeps application state, hierarchy, layout geometry, focus, and event
-targets in persistent Ard renderables. Layout updates attached Nodes in place,
-and painting writes directly into one root cell buffer for Vaxis to diff.
+Cooper keeps application state, control identity, hierarchy, layout geometry,
+focus, listeners, and event targets in persistent Ard controls. Layout updates
+attached Nodes in place, and drawing writes directly into one logical cell
+buffer for Vaxis to diff.
 
 ## Status
 
 Cooper is under active development and currently requires `ard-dev` from Ard
-main (the promoted retained API depends on changes newer than v0.37.0; the
-manifest targets the upcoming v0.38.0 release). The retained vertical slice
-includes:
+main. The accepted application API is now being implemented, and the runnable
+examples will be migrated during that work.
 
-- persistent `Node` identity and explicit hierarchy mutation;
-- row/column flex layout through Ard-native `Style`;
-- retained `Box`, `Text`, `Input`, and `ScrollView` primitives;
-- RGB cell styling and terminal attributes;
-- direct capture/target/bubble event routing;
-- direct focus identity, mouse hit testing, and focused-descendant reveal;
-- attachment-scoped asynchronous dispatch and cancellation;
-- deterministic headless tests and PTY-tested applications.
+The canonical design is the accepted
+[application API ADR](./docs/adrs/0002-define-application-api.md). Cooper has no
+compatibility constraint while it is implemented.
 
-The earlier Surface-tree experiment has been removed. See
-[the architecture](./docs/architecture.md) for the accepted clean-break design.
+## Accepted application shape
 
-## Install
-
-```sh
-ard-dev add github.com/akonwi/cooper@latest
-```
-
-## Quick start
+> This is the accepted target API. It will become runnable as the implementation
+> cutover proceeds.
 
 ```ard
 use cooper/app
@@ -42,110 +31,77 @@ use cooper/style
 fn main() {
   let application = app::new().expect("create Cooper app")
   let field = input::new(
-    application.context(),
+    application.context,
     placeholder: "Type here, then press Ctrl+C to quit",
-    initial_style: style::new(
+    style: style::new(
       width: style::percent(100.0),
       height: style::cells(1),
     ),
   )
 
-  application.run(field).expect("run Cooper")
+  application.root.add(field)
+  field.focus()
+  application.run().expect("run Cooper")
 }
 ```
 
-`Input` retains its value and cursor. It supports grapheme-aware editing,
-Left/Right/Home/End, Backspace/Delete, paste, horizontal cursor visibility,
-click focus, and mouse cursor placement. App owns Tab/Shift+Tab traversal and
-Ctrl+C shutdown.
+App exposes its constructor Context and permanent terminal-sized Root. Controls
+are persistent references: construct them once, add them to the tree, and
+mutate them through setters. `run()` is blocking and one-shot; App guarantees
+terminal teardown.
 
-## Renderable model
+## Retained model
 
-Every renderable owns one persistent Node:
+Every built-in control owns one persistent internal Node. Parent/child
+relationships change through indexed `add`, `remove`, reparenting, `destroy`,
+and `destroy_recursively`.
 
-```ard
-trait Renderable {
-  fn node() mut Node
-  fn mut mount(ctx: MountContext)
-  fn paint(ctx: mut PaintContext)
-  fn mut event(ctx: mut EventContext) EventResult
-}
+- Removal detaches without destroying.
+- Same-parent reorder preserves attachment.
+- Cross-parent reparent receives a fresh attachment scope.
+- `destroy` destroys one control and preserves detached children.
+- `destroy_recursively` destroys the complete subtree.
+- App teardown destroys all remaining Context-owned controls.
+
+The internal Renderable protocol is language-visible beneath `core/` but is not
+yet a supported custom-control API.
+
+## Runtime behavior
+
+- Context dispatch queues application work on the UI thread and exposes
+  App-lifetime cancellation.
+- Frame requests are demand-driven and coalesced.
+- Layout and drawing use one frame-consistent grapheme/terminal-width measurer.
+- Drawing writes directly into one backend-independent cell buffer.
+- Vaxis input is converted to Cooper-owned event values.
+- Keyboard and paste run through App listeners and then the focused control.
+- Mouse input targets the deepest hit control and bubbles through ancestors.
+- Focus is explicit or caused by configurable mouse autofocus; Cooper does not
+  reserve Tab or choose fallback focus.
+
+## Initial controls
+
+- `Box` — indexed flex container with background, border, and title;
+- `Text` — multiline plain text with terminal-aware wrapping and TextStyle;
+- `Input` — grapheme-aware single-line editing, validation, and callbacks;
+- `ScrollBox` — focusable multi-child vertical scrolling container.
+
+Public layout uses Ard-native Style, Color, Rect, and Geometry values.
+Tess/Yoga remains a hidden and replaceable internal layout backend.
+
+## Installation
+
+```sh
+ard-dev add github.com/akonwi/cooper@latest
 ```
 
-Constructors create detached renderables. Parent/child relationships change
-through `add`, `remove`, reparenting, and `destroy`. Removal permits reuse;
-reattachment receives a fresh mount scope; destruction recursively releases the
-subtree.
-
-`paint` observes retained state and writes directly into the root Ard cell
-buffer. It does not rebuild a Surface or child description tree.
-
-## Asynchronous effects
-
-`mount` runs once for each structural attachment to a running root.
-`MountContext` provides an attachment-scoped dispatch function and cancellation
-receiver:
-
-```ard
-fn mut mount(ctx: node::MountContext) {
-  async::start(fn() {
-    select {
-      ctx.cancellation.recv() => (),
-      let result = load_data() => {
-        let _ = ctx.dispatch(fn() {
-          self.apply(result)
-        })
-      },
-    }
-  })
-}
-```
-
-Detach or destroy closes cancellation, rejects future calls through the old
-dispatch function, and suppresses queued stale actions. Reattachment creates a
-new scope. Background work must only inspect or mutate retained state inside a
-dispatched UI-thread closure.
-
-See [`examples/async.ard`](./examples/async.ard).
-
-## Layout and scrolling
-
-`Box` is the configurable flex primitive. Public `Style` supports horizontal
-and vertical direction, grow/shrink, alignment, gap, cell and percentage
-lengths, display, position, and overflow. Tess/Yoga is currently an internal,
-replaceable layout backend.
-
-```ard
-let content = box::new(ctx)
-// Add persistent children.
-
-let viewport = scroll::new(
-  ctx,
-  content,
-  initial_style: style::new(
-    width: style::percent(100.0),
-    height: style::cells(1),
-    grow: 1.0,
-  ),
-)
-```
-
-`ScrollView` retains requested and effective offsets separately, clips and
-translates descendant geometry, bubbles wheel fallback, and reveals focused
-Nodes after traversal or resize without snapping ordinary wheel movement back
-to focus.
-
-## Events and focus
-
-Events target direct Node references and route capture → target → bubble.
-`EventResult::handled` records handling without stopping traversal;
-`ctx.stop_propagation()` stops it explicitly. Route attachment generations are
-revalidated because capture handlers may mutate the tree.
-
-Focus stores direct Node identity. Hit testing uses the same translated and
-clipped screen geometry as painting and cursor placement.
+Published revisions may lag the accepted target API while the clean-break
+implementation is underway.
 
 ## Examples
+
+Current runnable examples exercise the retained implementation baseline and
+will be migrated during the application API cutover:
 
 ```sh
 cd examples
@@ -156,30 +112,25 @@ ard-dev run async.ard
 ard-dev run explorer.ard
 ```
 
-The explorer is an app-local asynchronous filesystem listing with responsive
-listing/detail panes, keyboard activation, mouse targeting, resize handling,
-and retained scrolling.
+See [`examples/README.md`](./examples/README.md) for current behavior and
+migration status.
 
-## Project structure
+## Target module structure
 
 ```text
-app.ard          application runtime and Vaxis boundary
-box.ard          generic retained flex container
-cell_style.ard   backend-independent colors and attributes
-context.ard      Node allocation, measurement, and cleanup ownership
-event.ard        phased context, propagation, and dispatch result types
-focus.ard        direct focus identity, traversal, and reveal
-geometry.ard     rectangles and cached geometry
-hit.ard          clipped direct-Node hit testing
+app.ard          App facade and Vaxis boundary
+box.ard          configurable retained flex container
+color.ard        backend-independent RGB color
+context.ard      public construction, dispatch, and cancellation capability
+event.ard        Cooper-owned input events and listener controls
+geometry.ard     Rect and cached Geometry
 input.ard        retained single-line Input
-node.ard         Renderable, Node, hierarchy, mount, and destruction
-paint.ard        root cell buffer and localized PaintContext
-router.ard       capture/target/bubble delivery
-runtime.ard      dispatch queue and cancellation scopes
-scroll.ard       retained vertical ScrollView
+root.ard         permanent terminal-sized Root
+scroll_box.ard   retained vertical ScrollBox
 style.ard        Ard-native layout vocabulary
-text.ard         measured retained Text
-ffi/             internal Tess/Yoga boundary
+testing.ard      headless TestApp and frame snapshots
+text.ard         Text and TextStyle
+core/            unsupported runtime, layout, and backend implementation
 test/            deterministic headless tests
 examples/        runnable PTY-tested applications
 benchmarks/      retained layout and stress workloads
@@ -207,15 +158,15 @@ ARD=ard-dev python3 benchmarks/run.py
 
 ## Design principles
 
-- Persistent Ard Nodes and renderable structs own framework and application
+- Persistent Ard Nodes and concrete controls own framework and application
   state.
 - Vaxis is a narrow terminal backend, not Cooper's public model.
-- Tree mutation and retained state mutation are UI-thread-only.
-- Layout, paint, hit testing, focus, and cursor placement share cached geometry.
-- Paint the complete logical cell buffer first; optimize incrementally only in
-  response to measurements.
+- Tree and retained-state mutation are UI-thread-only.
+- Layout, drawing, hit testing, focus, and cursor placement share cached
+  geometry.
+- Paint the complete logical buffer first; optimize only after measurement.
 - Prefer one configurable primitive and promote broader APIs only after repeated
-  application-level usage.
+  application use.
 
 ## License
 

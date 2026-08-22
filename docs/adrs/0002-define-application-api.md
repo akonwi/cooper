@@ -1,8 +1,19 @@
-# Application API proposal
+# 0002: Define the Application API
 
-Status: proposed for final review. This is not yet a compatibility guarantee.
+## Status
 
-## Model
+Accepted
+
+## Context
+
+Cooper needs one coherent application-facing contract for constructing a
+runtime, retaining controls, mutating the tree, handling input, scheduling
+frames, and testing applications. The contract must remain Ard-native while
+using Vaxis only as the terminal backend.
+
+## Decision
+
+### Model
 
 Cooper follows OpenTUI core's imperative retained model: create one terminal
 runtime, pass its Context to control constructors, build one persistent tree,
@@ -13,7 +24,7 @@ The application-facing core is defined here. `Renderable` remains a
 language-visible implementation protocol under `core/`, not a supported custom
 extension API yet.
 
-## App, Context, and Root
+### App, Context, and Root
 
 ```ard
 let application = app::new().expect("create Cooper app")
@@ -84,7 +95,7 @@ after destruction is rejected, and queued actions are suppressed by
 destruction. Cancellation closes during destruction. Cooper does not own or
 forcibly terminate application fibers.
 
-## Tree lifetime
+### Tree lifetime
 
 Tree placement and destruction ownership are separate:
 
@@ -103,7 +114,7 @@ Tree placement and destruction ownership are separate:
 Child order controls layout, drawing, and hit testing. Applications retain
 direct control references; public IDs and string tree lookup are omitted.
 
-## Common control API
+### Common control API
 
 Every visual control exposes:
 
@@ -131,7 +142,7 @@ fn mut on_blur(handler: fn()) fn()
 Control constructors return mutable references so the tree and application
 share one persistent identity. Effective setter changes request a frame.
 
-## Style and geometry
+### Style and geometry
 
 Style is open value data. It has the standard Flexbox/OpenTUI vocabulary:
 
@@ -187,7 +198,7 @@ Local geometry is relative to the parent's unscrolled content origin; screen
 geometry includes ancestor layout and scrolling. Geometry is zero before the
 first frame and may remain stale until the next scheduled frame.
 
-## Color
+### Color
 
 ```ard
 struct Color {
@@ -203,7 +214,7 @@ Components outside `0...255` panic. `Color?` represents terminal default or no
 fill according to the property. Alpha, named colors, palette indexes, and theme
 references are deferred.
 
-## Text
+### Text
 
 `TextStyle` and `Text` both live in `text.ard`.
 
@@ -242,7 +253,7 @@ control API. It supports explicit newlines and terminal-width-aware word or
 grapheme wrapping. Graphemes are never split. Rich spans, selection, links,
 truncation, Markdown, and Code are deferred.
 
-## Box
+### Box
 
 ```ard
 enum Border {
@@ -265,7 +276,7 @@ enablement is not public.
 
 Partial/custom borders, bottom titles, and separate title styling are deferred.
 
-## Input
+### Input
 
 ```ard
 input::new(
@@ -300,7 +311,7 @@ editing grapheme-safe. `set_value` moves the cursor to the end. A TextStyle
 background fills the complete Input bounds. Cursor appearance remains runtime
 policy.
 
-## ScrollBox
+### ScrollBox
 
 ScrollBox is a vertical container with the Box tree operations and common
 control API:
@@ -323,7 +334,7 @@ End.
 Horizontal/sticky scrolling, scrollbars, acceleration, and viewport culling are
 deferred.
 
-## Events, listeners, and focus
+### Events, listeners, and focus
 
 Cooper converts Vaxis input to backend-independent values. Key events contain a
 canonical string name, text, press/repeat/release type, and Shift/Ctrl/Alt/Super
@@ -360,7 +371,7 @@ hide, detach, or destruction clears focus without selecting a fallback.
 Successful focus reveals through ancestor ScrollBoxes. Cooper has no implicit
 Tab traversal.
 
-## Frame scheduling
+### Frame scheduling
 
 Cooper is demand-driven. Initial run, tree changes, effective setters, focus,
 and resize request frames. Internal requests coalesce before layout and complete
@@ -370,7 +381,7 @@ Dispatch itself does not force a frame; setters called by a dispatched action
 do. Manual redraw, continuous rendering, frame-rate controls, and animation are
 deferred.
 
-## Testing
+### Testing
 
 ```ard
 let test_app = testing::new(width: 40, height: 10)
@@ -387,7 +398,7 @@ bounded flush, resize, key/paste/mouse/scroll input, read-only frame and cell
 snapshots, and idempotent destruction. It never initializes the host terminal.
 PTY tests retain responsibility for Vaxis parsing and terminal restoration.
 
-## Errors
+### Errors
 
 - Recoverable terminal creation/execution and rejected dispatch use Result.
 - Invalid arguments, tree invariants, destroyed-control use, and repeated run
@@ -396,7 +407,7 @@ PTY tests retain responsibility for Vaxis parsing and terminal restoration.
   scroll-at-boundary use Bool.
 - App, control, TestApp, and listener cleanup are idempotent.
 
-## Modules
+### Modules
 
 Documented application modules are:
 
@@ -405,12 +416,11 @@ app  box  color  context  event  geometry
 input  root  scroll_box  style  testing  text
 ```
 
-There is no public `cell_style`. Node, paint, focus, routing, scheduling,
-layout, and backend implementation modules are nested under `core/`. Ard does
-not enforce package-private imports, so that path communicates the support
-boundary rather than enforcing it.
+Node, paint, focus, routing, scheduling, layout, and backend implementation
+modules are nested under `core/`. Ard does not enforce package-private imports,
+so that path communicates the support boundary rather than enforcing it.
 
-## OpenTUI correspondence
+### OpenTUI correspondence
 
 | OpenTUI core | Cooper |
 | --- | --- |
@@ -425,3 +435,17 @@ boundary rather than enforcing it.
 
 Cooper intentionally differs by separating App from Context, using a blocking
 one-shot run, and deferring supported custom-renderable authoring.
+
+## Consequences
+
+- The implementation, examples, tests, and package layout must migrate together
+  to this clean-break API.
+- Applications use persistent mutable controls and explicit tree operations.
+- The initial public surface stays intentionally narrow, with deferred features
+  added only after concrete use demonstrates a stable shape.
+- Internal Renderable authoring remains unsupported until built-in controls have
+  fully exercised the protocol.
+
+## Related
+
+None.

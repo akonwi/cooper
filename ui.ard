@@ -17,6 +17,7 @@ type Span = text_control::Span
 type SpanStyle = text_control::SpanStyle
 type TextStyle = text_control::TextStyle
 type TextWrap = text_control::TextWrap
+type TextOverflow = text_control::TextOverflow
 
 let box = box_control::new
 let input = input_control::new

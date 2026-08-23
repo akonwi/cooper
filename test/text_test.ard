@@ -56,6 +56,94 @@ test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!St
   testing::assert(label.node_ref.is_destroyed(), "Expected Unicode wrapped Text cleanup")
 }
 
+test fn horizontal_ellipsis_replaces_complete_glyph_and_clamps_selection() Void!Str {
+  let application = cooper_testing::new(5, 1)
+  let label = text::new(
+    application.context,
+    content: text::styled_text(
+      [
+        text::span("abc", style: text::span_style(foreground: color::rgb(180, 20, 30)), link: "https://example.com/abc"),
+        text::span("你", style: text::span_style(foreground: color::rgb(20, 180, 30), italic: true), link: "https://example.com/wide"),
+        text::span("z", style: text::span_style(foreground: color::rgb(20, 30, 180)), link: "https://example.com/z"),
+      ],
+    ),
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::cells(5), height: style::cells(1)),
+    overflow: text::TextOverflow::ellipsis,
+  )
+  application.root.add(label)
+  application.render()
+
+  let marker = application.frame().cell(3, 0).expect("horizontal ellipsis")
+  try testing::assert(label.overflow() == text::TextOverflow::ellipsis and label.content() == "abc你z", "Expected configured ellipsis without source mutation")
+  try testing::assert(marker.grapheme == "…" and (not marker.style.italic) and marker.style.foreground.expect("ellipsis inherited style").red == Uint8::from(180), "Expected ellipsis style immediately before final omitted source")
+  try testing::assert(marker.hyperlink.is_none(), "Expected synthetic ellipsis without hyperlink")
+  try testing::assert(application.frame().cell(4, 0).expect("cleared wide continuation").grapheme == " ", "Expected no partial wide glyph")
+
+  application.drag(3, 0, 0, 0)
+  try testing::assert(label.selected_text() == "abc" and application.selection().expect("ellipsis-clamped selection").selected_text == "abc", "Expected ellipsis endpoint clamped to visible source")
+  try testing::assert(not application.frame().cell(3, 0).expect("unselected ellipsis").style.reverse, "Expected synthetic ellipsis not selected")
+
+  label.set_overflow(text::TextOverflow::clip)
+  application.render()
+  try testing::assert(label.overflow() == text::TextOverflow::clip, "Expected overflow setter")
+  try testing::assert(application.frame().cell(3, 0).expect("restored clipped wide glyph").grapheme == "你" and application.frame().cell(4, 0).expect("restored wide link continuation").hyperlink.or("") == "https://example.com/wide", "Expected clip mode to restore complete linked wide glyph")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected horizontal ellipsis cleanup")
+}
+
+test fn vertical_ellipsis_uses_last_visible_row_and_preceding_style() Void!Str {
+  let application = cooper_testing::new(6, 2)
+  let label = text::new(
+    application.context,
+    content: text::styled_text(
+      [
+        text::span("one "),
+        text::span("two ", style: text::span_style(foreground: color::rgb(40, 150, 210), italic: true), link: "https://example.com/two"),
+        text::span("three", style: text::span_style(bold: true)),
+      ],
+    ),
+    styles: style::new(width: style::cells(6), height: style::cells(2)),
+    overflow: text::TextOverflow::ellipsis,
+  )
+  application.root.add(label)
+  application.render()
+
+  let marker = application.frame().cell(4, 1).expect("vertical ellipsis")
+  try testing::assert(application.frame().cell(0, 0).expect("first visible line").grapheme == "o" and application.frame().cell(0, 1).expect("last visible line").grapheme == "t", "Expected visible wrapped prefix")
+  try testing::assert(marker.grapheme == "…" and marker.style.italic and marker.style.foreground.expect("vertical marker style").blue == Uint8::from(210), "Expected marker after last visible source")
+  try testing::assert(marker.hyperlink.is_none(), "Expected vertical ellipsis to clear source hyperlink")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected vertical ellipsis cleanup")
+}
+
+test fn ellipsis_without_visible_source_is_synthetic_and_not_selectable() Void!Str {
+  let application = cooper_testing::new(2, 1)
+  let label = text::new(
+    application.context,
+    content: "\n\n",
+    styles: style::new(width: style::cells(2), height: style::cells(1)),
+    text_style: text::style(bold: true),
+    overflow: text::TextOverflow::ellipsis,
+  )
+  application.root.add(label)
+  application.render()
+
+  let marker = application.frame().cell(0, 0).expect("source-free ellipsis")
+  try testing::assert(marker.grapheme == "…" and marker.style.bold, "Expected Text-level marker style without fitting source")
+  application.click(0, 0)
+  let copied = match application.selection() {
+    selected => selected.selected_text,
+    _ => "",
+  }
+  try testing::assert((not label.selection().is_some()) and copied.is_empty(), "Expected source-free synthetic marker not selectable")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected source-free ellipsis cleanup")
+}
+
 test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
   let application = cooper_testing::new(9, 1)
   let spans = mut List::new<text::Span>()

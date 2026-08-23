@@ -418,6 +418,100 @@ test fn finalized_text_drag_preserves_selected_zero_width_source() Void!Str {
   testing::assert(message.node_ref.is_destroyed(), "Expected zero-width finalized selection cleanup")
 }
 
+test fn fully_ellipsized_source_lock_restores_selection_when_revealed() Void!Str {
+  let application = cooper_testing::new(6, 1)
+  let message = text::new(
+    application.context,
+    content: "abcdef",
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::percent(100.0), height: style::cells(1)),
+    overflow: text::TextOverflow::ellipsis,
+  )
+  application.root.add(message)
+  application.render()
+
+  application.drag(4, 0, 5, 0)
+  try testing::assert(message.selected_text() == "ef", "Expected initial source lock")
+  application.resize(3, 1)
+  try testing::assert(application.selection().expect("retained hidden source lock").selected_text == "", "Expected fully omitted lock retained without copied source")
+  try testing::assert(not application.frame().cell(2, 0).expect("unselected hidden marker").style.reverse, "Expected marker excluded from hidden lock")
+
+  application.resize(6, 1)
+  try testing::assert(message.selected_text() == "ef" and application.selection().expect("restored source lock").selected_text == "ef", "Expected hidden source lock restored")
+  try testing::assert(application.frame().cell(4, 0).expect("restored selected source").style.reverse and application.frame().cell(5, 0).expect("restored selected end").style.reverse, "Expected restored selection styling")
+
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected hidden source lock cleanup")
+}
+
+test fn word_lock_reveals_suffix_previously_behind_ellipsis() Void!Str {
+  let application = cooper_testing::new(3, 1)
+  let message = text::new(
+    application.context,
+    content: "abcdef",
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::percent(100.0), height: style::cells(1)),
+    overflow: text::TextOverflow::ellipsis,
+  )
+  application.root.add(message)
+  application.render()
+
+  application.double_click(2, 0)
+  try testing::assert(message.selected_text() == "ab", "Expected marker-clamped visible word prefix")
+  application.resize(6, 1)
+  try testing::assert(message.selected_text() == "abcdef" and application.selection().expect("expanded revealed word").selected_text == "abcdef", "Expected full word lock after revealing suffix")
+  try testing::assert(application.frame().cell(5, 0).expect("revealed selected suffix").style.reverse, "Expected revealed suffix selection style")
+
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected ellipsis word lock cleanup")
+}
+
+test fn cross_control_selection_excludes_ellipsized_source_and_marker() Void!Str {
+  let application = cooper_testing::new(5, 2)
+  let truncated = text::new(
+    application.context,
+    content: "abc你z",
+    wrap: text::TextWrap::none,
+    styles: fixed(5),
+    overflow: text::TextOverflow::ellipsis,
+  )
+  let next = text::new(application.context, content: "X", styles: fixed(5))
+  application.root.add(truncated)
+  application.root.add(next)
+
+  application.drag(0, 0, 0, 1)
+
+  try testing::assert(truncated.selected_text() == "abc", "Expected omitted Text source excluded from local selection")
+  try testing::assert(application.selection().expect("ellipsis cross-control selection").selected_text == "abc\nX", "Expected global selection to exclude omitted source and synthetic marker")
+  try testing::assert(not application.frame().cell(3, 0).expect("cross-control ellipsis marker").style.reverse, "Expected cross-control selection not to style marker")
+  application.destroy()
+  testing::assert(truncated.node_ref.is_destroyed(), "Expected ellipsis cross-control cleanup")
+}
+
+test fn ellipsis_retains_zero_width_source_locally_but_not_in_global_copy() Void!Str {
+  let application = cooper_testing::new(1, 3)
+  let first = text::new(application.context, content: "X", styles: fixed(1))
+  let truncated = text::new(
+    application.context,
+    content: "\u200bab",
+    wrap: text::TextWrap::none,
+    styles: fixed(1),
+    overflow: text::TextOverflow::ellipsis,
+  )
+  let last = text::new(application.context, content: "Y", styles: fixed(1))
+  application.root.add(first)
+  application.root.add(truncated)
+  application.root.add(last)
+
+  application.drag(0, 0, 0, 2)
+
+  try testing::assert(truncated.selected_text() == "\u200b", "Expected retained zero-width source in local selection")
+  try testing::assert(application.selection().expect("visible zero-width copy").selected_text == "X\nY", "Expected zero-width source excluded from visible global copy")
+  try testing::assert(application.frame().cell(0, 1).expect("zero-width ellipsis marker").grapheme == "…" and (not application.frame().cell(0, 1).expect("unselected zero-width marker").style.reverse), "Expected synthetic marker outside selection")
+  application.destroy()
+  testing::assert(truncated.node_ref.is_destroyed(), "Expected zero-width ellipsis cleanup")
+}
+
 test fn clipping_limits_fragments_but_not_logical_text_range() Void!Str {
   let application = cooper_testing::new(2, 1)
   let clipped_style = mut fixed(1)

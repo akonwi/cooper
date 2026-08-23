@@ -92,10 +92,11 @@ fn main() {
 
   let title = text::new(
     ctx,
-    content: "Interaction Lab — try each labeled behavior",
+    content: "Interaction Lab — try each labeled behavior — resize to reveal this tail",
     styles: row(),
     selectable: false,
     text_style: text::style(foreground: color::rgb(90, 170, 255), bold: true),
+    overflow: text::TextOverflow::ellipsis,
   )
   let terminal = text::new(
     ctx,

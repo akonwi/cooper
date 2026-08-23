@@ -35,6 +35,11 @@ enum TextWrap {
   word,
 }
 
+enum TextOverflow {
+  clip,
+  ellipsis,
+}
+
 fn style(
   foreground: color::Color?,
   background: color::Color?,
@@ -598,6 +603,91 @@ private fn visual_glyphs(content: Str, layout: Layout, runs: [StyleRun], measure
   output.@
 }
 
+private struct EllipsisGlyph {
+  x: Int,
+  y: Int,
+  width: Int,
+  style: TextStyle,
+}
+
+private struct VisualView {
+  glyphs: [VisualGlyph],
+  ellipsis: EllipsisGlyph?,
+  truncated: Bool,
+}
+
+private fn ellipsis_active(layout: Layout, width: Int, height: Int, overflow: TextOverflow) Bool {
+  overflow == TextOverflow::ellipsis and (layout.width > width or layout.height > height)
+}
+
+private fn visual_view(
+  content: Str,
+  layout: Layout,
+  runs: [StyleRun],
+  width: Int,
+  height: Int,
+  overflow: TextOverflow,
+  base_style: TextStyle,
+  measure: fn(Str) Int,
+) VisualView {
+  let visual = visual_glyphs(content, layout, runs, measure)
+  let truncated = ellipsis_active(layout, width, height, overflow)
+  if not truncated {
+    VisualView{glyphs: visual, ellipsis: Maybe::new<EllipsisGlyph>(), truncated: false}
+  } else {
+    let kept = mut List::new<VisualGlyph>()
+    mut omitted = false
+    mut omitted_y = height
+    for glyph in visual {
+      if not omitted {
+        let fits = glyph.y >= 0 and glyph.y < height and glyph.x >= 0 and glyph.x + glyph.width <= width
+        if fits {
+          kept.push(glyph)
+        } else {
+          omitted = true
+          omitted_y = glyph.y
+        }
+      }
+    }
+
+    let marker_width = measure("…")
+    if width < marker_width or height < 1 or marker_width < 1 {
+      VisualView{glyphs: kept.@, ellipsis: Maybe::new<EllipsisGlyph>(), truncated: true}
+    } else {
+      mut marker_y = omitted_y
+      if marker_y < 0 or marker_y >= height {
+        marker_y = height - 1
+      }
+      let fitting = mut List::new<VisualGlyph>()
+      mut marker_x = 0
+      mut row_open = true
+      for glyph in kept {
+        if glyph.y < marker_y {
+          fitting.push(glyph)
+        } else if glyph.y == marker_y and row_open {
+          if glyph.x + glyph.width + marker_width <= width {
+            fitting.push(glyph)
+            marker_x = glyph.x + glyph.width
+          } else {
+            row_open = false
+          }
+        }
+      }
+      let marker_style = match fitting.at(fitting.size() - 1) {
+        glyph => runs.at(glyph.style_index).expect("ellipsis preceding style run").style,
+        _ => base_style,
+      }
+      VisualView{
+        glyphs: fitting.@,
+        ellipsis: Maybe::new<EllipsisGlyph>(
+          EllipsisGlyph{x: marker_x, y: marker_y, width: marker_width, style: marker_style},
+        ),
+        truncated: true,
+      }
+    }
+  }
+}
+
 private struct WrapSegment {
   text: Str,
   width: Int,
@@ -889,6 +979,7 @@ struct Text {
   styled_value: StyledText,
   style_cache: Any,
   wrap_mode: TextWrap,
+  overflow_mode: TextOverflow,
   text_style: TextStyle,
   selection_patch: fn(mut TextStyle),
   selected_range: selection::Range?,
@@ -906,6 +997,7 @@ fn new(
   text_style: TextStyle?,
   selectable: Bool?,
   selection_style: (fn(mut TextStyle))?,
+  overflow: TextOverflow?,
 ) mut Text {
   let snapshot = snapshot_content(content)
   let retained = context::internal_state(ctx).create_node(styles.or(layout_style::new()))
@@ -917,6 +1009,7 @@ fn new(
     styled_value: snapshot.styled,
     style_cache: new_style_cache(styled_runs(snapshot.styled, base_style, patch)),
     wrap_mode: wrap.or(TextWrap::word),
+    overflow_mode: overflow.or(TextOverflow::clip),
     text_style: base_style,
     selection_patch: patch,
     selected_range: Maybe::new<selection::Range>(),
@@ -960,7 +1053,13 @@ impl node::Renderable for Text {
       self.width_measurer,
     )
     let runs = cached_style_runs(self.style_cache)
-    if runs.size() <= 1 {
+    let truncated = ellipsis_active(
+      measured,
+      self.node_ref.layout().screen.width,
+      self.node_ref.layout().screen.height,
+      self.overflow_mode,
+    )
+    if runs.size() <= 1 and (not truncated) {
       mut hyperlink = Maybe::new<Str>()
       let applied = match runs.at(0) {
         run => {
@@ -979,12 +1078,29 @@ impl node::Renderable for Text {
         )
       }
     } else {
-      paint_visual_glyphs(
-        ctx,
-        visual_glyphs(self.content, measured, runs, self.width_measurer),
+      let view = visual_view(
+        self.content,
+        measured,
         runs,
+        self.node_ref.layout().screen.width,
+        self.node_ref.layout().screen.height,
+        self.overflow_mode,
+        self.text_style,
         self.width_measurer,
       )
+      paint_visual_glyphs(ctx, view.glyphs, runs, self.width_measurer)
+      match view.ellipsis {
+        marker => {
+          ctx.write_measured(
+            marker.x,
+            marker.y,
+            "…",
+            self.width_measurer,
+            text_style: cell_style(marker.style),
+          )
+        },
+        _ => (),
+      }
     }
     if self.selected_glyphs.size() > 0 {
       paint_selected_glyphs(ctx, self.selected_glyphs, self.width_measurer)
@@ -997,7 +1113,26 @@ impl node::Renderable for Text {
 }
 
 impl Text {
-  private fn visual_content() [VisualGlyph] {
+  private fn current_view() VisualView {
+    let measured = layout_text(
+      self.content,
+      self.wrap_mode,
+      self.node_ref.layout().screen.width,
+      self.width_measurer,
+    )
+    visual_view(
+      self.content,
+      measured,
+      cached_style_runs(self.style_cache),
+      self.node_ref.layout().screen.width,
+      self.node_ref.layout().screen.height,
+      self.overflow_mode,
+      self.text_style,
+      self.width_measurer,
+    )
+  }
+
+  private fn full_visual_content() [VisualGlyph] {
     let measured = layout_text(
       self.content,
       self.wrap_mode,
@@ -1007,29 +1142,70 @@ impl Text {
     visual_glyphs(self.content, measured, cached_style_runs(self.style_cache), self.width_measurer)
   }
 
+  private fn visual_content() [VisualGlyph] {
+    self.current_view().glyphs
+  }
+
+  private fn clamped_point(view: VisualView) geometry::Point {
+    mut point = geometry::Point{x: 0, y: 0}
+    mut found = false
+    for glyph in view.glyphs {
+      if glyph.width > 0 {
+        point = geometry::Point{x: glyph.x + glyph.width - 1, y: glyph.y}
+        found = true
+      }
+    }
+    if not found {
+      match view.ellipsis {
+        marker => { point = geometry::Point{x: marker.x, y: marker.y} },
+        _ => (),
+      }
+    }
+    point
+  }
+
   private fn expansion_from_source(value: SourceRange) node::SelectionExpansion? {
-    mut started = false
-    mut anchor_x = 0
-    mut anchor_y = 0
-    mut focus_x = 0
-    mut focus_y = 0
+    mut range_started = false
     mut range_start = 0
     mut range_end = 0
-    for glyph in self.visual_content() {
+    for glyph in self.full_visual_content() {
       let overlaps = glyph.source_end > value.start and glyph.source_start < value.end
-      if overlaps and glyph.width > 0 {
-        if not started {
-          started = true
-          anchor_x = glyph.x
-          anchor_y = glyph.y
+      if overlaps {
+        if not range_started {
+          range_started = true
           range_start = glyph.offset_start
         }
-        focus_x = glyph.x + glyph.width - 1
-        focus_y = glyph.y
         range_end = glyph.offset_end
       }
     }
-    if started {
+    if not range_started {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      let view = self.current_view()
+      mut visual_started = false
+      mut anchor_x = 0
+      mut anchor_y = 0
+      mut focus_x = 0
+      mut focus_y = 0
+      for glyph in view.glyphs {
+        let overlaps = glyph.source_end > value.start and glyph.source_start < value.end
+        if overlaps and glyph.width > 0 {
+          if not visual_started {
+            visual_started = true
+            anchor_x = glyph.x
+            anchor_y = glyph.y
+          }
+          focus_x = glyph.x + glyph.width - 1
+          focus_y = glyph.y
+        }
+      }
+      if not visual_started {
+        let clamped = self.clamped_point(view)
+        anchor_x = clamped.x
+        anchor_y = clamped.y
+        focus_x = clamped.x
+        focus_y = clamped.y
+      }
       Maybe::new<node::SelectionExpansion>(
         node::SelectionExpansion{
           anchor_x: anchor_x,
@@ -1041,8 +1217,6 @@ impl Text {
           source_revision: self.source_revision,
         },
       )
-    } else {
-      Maybe::new<node::SelectionExpansion>()
     }
   }
 
@@ -1112,11 +1286,26 @@ impl Text {
   }
 
   private fn word_expansion(local_x: Int, local_y: Int) node::SelectionExpansion? {
+    let view = self.current_view()
     mut source_start = -1
-    for glyph in self.visual_content() {
+    mut preceding_source = -1
+    for glyph in view.glyphs {
+      if glyph.width > 0 {
+        preceding_source = glyph.source_start
+      }
       if glyph.y == local_y and local_x >= glyph.x and local_x < glyph.x + glyph.width {
         source_start = glyph.source_start
         break
+      }
+    }
+    if source_start < 0 {
+      match view.ellipsis {
+        marker => {
+          if preceding_source >= 0 and marker.y == local_y and local_x >= marker.x and local_x < marker.x + marker.width {
+            source_start = preceding_source
+          }
+        },
+        _ => (),
       }
     }
     if source_start < 0 {
@@ -1137,12 +1326,13 @@ impl Text {
     if source_revision != self.source_revision {
       Maybe::new<node::SelectionExpansion>()
     } else {
+      let view = self.current_view()
       mut started = false
       mut anchor_x = 0
       mut anchor_y = 0
       mut focus_x = 0
       mut focus_y = 0
-      for glyph in self.visual_content() {
+      for glyph in view.glyphs {
         let overlaps = glyph.offset_end > logical_range.start and glyph.offset_start < logical_range.end
         if overlaps and glyph.width > 0 {
           if not started {
@@ -1154,21 +1344,24 @@ impl Text {
           focus_y = glyph.y
         }
       }
-      if started {
-        Maybe::new<node::SelectionExpansion>(
-          node::SelectionExpansion{
-            anchor_x: anchor_x,
-            anchor_y: anchor_y,
-            focus_x: focus_x,
-            focus_y: focus_y,
-            logical_range: logical_range,
-            source_range: source_range,
-            source_revision: source_revision,
-          },
-        )
-      } else {
-        Maybe::new<node::SelectionExpansion>()
+      if not started {
+        let clamped = self.clamped_point(view)
+        anchor_x = clamped.x
+        anchor_y = clamped.y
+        focus_x = clamped.x
+        focus_y = clamped.y
       }
+      Maybe::new<node::SelectionExpansion>(
+        node::SelectionExpansion{
+          anchor_x: anchor_x,
+          anchor_y: anchor_y,
+          focus_x: focus_x,
+          focus_y: focus_y,
+          logical_range: logical_range,
+          source_range: source_range,
+          source_revision: source_revision,
+        },
+      )
     }
   }
 
@@ -1180,17 +1373,24 @@ impl Text {
   }
 
   private fn selection_accepts(local_x: Int, local_y: Int) Bool {
-    let measured = layout_text(
-      self.content,
-      self.wrap_mode,
-      self.node_ref.layout().screen.width,
-      self.width_measurer,
-    )
+    let view = self.current_view()
     mut accepted = false
-    for glyph in visual_glyphs(self.content, measured, cached_style_runs(self.style_cache), self.width_measurer) {
+    mut has_source = false
+    for glyph in view.glyphs {
+      if glyph.width > 0 {
+        has_source = true
+      }
       if glyph.y == local_y and local_x >= glyph.x and local_x < glyph.x + glyph.width {
         accepted = true
         break
+      }
+    }
+    if not accepted and has_source {
+      match view.ellipsis {
+        marker => {
+          accepted = marker.y == local_y and local_x >= marker.x and local_x < marker.x + marker.width
+        },
+        _ => (),
       }
     }
     accepted
@@ -1212,12 +1412,7 @@ impl Text {
         end_x = local.anchor_x
         end_y = local.anchor_y
       }
-      let measured = layout_text(
-        self.content,
-        self.wrap_mode,
-        self.node_ref.layout().screen.width,
-        self.width_measurer,
-      )
+      let view = self.current_view()
       let selected = mut List::new<SelectedGlyph>()
       let fragments = mut List::new<node::SelectionFragment>()
       mut first_source = 0
@@ -1228,7 +1423,7 @@ impl Text {
       mut all_selected_visible = true
       let screen = self.node_ref.layout().screen
       let runs = cached_style_runs(self.style_cache)
-      for glyph in visual_glyphs(self.content, measured, runs, self.width_measurer) {
+      for glyph in view.glyphs {
         let glyph_end = glyph.x + glyph.width
         let clip_end = local.clip.x + local.clip.width
         let visible = glyph.y >= local.clip.y and glyph.y < local.clip.y + local.clip.height and glyph.x >= local.clip.x and glyph_end <= clip_end
@@ -1243,7 +1438,7 @@ impl Text {
           if not visible {
             all_selected_visible = false
           }
-          if visible {
+          if visible and glyph.width > 0 {
             fragments.push(
               node::SelectionFragment{
                 screen_x: screen.x + glyph.x,
@@ -1266,17 +1461,18 @@ impl Text {
         self.clear_local_selection()
       } else {
         self.selected_range = Maybe::new<selection::Range>(selection::Range{start: start_offset, end: end_offset})
-        self.selected_text_value = match local.source_range {
-          range => self.content.slice(start: range.start, end: range.end).or(""),
-          _ => self.content.slice(start: first_source, end: last_source).or(""),
+        mut selected_source = self.content.slice(start: first_source, end: last_source).or("")
+        if not view.truncated {
+          match local.source_range {
+            range => { selected_source = self.content.slice(start: range.start, end: range.end).or("") },
+            _ => (),
+          }
         }
+        self.selected_text_value = selected_source
         self.selected_glyphs = selected.@
         mut source_text = Maybe::new<Str>()
         if all_selected_visible and local.prefer_source_text {
-          match local.source_range {
-            range => { source_text = Maybe::new<Str>(self.content.slice(start: range.start, end: range.end).or("")) },
-            _ => (),
-          }
+          source_text = Maybe::new<Str>(self.selected_text_value)
         }
         node::SelectionResult{
           has_selection: true,
@@ -1349,6 +1545,18 @@ impl Text {
     }
   }
 
+  fn overflow() TextOverflow {
+    self.overflow_mode
+  }
+
+  fn mut set_overflow(value: TextOverflow) {
+    self.node_ref.require_live()
+    if self.overflow_mode != value {
+      self.overflow_mode = value
+      self.node_ref.mark_measure_dirty()
+    }
+  }
+
   fn text_style() TextStyle {
     self.text_style
   }
@@ -1413,6 +1621,35 @@ impl Text {
 
 private fn test_width(value: Str) Int {
   unicode::StringWidth(value)
+}
+
+private fn wide_ellipsis_width(value: Str) Int {
+  if value == "…" {
+    2
+  } else {
+    test_width(value)
+  }
+}
+
+test fn ellipsis_that_cannot_fit_paints_no_partial_marker() Void!Str {
+  let content = styled_text([span("abc")])
+  let base = style()
+  let runs = styled_runs(content, base, default_selection_style)
+  let view = visual_view("abc", unwrapped("abc", wide_ellipsis_width), runs, 1, 1, TextOverflow::ellipsis, base, wide_ellipsis_width)
+  try testing::assert(view.truncated and view.ellipsis.is_none(), "Expected no marker when ellipsis width exceeds Text width")
+  try testing::assert(view.glyphs.size() == 1 and view.glyphs.at(0).expect("narrow retained glyph").text == "a", "Expected fitting source retained without partial marker")
+
+  let marker_base = style(bold: true)
+  let styled = styled_text(
+    [
+      span("a", style: span_style(foreground: color::rgb(200, 10, 20))),
+      span("b", style: span_style(foreground: color::rgb(10, 20, 200))),
+    ],
+  )
+  let resolved_runs = styled_runs(styled, marker_base, default_selection_style)
+  let marker_only = visual_view("ab", unwrapped("ab", test_width), resolved_runs, 1, 1, TextOverflow::ellipsis, marker_base, test_width)
+  let marker = marker_only.ellipsis.expect("single-cell ellipsis")
+  testing::assert(marker_only.glyphs.size() == 0 and marker.style.bold and marker.style.foreground.is_none(), "Expected Text-level marker style when reservation omits every source glyph")
 }
 
 test fn unicode_word_wrap_uses_line_opportunities_and_intrinsic_measurement() Void!Str {

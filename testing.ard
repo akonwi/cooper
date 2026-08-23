@@ -181,6 +181,10 @@ impl TestApp {
     self.root.state_ref.mouse_test(self.context, self.root, received)
   }
 
+  fn advance_time(milliseconds: Int) {
+    self.root.state_ref.advance_time_test(milliseconds)
+  }
+
   fn mouse_move(x: Int, y: Int, received_modifiers: event::Modifiers?) {
     self.mouse(event::mouse(event::MouseEventType::move, event::MouseButton::none, x, y, modifiers(received_modifiers)))
   }
@@ -197,6 +201,11 @@ impl TestApp {
     let configured = button.or(event::MouseButton::left)
     self.mouse_down(x, y, configured, received_modifiers)
     self.mouse_up(x, y, configured, received_modifiers)
+  }
+
+  fn double_click(x: Int, y: Int) {
+    self.click(x, y)
+    self.click(x, y)
   }
 
   fn drag(

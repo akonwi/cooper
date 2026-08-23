@@ -75,6 +75,11 @@ def main():
         wait_for(fd, screen, "last: m swapped hover tile layout")
         wait_for(fd, screen, "hover: RIGHT ✓")
 
+        # Double-click selects one complete read-only word.
+        click(fd, col=2, row=16)
+        click(fd, col=2, row=16)
+        wait_for(fd, screen, "selection: SELECTABLE")
+
         # Select across the wrapped/read-only Text and extend with Ctrl+click.
         drag(fd, start_col=0, start_row=16, end_col=10, end_row=17)
         wait_for(fd, screen, "selection: SELECTABLE")

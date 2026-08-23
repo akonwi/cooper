@@ -127,17 +127,34 @@ struct ValueListener {
   handler: fn(Str),
 }
 
+struct SelectionRange {
+  start: Int,
+  end: Int,
+}
+
 struct LocalSelection {
   anchor_x: Int,
   anchor_y: Int,
   focus_x: Int,
   focus_y: Int,
+  logical_range: SelectionRange?,
+  source_range: SelectionRange?,
   clip: geometry::Rect,
   is_active: Bool,
   is_dragging: Bool,
   allow_edge_pan: Bool,
   generation: Int,
   version: Int,
+}
+
+struct SelectionExpansion {
+  anchor_x: Int,
+  anchor_y: Int,
+  focus_x: Int,
+  focus_y: Int,
+  logical_range: SelectionRange,
+  source_range: SelectionRange,
+  source_revision: Int,
 }
 
 struct SelectionFragment {
@@ -151,11 +168,12 @@ struct SelectionResult {
   has_selection: Bool,
   start: Int,
   end: Int,
+  source_text: Str?,
   fragments: [SelectionFragment],
 }
 
 fn empty_selection_result() SelectionResult {
-  SelectionResult{has_selection: false, start: 0, end: 0, fragments: []}
+  SelectionResult{has_selection: false, start: 0, end: 0, source_text: Maybe::new<Str>(), fragments: []}
 }
 
 struct Node {
@@ -196,6 +214,8 @@ struct Node {
   value_listeners: [ValueListener],
   selection_hit: (fn(Int, Int) Bool)?,
   selection_update: (fn(LocalSelection?) SelectionResult)?,
+  selection_expand_word: (fn(Int, Int) SelectionExpansion?)?,
+  selection_resolve: (fn(SelectionRange, SelectionRange, Int) SelectionExpansion?)?,
   requested_scroll_y: Int,
   children_offset_y: Int,
   request_render: fn(),
@@ -405,6 +425,8 @@ fn create(
     value_listeners: [],
     selection_hit: Maybe::new<fn(Int, Int) Bool>(),
     selection_update: Maybe::new<fn(LocalSelection?) SelectionResult>(),
+    selection_expand_word: Maybe::new<fn(Int, Int) SelectionExpansion?>(),
+    selection_resolve: Maybe::new<fn(SelectionRange, SelectionRange, Int) SelectionExpansion?>(),
     requested_scroll_y: 0,
     children_offset_y: 0,
     request_render: request_render,
@@ -550,9 +572,29 @@ impl Node {
     }
   }
 
+  fn can_expand_word_selection() Bool {
+    self.selection_expand_word.is_some() and self.selection_resolve.is_some()
+  }
+
+  fn expand_word_selection(local_x: Int, local_y: Int) SelectionExpansion? {
+    match self.selection_expand_word {
+      expand => expand(local_x, local_y),
+      _ => Maybe::new<SelectionExpansion>(),
+    }
+  }
+
+  fn resolve_selection(logical_range: SelectionRange, source_range: SelectionRange, source_revision: Int) SelectionExpansion? {
+    match self.selection_resolve {
+      resolve => resolve(logical_range, source_range, source_revision),
+      _ => Maybe::new<SelectionExpansion>(),
+    }
+  }
+
   fn mut set_selection_callbacks(
     accepts: fn(Int, Int) Bool,
     update: fn(LocalSelection?) SelectionResult,
+    expand_word: (fn(Int, Int) SelectionExpansion?)?,
+    resolve: (fn(SelectionRange, SelectionRange, Int) SelectionExpansion?)?,
   ) {
     if self.destroyed or self.destroying {
       panic("cannot configure selection on a destroying or destroyed retained Node")
@@ -560,6 +602,8 @@ impl Node {
     self.clear_selection_callbacks()
     self.selection_hit = Maybe::new<fn(Int, Int) Bool>(accepts)
     self.selection_update = Maybe::new<fn(LocalSelection?) SelectionResult>(update)
+    self.selection_expand_word = expand_word
+    self.selection_resolve = resolve
     self.request_render()
   }
 
@@ -570,6 +614,8 @@ impl Node {
     }
     self.selection_hit = Maybe::new<fn(Int, Int) Bool>()
     self.selection_update = Maybe::new<fn(LocalSelection?) SelectionResult>()
+    self.selection_expand_word = Maybe::new<fn(Int, Int) SelectionExpansion?>()
+    self.selection_resolve = Maybe::new<fn(SelectionRange, SelectionRange, Int) SelectionExpansion?>()
     self.request_render()
   }
 

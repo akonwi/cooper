@@ -9,6 +9,7 @@ use cooper/core/runtime
 use cooper/core/selection_state
 use cooper/event
 use cooper/selection as public_selection
+use go:github.com/akonwi/cooper/ffi/core/backend/clock
 use go:github.com/akonwi/cooper/ffi/core/backend/vaxisbridge as bridge
 use go:go.rockorager.dev/vaxis
 use go:math
@@ -177,6 +178,8 @@ struct State {
   suppress_focus_reveal: Bool,
   exit_on_ctrl_c: Bool,
   auto_focus: Bool,
+  headless: Bool,
+  test_now_ms: Int64,
   headless_width: Int,
   headless_height: Int,
   last_frame: mut paint::Buffer,
@@ -199,6 +202,7 @@ private fn state(
   width: Int,
   height: Int,
   construction_committed: Bool,
+  headless: Bool,
 ) mut State {
   let lifecycle = mut sync::Mutex{}
   let updates = mut runtime::new_dispatch_queue()
@@ -222,6 +226,8 @@ private fn state(
     suppress_focus_reveal: false,
     exit_on_ctrl_c: exit_on_ctrl_c,
     auto_focus: auto_focus,
+    headless: headless,
+    test_now_ms: 0,
     headless_width: width,
     headless_height: height,
     last_frame: paint::new_buffer(width, height),
@@ -240,7 +246,7 @@ private fn state(
 
 fn new_live(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Bool) (mut State)!Error {
   let terminal = try vaxis::New(vaxis::Options{DisableMouse: not use_mouse})
-  let created = state(Maybe::new<mut vaxis::Vaxis>(terminal), exit_on_ctrl_c, auto_focus, 0, 0, false)
+  let created = state(Maybe::new<mut vaxis::Vaxis>(terminal), exit_on_ctrl_c, auto_focus, 0, 0, false, false)
   Result::ok(created)
 }
 
@@ -248,11 +254,27 @@ fn new_headless(width: Int, height: Int) mut State {
   if width < 0 or height < 0 {
     panic("headless application dimensions must be non-negative")
   }
-  let created = state(Maybe::new<mut vaxis::Vaxis>(), true, true, width, height, true)
+  let created = state(Maybe::new<mut vaxis::Vaxis>(), true, true, width, height, true, true)
   created
 }
 
 impl State {
+  private fn now_ms() Int64 {
+    if self.headless {
+      self.test_now_ms
+    } else {
+      clock::Milliseconds()
+    }
+  }
+
+  fn mut advance_time_test(delta_ms: Int) {
+    self.require_phase(2)
+    if delta_ms < 0 {
+      panic("headless time advance must be non-negative")
+    }
+    self.test_now_ms = self.test_now_ms + Int64::from(delta_ms)
+  }
+
   fn mut bind_root(root: mut node::Node) {
     if self.root_node.is_some() {
       panic("application runtime Root is already bound")
@@ -971,7 +993,7 @@ impl State {
                 },
                 vaxis::Mouse(mouse) => {
                   let converted = mouse_event(mouse)
-                  let outcome = self.pointer.process(root, converted, self.focused, self.selection, self.auto_focus)
+                  let outcome = self.pointer.process(root, converted, self.focused, self.selection, self.auto_focus, self.now_ms())
                   self.apply_outcome(outcome)
                   if outcome.redraw or self.take_redraw_request() {
                     self.paint_live(ctx, root)
@@ -1105,7 +1127,7 @@ impl State {
     } else {
       self.focused.reconcile(root)
     }
-    let outcome = self.pointer.process(root, received, self.focused, self.selection, self.auto_focus)
+    let outcome = self.pointer.process(root, received, self.focused, self.selection, self.auto_focus, self.now_ms())
     self.apply_outcome(outcome)
     if self.test_active() and (outcome.redraw or self.take_redraw_request()) {
       self.paint_test(ctx, root)

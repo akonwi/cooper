@@ -1,3 +1,5 @@
+use ard/testing
+
 use cooper/color
 use cooper/context
 use cooper/core/event_delivery
@@ -9,6 +11,7 @@ use cooper/selection
 use cooper/style as layout_style
 use go:github.com/rockorager/go-uucode as unicode
 use go:go.rockorager.dev/vaxis
+use go:math
 use go:strings
 
 struct TextStyle {
@@ -127,11 +130,126 @@ private struct VisualGlyph {
   y: Int,
 }
 
+private struct WordGlyph {
+  text: Str,
+  start: Int,
+  end: Int,
+}
+
+private struct SourceRange {
+  start: Int,
+  end: Int,
+}
+
+private enum WordClass {
+  line_break,
+  whitespace,
+  word,
+  punctuation,
+  symbol,
+}
+
 struct SelectedGlyph {
   text: Str,
   x: Int,
   y: Int,
   width: Int,
+}
+
+private fn word_glyphs(content: Str) [WordGlyph] {
+  let iterator = mut unicode::NewGraphemeIterator(content)
+  let output = mut List::new<WordGlyph>()
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      grapheme => {
+        output.push(
+          WordGlyph{
+            text: content.slice(start: grapheme.Start, end: grapheme.End).or(""),
+            start: grapheme.Start,
+            end: grapheme.End,
+          },
+        )
+      },
+      _ => { reading = false },
+    }
+  }
+  output.@
+}
+
+private fn first_rune(value: Str) Rune? {
+  value.runes().at(0)
+}
+
+private fn basic_word_class(glyph: WordGlyph) WordClass {
+  if newline(glyph.text) {
+    WordClass::line_break
+  } else {
+    let rune = try first_rune(glyph.text) -> _ { WordClass::symbol }
+    let scalar = Int32::from(rune)
+    if unicode::IsSpace(scalar) {
+      WordClass::whitespace
+    } else if unicode::GeneralCategory(scalar) == unicode::GeneralCategoryPc or unicode::IsLetter(scalar) or unicode::IsNumber(scalar) or unicode::IsMark(scalar) {
+      WordClass::word
+    } else if unicode::IsPunct(scalar) {
+      WordClass::punctuation
+    } else {
+      WordClass::symbol
+    }
+  }
+}
+
+private fn apostrophe(glyph: WordGlyph) Bool {
+  glyph.text == "'" or glyph.text == "’"
+}
+
+private fn word_class(glyphs: [WordGlyph], index: Int) WordClass {
+  let glyph = glyphs.at(index).expect("word class grapheme")
+  if apostrophe(glyph) and index > 0 and index + 1 < glyphs.size() {
+    let before = basic_word_class(glyphs.at(index - 1).expect("apostrophe previous"))
+    let after = basic_word_class(glyphs.at(index + 1).expect("apostrophe next"))
+    if before == WordClass::word and after == WordClass::word {
+      WordClass::word
+    } else {
+      WordClass::punctuation
+    }
+  } else {
+    basic_word_class(glyph)
+  }
+}
+
+private fn word_source_range(content: Str, source_index: Int) SourceRange? {
+  let glyphs = word_glyphs(content)
+  mut clicked = -1
+  for glyph, index in glyphs {
+    if source_index >= glyph.start and source_index < glyph.end {
+      clicked = index
+      break
+    }
+  }
+  if clicked < 0 {
+    Maybe::new<SourceRange>()
+  } else {
+    let target_class = word_class(glyphs, clicked)
+    if target_class == WordClass::line_break {
+      Maybe::new<SourceRange>()
+    } else {
+      mut start = clicked
+      while start > 0 and word_class(glyphs, start - 1) == target_class {
+        start =- 1
+      }
+      mut end = clicked + 1
+      while end < glyphs.size() and word_class(glyphs, end) == target_class {
+        end =+ 1
+      }
+      Maybe::new<SourceRange>(
+        SourceRange{
+          start: glyphs.at(start).expect("word range start").start,
+          end: glyphs.at(end - 1).expect("word range end").end,
+        },
+      )
+    }
+  }
 }
 
 private fn source_glyphs(content: Str, measure: fn(Str) Int) [SourceGlyph] {
@@ -475,6 +593,7 @@ struct Text {
   selected_range: selection::Range?,
   selected_text_value: Str,
   selected_glyphs: [SelectedGlyph],
+  source_revision: Int,
   width_measurer: fn(Str) Int,
 }
 
@@ -500,6 +619,7 @@ fn new(
     selected_range: Maybe::new<selection::Range>(),
     selected_text_value: "",
     selected_glyphs: [],
+    source_revision: 1,
     width_measurer: context::internal_state(ctx).width_measurer,
   }
   retained.bind(text)
@@ -562,6 +682,116 @@ impl node::Renderable for Text {
 }
 
 impl Text {
+  private fn visual_content() [VisualGlyph] {
+    let measured = layout_text(
+      self.content,
+      self.wrap_mode,
+      self.node_ref.layout().screen.width,
+      self.width_measurer,
+    )
+    visual_glyphs(self.content, measured, self.width_measurer)
+  }
+
+  private fn expansion_from_source(value: SourceRange) node::SelectionExpansion? {
+    mut started = false
+    mut anchor_x = 0
+    mut anchor_y = 0
+    mut focus_x = 0
+    mut focus_y = 0
+    mut range_start = 0
+    mut range_end = 0
+    for glyph in self.visual_content() {
+      let overlaps = glyph.source_end > value.start and glyph.source_start < value.end
+      if overlaps and glyph.width > 0 {
+        if not started {
+          started = true
+          anchor_x = glyph.x
+          anchor_y = glyph.y
+          range_start = glyph.offset_start
+        }
+        focus_x = glyph.x + glyph.width - 1
+        focus_y = glyph.y
+        range_end = glyph.offset_end
+      }
+    }
+    if started {
+      Maybe::new<node::SelectionExpansion>(
+        node::SelectionExpansion{
+          anchor_x: anchor_x,
+          anchor_y: anchor_y,
+          focus_x: focus_x,
+          focus_y: focus_y,
+          logical_range: node::SelectionRange{start: range_start, end: range_end},
+          source_range: node::SelectionRange{start: value.start, end: value.end},
+          source_revision: self.source_revision,
+        },
+      )
+    } else {
+      Maybe::new<node::SelectionExpansion>()
+    }
+  }
+
+  private fn word_expansion(local_x: Int, local_y: Int) node::SelectionExpansion? {
+    mut source_start = -1
+    for glyph in self.visual_content() {
+      if glyph.y == local_y and local_x >= glyph.x and local_x < glyph.x + glyph.width {
+        source_start = glyph.source_start
+        break
+      }
+    }
+    if source_start < 0 {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      match word_source_range(self.content, source_start) {
+        value => self.expansion_from_source(value),
+        _ => Maybe::new<node::SelectionExpansion>(),
+      }
+    }
+  }
+
+  private fn resolve_expansion(
+    logical_range: node::SelectionRange,
+    source_range: node::SelectionRange,
+    source_revision: Int,
+  ) node::SelectionExpansion? {
+    if source_revision != self.source_revision {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      mut started = false
+      mut anchor_x = 0
+      mut anchor_y = 0
+      mut focus_x = 0
+      mut focus_y = 0
+      for glyph in self.visual_content() {
+        let overlaps = glyph.offset_end > logical_range.start and glyph.offset_start < logical_range.end
+        if overlaps and glyph.width > 0 {
+          if not started {
+            started = true
+            anchor_x = glyph.x
+            anchor_y = glyph.y
+          }
+          focus_x = glyph.x + glyph.width - 1
+          focus_y = glyph.y
+        }
+      }
+      if started {
+        Maybe::new<node::SelectionExpansion>(
+          node::SelectionExpansion{
+            anchor_x: anchor_x,
+            anchor_y: anchor_y,
+            focus_x: focus_x,
+            focus_y: focus_y,
+            logical_range: logical_range,
+            source_range: source_range,
+            source_revision: source_revision,
+          },
+        )
+      } else {
+        Maybe::new<node::SelectionExpansion>()
+      }
+    }
+  }
+
   private fn mut clear_local_selection() node::SelectionResult {
     self.selected_range = Maybe::new<selection::Range>()
     self.selected_text_value = ""
@@ -588,7 +818,8 @@ impl Text {
 
   private fn mut apply_local_selection(value: node::LocalSelection?) node::SelectionResult {
     let local = try value -> _ { self.clear_local_selection() }
-    if (not local.is_active) or (local.anchor_x == local.focus_x and local.anchor_y == local.focus_y) {
+    let has_logical_range = local.logical_range.is_some()
+    if (not local.is_active) or ((not has_logical_range) and local.anchor_x == local.focus_x and local.anchor_y == local.focus_y) {
       self.clear_local_selection()
     } else {
       mut start_x = local.anchor_x
@@ -614,15 +845,22 @@ impl Text {
       mut start_offset = 0
       mut end_offset = 0
       mut started = false
+      mut all_selected_visible = true
       let screen = self.node_ref.layout().screen
       for glyph in visual_glyphs(self.content, measured, self.width_measurer) {
         let glyph_end = glyph.x + glyph.width
         let clip_end = local.clip.x + local.clip.width
         let visible = glyph.y >= local.clip.y and glyph.y < local.clip.y + local.clip.height and glyph.x >= local.clip.x and glyph_end <= clip_end
-        let after_start = glyph.y > start_y or (glyph.y == start_y and glyph_end > start_x)
-        let before_end = glyph.y < end_y or (glyph.y == end_y and glyph.x <= end_x)
-        if after_start and before_end {
+        let coordinate_selected = (glyph.y > start_y or (glyph.y == start_y and glyph_end > start_x)) and (glyph.y < end_y or (glyph.y == end_y and glyph.x <= end_x))
+        let selected_by_range = match local.logical_range {
+          range => glyph.offset_end > range.start and glyph.offset_start < range.end,
+          _ => coordinate_selected,
+        }
+        if selected_by_range {
           selected.push(SelectedGlyph{text: glyph.text, x: glyph.x, y: glyph.y, width: glyph.width})
+          if not visible {
+            all_selected_visible = false
+          }
           if visible {
             fragments.push(
               node::SelectionFragment{
@@ -646,12 +884,23 @@ impl Text {
         self.clear_local_selection()
       } else {
         self.selected_range = Maybe::new<selection::Range>(selection::Range{start: start_offset, end: end_offset})
-        self.selected_text_value = self.content.slice(start: first_source, end: last_source).or("")
+        self.selected_text_value = match local.source_range {
+          range => self.content.slice(start: range.start, end: range.end).or(""),
+          _ => self.content.slice(start: first_source, end: last_source).or(""),
+        }
         self.selected_glyphs = selected.@
+        mut source_text = Maybe::new<Str>()
+        if all_selected_visible {
+          match local.source_range {
+            range => { source_text = Maybe::new<Str>(self.content.slice(start: range.start, end: range.end).or("")) },
+            _ => (),
+          }
+        }
         node::SelectionResult{
           has_selection: true,
           start: start_offset,
           end: end_offset,
+          source_text: source_text,
           fragments: fragments.@,
         }
       }
@@ -666,6 +915,12 @@ impl Text {
       fn(value: node::LocalSelection?) node::SelectionResult {
         self.apply_local_selection(value)
       },
+      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(fn(local_x: Int, local_y: Int) node::SelectionExpansion? {
+        self.word_expansion(local_x, local_y)
+      }),
+      Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(fn(logical_range: node::SelectionRange, source_range: node::SelectionRange, source_revision: Int) node::SelectionExpansion? {
+        self.resolve_expansion(logical_range, source_range, source_revision)
+      }),
     )
   }
 
@@ -676,7 +931,11 @@ impl Text {
   fn mut set_content(content: Str) {
     self.node_ref.require_live()
     if self.content != content {
+      if self.source_revision == math::MaxInt {
+        panic("Text source revision overflow")
+      }
       self.content = content
+      self.source_revision =+ 1
       self.node_ref.mark_measure_dirty()
     }
   }
@@ -753,4 +1012,26 @@ impl Text {
   fn mut destroy(recursive: Bool?) {
     self.node_ref.destroy(recursive)
   }
+}
+
+test fn word_ranges_group_editor_oriented_unicode_classes() Void!Str {
+  let contraction = "don't stop"
+  let contraction_range = word_source_range(contraction, 2).expect("contraction word range")
+  try testing::assert(contraction.slice(start: contraction_range.start, end: contraction_range.end).or("") == "don't", "Expected internal apostrophe to join a word")
+
+  let whitespace_range = word_source_range(contraction, 5).expect("whitespace word range")
+  try testing::assert(contraction.slice(start: whitespace_range.start, end: whitespace_range.end).or("") == " ", "Expected contiguous whitespace run")
+
+  let punctuation = "go...now"
+  let punctuation_range = word_source_range(punctuation, 3).expect("punctuation word range")
+  try testing::assert(punctuation.slice(start: punctuation_range.start, end: punctuation_range.end).or("") == "...", "Expected contiguous punctuation run")
+
+  let symbols = "a🙂🙂b"
+  let symbol_range = word_source_range(symbols, 1).expect("symbol word range")
+  try testing::assert(symbols.slice(start: symbol_range.start, end: symbol_range.end).or("") == "🙂🙂", "Expected contiguous symbol run")
+
+  let unicode_word = "你好_one"
+  let unicode_range = word_source_range(unicode_word, 0).expect("Unicode word range")
+  try testing::assert(unicode_word.slice(start: unicode_range.start, end: unicode_range.end).or("") == unicode_word, "Expected letters and connector punctuation to share a run")
+  testing::assert(not word_source_range("a\nb", 1).is_some(), "Expected explicit newline to reject word expansion")
 }

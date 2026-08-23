@@ -43,12 +43,21 @@ impl AttachmentHandle {
   }
 }
 
+struct ClickCandidate {
+  target: AttachmentHandle,
+  x: Int,
+  y: Int,
+  at_ms: Int64,
+  selection_generation: Int,
+}
+
 struct State {
   hovered: AttachmentHandle?,
   observed: AttachmentHandle?,
   pressed: AttachmentHandle?,
   captured: AttachmentHandle?,
   captured_button: event::MouseButton,
+  click_candidate: ClickCandidate?,
   dragging: Bool,
   has_pointer: Bool,
   x: Int,
@@ -63,6 +72,7 @@ fn new() mut State {
     pressed: Maybe::new<AttachmentHandle>(),
     captured: Maybe::new<AttachmentHandle>(),
     captured_button: event::MouseButton::none,
+    click_candidate: Maybe::new<ClickCandidate>(),
     dragging: false,
     has_pointer: false,
     x: 0,
@@ -143,6 +153,10 @@ private fn physical_event(event_type: event::MouseEventType) Bool {
   event_type == event::MouseEventType::down or event_type == event::MouseEventType::up or event_type == event::MouseEventType::move or event_type == event::MouseEventType::drag or event_type == event::MouseEventType::scroll
 }
 
+private fn unmodified(value: event::Modifiers) Bool {
+  (not value.shift) and (not value.ctrl) and (not value.alt) and (not value.super)
+}
+
 impl State {
   private fn mut refresh_handles() {
     match self.hovered {
@@ -175,6 +189,14 @@ impl State {
           self.captured = Maybe::new<AttachmentHandle>()
           self.captured_button = event::MouseButton::none
           self.dragging = false
+        }
+      },
+      _ => (),
+    }
+    match self.click_candidate {
+      candidate => {
+        if not candidate.target.current() {
+          self.click_candidate = Maybe::new<ClickCandidate>()
         }
       },
       _ => (),
@@ -314,6 +336,7 @@ impl State {
     focused: mut focus::State,
     selected: mut selection_state::State,
     auto_focus: Bool,
+    now_ms: Int64,
   ) router::Outcome {
     if not physical_event(received.event_type) {
       panic("pointer input accepts only physical mouse event kinds")
@@ -326,6 +349,9 @@ impl State {
     self.modifiers = received.modifiers
     let physical = hit_handle(root, received.x, received.y)
     self.observed = physical
+    if received.event_type == event::MouseEventType::drag or received.event_type == event::MouseEventType::scroll {
+      self.click_candidate = Maybe::new<ClickCandidate>()
+    }
 
     if received.event_type == event::MouseEventType::scroll {
       match physical {
@@ -338,8 +364,44 @@ impl State {
         },
       }
     } else if received.event_type == event::MouseEventType::down {
+      let qualifies_for_double = received.button == event::MouseButton::left and unmodified(received.modifiers)
+      if not qualifies_for_double {
+        self.click_candidate = Maybe::new<ClickCandidate>()
+      }
+
+      mut word_expanded = false
+      mut expanded_generation = -1
+      mut expanded_attachment = Maybe::new<AttachmentHandle>()
+      if qualifies_for_double {
+        match self.click_candidate {
+          candidate => {
+            match physical {
+              destination => {
+                let elapsed = now_ms - candidate.at_ms
+                let matching_generation = match selected.generation() {
+                  current => current == candidate.selection_generation,
+                  _ => false,
+                }
+                if elapsed >= 0 and elapsed <= 500 and candidate.x == received.x and candidate.y == received.y and candidate.target.same(destination) and matching_generation {
+                  word_expanded = selected.expand_word(destination.target, received.x, received.y, candidate.selection_generation)
+                  if word_expanded {
+                    expanded_generation = candidate.selection_generation
+                    expanded_attachment = Maybe::new<AttachmentHandle>(candidate.target)
+                  }
+                }
+              },
+              _ => (),
+            }
+          },
+          _ => (),
+        }
+      }
+      if word_expanded {
+        self.click_candidate = Maybe::new<ClickCandidate>()
+      }
+
       mut consumes_extension = false
-      if received.button == event::MouseButton::left and received.modifiers.ctrl and selected.has_selection() {
+      if (not word_expanded) and received.button == event::MouseButton::left and received.modifiers.ctrl and selected.has_selection() {
         consumes_extension = selected.update(selection_target(physical), received.x, received.y, edge_pan: true)
       }
       if consumes_extension {
@@ -349,13 +411,42 @@ impl State {
         self.dragging = false
         with_redraw(router::empty_outcome())
       } else {
-        mut selection_started = false
-        if received.button == event::MouseButton::left and (not received.modifiers.ctrl) {
+        mut selection_started = word_expanded
+        if (not selection_started) and received.button == event::MouseButton::left and (not received.modifiers.ctrl) {
           match physical {
             destination => { selection_started = selected.start(root, destination.target, received.x, received.y) },
             _ => (),
           }
         }
+
+        if qualifies_for_double and (not word_expanded) and selection_started {
+          match physical {
+            destination => {
+              match selected.generation() {
+                generation => {
+                  if destination.target.can_expand_word_selection() {
+                    self.click_candidate = Maybe::new<ClickCandidate>(
+                      ClickCandidate{
+                        target: destination,
+                        x: received.x,
+                        y: received.y,
+                        at_ms: now_ms,
+                        selection_generation: generation,
+                      },
+                    )
+                  } else {
+                    self.click_candidate = Maybe::new<ClickCandidate>()
+                  }
+                },
+                _ => { self.click_candidate = Maybe::new<ClickCandidate>() },
+              }
+            },
+            _ => { self.click_candidate = Maybe::new<ClickCandidate>() },
+          }
+        } else if not word_expanded {
+          self.click_candidate = Maybe::new<ClickCandidate>()
+        }
+
         if received.button == event::MouseButton::left {
           self.captured = Maybe::new<AttachmentHandle>()
           self.captured_button = event::MouseButton::none
@@ -390,6 +481,14 @@ impl State {
           if received.button == event::MouseButton::left and (not selection_started) and selected.clear() {
             outcome = with_redraw(outcome)
           }
+        }
+        match expanded_attachment {
+          attachment => {
+            if not attachment.current() {
+              let _ = selected.clear_generation(expanded_generation)
+            }
+          },
+          _ => (),
         }
         if selection_started {
           with_redraw(outcome)
@@ -527,6 +626,7 @@ impl State {
     self.pressed = Maybe::new<AttachmentHandle>()
     self.captured = Maybe::new<AttachmentHandle>()
     self.captured_button = event::MouseButton::none
+    self.click_candidate = Maybe::new<ClickCandidate>()
     self.dragging = false
     self.has_pointer = false
   }

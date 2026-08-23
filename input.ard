@@ -796,6 +796,7 @@ impl Input {
             has_selection: true,
             start: selected_range.start,
             end: selected_range.end,
+            source_text: Maybe::new<Str>(),
             fragments: fragments.@,
           }
         },
@@ -812,6 +813,8 @@ impl Input {
       fn(value: node::LocalSelection?) node::SelectionResult {
         self.apply_local_selection(value)
       },
+      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(),
+      Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(),
     )
   }
 

@@ -51,6 +51,170 @@ test fn text_selection_exposes_range_text_and_default_style() Void!Str {
   testing::assert(message.node_ref.is_destroyed(), "Expected Text selection cleanup")
 }
 
+test fn double_click_selects_complete_word_and_finalizes_selection() Void!Str {
+  let application = cooper_testing::new(11, 1)
+  let message = text::new(application.context, content: "Hello World", styles: fixed(11))
+  application.root.add(message)
+
+  application.double_click(1, 0)
+
+  let selected = application.selection().expect("double-click selection")
+  let local = message.selection().expect("double-click local range")
+  try testing::assert(selected.selected_text == "Hello" and (not selected.is_dragging), "Expected finalized complete word selection")
+  try testing::assert(selected.anchor.x == 0 and selected.focus.x == 4 and selected.bounds.width == 5, "Expected word visual endpoints")
+  try testing::assert(local.start == 0 and local.end == 5 and message.selected_text() == "Hello", "Expected half-open word range")
+  try testing::assert(application.frame().cell(4, 0).expect("last selected cell").style.reverse, "Expected last word cell selected")
+  try testing::assert(not application.frame().cell(5, 0).expect("following cell").style.reverse, "Expected following space unselected")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected double-click selection cleanup")
+}
+
+test fn double_click_selects_punctuation_and_whitespace_runs() Void!Str {
+  let application = cooper_testing::new(14, 1)
+  let message = text::new(application.context, content: "word...  next", styles: fixed(14))
+  application.root.add(message)
+
+  application.double_click(5, 0)
+  try testing::assert(message.selected_text() == "...", "Expected punctuation run selection")
+
+  application.double_click(7, 0)
+  try testing::assert(message.selected_text() == "  ", "Expected whitespace run selection")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected run selection cleanup")
+}
+
+test fn double_click_deadline_reflow_and_source_revision_are_deterministic() Void!Str {
+  let application = cooper_testing::new(5, 2)
+  let message = text::new(
+    application.context,
+    content: "hello",
+    wrap: text::TextWrap::character,
+    styles: fixed(3, height: 2),
+  )
+  application.root.add(message)
+
+  application.click(1, 1)
+  application.advance_time(501)
+  application.click(1, 1)
+  try testing::assert(not message.selection().is_some(), "Expected expired clicks to remain collapsed")
+
+  application.advance_time(501)
+  application.double_click(1, 1)
+  try testing::assert(message.selected_text() == "hello", "Expected wrapped word source selection")
+  try testing::assert(application.selection().expect("wrapped global selection").selected_text == "hello", "Expected soft wrap not to alter copied word text")
+  message.set_style(fixed(5))
+  application.render()
+  let reflowed = application.selection().expect("reflowed word selection")
+  try testing::assert(message.selected_text() == "hello" and reflowed.anchor.x == 0 and reflowed.focus.x == 4, "Expected source-anchored selection after reflow")
+
+  message.set_content("world")
+  application.render()
+  try testing::assert(not application.selection().is_some(), "Expected source mutation to invalidate word selection")
+
+  message.set_content("\u0301a")
+  application.render()
+  application.double_click(0, 0)
+  try testing::assert(message.selected_text() == "\u0301a", "Expected zero-width word mark preserved in source selection")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected deterministic double-click cleanup")
+}
+
+test fn reentrant_second_press_clear_does_not_resurrect_word_selection() Void!Str {
+  let application = cooper_testing::new(5, 1)
+  let message = text::new(application.context, content: "Hello", styles: fixed(5))
+  application.root.add(message)
+  mut downs = 0
+  let _ = message.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down {
+      downs =+ 1
+      if downs == 2 {
+        message.node_ref.clear_global_selection()
+      }
+    }
+  })
+
+  application.double_click(1, 0)
+
+  try testing::assert(not application.selection().is_some(), "Expected reentrant clear to win over expansion")
+  try testing::assert(not message.selection().is_some(), "Expected local word selection cleared")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected reentrant double-click cleanup")
+}
+
+test fn reentrant_second_press_reparent_invalidates_word_selection() Void!Str {
+  let application = cooper_testing::new(10, 1)
+  let message = text::new(
+    application.context,
+    content: "Hello",
+    styles: style::new(position: style::Position::absolute, width: style::cells(5), height: style::cells(1)),
+  )
+  let destination = box::new(
+    application.context,
+    styles: style::new(position: style::Position::absolute, left: style::cells(5), width: style::cells(5), height: style::cells(1)),
+  )
+  application.root.add(message)
+  application.root.add(destination)
+  mut downs = 0
+  let _ = message.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down {
+      downs =+ 1
+      if downs == 2 {
+        destination.add(message)
+      }
+    }
+  })
+
+  application.double_click(1, 0)
+
+  try testing::assert(message.node_ref.parent.expect("reparented Text parent") == destination.node_ref, "Expected listener reparent")
+  try testing::assert(not application.selection().is_some(), "Expected stale attachment expansion cleared")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected reparented double-click cleanup")
+}
+
+test fn double_click_global_text_respects_ancestor_clipping() Void!Str {
+  let application = cooper_testing::new(5, 1)
+  let clipped_style = mut fixed(2)
+  clipped_style.overflow = style::Overflow::hidden
+  let clipped = box::new(application.context, styles: clipped_style.@)
+  let message = text::new(application.context, content: "hello", styles: fixed(5))
+  clipped.add(message)
+  application.root.add(clipped)
+
+  application.double_click(0, 0)
+
+  try testing::assert(message.selected_text() == "hello", "Expected complete local word source")
+  try testing::assert(application.selection().expect("clipped double-click selection").selected_text == "he", "Expected global copy to include only visible fragments")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected clipped double-click cleanup")
+}
+
+test fn second_press_autofocus_reparent_invalidates_word_selection() Void!Str {
+  let application = cooper_testing::new(10, 1)
+  let source = box::new(
+    application.context,
+    styles: style::new(position: style::Position::absolute, width: style::cells(5), height: style::cells(1)),
+  )
+  let destination = box::new(
+    application.context,
+    styles: style::new(position: style::Position::absolute, left: style::cells(5), width: style::cells(5), height: style::cells(1)),
+  )
+  let message = text::new(application.context, content: "Hello", styles: fixed(5))
+  source.add(message)
+  application.root.add(source)
+  application.root.add(destination)
+
+  application.click(1, 0)
+  source.set_focusable(true)
+  let _ = source.on_focus(fn() { destination.add(message) })
+  application.click(1, 0)
+
+  try testing::assert(message.node_ref.parent.expect("autofocus reparented parent") == destination.node_ref, "Expected autofocus listener reparent")
+  try testing::assert(not application.selection().is_some(), "Expected autofocus-invalidated expansion cleared")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected autofocus reparent cleanup")
+}
+
 test fn text_selection_patch_mutates_copy_of_base_style() Void!Str {
   let application = cooper_testing::new(6, 1)
   let message = text::new(

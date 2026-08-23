@@ -119,6 +119,13 @@ private struct LinkListener {
   handler: fn(mut LinkEvent),
 }
 
+private struct LinkHit {
+  x: Int,
+  y: Int,
+  width: Int,
+  url: Str,
+}
+
 private struct LinkState {
   open_url: fn(Str) Void!Error,
   armed_link: Str?,
@@ -131,6 +138,7 @@ private struct LinkState {
   next_listener_id: Int,
   listeners: [LinkListener],
   paint_clip: geometry::Rect,
+  link_hits: [LinkHit],
   last_url: Str?,
   last_press_at_ms: Int64,
   last_screen_x: Int,
@@ -153,6 +161,7 @@ private fn new_link_state(open_url: fn(Str) Void!Error) Any {
     next_listener_id: 1,
     listeners: [],
     paint_clip: geometry::Rect{x: 0, y: 0, width: 0, height: 0},
+    link_hits: [],
     last_url: Maybe::new<Str>(),
     last_press_at_ms: 0,
     last_screen_x: 0,
@@ -179,6 +188,7 @@ private fn reset_link_state(value: Any) {
   state.armed_press_serial = 0
   state.armed_click_epoch = 0
   state.listeners = []
+  state.link_hits = []
   state.last_url = Maybe::new<Str>()
   state.last_press_serial = 0
   state.last_click_epoch = 0
@@ -331,6 +341,16 @@ private fn paint_link(value: Str?) Str? {
     },
     _ => Maybe::new<Str>(),
   }
+}
+
+private fn style_runs_have_links(runs: [StyleRun]) Bool {
+  mut found = false
+  for run in runs {
+    if run.link.is_some() {
+      found = true
+    }
+  }
+  found
 }
 
 private fn same_optional_str(left: Str?, right: Str?) Bool {
@@ -1125,6 +1145,13 @@ fn new(
   let _ = retained.on_mouse(fn(received: mut event::MouseEvent) {
     text.observe_link_pointer(received)
   })
+  retained.set_mouse_cursor_resolver(fn(local_x: Int, local_y: Int) event::MouseCursor {
+    if text.cached_link_at(local_x, local_y).is_some() {
+      event::MouseCursor::pointer
+    } else {
+      event::MouseCursor::default_cursor
+    }
+  })
   retained.set_measure(fn(input: node::MeasureInput) node::MeasureSize {
     let measured = measured_text(
       text.content,
@@ -1153,12 +1180,15 @@ impl node::Renderable for Text {
 
   fn paint(ctx: mut paint::Context) {
     let visible = geometry::intersect(ctx.bounds, ctx.clip)
-    link_state(self.link_state).paint_clip = geometry::Rect{
+    let local_clip = geometry::Rect{
       x: visible.x - ctx.bounds.x,
       y: visible.y - ctx.bounds.y,
       width: visible.width,
       height: visible.height,
     }
+    let link_data = link_state(self.link_state)
+    link_data.paint_clip = local_clip
+    link_data.link_hits = []
     let measured = layout_text(
       self.content,
       self.wrap_mode,
@@ -1172,7 +1202,21 @@ impl node::Renderable for Text {
       self.node_ref.layout().screen.height,
       self.overflow_mode,
     )
+    let has_links = style_runs_have_links(runs)
     if runs.size() <= 1 and (not truncated) {
+      if has_links {
+        let link_view = visual_view(
+          self.content,
+          measured,
+          runs,
+          self.node_ref.layout().screen.width,
+          self.node_ref.layout().screen.height,
+          self.overflow_mode,
+          self.text_style,
+          self.width_measurer,
+        )
+        self.cache_link_hits(link_view.glyphs, runs, local_clip)
+      }
       mut hyperlink = Maybe::new<Str>()
       let applied = match runs.at(0) {
         run => {
@@ -1201,6 +1245,9 @@ impl node::Renderable for Text {
         self.text_style,
         self.width_measurer,
       )
+      if has_links {
+        self.cache_link_hits(view.glyphs, runs, local_clip)
+      }
       paint_visual_glyphs(ctx, view.glyphs, runs, self.width_measurer)
       match view.ellipsis {
         marker => {
@@ -1226,6 +1273,33 @@ impl node::Renderable for Text {
 }
 
 impl Text {
+  private fn cache_link_hits(glyphs: [VisualGlyph], runs: [StyleRun], clip: geometry::Rect) {
+    let hits = mut List::new<LinkHit>()
+    for glyph in glyphs {
+      let complete = glyph.y >= clip.y and glyph.y < clip.y + clip.height and glyph.x >= clip.x and glyph.x + glyph.width <= clip.x + clip.width
+      if complete and glyph.width > 0 {
+        let run = runs.at(glyph.style_index).expect("cached linked glyph style run")
+        if not run.style.hidden {
+          match run.link {
+            url => hits.push(LinkHit{x: glyph.x, y: glyph.y, width: glyph.width, url: url}),
+            _ => (),
+          }
+        }
+      }
+    }
+    link_state(self.link_state).link_hits = hits.@
+  }
+
+  private fn cached_link_at(local_x: Int, local_y: Int) Str? {
+    mut link = Maybe::new<Str>()
+    for hit in link_state(self.link_state).link_hits {
+      if hit.y == local_y and local_x >= hit.x and local_x < hit.x + hit.width {
+        link = Maybe::new<Str>(hit.url)
+      }
+    }
+    link
+  }
+
   private fn link_at(local_x: Int, local_y: Int) Str? {
     let runs = cached_style_runs(self.style_cache)
     let clip = link_state(self.link_state).paint_clip

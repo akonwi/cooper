@@ -75,6 +75,14 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
   application.root.add(label)
   application.render()
 
+  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected default cursor before pointer input")
+  application.mouse_move(2, 0)
+  try testing::assert(application.mouse_cursor() == event::MouseCursor::pointer, "Expected pointer cursor over linked cell")
+  application.mouse_move(0, 0)
+  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected default cursor over unlinked text")
+  application.mouse_move(8, 0)
+  try testing::assert(application.mouse_cursor() == event::MouseCursor::pointer, "Expected pointer cursor over linked wide continuation")
+
   mut events = 0
   mut activated = ""
   let dispose = label.on_link(fn(received: mut text::LinkEvent) {
@@ -130,6 +138,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
   )
 
   application.destroy()
+  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected cursor state reset after teardown")
   testing::assert(label.node_ref.is_destroyed(), "Expected clickable link cleanup")
 }
 
@@ -201,11 +210,36 @@ test fn completely_clipped_wide_link_is_not_activatable() Void!Str {
     application.frame().cell(3, 0).expect("cleared partial wide link").grapheme == " ",
     "Expected partial wide link not painted",
   )
+  application.mouse_move(3, 0)
+  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected no pointer cursor for partial wide link")
   application.click(3, 0)
   try testing::assert(application.opened_urls().size() == 0, "Expected partial wide link not activated")
 
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected clipped link cleanup")
+}
+
+test fn link_cursor_reconciles_after_content_changes_without_pointer_motion() Void!Str {
+  let application = cooper_testing::new(4, 1)
+  let label = text::new(
+    application.context,
+    content: "docs",
+    styles: style::new(width: style::cells(4), height: style::cells(1)),
+  )
+  application.root.add(label)
+  application.render()
+
+  application.mouse_move(1, 0)
+  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected unlinked Text default cursor")
+  label.set_content(text::styled_text([text::span("docs", link: "https://example.com/docs")]))
+  application.render()
+  try testing::assert(application.mouse_cursor() == event::MouseCursor::pointer, "Expected stationary pointer reconciled after link appears")
+  label.set_content("docs")
+  application.render()
+  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected stationary pointer reconciled after link disappears")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected link cursor reconciliation cleanup")
 }
 
 test fn double_clicking_link_opens_once_then_selects_word() Void!Str {

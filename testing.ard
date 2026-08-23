@@ -147,6 +147,10 @@ impl TestApp {
     output.@
   }
 
+  fn mouse_cursor() event::MouseCursor {
+    self.root.state_ref.mouse_cursor()
+  }
+
   fn on_key(handler: fn(mut event::KeyEvent)) fn() {
     self.root.state_ref.on_key(handler)
   }

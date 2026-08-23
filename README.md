@@ -90,8 +90,8 @@ yet a supported custom-control API.
 
 - `Box` — indexed flex container with background, border, and title;
 - `Text` — selectable multiline plain or StyledText spans with Unicode-aware
-  word wrapping by default, inheritable styles, plain-click/OSC 8 hyperlinks,
-  and optional ellipsis overflow;
+  word wrapping by default, inheritable styles, plain-click/OSC 8 hyperlinks
+  with pointer cursors, and optional ellipsis overflow;
 - `Input` — grapheme-aware CLI editing, editable selection, validation, and callbacks;
 - `ScrollBox` — focusable multi-child vertical scrolling container.
 

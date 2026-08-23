@@ -77,8 +77,9 @@ ard-dev run explorer.ard
 captured and hit-routed drags, layout-driven hover, terminal focus, selectable
 rich linked Unicode Text with double-click word selection, ellipsis overflow,
 editable Input selection, and selection through a ScrollBox. Press M while the pointer is over
-a hover tile to move another tile beneath the stationary pointer. Plain-click
-`SELECTABLE` to open its link. OSC 8 metadata remains available for native
+a hover tile to move another tile beneath the stationary pointer. Hover
+`SELECTABLE` for a pointer cursor, then plain-click to open its link. OSC 8
+metadata remains available for native
 terminal previews and modifier-based activation.
 
 ```sh

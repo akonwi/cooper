@@ -274,7 +274,9 @@ pointer. A matching release over the same URL opens it with the platform's
 default handler. Dragging, leaving the Text, changing the link before release,
 a modified press, or a prevented mouse default cancels activation. Wide-glyph
 continuation cells activate the same URL; clipped, omitted, zero-width, and
-synthetic ellipsis cells do not.
+synthetic ellipsis cells do not. Hovering a complete linked cell requests the
+platform pointer cursor. The cursor returns to default over non-links and is
+reconciled after layout or content changes without requiring pointer motion.
 
 `Text.on_link(fn(mut LinkEvent))` observes activation before the platform opener
 runs. `LinkEvent.prevent_default()` suppresses the opener so applications can
@@ -287,9 +289,9 @@ and call `Context.open_url`, which returns `Result`.
 
 The first completed click of a double-click activates once. If the second press
 expands a word selection, its release does not activate the same link again.
-Per-span keyboard focus, Enter/Space activation, URL parsing, and pointer cursor
-policy remain deferred. OSC 8 metadata remains present for terminal-native link
-preview, copy, and activation behavior.
+Per-span keyboard focus, Enter/Space activation, URL parsing, and configurable
+per-span cursor policy remain deferred. OSC 8 metadata remains present for
+terminal-native link preview, copy, and activation behavior.
 
 Every StyledText ingress validates links before storing or painting them,
 including directly constructed Span values. A link containing any C0 or C1

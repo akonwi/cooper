@@ -143,6 +143,11 @@ enum MouseButton {
   right,
 }
 
+enum MouseCursor {
+  default_cursor,
+  pointer,
+}
+
 struct MouseEvent {
   event_type: MouseEventType,
   button: MouseButton,

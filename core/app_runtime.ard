@@ -26,6 +26,13 @@ private fn vaxis_color(value: color::Color?) vaxis::Color {
   }
 }
 
+private fn vaxis_mouse_shape(cursor: event::MouseCursor) vaxis::MouseShape {
+  match cursor {
+    event::MouseCursor::pointer => vaxis::MouseShapeClickable,
+    _ => vaxis::MouseShapeDefault,
+  }
+}
+
 private fn vaxis_attributes(style: paint::CellStyle) vaxis::AttributeMask {
   mut attributes = vaxis::AttributeMask::from(0)
   if style.bold {
@@ -176,6 +183,8 @@ struct State {
   cancellation_signal: Chan<Void>,
   root_node: (mut node::Node)?,
   pointer: mut pointer::State,
+  pointer_cursor: event::MouseCursor,
+  pointer_cursor_initialized: Bool,
   selection: mut selection_state::State,
   focused: mut focus::State,
   has_frame: Bool,
@@ -224,6 +233,8 @@ private fn state(
     cancellation_signal: Chan::new<Void>(),
     root_node: Maybe::new<mut node::Node>(),
     pointer: pointer::new(),
+    pointer_cursor: event::MouseCursor::default_cursor,
+    pointer_cursor_initialized: false,
     selection: selection_state::new(),
     focused: focus::new(),
     has_frame: false,
@@ -269,6 +280,25 @@ impl State {
       self.test_now_ms
     } else {
       clock::Milliseconds()
+    }
+  }
+
+  fn mouse_cursor() event::MouseCursor {
+    self.pointer_cursor
+  }
+
+  private fn mut update_pointer_cursor(root: mut node::Renderable) Bool {
+    let next = self.pointer.mouse_cursor(root)
+    if self.pointer_cursor_initialized and next == self.pointer_cursor {
+      false
+    } else {
+      self.pointer_cursor = next
+      self.pointer_cursor_initialized = true
+      match self.terminal {
+        terminal => terminal.SetMouseShape(vaxis_mouse_shape(next)),
+        _ => (),
+      }
+      true
     }
   }
 
@@ -443,6 +473,8 @@ impl State {
       self.terminal_focus_listeners = []
       self.selection_listeners = []
       self.pointer.clear()
+      self.pointer_cursor = event::MouseCursor::default_cursor
+      self.pointer_cursor_initialized = false
       self.selection.destroy()
       self.cancellation_signal.close()
       match self.terminal {
@@ -590,6 +622,8 @@ impl State {
       self.terminal_focus_listeners = []
       self.selection_listeners = []
       self.pointer.clear()
+      self.pointer_cursor = event::MouseCursor::default_cursor
+      self.pointer_cursor_initialized = false
       self.selection.destroy()
       self.cancellation_signal.close()
       match self.terminal {
@@ -687,7 +721,8 @@ impl State {
   private fn mut post_frame_pointer(root: mut node::Renderable) {
     let outcome = self.pointer.reconcile(root, self.focused)
     self.apply_outcome(outcome)
-    if outcome.redraw {
+    let cursor_changed = self.update_pointer_cursor(root)
+    if outcome.redraw or cursor_changed {
       (self.request_render())()
     }
     if outcome.quit {
@@ -1006,7 +1041,8 @@ impl State {
                   let converted = mouse_event(mouse)
                   let outcome = self.pointer.process(root, converted, self.focused, self.selection, self.auto_focus, self.now_ms())
                   self.apply_outcome(outcome)
-                  if outcome.redraw or self.take_redraw_request() {
+                  let cursor_changed = self.update_pointer_cursor(root)
+                  if outcome.redraw or cursor_changed or self.take_redraw_request() {
                     self.paint_live(ctx, root)
                   }
                   if outcome.quit or self.post_frame_quit {
@@ -1140,7 +1176,8 @@ impl State {
     }
     let outcome = self.pointer.process(root, received, self.focused, self.selection, self.auto_focus, self.now_ms())
     self.apply_outcome(outcome)
-    if self.test_active() and (outcome.redraw or self.take_redraw_request()) {
+    let cursor_changed = self.update_pointer_cursor(root)
+    if self.test_active() and (outcome.redraw or cursor_changed or self.take_redraw_request()) {
       self.paint_test(ctx, root)
     }
   }

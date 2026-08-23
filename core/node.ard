@@ -214,6 +214,7 @@ struct Node {
   blur_listeners: [VoidListener],
   value_listeners: [ValueListener],
   cleanup_listeners: [fn()],
+  mouse_cursor_resolver: (fn(Int, Int) event::MouseCursor)?,
   selection_hit: (fn(Int, Int) Bool)?,
   selection_update: (fn(LocalSelection?) SelectionResult)?,
   selection_lock: (fn(Int, Int, Int, Int) SelectionExpansion?)?,
@@ -427,6 +428,7 @@ fn create(
     blur_listeners: [],
     value_listeners: [],
     cleanup_listeners: [],
+    mouse_cursor_resolver: Maybe::new<fn(Int, Int) event::MouseCursor>(),
     selection_hit: Maybe::new<fn(Int, Int) Bool>(),
     selection_update: Maybe::new<fn(LocalSelection?) SelectionResult>(),
     selection_lock: Maybe::new<fn(Int, Int, Int, Int) SelectionExpansion?>(),
@@ -762,6 +764,18 @@ impl Node {
   fn mut on_cleanup(handler: fn()) {
     self.require_live()
     self.cleanup_listeners.push(handler)
+  }
+
+  fn mut set_mouse_cursor_resolver(resolver: fn(Int, Int) event::MouseCursor) {
+    self.require_live()
+    self.mouse_cursor_resolver = Maybe::new<fn(Int, Int) event::MouseCursor>(resolver)
+  }
+
+  fn mouse_cursor(local_x: Int, local_y: Int) event::MouseCursor {
+    match self.mouse_cursor_resolver {
+      resolve => resolve(local_x, local_y),
+      _ => event::MouseCursor::default_cursor,
+    }
   }
 
   fn emit_key(received: mut event::KeyEvent) {
@@ -1469,6 +1483,7 @@ impl Node {
       self.focus_listeners = []
       self.blur_listeners = []
       self.value_listeners = []
+      self.mouse_cursor_resolver = Maybe::new<fn(Int, Int) event::MouseCursor>()
       let cleanup = self.cleanup_listeners
       self.cleanup_listeners = []
       for handler in cleanup {

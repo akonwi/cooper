@@ -624,6 +624,36 @@ impl State {
     }
   }
 
+  fn mouse_cursor(root: mut node::Renderable) event::MouseCursor {
+    if not self.has_pointer {
+      event::MouseCursor::default_cursor
+    } else {
+      match hit::test(root, self.x, self.y) {
+        hit => {
+          mut current = Maybe::new<mut node::Node>(hit.target)
+          mut cursor = event::MouseCursor::default_cursor
+          mut scanning = true
+          while scanning {
+            match current {
+              retained => {
+                let bounds = retained.layout().screen
+                cursor = retained.mouse_cursor(self.x - bounds.x, self.y - bounds.y)
+                if cursor != event::MouseCursor::default_cursor or retained == root.node() {
+                  scanning = false
+                } else {
+                  current = retained.parent
+                }
+              },
+              _ => { scanning = false },
+            }
+          }
+          cursor
+        },
+        _ => event::MouseCursor::default_cursor,
+      }
+    }
+  }
+
   fn mut reconcile(root: mut node::Renderable, focused: mut focus::State) router::Outcome {
     if not self.has_pointer {
       router::empty_outcome()

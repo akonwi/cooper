@@ -1,4 +1,5 @@
 use ard/testing as assertions
+use ard/unsafe
 
 use cooper/context
 use cooper/core/app_runtime
@@ -98,9 +99,14 @@ impl Frame {
   }
 }
 
+private struct OpenedURLs {
+  values: [Str],
+}
+
 struct TestApp {
   context: mut context::Context,
   root: mut root::Root,
+  opened: Any,
 }
 
 private fn modifiers(value: event::Modifiers?) event::Modifiers {
@@ -109,6 +115,7 @@ private fn modifiers(value: event::Modifiers?) event::Modifiers {
 
 fn new(width: Int, height: Int) TestApp {
   let runtime = app_runtime::new_headless(width, height)
+  let opened = mut OpenedURLs{values: []}
   let ctx = context::internal_new(
     request_render: runtime.request_render(),
     width_measurer: runtime.width_measurer(),
@@ -120,13 +127,26 @@ fn new(width: Int, height: Int) TestApp {
     selection_update: runtime.selection_update_request(),
     selection_owns: runtime.selection_owns_request(),
     selection_clear: runtime.selection_clear_request(),
+    open_url: fn(url: Str) Void!Error {
+      opened.values.push(url)
+      Result::ok(())
+    },
   )
   let root = root::new(ctx, runtime)
   runtime.start_test(ctx, root)
-  TestApp{context: ctx, root: root}
+  TestApp{context: ctx, root: root, opened: opened}
 }
 
 impl TestApp {
+  fn opened_urls() [Str] {
+    let opened = unsafe::cast<mut OpenedURLs>(self.opened).expect("TestApp opened URLs must be created by Cooper")
+    let output = mut List::new<Str>()
+    for url in opened.values {
+      output.push(url)
+    }
+    output.@
+  }
+
   fn on_key(handler: fn(mut event::KeyEvent)) fn() {
     self.root.state_ref.on_key(handler)
   }

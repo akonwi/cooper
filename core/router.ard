@@ -147,7 +147,13 @@ fn dispatch_mouse(
     index =+ 1
   }
 
+  let route_current = route_is_current(routed, tree_version)
   root.node().end_event_route()
+  if route_current {
+    event::internal_run_deferred_defaults(mouse)
+  } else {
+    event::internal_discard_deferred_defaults(mouse)
+  }
   outcome(state)
 }
 

@@ -14,7 +14,9 @@ sub-agent and verify the smallest shape with the current compiler.
 
 Implement Nodes, styles, colors, cells, layout semantics, geometry, focus,
 events, listeners, scrolling, controls, and application helpers in Ard. Direct
-Go interop is limited to Vaxis and the internal layout backend. Tess/Yoga types
+Go interop is limited to Vaxis, the internal layout backend, and isolated
+platform services that Ard does not expose, such as opening a URL with the
+system handler. Tess/Yoga types
 and fallible setters must remain hidden behind Cooper's validated API and remain
 replaceable by an Ard-native implementation.
 

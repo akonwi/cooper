@@ -213,6 +213,7 @@ struct Node {
   focus_listeners: [VoidListener],
   blur_listeners: [VoidListener],
   value_listeners: [ValueListener],
+  cleanup_listeners: [fn()],
   selection_hit: (fn(Int, Int) Bool)?,
   selection_update: (fn(LocalSelection?) SelectionResult)?,
   selection_lock: (fn(Int, Int, Int, Int) SelectionExpansion?)?,
@@ -425,6 +426,7 @@ fn create(
     focus_listeners: [],
     blur_listeners: [],
     value_listeners: [],
+    cleanup_listeners: [],
     selection_hit: Maybe::new<fn(Int, Int) Bool>(),
     selection_update: Maybe::new<fn(LocalSelection?) SelectionResult>(),
     selection_lock: Maybe::new<fn(Int, Int, Int, Int) SelectionExpansion?>(),
@@ -755,6 +757,11 @@ impl Node {
         listener.handler(value)
       }
     }
+  }
+
+  fn mut on_cleanup(handler: fn()) {
+    self.require_live()
+    self.cleanup_listeners.push(handler)
   }
 
   fn emit_key(received: mut event::KeyEvent) {
@@ -1462,6 +1469,11 @@ impl Node {
       self.focus_listeners = []
       self.blur_listeners = []
       self.value_listeners = []
+      let cleanup = self.cleanup_listeners
+      self.cleanup_listeners = []
+      for handler in cleanup {
+        handler()
+      }
       self.owner = Maybe::new<Any>()
       self.yoga.Free()
       self.destroying = false

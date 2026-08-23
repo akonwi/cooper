@@ -10,6 +10,7 @@ use cooper/core/selection_state
 use cooper/event
 use cooper/selection as public_selection
 use go:github.com/akonwi/cooper/ffi/core/backend/clock
+use go:github.com/akonwi/cooper/ffi/core/backend/urlopen
 use go:github.com/akonwi/cooper/ffi/core/backend/vaxisbridge as bridge
 use go:go.rockorager.dev/vaxis
 use go:math
@@ -787,6 +788,12 @@ impl State {
         }
       },
       _ => default_width,
+    }
+  }
+
+  fn open_url() fn(Str) Void!Error {
+    fn(target: Str) Void!Error {
+      urlopen::Open(target)
     }
   }
 

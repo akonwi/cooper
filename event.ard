@@ -3,10 +3,21 @@ use ard/unsafe
 private struct PropagationState {
   propagation_stopped: Bool,
   default_prevented: Bool,
+  deferred_defaults: [fn()],
+  timestamp_ms: Int64,
+  press_serial: Int,
+  click_epoch: Int,
 }
 
 private fn new_propagation_state() mut PropagationState {
-  (mut PropagationState{propagation_stopped: false, default_prevented: false})
+  (mut PropagationState{
+    propagation_stopped: false,
+    default_prevented: false,
+    deferred_defaults: [],
+    timestamp_ms: 0,
+    press_serial: 0,
+    click_epoch: 0,
+  })
 }
 
 private fn propagation_state(value: Any) mut PropagationState {
@@ -169,6 +180,49 @@ fn mouse(
     is_dragging: is_dragging.or(false),
     internal_state: new_propagation_state(),
   })
+}
+
+fn internal_defer_default(received: mut MouseEvent, action: fn()) {
+  propagation_state(received.internal_state).deferred_defaults.push(action)
+}
+
+fn internal_run_deferred_defaults(received: mut MouseEvent) {
+  let state = propagation_state(received.internal_state)
+  let actions = state.deferred_defaults
+  state.deferred_defaults = []
+  if not state.default_prevented {
+    for action in actions {
+      action()
+    }
+  }
+}
+
+fn internal_discard_deferred_defaults(received: mut MouseEvent) {
+  propagation_state(received.internal_state).deferred_defaults = []
+}
+
+fn internal_set_timestamp(received: mut MouseEvent, timestamp_ms: Int64) {
+  propagation_state(received.internal_state).timestamp_ms = timestamp_ms
+}
+
+fn internal_timestamp(received: mut MouseEvent) Int64 {
+  propagation_state(received.internal_state).timestamp_ms
+}
+
+fn internal_set_press_serial(received: mut MouseEvent, serial: Int) {
+  propagation_state(received.internal_state).press_serial = serial
+}
+
+fn internal_press_serial(received: mut MouseEvent) Int {
+  propagation_state(received.internal_state).press_serial
+}
+
+fn internal_set_click_epoch(received: mut MouseEvent, epoch: Int) {
+  propagation_state(received.internal_state).click_epoch = epoch
+}
+
+fn internal_click_epoch(received: mut MouseEvent) Int {
+  propagation_state(received.internal_state).click_epoch
 }
 
 impl MouseEvent {

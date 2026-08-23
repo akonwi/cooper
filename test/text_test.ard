@@ -2,6 +2,7 @@ use ard/testing
 
 use cooper/box
 use cooper/color
+use cooper/event
 use cooper/style
 use cooper/testing as cooper_testing
 use cooper/text
@@ -54,6 +55,299 @@ test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!St
 
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected Unicode wrapped Text cleanup")
+}
+
+test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str {
+  let application = cooper_testing::new(10, 1)
+  let label = text::new(
+    application.context,
+    content: text::styled_text(
+      [
+        text::span("A "),
+        text::span("docs", link: "https://example.com/docs"),
+        text::span(" "),
+        text::span("你", link: "https://example.com/wide"),
+      ],
+    ),
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::cells(10), height: style::cells(1)),
+  )
+  application.root.add(label)
+  application.render()
+
+  mut events = 0
+  mut activated = ""
+  let dispose = label.on_link(fn(received: mut text::LinkEvent) {
+    events =+ 1
+    activated = received.url
+    if events == 2 {
+      received.prevent_default()
+    }
+  })
+  mut later_observed_prevention = false
+  let dispose_later = label.on_link(fn(received: mut text::LinkEvent) {
+    later_observed_prevention = received.is_default_prevented()
+  })
+
+  application.click(2, 0)
+  try testing::assert(
+    events == 1 and activated == "https://example.com/docs",
+    "Expected Text link activation event",
+  )
+  try testing::assert(
+    application.opened_urls().size() == 1 and application.opened_urls().at(0).or("") == "https://example.com/docs",
+    "Expected plain click to use the default link opener",
+  )
+
+  application.click(3, 0)
+  try testing::assert(
+    events == 2 and later_observed_prevention and application.opened_urls().size() == 1,
+    "Expected monotonic LinkEvent.prevent_default to suppress opening",
+  )
+  dispose()
+  dispose()
+  dispose_later()
+  application.click(8, 0)
+  try testing::assert(
+    events == 2 and application.opened_urls().size() == 2 and application.opened_urls().at(1).or("") == "https://example.com/wide",
+    "Expected wide continuation click and idempotent listener disposal",
+  )
+
+  application.click(
+    2,
+    0,
+    received_modifiers: event::Modifiers{
+      shift: false,
+      ctrl: false,
+      alt: false,
+      super: true,
+    },
+  )
+  application.drag(2, 0, 4, 0)
+  try testing::assert(
+    application.opened_urls().size() == 2,
+    "Expected modified clicks and selection drags not to open links",
+  )
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected clickable link cleanup")
+}
+
+test fn ancestor_prevention_and_route_invalidation_cancel_link_activation() Void!Str {
+  let application = cooper_testing::new(4, 1)
+  let parent = box::new(
+    application.context,
+    styles: style::new(width: style::cells(4), height: style::cells(1)),
+  )
+  let label = text::new(
+    application.context,
+    content: text::styled_text([text::span("docs", link: "https://example.com/docs")]),
+    styles: style::new(width: style::cells(4), height: style::cells(1)),
+  )
+  parent.add(label)
+  application.root.add(parent)
+  application.render()
+
+  let stop_parent_default = parent.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::up {
+      received.prevent_default()
+    }
+  })
+  application.click(1, 0)
+  try testing::assert(
+    application.opened_urls().size() == 0,
+    "Expected ancestor prevent_default before deferred link activation",
+  )
+  stop_parent_default()
+
+  let invalidate_down = label.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down {
+      parent.set_style(style::new(display: style::Display::none))
+    }
+  })
+  application.mouse_down(1, 0)
+  parent.set_style(style::new(width: style::cells(4), height: style::cells(1)))
+  application.render()
+  application.mouse_up(1, 0)
+  try testing::assert(
+    application.opened_urls().size() == 0,
+    "Expected invalidated down route not to preserve an armed link",
+  )
+  invalidate_down()
+
+  application.click(1, 0)
+  try testing::assert(
+    application.opened_urls().size() == 1,
+    "Expected valid route to activate after cancellation cases",
+  )
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected deferred link route cleanup")
+}
+
+test fn completely_clipped_wide_link_is_not_activatable() Void!Str {
+  let application = cooper_testing::new(4, 1)
+  let label = text::new(
+    application.context,
+    content: text::styled_text(
+      [text::span("abc"), text::span("你", link: "https://example.com/wide")],
+    ),
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::cells(4), height: style::cells(1)),
+  )
+  application.root.add(label)
+  application.render()
+
+  try testing::assert(
+    application.frame().cell(3, 0).expect("cleared partial wide link").grapheme == " ",
+    "Expected partial wide link not painted",
+  )
+  application.click(3, 0)
+  try testing::assert(application.opened_urls().size() == 0, "Expected partial wide link not activated")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected clipped link cleanup")
+}
+
+test fn double_clicking_link_opens_once_then_selects_word() Void!Str {
+  let application = cooper_testing::new(4, 1)
+  let label = text::new(
+    application.context,
+    content: text::styled_text([text::span("docs", link: "https://example.com/docs")]),
+    styles: style::new(width: style::cells(4), height: style::cells(1)),
+  )
+  application.root.add(label)
+  application.render()
+
+  application.click(1, 0)
+  application.mouse_down(1, 0)
+  application.advance_time(600)
+  application.mouse_up(1, 0)
+  try testing::assert(
+    application.opened_urls().size() == 1,
+    "Expected press-timed double click not to open the same link twice after delayed release",
+  )
+  try testing::assert(
+    label.selected_text() == "docs",
+    "Expected second press to preserve word selection behavior",
+  )
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected double-click link cleanup")
+}
+
+test fn non_selectable_link_double_click_still_activates_once() Void!Str {
+  let application = cooper_testing::new(4, 1)
+  let label = text::new(
+    application.context,
+    content: text::styled_text([text::span("docs", link: "https://example.com/docs")]),
+    styles: style::new(width: style::cells(4), height: style::cells(1)),
+    selectable: false,
+  )
+  application.root.add(label)
+  application.render()
+
+  application.double_click(1, 0)
+  try testing::assert(
+    application.opened_urls().size() == 1,
+    "Expected link activation deduplicated independently of selection",
+  )
+  try testing::assert(
+    not label.selection().is_some(),
+    "Expected non-selectable linked Text to remain unselected",
+  )
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected non-selectable link cleanup")
+}
+
+test fn intervening_press_breaks_link_activation_dedupe() Void!Str {
+  let application = cooper_testing::new(2, 1)
+  let label = text::new(
+    application.context,
+    content: text::styled_text([text::span("a", link: "https://example.com/a"), text::span("x")]),
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::cells(2), height: style::cells(1)),
+    selectable: false,
+  )
+  application.root.add(label)
+  application.render()
+
+  application.click(0, 0)
+  application.click(1, 0)
+  application.click(0, 0)
+  try testing::assert(
+    application.opened_urls().size() == 2,
+    "Expected intervening unlinked press to start a new click sequence",
+  )
+  application.scroll(0, 0, 1)
+  application.click(0, 0)
+  try testing::assert(
+    application.opened_urls().size() == 3,
+    "Expected scroll to break link double-click dedupe",
+  )
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected intervening link click cleanup")
+}
+
+test fn changed_url_at_same_cell_is_a_new_activation() Void!Str {
+  let application = cooper_testing::new(1, 1)
+  let label = text::new(
+    application.context,
+    content: text::styled_text([text::span("x", link: "https://example.com/a")]),
+    styles: style::new(width: style::cells(1), height: style::cells(1)),
+    selectable: false,
+  )
+  application.root.add(label)
+  application.render()
+
+  application.click(0, 0)
+  label.set_content(text::styled_text([text::span("x", link: "https://example.com/b")]))
+  application.render()
+  application.click(0, 0)
+  try testing::assert(
+    application.opened_urls().size() == 2 and application.opened_urls().at(1).or("") == "https://example.com/b",
+    "Expected changed URL not deduplicated at the same cell",
+  )
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected changed URL cleanup")
+}
+
+test fn link_dedupe_uses_screen_position_when_text_moves() Void!Str {
+  let application = cooper_testing::new(5, 1)
+  let label = text::new(
+    application.context,
+    content: text::styled_text([text::span("docs", link: "https://example.com/docs")]),
+    wrap: text::TextWrap::none,
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(0),
+      width: style::cells(4),
+      height: style::cells(1),
+    ),
+  )
+  application.root.add(label)
+  application.render()
+
+  application.click(1, 0)
+  label.set_style(
+    style::new(
+      position: style::Position::absolute,
+      left: style::cells(1),
+      width: style::cells(4),
+      height: style::cells(1),
+    ),
+  )
+  application.render()
+  application.click(1, 0)
+  try testing::assert(
+    application.opened_urls().size() == 1 and label.selected_text() == "docs",
+    "Expected moved Text to share pointer double-click identity at the same screen cell",
+  )
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected moved link click cleanup")
 }
 
 test fn horizontal_ellipsis_replaces_complete_glyph_and_clamps_selection() Void!Str {

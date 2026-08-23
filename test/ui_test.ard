@@ -22,6 +22,9 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
     text_style: emphasized,
     overflow: ui::TextOverflow::ellipsis,
   )
+  let _ = label.on_link(fn(received: mut ui::LinkEvent) {
+    received.prevent_default()
+  })
   let field: mut ui::Input = ui::input(ctx, placeholder: "Ada")
   let viewport: mut ui::ScrollBox = ui::scroll_box(ctx, styles: style::new(height: style::cells(1)))
 

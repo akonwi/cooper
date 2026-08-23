@@ -21,6 +21,10 @@ private fn open_cancellation() Receiver<Void> {
 
 private fn no_op() {}
 
+private fn ignore_url(url: Str) Void!Error {
+  Result::ok(())
+}
+
 private fn reject_focus(target_id: Int) Bool {
   false
 }
@@ -61,6 +65,7 @@ struct InternalState {
   selection_update: fn(Int, Int, Int, Bool) Bool,
   selection_owns: fn(Int) Bool,
   selection_clear: fn(),
+  open_url: fn(Str) Void!Error,
 }
 
 private fn new_state(
@@ -72,6 +77,7 @@ private fn new_state(
   selection_update: (fn(Int, Int, Int, Bool) Bool)?,
   selection_owns: (fn(Int) Bool)?,
   selection_clear: (fn())?,
+  open_url: (fn(Str) Void!Error)?,
 ) mut InternalState {
   (mut InternalState{
     next_id: 1,
@@ -87,6 +93,7 @@ private fn new_state(
     selection_update: selection_update.or(reject_selection_update),
     selection_owns: selection_owns.or(reject_selection_owns),
     selection_clear: selection_clear.or(no_op),
+    open_url: open_url.or(ignore_url),
   })
 }
 
@@ -101,6 +108,7 @@ fn internal_new(
   selection_update: (fn(Int, Int, Int, Bool) Bool)?,
   selection_owns: (fn(Int) Bool)?,
   selection_clear: (fn())?,
+  open_url: (fn(Str) Void!Error)?,
 ) mut Context {
   let retained = new_state(
     request_render,
@@ -111,6 +119,7 @@ fn internal_new(
     selection_update,
     selection_owns,
     selection_clear,
+    open_url,
   )
   (mut Context{
     dispatch: dispatch.or(stopped_dispatch),
@@ -121,6 +130,17 @@ fn internal_new(
 
 fn internal_state(ctx: mut Context) mut InternalState {
   unsafe::cast<mut InternalState>(ctx.internal).expect("Context must be created by Cooper")
+}
+
+impl Context {
+  fn mut open_url(target: Str) Void!Error {
+    let state = internal_state(self)
+    if state.destroyed {
+      Result::err(Error::new("cannot open a URL from a destroyed Context"))
+    } else {
+      state.open_url(target)
+    }
+  }
 }
 
 impl InternalState {

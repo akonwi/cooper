@@ -77,9 +77,9 @@ ard-dev run explorer.ard
 captured and hit-routed drags, layout-driven hover, terminal focus, selectable
 rich linked Unicode Text with double-click word selection, ellipsis overflow,
 editable Input selection, and selection through a ScrollBox. Press M while the pointer is over
-a hover tile to move another tile beneath the stationary pointer. In Ghostty
-on macOS, open the `SELECTABLE` OSC 8 link with Shift-Command-click; Shift
-bypasses application mouse reporting.
+a hover tile to move another tile beneath the stationary pointer. Plain-click
+`SELECTABLE` to open its link. OSC 8 metadata remains available for native
+terminal previews and modifier-based activation.
 
 ```sh
 ard-dev run interaction_lab.ard

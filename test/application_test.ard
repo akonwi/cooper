@@ -122,6 +122,14 @@ test fn terminal_focus_listener_can_destroy_test_app_safely() Void!Str {
   testing::assert(context::internal_state(application.context).is_destroyed(), "Expected terminal-focus destruction at callback boundary")
 }
 
+test fn destroyed_context_rejects_platform_link_opening() Void!Str {
+  let application = cooper_testing::new(4, 1)
+  application.destroy()
+
+  try testing::assert(application.context.open_url("https://example.com").is_err(), "Expected destroyed Context to reject URL opening")
+  testing::assert(application.opened_urls().size() == 0, "Expected no platform side effect after teardown")
+}
+
 test fn test_app_resize_and_destruction_are_deterministic() Void!Str {
   let application = cooper_testing::new(4, 1)
   let cancellation = application.context.cancellation

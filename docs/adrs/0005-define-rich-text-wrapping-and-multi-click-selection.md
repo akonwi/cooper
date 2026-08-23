@@ -266,9 +266,30 @@ preserve original tab characters in local selected text.
 A non-empty Span link emits OSC 8 hyperlink metadata for all complete cells of
 that span. Hyperlinks remain Ard-owned value data and are converted to Vaxis
 style fields only by the paint/backend boundary. Continuation cells carry the
-same link metadata. Links are terminal annotations, not interactive controls;
-Cooper does not add focus, activation callbacks, URL parsing, or pointer cursor
-policy to Text spans.
+same link metadata.
+
+Linked cells are also pointer-activatable without relying on terminal-specific
+modifiers. An unmodified left press arms the complete linked glyph under the
+pointer. A matching release over the same URL opens it with the platform's
+default handler. Dragging, leaving the Text, changing the link before release,
+a modified press, or a prevented mouse default cancels activation. Wide-glyph
+continuation cells activate the same URL; clipped, omitted, zero-width, and
+synthetic ellipsis cells do not.
+
+`Text.on_link(fn(mut LinkEvent))` observes activation before the platform opener
+runs. `LinkEvent.prevent_default()` suppresses the opener so applications can
+route links themselves. Listener disposal is idempotent. TestApp records opened
+URLs instead of producing operating-system side effects. Live opening uses a
+small platform backend that passes the link as one process argument without a
+shell and starts the default handler asynchronously. Automatic activation is
+best effort; applications that need launch-error handling prevent the default
+and call `Context.open_url`, which returns `Result`.
+
+The first completed click of a double-click activates once. If the second press
+expands a word selection, its release does not activate the same link again.
+Per-span keyboard focus, Enter/Space activation, URL parsing, and pointer cursor
+policy remain deferred. OSC 8 metadata remains present for terminal-native link
+preview, copy, and activation behavior.
 
 Every StyledText ingress validates links before storing or painting them,
 including directly constructed Span values. A link containing any C0 or C1
@@ -371,7 +392,8 @@ of scope for Text.
    validation, and cross-span grapheme tests.
 5. Replace whitespace-only word wrapping with the documented Unicode policy and
    change the default to word.
-6. Add backend-independent hyperlink metadata and OSC 8 conversion.
+6. Add backend-independent hyperlink metadata, OSC 8 conversion, and plain-click
+   activation through the platform opener.
 7. Add ellipsis overflow and selection behavior around omitted content.
 8. Reassess caching or a rope only after long-content benchmarks show a need.
 

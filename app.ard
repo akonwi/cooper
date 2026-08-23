@@ -23,6 +23,7 @@ fn new(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?) App!Error {
     selection_update: runtime.selection_update_request(),
     selection_owns: runtime.selection_owns_request(),
     selection_clear: runtime.selection_clear_request(),
+    open_url: runtime.open_url(),
   )
   let root = root::new(ctx, runtime)
   runtime.commit_construction()

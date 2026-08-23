@@ -4,6 +4,7 @@ use cooper/core/node
 use cooper/core/router
 use cooper/core/selection_state
 use cooper/event
+use go:math
 
 struct AttachmentHandle {
   target: mut node::Node,
@@ -63,6 +64,9 @@ struct State {
   x: Int,
   y: Int,
   modifiers: event::Modifiers,
+  next_press_serial: Int,
+  active_press_serial: Int,
+  click_epoch: Int,
 }
 
 fn new() mut State {
@@ -78,6 +82,9 @@ fn new() mut State {
     x: 0,
     y: 0,
     modifiers: event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
+    next_press_serial: 1,
+    active_press_serial: 0,
+    click_epoch: 1,
   })
 }
 
@@ -117,7 +124,7 @@ private fn derived(
   event_type: event::MouseEventType,
   is_dragging: Bool?,
 ) mut event::MouseEvent {
-  event::mouse(
+  let result = event::mouse(
     event_type,
     received.button,
     received.x,
@@ -127,6 +134,10 @@ private fn derived(
     scroll_y: received.scroll_y,
     is_dragging: is_dragging.or(false),
   )
+  event::internal_set_timestamp(result, event::internal_timestamp(received))
+  event::internal_set_press_serial(result, event::internal_press_serial(received))
+  event::internal_set_click_epoch(result, event::internal_click_epoch(received))
+  result
 }
 
 private fn selection_target(value: AttachmentHandle?) (mut node::Node)? {
@@ -274,6 +285,9 @@ impl State {
       scroll_x: received.scroll_x,
       scroll_y: received.scroll_y,
     )
+    event::internal_set_timestamp(release, event::internal_timestamp(received))
+    event::internal_set_press_serial(release, event::internal_press_serial(received))
+    event::internal_set_click_epoch(release, event::internal_click_epoch(received))
     mut outcome = router::empty_outcome()
     mut same_destination = false
     match physical {
@@ -341,6 +355,22 @@ impl State {
     if not physical_event(received.event_type) {
       panic("pointer input accepts only physical mouse event kinds")
     }
+    event::internal_set_timestamp(received, now_ms)
+    if received.event_type == event::MouseEventType::drag or received.event_type == event::MouseEventType::scroll {
+      if self.click_epoch == math::MaxInt {
+        panic("pointer click epoch overflow")
+      }
+      self.click_epoch =+ 1
+    }
+    if received.event_type == event::MouseEventType::down {
+      if self.next_press_serial == math::MaxInt {
+        panic("pointer press serial overflow")
+      }
+      self.active_press_serial = self.next_press_serial
+      self.next_press_serial =+ 1
+    }
+    event::internal_set_press_serial(received, self.active_press_serial)
+    event::internal_set_click_epoch(received, self.click_epoch)
     received.is_dragging = false
     self.refresh_handles()
     self.has_pointer = true
@@ -629,5 +659,6 @@ impl State {
     self.click_candidate = Maybe::new<ClickCandidate>()
     self.dragging = false
     self.has_pointer = false
+    self.active_press_serial = 0
   }
 }

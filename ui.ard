@@ -15,6 +15,7 @@ type TextContent = text_control::TextContent
 type StyledText = text_control::StyledText
 type Span = text_control::Span
 type SpanStyle = text_control::SpanStyle
+type LinkEvent = text_control::LinkEvent
 type TextStyle = text_control::TextStyle
 type TextWrap = text_control::TextWrap
 type TextOverflow = text_control::TextOverflow

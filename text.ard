@@ -87,6 +87,103 @@ struct Span {
   link: Str?,
 }
 
+private struct LinkEventState {
+  default_prevented: Bool,
+}
+
+struct LinkEvent {
+  url: Str,
+  internal_state: Any,
+}
+
+private fn new_link_event(url: Str) mut LinkEvent {
+  (mut LinkEvent{url: url, internal_state: (mut LinkEventState{default_prevented: false})})
+}
+
+private fn link_event_state(value: Any) mut LinkEventState {
+  unsafe::cast<mut LinkEventState>(value).expect("Text LinkEvent state must be created by Cooper")
+}
+
+impl LinkEvent {
+  fn mut prevent_default() {
+    link_event_state(self.internal_state).default_prevented = true
+  }
+
+  fn is_default_prevented() Bool {
+    link_event_state(self.internal_state).default_prevented
+  }
+}
+
+private struct LinkListener {
+  id: Int,
+  handler: fn(mut LinkEvent),
+}
+
+private struct LinkState {
+  open_url: fn(Str) Void!Error,
+  armed_link: Str?,
+  armed_attachment_generation: Int,
+  armed_press_at_ms: Int64,
+  armed_screen_x: Int,
+  armed_screen_y: Int,
+  armed_press_serial: Int,
+  armed_click_epoch: Int,
+  next_listener_id: Int,
+  listeners: [LinkListener],
+  paint_clip: geometry::Rect,
+  last_url: Str?,
+  last_press_at_ms: Int64,
+  last_screen_x: Int,
+  last_screen_y: Int,
+  last_press_serial: Int,
+  last_click_epoch: Int,
+  last_attachment_generation: Int,
+}
+
+private fn new_link_state(open_url: fn(Str) Void!Error) Any {
+  (mut LinkState{
+    open_url: open_url,
+    armed_link: Maybe::new<Str>(),
+    armed_attachment_generation: 0,
+    armed_press_at_ms: 0,
+    armed_screen_x: 0,
+    armed_screen_y: 0,
+    armed_press_serial: 0,
+    armed_click_epoch: 0,
+    next_listener_id: 1,
+    listeners: [],
+    paint_clip: geometry::Rect{x: 0, y: 0, width: 0, height: 0},
+    last_url: Maybe::new<Str>(),
+    last_press_at_ms: 0,
+    last_screen_x: 0,
+    last_screen_y: 0,
+    last_press_serial: 0,
+    last_click_epoch: 0,
+    last_attachment_generation: 0,
+  })
+}
+
+private fn link_state(value: Any) mut LinkState {
+  unsafe::cast<mut LinkState>(value).expect("Text link state must be created by Cooper")
+}
+
+private fn ignore_link(url: Str) Void!Error {
+  Result::ok(())
+}
+
+private fn reset_link_state(value: Any) {
+  let state = link_state(value)
+  state.open_url = ignore_link
+  state.armed_link = Maybe::new<Str>()
+  state.armed_attachment_generation = 0
+  state.armed_press_serial = 0
+  state.armed_click_epoch = 0
+  state.listeners = []
+  state.last_url = Maybe::new<Str>()
+  state.last_press_serial = 0
+  state.last_click_epoch = 0
+}
+
 struct StyledText {
   spans: [Span],
 }
@@ -987,6 +1084,7 @@ struct Text {
   selected_glyphs: [SelectedGlyph],
   source_revision: Int,
   width_measurer: fn(Str) Int,
+  link_state: Any,
 }
 
 fn new(
@@ -1017,8 +1115,16 @@ fn new(
     selected_glyphs: [],
     source_revision: 1,
     width_measurer: context::internal_state(ctx).width_measurer,
+    link_state: new_link_state(context::internal_state(ctx).open_url),
   }
   retained.bind(text)
+  let link_storage = text.link_state
+  retained.on_cleanup(fn() {
+    reset_link_state(link_storage)
+  })
+  let _ = retained.on_mouse(fn(received: mut event::MouseEvent) {
+    text.observe_link_pointer(received)
+  })
   retained.set_measure(fn(input: node::MeasureInput) node::MeasureSize {
     let measured = measured_text(
       text.content,
@@ -1046,6 +1152,13 @@ impl node::Renderable for Text {
   fn mount(ctx: node::MountContext) {}
 
   fn paint(ctx: mut paint::Context) {
+    let visible = geometry::intersect(ctx.bounds, ctx.clip)
+    link_state(self.link_state).paint_clip = geometry::Rect{
+      x: visible.x - ctx.bounds.x,
+      y: visible.y - ctx.bounds.y,
+      width: visible.width,
+      height: visible.height,
+    }
     let measured = layout_text(
       self.content,
       self.wrap_mode,
@@ -1113,6 +1226,148 @@ impl node::Renderable for Text {
 }
 
 impl Text {
+  private fn link_at(local_x: Int, local_y: Int) Str? {
+    let runs = cached_style_runs(self.style_cache)
+    let clip = link_state(self.link_state).paint_clip
+    mut link = Maybe::new<Str>()
+    for glyph in self.current_view().glyphs {
+      let complete = glyph.y >= clip.y and glyph.y < clip.y + clip.height and glyph.x >= clip.x and glyph.x + glyph.width <= clip.x + clip.width
+      if complete and glyph.width > 0 and glyph.y == local_y and local_x >= glyph.x and local_x < glyph.x + glyph.width {
+        let run = runs.at(glyph.style_index).expect("linked glyph style run")
+        if not run.style.hidden {
+          link = run.link
+        }
+      }
+    }
+    link
+  }
+
+  private fn emit_link(url: Str) {
+    let state = link_state(self.link_state)
+    let activated = new_link_event(url)
+    let listeners = state.listeners
+    for listener in listeners {
+      listener.handler(activated)
+    }
+    if not activated.is_default_prevented() {
+      let _ = state.open_url(url)
+    }
+  }
+
+  private fn activate_link_once(
+    url: Str,
+    press_at_ms: Int64,
+    screen_x: Int,
+    screen_y: Int,
+    press_serial: Int,
+    click_epoch: Int,
+    attachment_generation: Int,
+  ) {
+    let state = link_state(self.link_state)
+    let elapsed = press_at_ms - state.last_press_at_ms
+    let same_url = match state.last_url {
+      previous => previous == url,
+      _ => false,
+    }
+    let duplicate = same_url and state.last_press_serial > 0 and press_serial == state.last_press_serial + 1 and state.last_click_epoch == click_epoch and state.last_screen_x == screen_x and state.last_screen_y == screen_y and state.last_attachment_generation == attachment_generation and elapsed >= 0 and elapsed <= 500
+    if not duplicate {
+      state.last_url = Maybe::new<Str>(url)
+      state.last_press_at_ms = press_at_ms
+      state.last_screen_x = screen_x
+      state.last_screen_y = screen_y
+      state.last_press_serial = press_serial
+      state.last_click_epoch = click_epoch
+      state.last_attachment_generation = attachment_generation
+      self.emit_link(url)
+    }
+  }
+
+  private fn observe_link_pointer(received: mut event::MouseEvent) {
+    let state = link_state(self.link_state)
+    let unmodified = (not received.modifiers.shift) and (not received.modifiers.ctrl) and (not received.modifiers.alt) and (not received.modifiers.super)
+    if received.event_type == event::MouseEventType::down {
+      state.armed_link = Maybe::new<Str>()
+      state.armed_attachment_generation = 0
+      state.armed_press_serial = 0
+      state.armed_click_epoch = 0
+      if received.button == event::MouseButton::left and unmodified {
+        match self.link_at(received.local_x, received.local_y) {
+          url => {
+            let generation = self.node_ref.attachment_generation()
+            let press_at_ms = event::internal_timestamp(received)
+            let screen_x = received.x
+            let screen_y = received.y
+            let press_serial = event::internal_press_serial(received)
+            let click_epoch = event::internal_click_epoch(received)
+            event::internal_defer_default(received, fn() {
+              let deferred = link_state(self.link_state)
+              deferred.armed_link = Maybe::new<Str>(url)
+              deferred.armed_attachment_generation = generation
+              deferred.armed_press_at_ms = press_at_ms
+              deferred.armed_screen_x = screen_x
+              deferred.armed_screen_y = screen_y
+              deferred.armed_press_serial = press_serial
+              deferred.armed_click_epoch = click_epoch
+            })
+          },
+          _ => (),
+        }
+      }
+    } else if received.event_type == event::MouseEventType::drag or received.event_type == event::MouseEventType::drag_end or received.event_type == event::MouseEventType::out {
+      state.armed_link = Maybe::new<Str>()
+      state.armed_attachment_generation = 0
+      state.armed_press_serial = 0
+      state.armed_click_epoch = 0
+    } else if received.event_type == event::MouseEventType::up {
+      let candidate = state.armed_link
+      let armed_generation = state.armed_attachment_generation
+      let press_at_ms = state.armed_press_at_ms
+      let screen_x = state.armed_screen_x
+      let screen_y = state.armed_screen_y
+      let press_serial = state.armed_press_serial
+      let click_epoch = state.armed_click_epoch
+      state.armed_link = Maybe::new<Str>()
+      state.armed_attachment_generation = 0
+      state.armed_press_serial = 0
+      state.armed_click_epoch = 0
+      let generation = self.node_ref.attachment_generation()
+      if received.button == event::MouseButton::left and unmodified and armed_generation == generation {
+        match candidate {
+          url => {
+            match self.link_at(received.local_x, received.local_y) {
+              current => {
+                if current == url {
+                  let local_x = received.local_x
+                  let local_y = received.local_y
+                  event::internal_defer_default(received, fn() {
+                    match self.link_at(local_x, local_y) {
+                      deferred_url => {
+                        if deferred_url == url and self.node_ref.attachment_generation() == generation {
+                          self.activate_link_once(
+                            url,
+                            press_at_ms,
+                            screen_x,
+                            screen_y,
+                            press_serial,
+                            click_epoch,
+                            generation,
+                          )
+                        }
+                      },
+                      _ => (),
+                    }
+                  })
+                }
+              },
+              _ => (),
+            }
+          },
+          _ => (),
+        }
+      }
+    }
+  }
+
   private fn current_view() VisualView {
     let measured = layout_text(
       self.content,
@@ -1610,6 +1865,29 @@ impl Text {
     self.node_ref.layout()
   }
 
+  fn mut on_link(handler: fn(mut LinkEvent)) fn() {
+    self.node_ref.require_live()
+    let state = link_state(self.link_state)
+    if state.next_listener_id == math::MaxInt {
+      panic("Text link listener id overflow")
+    }
+    let id = state.next_listener_id
+    state.next_listener_id =+ 1
+    state.listeners.push(LinkListener{id: id, handler: handler})
+    fn() { self.remove_link_listener(id) }
+  }
+
+  private fn remove_link_listener(id: Int) {
+    let state = link_state(self.link_state)
+    let retained = mut List::new<LinkListener>()
+    for listener in state.listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    state.listeners = retained.@
+  }
+
   fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
@@ -1629,6 +1907,21 @@ private fn wide_ellipsis_width(value: Str) Int {
   } else {
     test_width(value)
   }
+}
+
+test fn text_destruction_releases_link_listeners() Void!Str {
+  let ctx = context::internal_new()
+  let label = new(ctx, content: styled_text([span("docs", link: "https://example.com")]))
+  let dispose = label.on_link(fn(received: mut LinkEvent) {
+    received.prevent_default()
+  })
+  let state = link_state(label.link_state)
+  try testing::assert(state.listeners.size() == 1, "Expected registered link listener")
+  label.destroy()
+  try testing::assert(state.listeners.size() == 0 and state.armed_link.is_none(), "Expected Text destruction to release link state")
+  dispose()
+  context::internal_state(ctx).destroy()
+  testing::assert(context::internal_state(ctx).is_destroyed(), "Expected link listener lifecycle cleanup")
 }
 
 test fn ellipsis_that_cannot_fit_paints_no_partial_marker() Void!Str {

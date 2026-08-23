@@ -89,8 +89,8 @@ yet a supported custom-control API.
 ## Initial controls
 
 - `Box` — indexed flex container with background, border, and title;
-- `Text` — selectable multiline plain or StyledText spans with terminal-aware
-  wrapping and inheritable text styles;
+- `Text` — selectable multiline plain or StyledText spans with Unicode-aware
+  word wrapping by default and inheritable text styles;
 - `Input` — grapheme-aware CLI editing, editable selection, validation, and callbacks;
 - `ScrollBox` — focusable multi-child vertical scrolling container.
 

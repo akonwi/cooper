@@ -583,79 +583,47 @@ private fn visual_glyphs(content: Str, layout: Layout, runs: [StyleRun], measure
   output.@
 }
 
-private struct Token {
+private struct WrapSegment {
   text: Str,
   width: Int,
-  whitespace: Bool,
   newline: Bool,
 }
 
 private fn newline(grapheme: Str) Bool {
-  grapheme == "\n" or grapheme == "\r" or grapheme == "\r\n"
+  let rune = try grapheme.runes().at(0) -> _ { false }
+  let kind = unicode::LineBreak(Int32::from(rune))
+  kind == unicode::LineBreakBK or kind == unicode::LineBreakCR or kind == unicode::LineBreakLF or kind == unicode::LineBreakNL
 }
 
-private fn tokens(content: Str, measure: fn(Str) Int) [Token] {
-  let output = mut List::new<Token>()
-  mut current = ""
-  mut current_width = 0
-  mut current_whitespace = false
-  mut started = false
-  for character in vaxis::Characters(content) {
-    let grapheme = character.Grapheme
-    if newline(grapheme) {
-      if started {
+private fn wrap_segments(content: Str, measure: fn(Str) Int) [WrapSegment] {
+  let output = mut List::new<WrapSegment>()
+  let iterator = mut unicode::NewLineIterator(content)
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      segment => {
+        let source = content.slice(start: segment.Start, end: segment.End).expect("Unicode line segment source")
+        let parts = mut List::new<Str>()
+        mut width = 0
+        mut hard_break = false
+        for character in vaxis::Characters(source) {
+          if newline(character.Grapheme) {
+            hard_break = true
+          } else {
+            parts.push(character.Grapheme)
+            width = width + measure(character.Grapheme)
+          }
+        }
         output.push(
-          Token{
-            text: current,
-            width: current_width,
-            whitespace: current_whitespace,
-            newline: false,
+          WrapSegment{
+            text: strings::Join(parts, ""),
+            width: width,
+            newline: hard_break,
           },
         )
-      }
-      output.push(
-        Token{
-          text: "",
-          width: 0,
-          whitespace: false,
-          newline: true,
-        },
-      )
-      current = ""
-      current_width = 0
-      started = false
-    } else {
-      let whitespace = strings::TrimSpace(grapheme).is_empty()
-      if started and whitespace != current_whitespace {
-        output.push(
-          Token{
-            text: current,
-            width: current_width,
-            whitespace: current_whitespace,
-            newline: false,
-          },
-        )
-        current = ""
-        current_width = 0
-        started = false
-      }
-      if not started {
-        current_whitespace = whitespace
-        started = true
-      }
-      current = "{current}{grapheme}"
-      current_width = current_width + measure(grapheme)
-    }
-  }
-  if started {
-    output.push(
-      Token{
-        text: current,
-        width: current_width,
-        whitespace: current_whitespace,
-        newline: false,
       },
-    )
+      _ => { reading = false },
+    }
   }
   output.@
 }
@@ -734,62 +702,58 @@ private fn word_wrapped(content: Str, requested_limit: Int, measure: fn(Str) Int
   if limit < 1 {
     limit = 1
   }
-  let lines = mut List::new<Line>()
-  mut current = ""
-  mut width = 0
-  mut pending_space = ""
-  mut pending_width = 0
-  for token in tokens(content, measure) {
-    if token.newline {
-      if width + pending_width <= limit {
-        current = "{current}{pending_space}"
-        width = width + pending_width
+  let intrinsic = unwrapped(content, measure)
+  mut fits = true
+  for line in intrinsic.lines {
+    if line.width > limit {
+      fits = false
+      break
+    }
+  }
+  if fits {
+    intrinsic
+  } else {
+    let lines = mut List::new<Line>()
+    mut current = ""
+    mut width = 0
+    for segment in wrap_segments(content, measure) {
+      if segment.width == 0 {
+        current = "{current}{segment.text}"
+      } else if width + segment.width <= limit {
+        current = "{current}{segment.text}"
+        width = width + segment.width
+      } else {
+        if width > 0 {
+          push_line(lines, current, width)
+          current = ""
+          width = 0
+        }
+        if segment.width <= limit {
+          current = segment.text
+          width = segment.width
+        } else {
+          for character in vaxis::Characters(segment.text) {
+            let grapheme = character.Grapheme
+            let grapheme_width = measure(grapheme)
+            if width > 0 and width + grapheme_width > limit {
+              push_line(lines, current, width)
+              current = ""
+              width = 0
+            }
+            current = "{current}{grapheme}"
+            width = width + grapheme_width
+          }
+        }
       }
-      push_line(lines, current, width)
-      current = ""
-      width = 0
-      pending_space = ""
-      pending_width = 0
-    } else if token.whitespace {
-      pending_space = token.text
-      pending_width = token.width
-    } else if width > 0 and width + pending_width + token.width <= limit {
-      current = "{current}{pending_space}{token.text}"
-      width = width + pending_width + token.width
-      pending_space = ""
-      pending_width = 0
-    } else {
-      if width > 0 {
+      if segment.newline {
         push_line(lines, current, width)
         current = ""
         width = 0
       }
-      pending_space = ""
-      pending_width = 0
-      if token.width <= limit {
-        current = token.text
-        width = token.width
-      } else {
-        for character in vaxis::Characters(token.text) {
-          let grapheme = character.Grapheme
-          let grapheme_width = measure(grapheme)
-          if width > 0 and width + grapheme_width > limit {
-            push_line(lines, current, width)
-            current = ""
-            width = 0
-          }
-          current = "{current}{grapheme}"
-          width = width + grapheme_width
-        }
-      }
     }
+    push_line(lines, current, width)
+    finish(lines)
   }
-  if width + pending_width <= limit {
-    current = "{current}{pending_space}"
-    width = width + pending_width
-  }
-  push_line(lines, current, width)
-  finish(lines)
 }
 
 private fn layout_text(content: Str, wrap: TextWrap, width: Int, measure: fn(Str) Int) Layout {
@@ -797,6 +761,19 @@ private fn layout_text(content: Str, wrap: TextWrap, width: Int, measure: fn(Str
     TextWrap::none => unwrapped(content, measure),
     TextWrap::character => character_wrapped(content, width, measure),
     TextWrap::word => word_wrapped(content, width, measure),
+  }
+}
+
+private fn measured_text(
+  content: Str,
+  wrap: TextWrap,
+  width: Float32,
+  width_mode: node::MeasureMode,
+  measure: fn(Str) Int,
+) Layout {
+  match width_mode {
+    node::MeasureMode::undefined => unwrapped(content, measure),
+    _ => layout_text(content, wrap, node::measure_limit(width), measure),
   }
 }
 
@@ -924,7 +901,7 @@ fn new(
     content: snapshot.content,
     styled_value: snapshot.styled,
     style_cache: new_style_cache(styled_runs(snapshot.styled, base_style, patch)),
-    wrap_mode: wrap.or(TextWrap::none),
+    wrap_mode: wrap.or(TextWrap::word),
     text_style: base_style,
     selection_patch: patch,
     selected_range: Maybe::new<selection::Range>(),
@@ -935,11 +912,13 @@ fn new(
   }
   retained.bind(text)
   retained.set_measure(fn(input: node::MeasureInput) node::MeasureSize {
-    mut width_limit = 1
-    if input.width_mode != node::MeasureMode::undefined {
-      width_limit = node::measure_limit(input.width)
-    }
-    let measured = layout_text(text.content, text.wrap_mode, width_limit, text.width_measurer)
+    let measured = measured_text(
+      text.content,
+      text.wrap_mode,
+      input.width,
+      input.width_mode,
+      text.width_measurer,
+    )
     node::MeasureSize{
       width: constrained(Float32::from(measured.width), input.width, input.width_mode),
       height: constrained(Float32::from(measured.height), input.height, input.height_mode),
@@ -1343,6 +1322,47 @@ impl Text {
   fn mut destroy(recursive: Bool?) {
     self.node_ref.destroy(recursive)
   }
+}
+
+private fn test_width(value: Str) Int {
+  unicode::StringWidth(value)
+}
+
+test fn unicode_word_wrap_uses_line_opportunities_and_intrinsic_measurement() Void!Str {
+  let cjk = word_wrapped("你好世界", 4, test_width)
+  try testing::assert(cjk.height == 2 and cjk.lines.at(0).expect("first CJK line").text == "你好" and cjk.lines.at(1).expect("second CJK line").text == "世界", "Expected CJK line opportunities")
+
+  let mixed = word_wrapped("Hi你好🙂world", 6, test_width)
+  try testing::assert(mixed.height == 3 and mixed.lines.at(0).expect("mixed prefix").text == "Hi你好" and mixed.lines.at(1).expect("mixed emoji").text == "🙂" and mixed.lines.at(2).expect("mixed Latin").text == "world", "Expected mixed scripts without splitting fitting Latin words")
+
+  let punctuated = word_wrapped("hello!world", 6, test_width)
+  try testing::assert(punctuated.height == 2 and punctuated.lines.at(0).expect("punctuation break").text == "hello!", "Expected Unicode punctuation opportunity")
+  let hyphenated = word_wrapped("alpha-beta", 6, test_width)
+  try testing::assert(hyphenated.height == 2 and hyphenated.lines.at(0).expect("hyphen break").text == "alpha-", "Expected Unicode hyphen opportunity")
+  let unbreakable = word_wrapped("abcdefgh", 3, test_width)
+  try testing::assert(unbreakable.height == 3 and unbreakable.lines.at(1).expect("fallback middle").text == "def", "Expected grapheme fallback for long runs")
+
+  let spaced = word_wrapped("one two", 4, test_width)
+  try testing::assert(spaced.lines.at(0).expect("spaced first line").text == "one " and spaced.lines.at(1).expect("spaced second line").text == "two", "Expected soft-break whitespace preserved")
+  let tight_spaces = word_wrapped("one two", 3, test_width)
+  try testing::assert(tight_spaces.height == 3 and tight_spaces.lines.at(1).expect("preserved whitespace line").text == " ", "Expected oversized segment fallback to preserve whitespace")
+  for line in tight_spaces.lines {
+    try testing::assert(line.width <= 3, "Expected finite word-wrapped line width")
+  }
+  let explicit = word_wrapped("a\n\nb", 10, test_width)
+  try testing::assert(explicit.height == 3 and explicit.lines.at(1).expect("empty explicit line").text == "", "Expected explicit empty lines")
+  let unicode_breaks = word_wrapped("a\u2028\u2029b", 10, test_width)
+  try testing::assert(unicode_breaks.height == 3 and unicode_breaks.lines.at(1).expect("Unicode empty line").text == "", "Expected Unicode mandatory line breaks")
+
+  let no_wrap = layout_text("one two", TextWrap::none, 3, test_width)
+  try testing::assert(no_wrap.width == 7 and no_wrap.height == 1, "Expected explicit no-wrap mode to remain available")
+
+  let intrinsic_width: Int = 1
+  let finite_width: Int = 4
+  let intrinsic = measured_text("one two", TextWrap::word, Float32::from(intrinsic_width), node::MeasureMode::undefined, test_width)
+  let finite = measured_text("one two", TextWrap::word, Float32::from(finite_width), node::MeasureMode::at_most, test_width)
+  try testing::assert(intrinsic.width == 7 and intrinsic.height == 1, "Expected undefined width to measure unwrapped content")
+  testing::assert(finite.height == 2, "Expected finite width to activate wrapping")
 }
 
 test fn styled_text_helpers_snapshot_and_resolve_tristate_styles() Void!Str {

@@ -236,11 +236,10 @@ fn main() {
         text::span(" TEXT — drag across "),
         text::span("Alpha", style: text::span_style(italic: true)),
         text::span(" élan", style: text::span_style(underline: true)),
-        text::span(" 你好", style: text::span_style(foreground: color::rgb(255, 190, 90))),
+        text::span(" 你好世界🙂", style: text::span_style(foreground: color::rgb(255, 190, 90))),
         text::span(" and naturally wrapped lines.\nSecond line joins selection in reading order."),
       ],
     ),
-    wrap: text::TextWrap::word,
     styles: style::new(width: style::percent(100.0), height: style::cells(3), flex_shrink: 0.0),
     selection_style: fn(value: mut text::TextStyle) {
       value.background = Maybe::new(color::rgb(45, 75, 125))

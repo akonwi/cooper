@@ -6,17 +6,17 @@ use cooper/style
 use cooper/testing as cooper_testing
 use cooper/text
 
-test fn text_wraps_words_and_explicit_lines_with_terminal_widths() Void!Str {
+test fn text_defaults_to_word_wrap_and_preserves_explicit_lines() Void!Str {
   let application = cooper_testing::new(6, 4)
   let label = text::new(
     application.context,
     content: "one two\n🙂x",
-    wrap: text::TextWrap::word,
     styles: style::new(width: style::cells(5)),
   )
   application.root.add(label)
   application.render()
 
+  try testing::assert(label.wrap() == text::TextWrap::word, "Expected default word wrapping")
   try testing::assert(label.layout().screen.height == 3, "Expected wrapped and explicit lines")
   try testing::assert(application.frame().cell(0, 0).expect("word lead").grapheme == "o", "Expected first word")
   try testing::assert(application.frame().cell(0, 1).expect("wrapped lead").grapheme == "t", "Expected second wrapped word")
@@ -24,6 +24,34 @@ test fn text_wraps_words_and_explicit_lines_with_terminal_widths() Void!Str {
 
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected wrapped Text cleanup")
+}
+
+test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!Str {
+  let application = cooper_testing::new(6, 4)
+  let label = text::new(
+    application.context,
+    content: text::styled_text(
+      [
+        text::span("Hi", style: text::span_style(bold: true)),
+        text::span("你好", style: text::span_style(foreground: color::rgb(20, 180, 220))),
+        text::span("🙂"),
+        text::span("world", style: text::span_style(underline: true)),
+      ],
+    ),
+    styles: style::new(width: style::cells(6)),
+  )
+  application.root.add(label)
+  application.render()
+
+  try testing::assert(label.layout().screen.height == 3, "Expected mixed Unicode line opportunities")
+  try testing::assert(application.frame().cell(0, 0).expect("Latin line lead").grapheme == "H", "Expected short Latin prefix retained")
+  try testing::assert(application.frame().cell(2, 0).expect("first CJK glyph").grapheme == "你", "Expected CJK break opportunities")
+  try testing::assert(application.frame().cell(4, 0).expect("second CJK glyph").style.foreground.expect("CJK style").green == Uint8::from(180), "Expected styles across Unicode wrapping")
+  try testing::assert(application.frame().cell(0, 1).expect("emoji line").grapheme == "🙂", "Expected complete emoji grapheme")
+  try testing::assert(application.frame().cell(0, 2).expect("Latin word line").grapheme == "w" and application.frame().cell(4, 2).expect("Latin word end").style.underline, "Expected fitting Latin word not split")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected Unicode wrapped Text cleanup")
 }
 
 test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {

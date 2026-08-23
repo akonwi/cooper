@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ARD = shlex.split(os.environ.get("ARD", "ard-dev"))
+ARD = shlex.split(os.environ.get("ARD", "ard"))
 BENCHMARKS = {
     "tess_retained": ROOT / "benchmarks" / "retained_layout.ard",
     "tess_virtual": ROOT / "benchmarks" / "retained_virtual_list.ard",

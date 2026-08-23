@@ -65,19 +65,19 @@ resize, cursor placement, asynchronous dispatch, examples, and clean quit.
 Current validation entry points:
 
 ```sh
-ard-dev test
+ard test
 
 cd examples
-ARD=ard-dev python3 test_input.py
-ARD=ard-dev python3 test_form.py
-ARD=ard-dev python3 test_scroll_form.py
-ARD=ard-dev python3 test_async.py
-ARD=ard-dev python3 test_lifecycle.py
-ARD=ard-dev python3 test_explorer.py
-ARD=ard-dev python3 test_interaction.py
+ARD=ard python3 test_input.py
+ARD=ard python3 test_form.py
+ARD=ard python3 test_scroll_form.py
+ARD=ard python3 test_async.py
+ARD=ard python3 test_lifecycle.py
+ARD=ard python3 test_explorer.py
+ARD=ard python3 test_interaction.py
 
 cd ..
-ARD=ard-dev python3 benchmarks/run.py
+ARD=ard python3 benchmarks/run.py
 ```
 
 ## References

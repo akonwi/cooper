@@ -10,9 +10,9 @@ buffer for Vaxis to diff.
 
 ## Status
 
-Cooper is under active development and currently requires `ard-dev` from Ard
-main. The accepted application API, built-in controls, headless TestApp, and
-runnable examples are implemented.
+Cooper is under active development and requires Ard v0.38.0 or newer. The
+accepted application API, built-in controls, headless TestApp, and runnable
+examples are implemented.
 
 The canonical design is defined by the accepted
 [application API ADR](./docs/adrs/0002-define-application-api.md),
@@ -107,7 +107,7 @@ Tess/Yoga remains a hidden and replaceable internal layout backend.
 ## Installation
 
 ```sh
-ard-dev add github.com/akonwi/cooper@latest
+ard add github.com/akonwi/cooper@latest
 ```
 
 
@@ -117,13 +117,14 @@ The runnable examples exercise the public application and control APIs:
 
 ```sh
 cd examples
-ard-dev run quickstart.ard
-ard-dev run input.ard
-ard-dev run form.ard
-ard-dev run scroll_form.ard
-ard-dev run async.ard
-ard-dev run explorer.ard
-ard-dev run interaction_lab.ard
+ard run quickstart.ard
+ard run input.ard
+ard run form.ard
+ard run scroll_form.ard
+ard run async.ard
+ard run lifecycle.ard
+ard run explorer.ard
+ard run interaction_lab.ard
 ```
 
 See [`examples/README.md`](./examples/README.md) for behavior and PTY smoke
@@ -166,22 +167,23 @@ benchmarks/      retained layout and stress workloads
 ## Development
 
 ```sh
-ard-dev test
+ard test
 
 git diff --check
 
 go test ./...
 
 cd examples
-ARD=ard-dev python3 test_input.py
-ARD=ard-dev python3 test_form.py
-ARD=ard-dev python3 test_scroll_form.py
-ARD=ard-dev python3 test_async.py
-ARD=ard-dev python3 test_explorer.py
-ARD=ard-dev python3 test_interaction.py
+ARD=ard python3 test_input.py
+ARD=ard python3 test_form.py
+ARD=ard python3 test_scroll_form.py
+ARD=ard python3 test_async.py
+ARD=ard python3 test_lifecycle.py
+ARD=ard python3 test_explorer.py
+ARD=ard python3 test_interaction.py
 
 cd ..
-ARD=ard-dev python3 benchmarks/run.py
+ARD=ard python3 benchmarks/run.py
 ```
 
 ## Design principles

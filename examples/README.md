@@ -1,7 +1,7 @@
 # Cooper examples
 
-These applications exercise Cooper's accepted application API and require
-`ard-dev` from Ard main (or Ard v0.38.0 once released).
+These applications exercise Cooper's accepted application API and require Ard
+v0.38.0 or newer.
 
 Every example uses `App.context`, the permanent `App.root`, persistent public
 controls, and explicit focus policy. Most use blocking `run()`; the lifecycle
@@ -14,7 +14,7 @@ Boxes, inherited colors, mutable Text, application key listeners, and the
 single-import `cooper/ui` control aliases.
 
 ```sh
-ard-dev run quickstart.ard
+ard run quickstart.ard
 ```
 
 Use Left and Right to change the counter, or press Q to quit.
@@ -24,7 +24,7 @@ Use Left and Right to change the counter, or press Q to quit.
 `input.ard` runs one retained single-line Input.
 
 ```sh
-ard-dev run input.ard
+ard run input.ard
 ```
 
 Type or paste to insert text, use Left/Right/Home/End and Backspace/Delete for
@@ -37,7 +37,7 @@ and Alt+B/F/D. Click to place the cursor and press Ctrl+C to exit.
 and Shift+Tab traversal; mouse presses use Input's built-in autofocus.
 
 ```sh
-ard-dev run form.ard
+ard run form.ard
 ```
 
 ## Scrollable form
@@ -47,7 +47,7 @@ demonstrates wheel fallback, translated mouse targeting, resize, and automatic
 focused-child reveal.
 
 ```sh
-ard-dev run scroll_form.ard
+ard run scroll_form.ard
 ```
 
 ## App-lifetime async work
@@ -57,7 +57,7 @@ uses `Context.dispatch` to update a Text control on the UI thread. App teardown
 cancels pending work and suppresses queued actions.
 
 ```sh
-ard-dev run async.ard
+ard run async.ard
 ```
 
 ## Reusable application lifecycle
@@ -68,7 +68,7 @@ waiting, and final destruction. It also verifies that the retained tree
 survives terminal suspension.
 
 ```sh
-ard-dev run lifecycle.ard
+ard run lifecycle.ard
 ```
 
 ## Filesystem explorer
@@ -79,7 +79,7 @@ first row, Enter and mouse presses activate rows, and the listing ScrollBox
 handles wheel input.
 
 ```sh
-ard-dev run explorer.ard
+ard run explorer.ard
 ```
 
 ## Interaction Lab
@@ -95,19 +95,19 @@ metadata remains available for native
 terminal previews and modifier-based activation.
 
 ```sh
-ard-dev run interaction_lab.ard
+ard run interaction_lab.ard
 ```
 
 ## PTY smoke tests
 
 ```sh
-ARD=ard-dev python3 test_input.py
-ARD=ard-dev python3 test_form.py
-ARD=ard-dev python3 test_scroll_form.py
-ARD=ard-dev python3 test_async.py
-ARD=ard-dev python3 test_lifecycle.py
-ARD=ard-dev python3 test_explorer.py
-ARD=ard-dev python3 test_interaction.py
+ARD=ard python3 test_input.py
+ARD=ard python3 test_form.py
+ARD=ard python3 test_scroll_form.py
+ARD=ard python3 test_async.py
+ARD=ard python3 test_lifecycle.py
+ARD=ard python3 test_explorer.py
+ARD=ard python3 test_interaction.py
 ```
 
 The tests cover terminal startup/restoration, editing, explicit focus policy,

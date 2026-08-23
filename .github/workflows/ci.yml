@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  ARD_REF: cc6fcd44fe23c4739b0dd017cd7cba4a4af9e5b5
+  ARD_REF: 788616491f7489c0c873e7776de284d1cba352a5
   GOEXPERIMENT: jsonv2
 
 jobs:
@@ -40,7 +40,7 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Build pinned Ard compiler
+      - name: Build Ard v0.38.0 compiler
         shell: bash
         run: |
           set -euo pipefail
@@ -49,7 +49,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bin"
           (
             cd "$RUNNER_TEMP/ard/compiler"
-            go build -o "$RUNNER_TEMP/bin/ard-dev" .
+            go build -o "$RUNNER_TEMP/bin/ard" .
           )
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
@@ -60,7 +60,7 @@ jobs:
         run: go test ./...
 
       - name: Test Ard framework
-        run: ard-dev test test
+        run: ard test test
 
       - name: Check Python scripts
         if: runner.os == 'Linux'
@@ -70,6 +70,7 @@ jobs:
             examples/test_form.py \
             examples/test_scroll_form.py \
             examples/test_async.py \
+            examples/test_lifecycle.py \
             examples/test_explorer.py \
             benchmarks/run.py
 
@@ -77,18 +78,19 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: examples
         env:
-          ARD: ard-dev
+          ARD: ard
         run: |
           python3 test_input.py
           python3 test_form.py
           python3 test_scroll_form.py
           python3 test_async.py
+          python3 test_lifecycle.py
           python3 test_explorer.py
 
       - name: Smoke-test benchmarks
         if: runner.os == 'Linux'
         env:
-          ARD: ard-dev
+          ARD: ard
         run: python3 benchmarks/run.py --iterations 1 --warmups 0
 
       - name: Check whitespace

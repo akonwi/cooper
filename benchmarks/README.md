@@ -3,7 +3,7 @@
 Run the benchmark suite from the repository root:
 
 ```sh
-ARD=ard-dev python3 benchmarks/run.py
+ARD=ard python3 benchmarks/run.py
 ```
 
 The runner builds each benchmark once, performs three warmups, then reports the

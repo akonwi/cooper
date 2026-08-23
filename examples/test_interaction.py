@@ -5,7 +5,7 @@ import os
 import signal
 import sys
 
-os.environ.setdefault("ARD", "ard-dev")
+os.environ.setdefault("ARD", "ard")
 
 from test_harness import Screen, build, read_for, send, spawn, wait_exit, wait_for
 

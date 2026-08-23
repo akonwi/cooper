@@ -139,6 +139,7 @@ struct LocalSelection {
   focus_y: Int,
   logical_range: SelectionRange?,
   source_range: SelectionRange?,
+  prefer_source_text: Bool,
   clip: geometry::Rect,
   is_active: Bool,
   is_dragging: Bool,
@@ -214,6 +215,7 @@ struct Node {
   value_listeners: [ValueListener],
   selection_hit: (fn(Int, Int) Bool)?,
   selection_update: (fn(LocalSelection?) SelectionResult)?,
+  selection_lock: (fn(Int, Int, Int, Int) SelectionExpansion?)?,
   selection_expand_word: (fn(Int, Int) SelectionExpansion?)?,
   selection_resolve: (fn(SelectionRange, SelectionRange, Int) SelectionExpansion?)?,
   requested_scroll_y: Int,
@@ -425,6 +427,7 @@ fn create(
     value_listeners: [],
     selection_hit: Maybe::new<fn(Int, Int) Bool>(),
     selection_update: Maybe::new<fn(LocalSelection?) SelectionResult>(),
+    selection_lock: Maybe::new<fn(Int, Int, Int, Int) SelectionExpansion?>(),
     selection_expand_word: Maybe::new<fn(Int, Int) SelectionExpansion?>(),
     selection_resolve: Maybe::new<fn(SelectionRange, SelectionRange, Int) SelectionExpansion?>(),
     requested_scroll_y: 0,
@@ -572,6 +575,13 @@ impl Node {
     }
   }
 
+  fn lock_selection(anchor_x: Int, anchor_y: Int, focus_x: Int, focus_y: Int) SelectionExpansion? {
+    match self.selection_lock {
+      lock => lock(anchor_x, anchor_y, focus_x, focus_y),
+      _ => Maybe::new<SelectionExpansion>(),
+    }
+  }
+
   fn can_expand_word_selection() Bool {
     self.selection_expand_word.is_some() and self.selection_resolve.is_some()
   }
@@ -593,6 +603,7 @@ impl Node {
   fn mut set_selection_callbacks(
     accepts: fn(Int, Int) Bool,
     update: fn(LocalSelection?) SelectionResult,
+    lock: (fn(Int, Int, Int, Int) SelectionExpansion?)?,
     expand_word: (fn(Int, Int) SelectionExpansion?)?,
     resolve: (fn(SelectionRange, SelectionRange, Int) SelectionExpansion?)?,
   ) {
@@ -602,6 +613,7 @@ impl Node {
     self.clear_selection_callbacks()
     self.selection_hit = Maybe::new<fn(Int, Int) Bool>(accepts)
     self.selection_update = Maybe::new<fn(LocalSelection?) SelectionResult>(update)
+    self.selection_lock = lock
     self.selection_expand_word = expand_word
     self.selection_resolve = resolve
     self.request_render()
@@ -614,6 +626,7 @@ impl Node {
     }
     self.selection_hit = Maybe::new<fn(Int, Int) Bool>()
     self.selection_update = Maybe::new<fn(LocalSelection?) SelectionResult>()
+    self.selection_lock = Maybe::new<fn(Int, Int, Int, Int) SelectionExpansion?>()
     self.selection_expand_word = Maybe::new<fn(Int, Int) SelectionExpansion?>()
     self.selection_resolve = Maybe::new<fn(SelectionRange, SelectionRange, Int) SelectionExpansion?>()
     self.request_render()

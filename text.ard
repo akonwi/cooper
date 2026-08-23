@@ -1027,6 +1027,71 @@ impl Text {
     }
   }
 
+  private fn lock_expansion(
+    anchor_x: Int,
+    anchor_y: Int,
+    focus_x: Int,
+    focus_y: Int,
+  ) node::SelectionExpansion? {
+    mut start_x = anchor_x
+    mut start_y = anchor_y
+    mut end_x = focus_x
+    mut end_y = focus_y
+    if not point_before(start_x, start_y, end_x, end_y) {
+      start_x = focus_x
+      start_y = focus_y
+      end_x = anchor_x
+      end_y = anchor_y
+    }
+    mut source_started = false
+    mut visual_started = false
+    mut visual_start_x = 0
+    mut visual_start_y = 0
+    mut visual_end_x = 0
+    mut visual_end_y = 0
+    mut logical_start = 0
+    mut logical_end = 0
+    mut source_start = 0
+    mut source_end = 0
+    for glyph in self.visual_content() {
+      let glyph_end = glyph.x + glyph.width
+      let selected = (glyph.y > start_y or (glyph.y == start_y and glyph_end > start_x)) and (glyph.y < end_y or (glyph.y == end_y and glyph.x <= end_x))
+      if selected {
+        if not source_started {
+          source_started = true
+          logical_start = glyph.offset_start
+          source_start = glyph.source_start
+        }
+        logical_end = glyph.offset_end
+        source_end = glyph.source_end
+        if glyph.width > 0 {
+          if not visual_started {
+            visual_started = true
+            visual_start_x = glyph.x
+            visual_start_y = glyph.y
+          }
+          visual_end_x = glyph.x + glyph.width - 1
+          visual_end_y = glyph.y
+        }
+      }
+    }
+    if source_started and visual_started {
+      Maybe::new<node::SelectionExpansion>(
+        node::SelectionExpansion{
+          anchor_x: visual_start_x,
+          anchor_y: visual_start_y,
+          focus_x: visual_end_x,
+          focus_y: visual_end_y,
+          logical_range: node::SelectionRange{start: logical_start, end: logical_end},
+          source_range: node::SelectionRange{start: source_start, end: source_end},
+          source_revision: self.source_revision,
+        },
+      )
+    } else {
+      Maybe::new<node::SelectionExpansion>()
+    }
+  }
+
   private fn word_expansion(local_x: Int, local_y: Int) node::SelectionExpansion? {
     mut source_start = -1
     for glyph in self.visual_content() {
@@ -1188,7 +1253,7 @@ impl Text {
         }
         self.selected_glyphs = selected.@
         mut source_text = Maybe::new<Str>()
-        if all_selected_visible {
+        if all_selected_visible and local.prefer_source_text {
           match local.source_range {
             range => { source_text = Maybe::new<Str>(self.content.slice(start: range.start, end: range.end).or("")) },
             _ => (),
@@ -1213,6 +1278,9 @@ impl Text {
       fn(value: node::LocalSelection?) node::SelectionResult {
         self.apply_local_selection(value)
       },
+      Maybe::new<fn(Int, Int, Int, Int) node::SelectionExpansion?>(fn(anchor_x: Int, anchor_y: Int, focus_x: Int, focus_y: Int) node::SelectionExpansion? {
+        self.lock_expansion(anchor_x, anchor_y, focus_x, focus_y)
+      }),
       Maybe::new<fn(Int, Int) node::SelectionExpansion?>(fn(local_x: Int, local_y: Int) node::SelectionExpansion? {
         self.word_expansion(local_x, local_y)
       }),

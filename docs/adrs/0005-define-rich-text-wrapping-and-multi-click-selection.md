@@ -214,6 +214,14 @@ Complete UAX #14 conformance is not required for the first implementation. The
 supported policy is established by deterministic Unicode fixtures and can be
 extended without changing the public modes.
 
+When a pointer drag starts and finishes within one Text, release locks the
+selected logical and source ranges. Later wrapping or resizing resolves both
+visual endpoints from that source lock so every selected glyph retains its
+selection styling as it moves between rows. Reverse drag direction is
+preserved. Active drags and cross-control selections remain coordinate-based;
+a flattened source-mapping revision change invalidates a finalized Text lock
+instead of applying it to replacement content.
+
 ### Text overflow and ellipsis
 
 Text does not gain internal scrolling. Applications continue to compose Text

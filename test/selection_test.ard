@@ -108,6 +108,52 @@ test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str 
   testing::assert(message.node_ref.is_destroyed(), "Expected rich word selection cleanup")
 }
 
+test fn finalized_rich_text_drag_preserves_selection_style_through_reflow() Void!Str {
+  let application = cooper_testing::new(30, 8)
+  let selected_background = color::rgb(45, 75, 125)
+  let message = text::new(
+    application.context,
+    content: text::styled_text(
+      [
+        text::span("SELECTABLE", style: text::span_style(bold: true)),
+        text::span(" "),
+        text::span("你好世界", style: text::span_style(underline: true)),
+      ],
+    ),
+    styles: style::new(width: style::percent(100.0)),
+    selection_style: fn(value: mut text::TextStyle) {
+      value.background = Maybe::new(selected_background)
+      value.bold = true
+    },
+  )
+  application.root.add(message)
+  application.render()
+
+  application.drag(0, 0, 18, 0)
+  try testing::assert(message.selected_text() == "SELECTABLE 你好世界", "Expected complete initial drag source")
+  application.resize(5, 8)
+
+  try testing::assert(message.selected_text() == "SELECTABLE 你好世界", "Expected finalized drag source lock through reflow")
+  for y in [0, 1, 2, 3] {
+    let selected = application.frame().cell(0, y).expect("reflowed selected row").style
+    try testing::assert(selected.background.expect("reflowed selection background").blue == Uint8::from(125) and selected.bold, "Expected selection styling on every wrapped row")
+  }
+
+  application.resize(30, 8)
+  try testing::assert(application.frame().cell(11, 0).expect("restored single-line selection").style.background.expect("restored selection background").blue == Uint8::from(125), "Expected selection styling after reverse reflow")
+  application.drag(18, 0, 0, 0)
+  application.resize(5, 8)
+  let reversed = application.selection().expect("reversed finalized selection")
+  try testing::assert(message.selected_text() == "SELECTABLE 你好世界", "Expected reversed drag source lock")
+  try testing::assert(reversed.anchor.y == 3 and reversed.focus.y == 0, "Expected reversed anchor direction preserved through reflow")
+
+  message.set_content("changed")
+  application.render()
+  try testing::assert(not application.selection().is_some(), "Expected source mutation to invalidate finalized drag lock")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected finalized rich drag cleanup")
+}
+
 test fn double_click_selects_punctuation_and_whitespace_runs() Void!Str {
   let application = cooper_testing::new(14, 1)
   let message = text::new(application.context, content: "word...  next", styles: fixed(14))
@@ -355,6 +401,19 @@ test fn tabs_preserve_source_ranges_while_selecting_expanded_cells() Void!Str {
   try testing::assert(application.selection().expect("tab global selection").selected_text == "a        b", "Expected visible expanded tab fragments")
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected tab selection cleanup")
+}
+
+test fn finalized_text_drag_preserves_selected_zero_width_source() Void!Str {
+  let application = cooper_testing::new(3, 1)
+  let message = text::new(application.context, content: "ab\u200b", styles: fixed(3))
+  application.root.add(message)
+
+  application.drag(0, 0, 2, 0)
+
+  try testing::assert(message.selected_text() == "ab\u200b", "Expected finalized source lock to retain trailing zero-width glyph")
+  try testing::assert(application.selection().expect("zero-width global selection").selected_text == "ab", "Expected global copy to contain visible fragments only")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected zero-width finalized selection cleanup")
 }
 
 test fn clipping_limits_fragments_but_not_logical_text_range() Void!Str {

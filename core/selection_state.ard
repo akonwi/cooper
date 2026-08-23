@@ -25,6 +25,8 @@ struct Session {
   logical_range: node::SelectionRange?,
   source_range: node::SelectionRange?,
   source_revision: Int,
+  logical_reversed: Bool,
+  prefer_source_text: Bool,
   generation: Int,
   version: Int,
   edge_pan_version: Int,
@@ -46,6 +48,10 @@ fn new() mut State {
     revision_value: 0,
     next_generation: 1,
   })
+}
+
+private fn point_before(left_x: Int, left_y: Int, right_x: Int, right_y: Int) Bool {
+  left_y < right_y or (left_y == right_y and left_x <= right_x)
 }
 
 private fn contains(nodes: [mut node::Node], target: mut node::Node) Bool {
@@ -156,6 +162,7 @@ private fn walk(
   anchor_control: mut node::Node,
   logical_range: node::SelectionRange?,
   source_range: node::SelectionRange?,
+  prefer_source_text: Bool,
   touched: mut [mut node::Node],
   fragments: mut [node::SelectionFragment],
   source_texts: mut [Str],
@@ -184,6 +191,7 @@ private fn walk(
             focus_y: focus.y - bounds.y,
             logical_range: current_range,
             source_range: current_source,
+            prefer_source_text: prefer_source_text,
             clip: geometry::Rect{
               x: clip.x - bounds.x,
               y: clip.y - bounds.y,
@@ -210,7 +218,7 @@ private fn walk(
       }
     }
     for child in current.children {
-      walk(child, container, active, clip, anchor, focus, is_dragging, edge_pan_version, generation, version, anchor_control, logical_range, source_range, touched, fragments, source_texts)
+      walk(child, container, active, clip, anchor, focus, is_dragging, edge_pan_version, generation, version, anchor_control, logical_range, source_range, prefer_source_text, touched, fragments, source_texts)
     }
   }
 }
@@ -337,6 +345,8 @@ impl State {
           logical_range: Maybe::new<node::SelectionRange>(),
           source_range: Maybe::new<node::SelectionRange>(),
           source_revision: 0,
+          logical_reversed: false,
+          prefer_source_text: false,
           generation: generation,
           version: 0,
           edge_pan_version: -1,
@@ -378,6 +388,8 @@ impl State {
               updated.logical_range = Maybe::new<node::SelectionRange>(expansion.logical_range)
               updated.source_range = Maybe::new<node::SelectionRange>(expansion.source_range)
               updated.source_revision = expansion.source_revision
+              updated.logical_reversed = false
+              updated.prefer_source_text = true
               updated.version =+ 1
               updated.edge_pan_version = -1
               self.session = Maybe::new<Session>(updated.@)
@@ -427,6 +439,8 @@ impl State {
         updated.logical_range = Maybe::new<node::SelectionRange>()
         updated.source_range = Maybe::new<node::SelectionRange>()
         updated.source_revision = 0
+        updated.logical_reversed = false
+        updated.prefer_source_text = false
         self.session = Maybe::new<Session>(updated.@)
         self.bump()
         true
@@ -441,6 +455,40 @@ impl State {
         if active.generation == expected_generation {
           let updated = mut active
           updated.is_dragging = false
+          match active.focus_control {
+            target => {
+              let collapsed = active.anchor.local_x == active.focus_local_x and active.anchor.local_y == active.focus_local_y
+              if target == active.anchor.control and (not collapsed) {
+                match target.lock_selection(active.anchor.local_x, active.anchor.local_y, active.focus_local_x, active.focus_local_y) {
+                  expansion => {
+                    updated.logical_range = Maybe::new<node::SelectionRange>(expansion.logical_range)
+                    updated.source_range = Maybe::new<node::SelectionRange>(expansion.source_range)
+                    updated.source_revision = expansion.source_revision
+                    updated.logical_reversed = not point_before(active.anchor.local_x, active.anchor.local_y, active.focus_local_x, active.focus_local_y)
+                    updated.prefer_source_text = false
+                    if updated.logical_reversed {
+                      updated.anchor.local_x = expansion.focus_x
+                      updated.anchor.local_y = expansion.focus_y
+                      updated.focus_local_x = expansion.anchor_x
+                      updated.focus_local_y = expansion.anchor_y
+                    } else {
+                      updated.anchor.local_x = expansion.anchor_x
+                      updated.anchor.local_y = expansion.anchor_y
+                      updated.focus_local_x = expansion.focus_x
+                      updated.focus_local_y = expansion.focus_y
+                    }
+                    let bounds = target.layout().screen
+                    updated.focus = geometry::Point{x: bounds.x + updated.focus_local_x, y: bounds.y + updated.focus_local_y}
+                    updated.focus_control = Maybe::new<mut node::Node>(target)
+                    updated.focus_tracks_control = true
+                    updated.edge_pan_version = -1
+                  },
+                  _ => (),
+                }
+              }
+            },
+            _ => (),
+          }
           self.session = Maybe::new<Session>(updated.@)
           self.bump()
           true
@@ -494,10 +542,17 @@ impl State {
               source_range => {
                 match active.anchor.control.resolve_selection(logical_range, source_range, active.source_revision) {
                   expansion => {
-                    mapped.anchor.local_x = expansion.anchor_x
-                    mapped.anchor.local_y = expansion.anchor_y
-                    mapped.focus_local_x = expansion.focus_x
-                    mapped.focus_local_y = expansion.focus_y
+                    if active.logical_reversed {
+                      mapped.anchor.local_x = expansion.focus_x
+                      mapped.anchor.local_y = expansion.focus_y
+                      mapped.focus_local_x = expansion.anchor_x
+                      mapped.focus_local_y = expansion.anchor_y
+                    } else {
+                      mapped.anchor.local_x = expansion.anchor_x
+                      mapped.anchor.local_y = expansion.anchor_y
+                      mapped.focus_local_x = expansion.focus_x
+                      mapped.focus_local_y = expansion.focus_y
+                    }
                     mapped.logical_range = Maybe::new<node::SelectionRange>(expansion.logical_range)
                     mapped.source_range = Maybe::new<node::SelectionRange>(expansion.source_range)
                   },
@@ -560,6 +615,7 @@ impl State {
               current_session.anchor.control,
               current_session.logical_range,
               current_session.source_range,
+              current_session.prefer_source_text,
               touched,
               fragments,
               source_texts,

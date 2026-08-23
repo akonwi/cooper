@@ -5,7 +5,9 @@ ard-out/
 /examples/form
 /examples/scroll_form
 /examples/async
+/examples/lifecycle
 /examples/explorer
 /examples/interaction_lab
 /examples/terminal_focus
 /examples/pre_run_destroy
+/examples/pre_start_signal

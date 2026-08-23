@@ -27,6 +27,7 @@ fn new(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?) App!Error {
   )
   let root = root::new(ctx, runtime)
   runtime.commit_construction()
+  runtime.start_signal_monitor(ctx)
   Result::ok(App{context: ctx, root: root})
 }
 
@@ -59,9 +60,25 @@ impl App {
     self.root.state_ref.on_selection_change(handler)
   }
 
+  fn start() Void!Error {
+    self.root.state_ref.start_live(self.context, self.root)
+  }
+
+  fn wait() Void!Error {
+    self.root.state_ref.wait_live()
+  }
+
   fn run() Void!Error {
     let runtime = self.root.state_ref
     runtime.run(self.context, self.root)
+  }
+
+  fn suspend() Void!Error {
+    self.root.state_ref.suspend_live()
+  }
+
+  fn resume() Void!Error {
+    self.root.state_ref.resume_live()
   }
 
   fn destroy() {

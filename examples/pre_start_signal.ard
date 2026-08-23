@@ -1,0 +1,7 @@
+use cooper/app
+
+fn main() {
+  let application = app::new().expect("create pre-start signal probe")
+  application.context.cancellation.recv()
+  application.destroy()
+}

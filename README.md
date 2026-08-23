@@ -41,14 +41,18 @@ fn main() {
 
   application.root.add(field)
   field.focus()
+  defer application.destroy()
   application.run().expect("run Cooper")
 }
 ```
 
 App exposes its constructor Context and permanent terminal-sized Root. Controls
 are persistent references: construct them once, add them to the tree, and
-mutate them through setters. `run()` is blocking and one-shot; App guarantees
-terminal teardown.
+mutate them through setters. `start()` launches the event pump and returns,
+`wait()` is its completion barrier, and `run()` is the blocking convenience for
+standalone programs. Only `destroy()` is final; call `wait()` after requesting
+destruction before a standalone process exits. `suspend()` and `resume()`
+temporarily release and reacquire the terminal while retaining the tree.
 
 ## Retained model
 
@@ -69,7 +73,8 @@ yet a supported custom-control API.
 ## Runtime behavior
 
 - Context dispatch queues application work on the UI thread and exposes
-  App-lifetime cancellation.
+  App-lifetime cancellation. After nonblocking `start()`, use dispatch or a
+  Cooper callback for retained-tree mutation.
 - Frame requests are demand-driven and coalesced.
 - Layout and drawing use one frame-consistent grapheme/terminal-width measurer.
 - Drawing writes directly into one backend-independent cell buffer.

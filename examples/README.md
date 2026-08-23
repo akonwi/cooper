@@ -4,7 +4,8 @@ These applications exercise Cooper's accepted application API and require
 `ard-dev` from Ard main (or Ard v0.38.0 once released).
 
 Every example uses `App.context`, the permanent `App.root`, persistent public
-controls, explicit focus policy, and blocking `run()`.
+controls, and explicit focus policy. Most use blocking `run()`; the lifecycle
+example demonstrates nonblocking startup.
 
 ## Quickstart
 
@@ -59,6 +60,17 @@ cancels pending work and suppresses queued actions.
 ard-dev run async.ard
 ```
 
+## Reusable application lifecycle
+
+`lifecycle.ard` starts the event pump without blocking, waits independently,
+and exercises idempotent startup, suspension, resume, repeated completion
+waiting, and final destruction. It also verifies that the retained tree
+survives terminal suspension.
+
+```sh
+ard-dev run lifecycle.ard
+```
+
 ## Filesystem explorer
 
 `explorer.ard` asynchronously reads the current working directory and creates
@@ -93,11 +105,13 @@ ARD=ard-dev python3 test_input.py
 ARD=ard-dev python3 test_form.py
 ARD=ard-dev python3 test_scroll_form.py
 ARD=ard-dev python3 test_async.py
+ARD=ard-dev python3 test_lifecycle.py
 ARD=ard-dev python3 test_explorer.py
 ARD=ard-dev python3 test_interaction.py
 ```
 
 The tests cover terminal startup/restoration, editing, explicit focus policy,
 mouse input, scrolling, resize, App cancellation, asynchronous UI dispatch,
-filesystem rows, drag capture/drop ordering, hover reconciliation, terminal
-focus, text and editable selection, and clean exit.
+nonblocking startup, suspension/resume, filesystem rows, drag capture/drop
+ordering, hover reconciliation, terminal focus, text and editable selection,
+and clean exit.

@@ -31,6 +31,7 @@ let application = app::new().expect("create Cooper app")
 let panel = box::new(application.context)
 panel.add(text::new(application.context, content: "Hello"))
 application.root.add(panel)
+defer application.destroy()
 application.run().expect("run Cooper app")
 ```
 
@@ -47,7 +48,11 @@ fn new(
 ) App!Error
 
 impl App {
+  fn start() Void!Error
+  fn wait() Void!Error
   fn run() Void!Error
+  fn suspend() Void!Error
+  fn resume() Void!Error
   fn destroy()
 
   fn on_key(handler: fn(mut event::KeyEvent)) fn()
@@ -57,14 +62,47 @@ impl App {
 
 All three options default to `true`; `auto_focus` means focus on mouse-down.
 App is a copyable facade over shared runtime state held through Context and
-Root. Copies observe the same one-shot lifecycle.
+Root. Copies observe the same lifecycle.
 
-`run` blocks, performs the initial frame, and always tears down before
-returning. `destroy` is idempotent: before `run` it abandons the App, during
-`run` it requests shutdown at a safe event-loop boundary, and after `run` it is
-a no-op. Running twice or after destruction panics. After destruction,
-listener registration, Root mutation, and construction through the closed
-Context also panic; dispatch is the exception and returns `DispatchError`.
+`start` mounts the permanent Root, commits the initial frame when the terminal
+is active, starts the App event pump, and returns. Repeated starts while the App
+is live are idempotent. `wait` blocks until final destruction and is a
+repeatable completion barrier; calling it before start returns an Error. `run`
+is the standalone convenience `start` followed by `wait`. It does not itself
+own teardown.
+
+`destroy` is the only irreversible lifecycle operation and remains idempotent:
+before start it abandons the App synchronously; after start it requests shutdown
+at a safe event-loop boundary. `wait` observes completion of that cleanup. A
+standalone caller using nonblocking `start` must call `wait` after `destroy`
+before allowing its main function to return.
+Ctrl+C with `exit_on_ctrl_c` enabled requests destruction. Starting after final
+destruction returns an Error rather than panicking. If terminal release fails,
+`wait` reports that backend Error and a repeated `destroy` retries the remaining
+terminal cleanup without recreating application resources.
+
+`suspend` synchronously restores terminal input and screen state while retaining
+the Context, Root, controls, focus, selection, listeners, and queued model
+updates. Rendering pauses and terminal input is not delivered while suspended.
+`resume` reacquires the terminal, drains no stale pre-suspension input, forces a
+resize-aware complete frame, and continues the same event pump. Both operations
+are idempotent in their stable state, may be used before or after start, and
+return backend errors. Destruction is valid while suspended. Cooper disables
+Vaxis's internal signal handlers and routes resize signals through coalesced
+runtime state and termination signals through serialized App destruction, so
+they cannot race terminal lifecycle calls. Signals request App cleanup; Cooper
+does not forcibly terminate a host process or its application fibers.
+
+Because Ard application code and Cooper's event pump can run concurrently after
+`start` returns, retained-tree mutation and listener registration after startup
+must run in a Cooper callback or through `Context.dispatch`. Build the initial
+tree before `start`; background fibers must not directly read or mutate controls.
+This restriction does not apply while constructing the App before startup or to
+TestApp's synchronous driver methods.
+
+After destruction, listener registration, Root mutation, and construction
+through the closed Context panic; dispatch is the exception and returns
+`DispatchError`.
 
 Root is permanently terminal-sized, uses column layout, and stretches children.
 It cannot be styled, focused, reparented, or directly destroyed.
@@ -90,10 +128,11 @@ let _ = application.context.dispatch(fn() {
 application.context.cancellation.recv()
 ```
 
-Dispatch queues an action on the UI thread. It may queue before `run`; dispatch
-after destruction is rejected, and queued actions are suppressed by
-destruction. Cancellation closes during destruction. Cooper does not own or
-forcibly terminate application fibers.
+Dispatch queues an action on the UI thread. It may queue before `start` and is
+also drained while the terminal is suspended; setters coalesce a frame for the
+next active render. Dispatch after destruction is rejected, and queued actions
+are suppressed by destruction. Cancellation closes during destruction. Cooper
+does not own or forcibly terminate application fibers.
 
 ### Tree lifetime
 
@@ -394,9 +433,10 @@ Tab traversal.
 
 ### Frame scheduling
 
-Cooper is demand-driven. Initial run, tree changes, effective setters, focus,
+Cooper is demand-driven. Initial start, tree changes, effective setters, focus,
 and resize request frames. Internal requests coalesce before layout and complete
-logical-buffer drawing; Vaxis diffs terminal cells.
+logical-buffer drawing; Vaxis diffs terminal cells. Requests made during
+suspension remain coalesced until resume forces a complete frame.
 
 Dispatch itself does not force a frame; setters called by a dispatched action
 do. Manual redraw, continuous rendering, frame-rate controls, and animation are
@@ -421,9 +461,9 @@ PTY tests retain responsibility for Vaxis parsing and terminal restoration.
 
 ### Errors
 
-- Recoverable terminal creation/execution and rejected dispatch use Result.
-- Invalid arguments, tree invariants, destroyed-control use, and repeated run
-  panic.
+- Recoverable terminal creation, startup, suspension, resume, completion, and
+  rejected dispatch use Result.
+- Invalid arguments, tree invariants, and destroyed-control use panic.
 - Expected conditional outcomes such as remove, submit, focus, and
   scroll-at-boundary use Bool.
 - App, control, TestApp, and listener cleanup are idempotent.
@@ -458,11 +498,16 @@ than enforcing them.
 | imperative renderable constructors | retained control constructors |
 | indexed `add` and direct mutation | indexed `add` and setters |
 | `renderSelf()` | internal `draw()` |
-| renderer destruction | `App.destroy()` plus guaranteed run teardown |
+| renderer startup / host waiting | `App.start()` / `App.wait()` or `App.run()` |
+| renderer suspension / resume | `App.suspend()` / `App.resume()` |
+| renderer destruction | `App.destroy()` |
 | test renderer | `TestApp` |
 
-Cooper intentionally differs by separating App from Context, using a blocking
-one-shot run, and deferring supported custom-renderable authoring.
+Cooper intentionally differs by separating App from Context, retaining a
+blocking `run` convenience for Ard's process model, and deferring supported
+custom-renderable authoring. Unlike OpenTUI's JavaScript host, an Ard main
+function exits even while background fibers exist, so standalone applications
+must call `run`, `wait`, or otherwise keep their process alive.
 
 ## Consequences
 

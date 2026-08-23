@@ -1,0 +1,46 @@
+use ard/async
+
+use cooper/app
+use cooper/style
+use cooper/text
+use go:time
+
+fn main() {
+  let application = app::new().expect("create Cooper lifecycle example")
+  let status = text::new(
+    application.context,
+    content: "READY",
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+  )
+  application.root.add(status)
+
+  if application.wait().is_ok() {
+    panic("Cooper wait before start unexpectedly succeeded")
+  }
+  application.suspend().expect("suspend Cooper before start")
+  application.suspend().expect("repeat Cooper suspension before start")
+  application.start().expect("start suspended Cooper lifecycle example")
+  application.start().expect("repeat Cooper lifecycle start")
+  application.resume().expect("resume Cooper after start")
+  application.resume().expect("repeat Cooper resume after start")
+
+  async::start(fn() {
+    time::Sleep(150 * time::Millisecond)
+    application.suspend().expect("suspend Cooper lifecycle example")
+    application.context.dispatch(fn() {
+      status.set_content("RESUMED")
+    }).expect("update suspended lifecycle example")
+    time::Sleep(150 * time::Millisecond)
+    application.resume().expect("resume Cooper lifecycle example")
+    time::Sleep(150 * time::Millisecond)
+    application.suspend().expect("suspend Cooper before destroy")
+    application.destroy()
+  })
+
+  application.wait().expect("wait for Cooper lifecycle example")
+  application.wait().expect("repeat Cooper lifecycle wait")
+  application.destroy()
+  if application.start().is_ok() or application.suspend().is_ok() or application.resume().is_ok() {
+    panic("destroyed Cooper lifecycle operation unexpectedly succeeded")
+  }
+}

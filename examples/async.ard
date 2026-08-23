@@ -22,6 +22,9 @@ fn main() {
       time::After(300 * time::Millisecond).recv() => {
         let _ = dispatch(fn() {
           status.set_content("Loaded on the UI thread.")
+        })
+        time::Sleep(100 * time::Millisecond)
+        let _ = dispatch(fn() {
           application.destroy()
         })
       },

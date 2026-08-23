@@ -1,3 +1,5 @@
+use ard/async
+
 use cooper/color
 use cooper/context
 use cooper/core/focus
@@ -10,6 +12,7 @@ use cooper/core/selection_state
 use cooper/event
 use cooper/selection as public_selection
 use go:github.com/akonwi/cooper/ffi/core/backend/clock
+use go:github.com/akonwi/cooper/ffi/core/backend/signalwatch
 use go:github.com/akonwi/cooper/ffi/core/backend/urlopen
 use go:github.com/akonwi/cooper/ffi/core/backend/vaxisbridge as bridge
 use go:go.rockorager.dev/vaxis
@@ -172,15 +175,33 @@ struct PendingSelection {
 
 struct State {
   terminal: (mut vaxis::Vaxis)?,
+  terminal_io: mut sync::Mutex,
+  terminal_suspended: Bool,
+  terminal_closed: Bool,
+  signal_watcher: (mut signalwatch::Watcher)?,
+  system_wake: Chan<Bool>,
+  pending_resize_cols: Int,
+  pending_resize_rows: Int,
   lifecycle: mut sync::Mutex,
+  // 0 ready, 1 running, 2 test, 3 destroyed, 4 destroying,
+  // 5/6 suspended ready/running, 7/8 starting active/suspended,
+  // 9/10 resuming ready/running, 11/12/13 suspending ready/running/starting.
   phase: Int,
   resources_stopped: Bool,
   construction_committed: Bool,
+  pump_started: Bool,
   test_flushing: Bool,
   shutdown: Chan<Bool>,
   wake: Chan<Bool>,
   updates: mut runtime::DispatchQueue,
   cancellation_signal: Chan<Void>,
+  cancellation_closed: Bool,
+  startup_done: Chan<Void>,
+  startup_published: Bool,
+  startup_error: Error?,
+  completion_done: Chan<Void>,
+  completion_published: Bool,
+  completion_error: Error?,
   root_node: (mut node::Node)?,
   pointer: mut pointer::State,
   pointer_cursor: event::MouseCursor,
@@ -211,6 +232,7 @@ struct State {
 
 private fn state(
   terminal: (mut vaxis::Vaxis)?,
+  signal_watcher: (mut signalwatch::Watcher)?,
   exit_on_ctrl_c: Bool,
   auto_focus: Bool,
   width: Int,
@@ -218,19 +240,35 @@ private fn state(
   construction_committed: Bool,
   headless: Bool,
 ) mut State {
+  let terminal_io = mut sync::Mutex{}
   let lifecycle = mut sync::Mutex{}
   let updates = mut runtime::new_dispatch_queue()
   (mut State{
     terminal: terminal,
+    terminal_io: terminal_io,
+    terminal_suspended: false,
+    terminal_closed: not terminal.is_some(),
+    signal_watcher: signal_watcher,
+    system_wake: Chan::new<Bool>(1),
+    pending_resize_cols: 0,
+    pending_resize_rows: 0,
     lifecycle: lifecycle,
     phase: 0,
     resources_stopped: false,
     construction_committed: construction_committed,
+    pump_started: false,
     test_flushing: false,
     shutdown: Chan::new<Bool>(1),
     wake: Chan::new<Bool>(1),
     updates: updates,
     cancellation_signal: Chan::new<Void>(),
+    cancellation_closed: false,
+    startup_done: Chan::new<Void>(),
+    startup_published: false,
+    startup_error: Maybe::new<Error>(),
+    completion_done: Chan::new<Void>(),
+    completion_published: false,
+    completion_error: Maybe::new<Error>(),
     root_node: Maybe::new<mut node::Node>(),
     pointer: pointer::new(),
     pointer_cursor: event::MouseCursor::default_cursor,
@@ -261,16 +299,24 @@ private fn state(
 }
 
 fn new_live(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Bool) (mut State)!Error {
-  let terminal = try vaxis::New(vaxis::Options{DisableMouse: not use_mouse})
-  let created = state(Maybe::new<mut vaxis::Vaxis>(terminal), exit_on_ctrl_c, auto_focus, 0, 0, false, false)
-  Result::ok(created)
+  let watcher = signalwatch::New()
+  match vaxis::New(vaxis::Options{DisableMouse: not use_mouse, NoSignals: true}) {
+    ok(terminal) => {
+      let created = state(Maybe::new<mut vaxis::Vaxis>(terminal), Maybe::new<mut signalwatch::Watcher>(watcher), exit_on_ctrl_c, auto_focus, 0, 0, false, false)
+      Result::ok(created)
+    },
+    err(error) => {
+      watcher.Close()
+      Result::err(error)
+    },
+  }
 }
 
 fn new_headless(width: Int, height: Int) mut State {
   if width < 0 or height < 0 {
     panic("headless application dimensions must be non-negative")
   }
-  let created = state(Maybe::new<mut vaxis::Vaxis>(), true, true, width, height, true, true)
+  let created = state(Maybe::new<mut vaxis::Vaxis>(), Maybe::new<mut signalwatch::Watcher>(), true, true, width, height, true, true)
   created
 }
 
@@ -284,22 +330,29 @@ impl State {
   }
 
   fn mouse_cursor() event::MouseCursor {
-    self.pointer_cursor
+    self.terminal_io.Lock()
+    let cursor = self.pointer_cursor
+    self.terminal_io.Unlock()
+    cursor
   }
 
   private fn mut update_pointer_cursor(root: mut node::Renderable) Bool {
+    self.terminal_io.Lock()
     let next = self.pointer.mouse_cursor(root)
-    if self.pointer_cursor_initialized and next == self.pointer_cursor {
-      false
-    } else {
+    mut changed = false
+    if (not self.pointer_cursor_initialized) or next != self.pointer_cursor {
       self.pointer_cursor = next
       self.pointer_cursor_initialized = true
-      match self.terminal {
-        terminal => terminal.SetMouseShape(vaxis_mouse_shape(next)),
-        _ => (),
+      if self.live_rendering() {
+        match self.terminal {
+          terminal => terminal.SetMouseShape(vaxis_mouse_shape(next)),
+          _ => (),
+        }
       }
-      true
+      changed = true
     }
+    self.terminal_io.Unlock()
+    changed
   }
 
   fn mut advance_time_test(delta_ms: Int) {
@@ -457,6 +510,66 @@ impl State {
     self.lifecycle.Unlock()
   }
 
+  private fn mut close_cancellation() {
+    self.lifecycle.Lock()
+    let close = not self.cancellation_closed
+    if close {
+      self.cancellation_closed = true
+    }
+    self.lifecycle.Unlock()
+    if close {
+      self.cancellation_signal.close()
+    }
+  }
+
+  private fn mut publish_startup(error: Error?) {
+    self.lifecycle.Lock()
+    let publish = not self.startup_published
+    if publish {
+      self.startup_published = true
+      self.startup_error = error
+    }
+    self.lifecycle.Unlock()
+    if publish {
+      self.startup_done.close()
+    }
+  }
+
+  private fn startup_result() Void!Error {
+    self.startup_done.recv()
+    self.lifecycle.Lock()
+    let error = self.startup_error
+    self.lifecycle.Unlock()
+    match error {
+      failure => Result::err(failure),
+      _ => Result::ok(()),
+    }
+  }
+
+  private fn mut publish_completion(error: Error?) {
+    self.lifecycle.Lock()
+    let publish = not self.completion_published
+    if publish {
+      self.completion_published = true
+      self.completion_error = error
+    }
+    self.lifecycle.Unlock()
+    if publish {
+      self.completion_done.close()
+    }
+  }
+
+  private fn completion_result() Void!Error {
+    self.completion_done.recv()
+    self.lifecycle.Lock()
+    let error = self.completion_error
+    self.lifecycle.Unlock()
+    match error {
+      failure => Result::err(failure),
+      _ => Result::ok(()),
+    }
+  }
+
   fn mut rollback_construction() {
     self.lifecycle.Lock()
     let should_stop = self.phase == 0 and (not self.construction_committed) and (not self.resources_stopped)
@@ -473,14 +586,22 @@ impl State {
       self.terminal_focus_listeners = []
       self.selection_listeners = []
       self.pointer.clear()
+      self.selection.destroy()
+      self.close_cancellation()
+      self.terminal_io.Lock()
       self.pointer_cursor = event::MouseCursor::default_cursor
       self.pointer_cursor_initialized = false
-      self.selection.destroy()
-      self.cancellation_signal.close()
       match self.terminal {
         terminal => terminal.Close(),
         _ => (),
       }
+      self.terminal_closed = true
+      self.terminal_io.Unlock()
+      match self.signal_watcher {
+        watcher => watcher.Close(),
+        _ => (),
+      }
+      self.publish_completion(Maybe::new<Error>())
     }
   }
 
@@ -510,10 +631,14 @@ impl State {
     mut finish_now = false
     mut request_shutdown = false
     mut stop_dispatch = false
-    if self.phase == 0 {
-      self.phase = 3
+    if self.phase == 4 and (not self.pump_started) and (not self.resources_stopped) {
       finish_now = true
-    } else if self.phase == 1 {
+      stop_dispatch = true
+    } else if (self.phase == 0 or self.phase == 5 or self.phase == 9 or self.phase == 11) and (not self.pump_started) {
+      self.phase = 4
+      finish_now = true
+      stop_dispatch = true
+    } else if self.phase == 1 or self.phase == 6 or self.phase == 7 or self.phase == 8 or self.phase == 9 or self.phase == 10 or self.phase == 11 or self.phase == 12 or self.phase == 13 {
       self.phase = 4
       request_shutdown = true
       stop_dispatch = true
@@ -593,6 +718,13 @@ impl State {
     finish_destroy
   }
 
+  private fn live_rendering() Bool {
+    self.lifecycle.Lock()
+    let active = self.phase == 1
+    self.lifecycle.Unlock()
+    active
+  }
+
   private fn live_stopping() Bool {
     self.lifecycle.Lock()
     let stopping = self.phase == 4
@@ -606,7 +738,7 @@ impl State {
     self.stop_resources(ctx)
   }
 
-  private fn mut stop_resources(ctx: mut context::Context) {
+  private fn mut stop_resources(ctx: mut context::Context, error: Error?) {
     self.lifecycle.Lock()
     let should_stop = not self.resources_stopped
     if should_stop {
@@ -622,16 +754,65 @@ impl State {
       self.terminal_focus_listeners = []
       self.selection_listeners = []
       self.pointer.clear()
-      self.pointer_cursor = event::MouseCursor::default_cursor
-      self.pointer_cursor_initialized = false
       self.selection.destroy()
-      self.cancellation_signal.close()
+      self.close_cancellation()
+    }
+
+    let final_error = self.release_terminal(error)
+    if should_stop {
+      context::internal_state(ctx).destroy()
+      self.publish_completion(final_error)
+    }
+  }
+
+  private fn mut release_terminal(error: Error?) Error? {
+    mut final_error = error
+    self.terminal_io.Lock()
+    self.pointer_cursor = event::MouseCursor::default_cursor
+    self.pointer_cursor_initialized = false
+    if not self.terminal_closed {
+      mut close_terminal = true
       match self.terminal {
-        terminal => terminal.Close(),
+        terminal => {
+          if self.terminal_suspended {
+            match terminal.Resume() {
+              ok(_) => { self.terminal_suspended = false },
+              err(resume_error) => {
+                close_terminal = false
+                if not final_error.is_some() {
+                  final_error = Maybe::new<Error>(resume_error)
+                }
+              },
+            }
+          }
+          if close_terminal {
+            terminal.Close()
+            self.terminal_closed = true
+          }
+        },
+        _ => { self.terminal_closed = true },
+      }
+    }
+    let terminal_finished = self.terminal_closed
+    self.terminal_io.Unlock()
+
+    if terminal_finished {
+      match self.signal_watcher {
+        watcher => watcher.Close(),
         _ => (),
       }
-      context::internal_state(ctx).destroy()
     }
+    final_error
+  }
+
+  private fn terminal_cleanup_pending() Bool {
+    self.lifecycle.Lock()
+    let cleanup_started = self.resources_stopped or (self.phase == 4 and (not self.pump_started))
+    self.lifecycle.Unlock()
+    self.terminal_io.Lock()
+    let pending = cleanup_started and (not self.terminal_closed)
+    self.terminal_io.Unlock()
+    pending
   }
 
   private fn take_redraw_request() Bool {
@@ -650,6 +831,22 @@ impl State {
         pending.recv() => (),
         _ => { draining = false },
       }
+    }
+  }
+
+  private fn mut apply_pending_resize_locked(terminal: mut vaxis::Vaxis) Bool {
+    self.lifecycle.Lock()
+    let cols = self.pending_resize_cols
+    let rows = self.pending_resize_rows
+    self.pending_resize_cols = 0
+    self.pending_resize_rows = 0
+    self.lifecycle.Unlock()
+    if cols > 0 and rows > 0 {
+      let current = terminal.Size()
+      terminal.Resize(vaxis::Resize{Cols: cols, Rows: rows, XPixel: current.XPixel, YPixel: current.YPixel})
+      true
+    } else {
+      false
     }
   }
 
@@ -768,11 +965,29 @@ impl State {
 
   private fn mut paint_live(ctx: mut context::Context, root: mut node::Renderable) {
     let terminal = self.terminal.expect("live application terminal")
-    let window = terminal.Window()
-    let buffer = self.draw(ctx, root, window.Width, window.Height)
-    self.present(terminal, buffer)
-    self.post_frame_pointer(root)
-    self.post_frame_selection()
+    self.terminal_io.Lock()
+    mut width = 0
+    mut height = 0
+    let active = self.live_rendering()
+    if active {
+      let window = terminal.Window()
+      width = window.Width
+      height = window.Height
+    }
+    self.terminal_io.Unlock()
+    if active {
+      let buffer = self.draw(ctx, root, width, height)
+      self.terminal_io.Lock()
+      let present = self.live_rendering()
+      if present {
+        self.present(terminal, buffer)
+      }
+      self.terminal_io.Unlock()
+      if present {
+        self.post_frame_pointer(root)
+        self.post_frame_selection()
+      }
+    }
   }
 
   private fn mut paint_test(ctx: mut context::Context, root: mut node::Renderable) {
@@ -805,6 +1020,66 @@ impl State {
 }
 
 impl State {
+  private fn mut handle_system_shutdown(ctx: mut context::Context) {
+    self.lifecycle.Lock()
+    let defer_app_cleanup = (not self.pump_started) and (not self.resources_stopped) and (self.phase == 0 or self.phase == 4 or self.phase == 5 or self.phase == 9 or self.phase == 11)
+    if defer_app_cleanup {
+      self.phase = 4
+    }
+    self.lifecycle.Unlock()
+
+    if defer_app_cleanup {
+      self.updates.stop()
+      self.close_cancellation()
+      let _ = self.release_terminal(Maybe::new<Error>())
+    } else {
+      self.destroy_live(ctx)
+    }
+  }
+
+  fn mut start_signal_monitor(ctx: mut context::Context) {
+    match self.signal_watcher {
+      watcher => {
+        async::start(fn() {
+          let events = watcher.Events()
+          mut watching = true
+          while watching {
+            match events.recv() {
+              signaled => {
+                mut draining = true
+                while draining {
+                  let received = watcher.Next()
+                  if received.Kind == signalwatch::Shutdown {
+                    self.handle_system_shutdown(ctx)
+                    draining = false
+                  } else if received.Kind == signalwatch::Resize {
+                    self.lifecycle.Lock()
+                    let available = self.phase != 3 and self.phase != 4
+                    if available {
+                      self.pending_resize_cols = received.Cols
+                      self.pending_resize_rows = received.Rows
+                    }
+                    self.lifecycle.Unlock()
+                    if available {
+                      select {
+                        self.system_wake.send(true) => (),
+                        _ => (),
+                      }
+                    }
+                  } else {
+                    draining = false
+                  }
+                }
+              },
+              _ => { watching = false },
+            }
+          }
+        })
+      },
+      _ => (),
+    }
+  }
+
   fn request_render() fn() {
     let wake = self.wake
     fn() {
@@ -818,8 +1093,12 @@ impl State {
   fn width_measurer() fn(Str) Int {
     match self.terminal {
       terminal => {
+        let terminal_io = self.terminal_io
         fn(text: Str) Int {
-          terminal.RenderedWidth(text)
+          terminal_io.Lock()
+          let width = terminal.RenderedWidth(text)
+          terminal_io.Unlock()
+          width
         }
       },
       _ => default_width,
@@ -849,7 +1128,8 @@ impl State {
 
   private fn mut next_listener() Int {
     self.lifecycle.Lock()
-    let available = self.phase != 3 and self.next_listener_id < math::MaxInt
+    let prestart_shutdown = self.phase == 4 and (not self.pump_started) and (not self.resources_stopped)
+    let available = self.phase != 3 and (self.phase != 4 or prestart_shutdown) and self.next_listener_id < math::MaxInt
     mut id = 0
     if available {
       id = self.next_listener_id
@@ -975,29 +1255,282 @@ impl State {
     }
   }
 
+  fn mut suspend_live() Void!Error {
+    self.terminal_io.Lock()
+    self.lifecycle.Lock()
+    mut previous = -1
+    mut transition = -1
+    mut suspended = -1
+    mut available = true
+    mut already_suspended = false
+    if self.phase == 0 {
+      previous = 0
+      transition = 11
+      suspended = 5
+      self.phase = transition
+    } else if self.phase == 1 {
+      previous = 1
+      transition = 12
+      suspended = 6
+      self.phase = transition
+    } else if self.phase == 7 {
+      previous = 7
+      transition = 13
+      suspended = 8
+      self.phase = transition
+    } else if self.phase == 5 or self.phase == 6 or self.phase == 8 {
+      already_suspended = true
+    } else {
+      available = false
+    }
+    self.lifecycle.Unlock()
+
+    mut outcome: Void!Error = Result::ok(())
+    if available and (not already_suspended) {
+      let terminal = self.terminal.expect("live application terminal")
+      terminal.SetMouseShape(vaxis::MouseShapeDefault)
+      terminal.Render()
+      outcome = terminal.Suspend()
+      match outcome {
+        ok(_) => {
+          self.terminal_suspended = true
+          let events = terminal.Events()
+          mut draining = true
+          while draining {
+            select {
+              events.recv() => (),
+              _ => { draining = false },
+            }
+          }
+          self.lifecycle.Lock()
+          let committed = self.phase == transition
+          if committed {
+            self.phase = suspended
+          }
+          self.lifecycle.Unlock()
+          if not committed {
+            outcome = Result::err(Error::new("application was destroyed while suspending"))
+          }
+        },
+        err(error) => {
+          self.lifecycle.Lock()
+          if self.phase == transition {
+            self.phase = previous
+          }
+          self.lifecycle.Unlock()
+          outcome = Result::err(error)
+        },
+      }
+    }
+    self.terminal_io.Unlock()
+
+    if not available {
+      Result::err(Error::new("application runtime is not available to suspend"))
+    } else {
+      outcome
+    }
+  }
+
+  fn mut resume_live() Void!Error {
+    self.terminal_io.Lock()
+    self.lifecycle.Lock()
+    mut suspended = -1
+    mut transition = -1
+    mut resumed = -1
+    mut available = true
+    mut already_active = false
+    if self.phase == 5 {
+      suspended = 5
+      transition = 9
+      resumed = 0
+      self.phase = transition
+    } else if self.phase == 6 {
+      suspended = 6
+      transition = 10
+      resumed = 1
+      self.phase = transition
+    } else if self.phase == 0 or self.phase == 1 or self.phase == 7 {
+      already_active = true
+    } else {
+      available = false
+    }
+    self.lifecycle.Unlock()
+
+    mut outcome: Void!Error = Result::ok(())
+    if available and (not already_active) {
+      let terminal = self.terminal.expect("live application terminal")
+      outcome = terminal.Resume()
+      match outcome {
+        ok(_) => {
+          self.terminal_suspended = false
+          let _ = self.apply_pending_resize_locked(terminal)
+          self.lifecycle.Lock()
+          let committed = self.phase == transition
+          if committed {
+            self.phase = resumed
+            self.pointer_cursor_initialized = false
+          }
+          self.lifecycle.Unlock()
+          if committed {
+            (self.request_render())()
+          } else {
+            outcome = Result::err(Error::new("application was destroyed while resuming"))
+          }
+        },
+        err(error) => {
+          self.lifecycle.Lock()
+          if self.phase == transition {
+            self.phase = suspended
+          }
+          self.lifecycle.Unlock()
+          outcome = Result::err(error)
+        },
+      }
+    }
+    self.terminal_io.Unlock()
+
+    if not available {
+      Result::err(Error::new("application runtime is not available to resume"))
+    } else {
+      outcome
+    }
+  }
+
+  fn mut start_live(ctx: mut context::Context, root: mut node::Renderable) Void!Error {
+    self.terminal_io.Lock()
+    self.lifecycle.Lock()
+    mut launch = false
+    mut finish_shutdown = false
+    mut available = true
+    if self.phase == 0 {
+      self.phase = 7
+      self.pump_started = true
+      launch = true
+    } else if self.phase == 5 {
+      self.phase = 8
+      self.pump_started = true
+      launch = true
+    } else if self.phase == 1 or self.phase == 6 or self.phase == 7 or self.phase == 8 or self.phase == 9 or self.phase == 10 {
+      available = self.pump_started
+    } else {
+      finish_shutdown = self.phase == 4 and (not self.pump_started) and (not self.resources_stopped)
+      available = false
+    }
+    self.lifecycle.Unlock()
+    self.terminal_io.Unlock()
+
+    if not available {
+      if finish_shutdown {
+        self.stop_resources(ctx)
+      }
+      Result::err(Error::new("application runtime is not available to start"))
+    } else {
+      if launch {
+        async::start(fn() {
+          self.live_pump(ctx, root)
+        })
+      }
+      self.startup_result()
+    }
+  }
+
+  fn wait_live() Void!Error {
+    self.lifecycle.Lock()
+    let available = self.pump_started
+    self.lifecycle.Unlock()
+    if not available {
+      Result::err(Error::new("application runtime has not started"))
+    } else {
+      self.completion_result()
+    }
+  }
+
   fn mut run(ctx: mut context::Context, root: mut node::Renderable) Void!Error {
-    self.begin_phase(true, 1)
-    defer self.stop_resources(ctx)
+    try self.start_live(ctx, root)
+    self.wait_live()
+  }
+
+  private fn mut live_pump(ctx: mut context::Context, root: mut node::Renderable) {
     context::internal_state(ctx).begin_run()
+    defer self.stop_resources(ctx)
     defer context::internal_state(ctx).end_run()
+    defer self.publish_startup(Maybe::new<Error>(Error::new("application startup did not complete")))
     root.node().mount_root(self.dispatch())
     defer root.node().unmount_root()
 
+    self.terminal_io.Lock()
+    self.lifecycle.Lock()
+    mut started = false
+    mut active = false
+    if self.phase == 7 {
+      self.phase = 1
+      started = true
+      active = true
+    } else if self.phase == 8 {
+      self.phase = 6
+      started = true
+    }
+    self.lifecycle.Unlock()
+
+    if active {
+      let terminal = self.terminal.expect("live application terminal")
+      if self.live_rendering() {
+        if not self.apply_pending_resize_locked(terminal) {
+          terminal.Resize(terminal.Size())
+        }
+      }
+    }
+    self.terminal_io.Unlock()
+    if active {
+      self.paint_live(ctx, root)
+    }
+
+    self.lifecycle.Lock()
+    let startup_valid = started and self.phase != 4 and self.phase != 3
+    self.lifecycle.Unlock()
+    if startup_valid {
+      self.publish_startup(Maybe::new<Error>())
+      self.live_event_loop(ctx, root)
+    } else {
+      self.publish_startup(Maybe::new<Error>(Error::new("application was destroyed during startup")))
+    }
+
+    if not self.live_stopping() {
+      let _ = self.request_live_destroy()
+    }
+  }
+
+  private fn mut live_event_loop(ctx: mut context::Context, root: mut node::Renderable) {
     let terminal = self.terminal.expect("live application terminal")
-    terminal.Resize(terminal.Size())
-    self.paint_live(ctx, root)
     let events = terminal.Events()
     let redraws = self.wake.receiver()
     let update_events = self.updates.events()
     let shutdowns = self.shutdown.receiver()
+    let system_events = self.system_wake.receiver()
     mut running = true
     while running and (not self.live_stopping()) and (not self.post_frame_quit) {
-      select {
+      if self.live_rendering() {
+        select {
         shutdowns.recv() => { running = false },
-        redraws.recv() => self.paint_live(ctx, root),
+        system_events.recv() => {
+          self.terminal_io.Lock()
+          mut resized = false
+          if self.live_rendering() {
+            resized = self.apply_pending_resize_locked(terminal)
+          }
+          self.terminal_io.Unlock()
+          if resized {
+            self.paint_live(ctx, root)
+          }
+        },
+        redraws.recv() => {
+          if self.live_rendering() {
+            self.paint_live(ctx, root)
+          }
+        },
         update_events.recv() => {
           let _ = self.drain_updates()
-          if self.take_redraw_request() {
+          if self.take_redraw_request() and self.live_rendering() {
             self.paint_live(ctx, root)
           }
         },
@@ -1007,107 +1540,144 @@ impl State {
               if self.live_stopping() {
                 running = false
               } else {
-                if self.take_redraw_request() {
-                  self.paint_live(ctx, root)
-                } else {
-                  self.focused.reconcile(root)
-                }
                 match received {
-                vaxis::Resize(size) => {
-                  terminal.Resize(size)
-                  self.paint_live(ctx, root)
-                },
-                vaxis::Redraw(_) => self.paint_live(ctx, root),
-                vaxis::SyncFunc(action) => {
-                  action()
-                  if self.take_redraw_request() {
-                    self.paint_live(ctx, root)
-                  }
-                },
-                vaxis::QuitEvent(_) => { running = false },
-                vaxis::FocusIn(_) => {
-                  self.set_terminal_focus(event::TerminalFocus::gained)
-                  if self.take_redraw_request() {
-                    self.paint_live(ctx, root)
-                  }
-                },
-                vaxis::FocusOut(_) => {
-                  self.set_terminal_focus(event::TerminalFocus::lost)
-                  if self.take_redraw_request() {
-                    self.paint_live(ctx, root)
-                  }
-                },
-                vaxis::Mouse(mouse) => {
-                  let converted = mouse_event(mouse)
-                  let outcome = self.pointer.process(root, converted, self.focused, self.selection, self.auto_focus, self.now_ms())
-                  self.apply_outcome(outcome)
-                  let cursor_changed = self.update_pointer_cursor(root)
-                  if outcome.redraw or cursor_changed or self.take_redraw_request() {
-                    self.paint_live(ctx, root)
-                  }
-                  if outcome.quit or self.post_frame_quit {
-                    running = false
-                  }
-                },
-                vaxis::Key(key) => {
-                  if key.EventType == vaxis::EventPaste {
-                    let converted = event::paste(key.Text)
-                    self.emit_paste(converted)
-                    self.focused.reconcile(root)
-                    match self.focused.focused() {
-                      target => {
-                        if not converted.is_propagation_stopped() {
-                          let outcome = router::dispatch_paste(target, converted, self.focused)
-                          self.apply_outcome(outcome)
-                          if outcome.redraw {
-                            self.paint_live(ctx, root)
+                  vaxis::QuitEvent(_) => { running = false },
+                  _ => {
+                    if self.live_rendering() {
+                      if self.take_redraw_request() {
+                        self.paint_live(ctx, root)
+                      } else {
+                        self.focused.reconcile(root)
+                      }
+                      match received {
+                      vaxis::Resize(size) => {
+                        self.terminal_io.Lock()
+                        if self.live_rendering() {
+                          terminal.Resize(size)
+                        }
+                        self.terminal_io.Unlock()
+                        self.paint_live(ctx, root)
+                      },
+                      vaxis::Redraw(_) => self.paint_live(ctx, root),
+                      vaxis::SyncFunc(action) => {
+                        action()
+                        if self.take_redraw_request() {
+                          self.paint_live(ctx, root)
+                        }
+                      },
+                      vaxis::FocusIn(_) => {
+                        self.set_terminal_focus(event::TerminalFocus::gained)
+                        if self.take_redraw_request() {
+                          self.paint_live(ctx, root)
+                        }
+                      },
+                      vaxis::FocusOut(_) => {
+                        self.set_terminal_focus(event::TerminalFocus::lost)
+                        if self.take_redraw_request() {
+                          self.paint_live(ctx, root)
+                        }
+                      },
+                      vaxis::Mouse(mouse) => {
+                        let converted = mouse_event(mouse)
+                        let outcome = self.pointer.process(root, converted, self.focused, self.selection, self.auto_focus, self.now_ms())
+                        self.apply_outcome(outcome)
+                        let cursor_changed = self.update_pointer_cursor(root)
+                        if outcome.redraw or cursor_changed or self.take_redraw_request() {
+                          self.paint_live(ctx, root)
+                        }
+                        if outcome.quit or self.post_frame_quit {
+                          running = false
+                        }
+                      },
+                      vaxis::Key(key) => {
+                        if key.EventType == vaxis::EventPaste {
+                          let converted = event::paste(key.Text)
+                          self.emit_paste(converted)
+                          self.focused.reconcile(root)
+                          match self.focused.focused() {
+                            target => {
+                              if not converted.is_propagation_stopped() {
+                                let outcome = router::dispatch_paste(target, converted, self.focused)
+                                self.apply_outcome(outcome)
+                                if outcome.redraw {
+                                  self.paint_live(ctx, root)
+                                }
+                                if outcome.quit {
+                                  running = false
+                                }
+                              }
+                            },
+                            _ => (),
                           }
-                          if outcome.quit {
+                        } else {
+                          let converted = key_event(key)
+                          self.emit_key(converted)
+                          self.focused.reconcile(root)
+                          if self.exit_on_ctrl_c and converted.event_type != event::KeyEventType::release and converted.matches("c", ctrl: true) and (not converted.is_default_prevented()) and (not converted.is_propagation_stopped()) {
                             running = false
+                          } else {
+                            match self.focused.focused() {
+                              target => {
+                                if not converted.is_propagation_stopped() {
+                                  let outcome = router::dispatch_key(target, converted, self.focused)
+                                  self.apply_outcome(outcome)
+                                  if outcome.redraw {
+                                    self.paint_live(ctx, root)
+                                  }
+                                  if outcome.quit {
+                                    running = false
+                                  }
+                                }
+                              },
+                              _ => (),
+                            }
                           }
                         }
                       },
                       _ => (),
-                    }
-                  } else {
-                    let converted = key_event(key)
-                    self.emit_key(converted)
-                    self.focused.reconcile(root)
-                    if self.exit_on_ctrl_c and converted.event_type != event::KeyEventType::release and converted.matches("c", ctrl: true) and (not converted.is_default_prevented()) and (not converted.is_propagation_stopped()) {
-                      running = false
-                    } else {
-                      match self.focused.focused() {
-                        target => {
-                          if not converted.is_propagation_stopped() {
-                            let outcome = router::dispatch_key(target, converted, self.focused)
-                            self.apply_outcome(outcome)
-                            if outcome.redraw {
-                              self.paint_live(ctx, root)
-                            }
-                            if outcome.quit {
-                              running = false
-                            }
-                          }
-                        },
-                        _ => (),
                       }
                     }
-                  }
-                },
-                _ => (),
+                  },
                 }
               }
             },
             _ => { running = false },
           }
         },
+        }
+      } else {
+        select {
+          shutdowns.recv() => { running = false },
+          system_events.recv() => {
+            self.terminal_io.Lock()
+            mut resized = false
+            if self.live_rendering() {
+              resized = self.apply_pending_resize_locked(terminal)
+            }
+            self.terminal_io.Unlock()
+            if resized {
+              self.paint_live(ctx, root)
+            }
+          },
+          redraws.recv() => {
+            if self.live_rendering() {
+              self.paint_live(ctx, root)
+            }
+          },
+          update_events.recv() => {
+            let _ = self.drain_updates()
+            if self.take_redraw_request() and self.live_rendering() {
+              self.paint_live(ctx, root)
+            }
+          },
+        }
       }
     }
-    Result::ok(())
   }
 
   fn mut destroy_live(ctx: mut context::Context) {
-    if self.request_live_destroy() {
+    let finish_now = self.request_live_destroy()
+    if finish_now or self.terminal_cleanup_pending() {
       self.stop_resources(ctx)
     }
   }

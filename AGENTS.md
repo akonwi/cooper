@@ -50,7 +50,8 @@ Run formatting and compiler validation on every changed Ard file.
 
 Prefer deterministic headless tests for:
 
-- App/Root lifecycle, dispatch, cancellation, and Context ownership;
+- App/Root startup, waiting, suspend/resume, destruction, dispatch,
+  cancellation, and Context ownership;
 - persistent identity, indexed reorder/reparent, detach, and destruction;
 - layout, clipping, scrolling, wrapping, and translated geometry;
 - direct cells, text styles, wide spans, and cursor placement;
@@ -71,6 +72,7 @@ ARD=ard-dev python3 test_input.py
 ARD=ard-dev python3 test_form.py
 ARD=ard-dev python3 test_scroll_form.py
 ARD=ard-dev python3 test_async.py
+ARD=ard-dev python3 test_lifecycle.py
 ARD=ard-dev python3 test_explorer.py
 ARD=ard-dev python3 test_interaction.py
 

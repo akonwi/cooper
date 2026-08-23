@@ -29,6 +29,7 @@ private fn text_style(value: paint::CellStyle) text::TextStyle {
     blink: value.blink,
     reverse: value.reverse,
     strike: value.strike,
+    hidden: value.hidden,
   }
 }
 

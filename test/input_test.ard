@@ -983,7 +983,7 @@ test fn input_exposes_placeholder_styles_and_fills_text_background() Void!Str {
     placeholder: "hint",
     styles: fixed(6),
     text_style: text::style(background: background, bold: true),
-    placeholder_style: text::style(dim: true),
+    placeholder_style: text::style(dim: true, hidden: true),
   )
   application.root.add(field)
   field.set_placeholder("next\nline")
@@ -997,7 +997,7 @@ test fn input_exposes_placeholder_styles_and_fills_text_background() Void!Str {
     "Expected Input common style getter",
   )
   try testing::assert(
-    application.frame().cell(0, 0).expect("placeholder cell").style.dim,
+    application.frame().cell(0, 0).expect("placeholder cell").style.dim and application.frame().cell(0, 0).expect("hidden placeholder cell").style.hidden,
     "Expected placeholder style paint",
   )
   try testing::assert(
@@ -1008,7 +1008,7 @@ test fn input_exposes_placeholder_styles_and_fills_text_background() Void!Str {
     "Expected complete Input TextStyle background fill",
   )
 
-  field.set_text_style(text::style(background: background, italic: true))
+  field.set_text_style(text::style(background: background, italic: true, hidden: true))
   field.set_placeholder_style(text::style(underline: true))
   field.set_min_length(1)
   field.set_max_length(3)
@@ -1016,9 +1016,10 @@ test fn input_exposes_placeholder_styles_and_fills_text_background() Void!Str {
   application.render()
   try testing::assert(field.value() == "abc", "Expected max_length setter truncation")
   try testing::assert(
-    field.text_style().italic and field.placeholder_style().underline,
+    field.text_style().italic and field.text_style().hidden and field.placeholder_style().underline,
     "Expected style setters",
   )
+  try testing::assert(application.frame().cell(0, 0).expect("hidden Input value").style.hidden, "Expected hidden Input value paint")
 
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected styled Input cleanup")

@@ -240,7 +240,7 @@ private fn same_color(left: color::Color?, right: color::Color?) Bool {
 }
 
 private fn same_text_style(left: text::TextStyle, right: text::TextStyle) Bool {
-  same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike
+  same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike and left.hidden == right.hidden
 }
 
 private fn default_selection_style(value: mut text::TextStyle) {
@@ -274,6 +274,7 @@ private fn cell_style(value: text::TextStyle) paint::CellStyle {
     blink: value.blink,
     reverse: value.reverse,
     strike: value.strike,
+    hidden: value.hidden,
   )
 }
 
@@ -293,6 +294,7 @@ private fn placeholder_paint_style(value: text::TextStyle, placeholder: text::Te
     blink: placeholder.blink,
     reverse: placeholder.reverse,
     strike: placeholder.strike,
+    hidden: placeholder.hidden,
   }
 }
 

@@ -24,7 +24,7 @@ test fn text_style_defaults_rgb_and_defaults_attributes() Void!Str {
   try testing::assert(rgb.green == Uint8::from(34), "Expected green channel")
   try testing::assert(rgb.blue == Uint8::from(56), "Expected blue channel")
   testing::assert(
-    (not plain.bold) and (not plain.dim) and (not plain.italic) and (not plain.underline) and (not plain.blink) and (not plain.reverse) and (not plain.strike),
+    (not plain.bold) and (not plain.dim) and (not plain.italic) and (not plain.underline) and (not plain.blink) and (not plain.reverse) and (not plain.strike) and (not plain.hidden),
     "Expected default cell attributes",
   )
 }

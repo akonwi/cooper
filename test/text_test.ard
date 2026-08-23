@@ -26,6 +26,80 @@ test fn text_wraps_words_and_explicit_lines_with_terminal_widths() Void!Str {
   testing::assert(label.node_ref.is_destroyed(), "Expected wrapped Text cleanup")
 }
 
+test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
+  let application = cooper_testing::new(9, 1)
+  let spans = mut List::new<text::Span>()
+  spans.push(
+    text::span(
+      "RED",
+      style: text::span_style(foreground: color::rgb(220, 20, 30), underline: true),
+    ),
+  )
+  spans.push(text::span(" plain", style: text::span_style(bold: false, hidden: true), link: "https://example.com"))
+  let content = text::styled_text(spans.@)
+  spans.set(0, text::span("changed"))
+  let label = text::new(
+    application.context,
+    content: content,
+    styles: style::new(background: color::rgb(4, 5, 6), width: style::cells(9)),
+    text_style: text::style(bold: true, italic: true),
+  )
+  application.root.add(label)
+  application.render()
+
+  let emphasized = application.frame().cell(0, 0).expect("styled span cell").style
+  let inherited = application.frame().cell(4, 0).expect("inherited span cell").style
+  try testing::assert(label.content() == "RED plain", "Expected flattened rich content")
+  try testing::assert(emphasized.foreground.expect("span foreground").red == Uint8::from(220), "Expected span foreground override")
+  try testing::assert(emphasized.bold and emphasized.italic and emphasized.underline and (not emphasized.hidden), "Expected Text-level attributes inherited by span")
+  try testing::assert((not inherited.bold) and inherited.italic and inherited.hidden, "Expected explicit false and hidden span overrides")
+  try testing::assert(inherited.background.expect("common background").blue == Uint8::from(6), "Expected common color inheritance through span")
+
+  let snapshot = label.styled_content()
+  try testing::assert(snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("first snapshot span").text == "RED", "Expected helper and Text ingress snapshots")
+  try testing::assert(snapshot.spans.at(1).expect("linked snapshot span").link.or("") == "https://example.com", "Expected exact link snapshot")
+  let returned_spans = mut snapshot.spans
+  returned_spans.set(0, text::span("getter mutation"))
+  try testing::assert(label.content() == "RED plain", "Expected getter snapshot isolated from Text")
+
+  let direct_spans = mut List::new<text::Span>()
+  direct_spans.push(text::span("direct"))
+  label.set_content(text::StyledText{spans: direct_spans.@})
+  direct_spans.set(0, text::span("caller mutation"))
+  try testing::assert(label.content() == "direct", "Expected direct StyledText ingress snapshot")
+
+  label.set_content("plain")
+  application.render()
+  try testing::assert(label.content() == "plain" and label.styled_content().spans.size() == 1, "Expected plain union setter to create one span")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected styled Text cleanup")
+}
+
+test fn styled_text_uses_first_scalar_style_for_cross_span_grapheme() Void!Str {
+  let application = cooper_testing::new(1, 1)
+  let label = text::new(
+    application.context,
+    content: text::styled_text(
+      [
+        text::span("e", style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true)),
+        text::span("́", style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true)),
+      ],
+    ),
+    styles: style::new(width: style::cells(1), height: style::cells(1)),
+  )
+  application.root.add(label)
+  application.render()
+
+  let painted = application.frame().cell(0, 0).expect("cross-span grapheme")
+  try testing::assert(painted.grapheme == "é", "Expected one cross-span grapheme")
+  try testing::assert(painted.style.foreground.expect("first scalar foreground").red == Uint8::from(200), "Expected first scalar color")
+  try testing::assert(painted.style.bold and (not painted.style.italic), "Expected complete first scalar style")
+
+  application.destroy()
+  testing::assert(label.node_ref.is_destroyed(), "Expected cross-span Text cleanup")
+}
+
 test fn text_character_wrap_never_splits_a_grapheme() Void!Str {
   let application = cooper_testing::new(3, 3)
   let label = text::new(

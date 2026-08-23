@@ -45,6 +45,9 @@ private fn vaxis_attributes(style: paint::CellStyle) vaxis::AttributeMask {
   if style.strike {
     attributes = attributes + vaxis::AttrStrikethrough
   }
+  if style.hidden {
+    attributes = attributes + vaxis::AttrInvisible
+  }
   attributes
 }
 

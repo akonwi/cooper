@@ -69,6 +69,45 @@ test fn double_click_selects_complete_word_and_finalizes_selection() Void!Str {
   testing::assert(message.node_ref.is_destroyed(), "Expected double-click selection cleanup")
 }
 
+test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str {
+  let application = cooper_testing::new(5, 1)
+  let message = text::new(
+    application.context,
+    content: text::styled_text(
+      [
+        text::span("Hel", style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true)),
+        text::span("lo", style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true)),
+      ],
+    ),
+    styles: fixed(5),
+  )
+  application.root.add(message)
+
+  application.double_click(1, 0)
+
+  let first = application.frame().cell(0, 0).expect("selected first rich span").style
+  let second = application.frame().cell(4, 0).expect("selected second rich span").style
+  try testing::assert(message.selected_text() == "Hello", "Expected word selection across style boundary")
+  try testing::assert(first.reverse and first.bold and first.foreground.expect("first selected color").red == Uint8::from(200), "Expected selected first span style")
+  try testing::assert(second.reverse and second.italic and second.foreground.expect("second selected color").blue == Uint8::from(200), "Expected selected second span style")
+
+  message.set_content(
+    text::styled_text(
+      [
+        text::span("Hel", style: text::span_style(foreground: color::rgb(20, 200, 30))),
+        text::span("lo", style: text::span_style(underline: true)),
+      ],
+    ),
+  )
+  application.render()
+  let restyled = application.frame().cell(0, 0).expect("restyled locked selection").style
+  try testing::assert(application.selection().expect("restyled source lock").selected_text == "Hello", "Expected presentation-only mutation to preserve source lock")
+  try testing::assert(restyled.reverse and restyled.foreground.expect("restyled color").green == Uint8::from(200), "Expected locked selection to adopt new span style")
+
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected rich word selection cleanup")
+}
+
 test fn double_click_selects_punctuation_and_whitespace_runs() Void!Str {
   let application = cooper_testing::new(14, 1)
   let message = text::new(application.context, content: "word...  next", styles: fixed(14))

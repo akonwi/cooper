@@ -72,10 +72,11 @@ ard-dev run explorer.ard
 
 ## Interaction Lab
 
-`interaction_lab.ard` is the end-to-end acceptance program for ADR 0003. It
-combines nearest-ancestor focus, overlapping z-index controls, captured and
-hit-routed drags, layout-driven hover, terminal focus, selectable Unicode Text,
-editable Input selection, and selection through a ScrollBox. Press M while the
+`interaction_lab.ard` is the end-to-end acceptance program for ADRs 0003 and
+0005. It combines nearest-ancestor focus, overlapping z-index controls,
+captured and hit-routed drags, layout-driven hover, terminal focus, selectable
+rich Unicode Text with double-click word selection, editable Input selection,
+and selection through a ScrollBox. Press M while the
 pointer is over a hover tile to move another tile beneath the stationary
 pointer.
 

@@ -12,6 +12,7 @@ struct CellStyle {
   blink: Bool,
   reverse: Bool,
   strike: Bool,
+  hidden: Bool,
 }
 
 fn style(
@@ -24,6 +25,7 @@ fn style(
   blink: Bool?,
   reverse: Bool?,
   strike: Bool?,
+  hidden: Bool?,
 ) CellStyle {
   CellStyle{
     foreground: foreground,
@@ -35,6 +37,7 @@ fn style(
     blink: blink.or(false),
     reverse: reverse.or(false),
     strike: strike.or(false),
+    hidden: hidden.or(false),
   }
 }
 

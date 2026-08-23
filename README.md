@@ -81,14 +81,16 @@ yet a supported custom-control API.
 - Focus is explicit or caused by configurable mouse autofocus; terminal-window
   focus is reported separately. Cooper does not reserve Tab or choose fallback
   focus.
-- Text and Input participate in one global, grapheme-safe selection.
+- Text and Input participate in one global, grapheme-safe selection; selectable
+  Text supports double-click word selection.
 - Input delegates logical editing to an Ard-native action model with familiar
   readline-style Ctrl, Alt, and Super keybindings.
 
 ## Initial controls
 
 - `Box` — indexed flex container with background, border, and title;
-- `Text` — selectable multiline text with terminal-aware wrapping and TextStyle;
+- `Text` — selectable multiline plain or StyledText spans with terminal-aware
+  wrapping and inheritable text styles;
 - `Input` — grapheme-aware CLI editing, editable selection, validation, and callbacks;
 - `ScrollBox` — focusable multi-child vertical scrolling container.
 
@@ -136,7 +138,7 @@ scroll_box.ard   retained vertical ScrollBox
 selection.ard    global selection snapshots and local ranges
 style.ard        colors, layout values, stacking, and validation
 testing.ard      headless TestApp and frame snapshots
-text.ard         Text and TextStyle
+text.ard         Text, StyledText spans, and TextStyle
 ui.ard           convenience aliases for built-in controls
 core/            unsupported runtime mechanisms
   app_runtime.ard

@@ -1,4 +1,5 @@
 use ard/testing
+use ard/unsafe
 
 use cooper/color
 use cooper/context
@@ -9,6 +10,7 @@ use cooper/event
 use cooper/geometry
 use cooper/selection
 use cooper/style as layout_style
+use go:github.com/akonwi/cooper/ffi/core/backend/vaxisbridge as bridge
 use go:github.com/rockorager/go-uucode as unicode
 use go:go.rockorager.dev/vaxis
 use go:math
@@ -24,6 +26,7 @@ struct TextStyle {
   blink: Bool,
   reverse: Bool,
   strike: Bool,
+  hidden: Bool,
 }
 
 enum TextWrap {
@@ -42,6 +45,7 @@ fn style(
   blink: Bool?,
   reverse: Bool?,
   strike: Bool?,
+  hidden: Bool?,
 ) TextStyle {
   TextStyle{
     foreground: foreground,
@@ -53,10 +57,112 @@ fn style(
     blink: blink.or(false),
     reverse: reverse.or(false),
     strike: strike.or(false),
+    hidden: hidden.or(false),
   }
 }
 
 let default_style = style()
+
+struct SpanStyle {
+  foreground: color::Color?,
+  background: color::Color?,
+  bold: Bool?,
+  dim: Bool?,
+  italic: Bool?,
+  underline: Bool?,
+  blink: Bool?,
+  reverse: Bool?,
+  strike: Bool?,
+  hidden: Bool?,
+}
+
+struct Span {
+  text: Str,
+  style: SpanStyle,
+  link: Str?,
+}
+
+struct StyledText {
+  spans: [Span],
+}
+
+type TextContent = Str | StyledText
+
+fn span_style(
+  foreground: color::Color?,
+  background: color::Color?,
+  bold: Bool?,
+  dim: Bool?,
+  italic: Bool?,
+  underline: Bool?,
+  blink: Bool?,
+  reverse: Bool?,
+  strike: Bool?,
+  hidden: Bool?,
+) SpanStyle {
+  SpanStyle{
+    foreground: foreground,
+    background: background,
+    bold: bold,
+    dim: dim,
+    italic: italic,
+    underline: underline,
+    blink: blink,
+    reverse: reverse,
+    strike: strike,
+    hidden: hidden,
+  }
+}
+
+private fn valid_link(value: Str) Bool {
+  bridge::ValidHyperlink(value)
+}
+
+private fn validate_link(value: Str?) {
+  match value {
+    link => {
+      if not valid_link(link) {
+        panic("Text span links cannot contain terminal control characters")
+      }
+    },
+    _ => (),
+  }
+}
+
+fn span(text: Str, style: SpanStyle?, link: Str?) Span {
+  validate_link(link)
+  Span{text: text, style: style.or(span_style()), link: link}
+}
+
+private fn copy_spans(spans: [Span]) [Span] {
+  let copied = mut List::new<Span>()
+  for value in spans {
+    validate_link(value.link)
+    copied.push(value)
+  }
+  copied.@
+}
+
+fn styled_text(spans: [Span]) StyledText {
+  StyledText{spans: copy_spans(spans)}
+}
+
+private struct ContentSnapshot {
+  content: Str,
+  styled: StyledText,
+}
+
+private fn snapshot_content(content: TextContent) ContentSnapshot {
+  let styled = match content {
+    Str(value) => styled_text([span(value)]),
+    StyledText(value) => styled_text(value.spans),
+  }
+  let parts = mut List::new<Str>()
+  for value in styled.spans {
+    parts.push(value.text)
+  }
+  ContentSnapshot{content: strings::Join(parts, ""), styled: styled}
+}
 
 private fn default_selection_style(value: mut TextStyle) {
   value.reverse = not value.reverse
@@ -79,6 +185,7 @@ private fn cell_style(value: TextStyle) paint::CellStyle {
     blink: value.blink,
     reverse: value.reverse,
     strike: value.strike,
+    hidden: value.hidden,
   )
 }
 
@@ -95,7 +202,118 @@ private fn same_color(left: color::Color?, right: color::Color?) Bool {
 }
 
 private fn same_text_style(left: TextStyle, right: TextStyle) Bool {
-  same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike
+  same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike and left.hidden == right.hidden
+}
+
+private fn same_optional_bool(left: Bool?, right: Bool?) Bool {
+  match left {
+    left_value => {
+      match right {
+        right_value => left_value == right_value,
+        _ => false,
+      }
+    },
+    _ => right.is_none(),
+  }
+}
+
+private fn same_optional_str(left: Str?, right: Str?) Bool {
+  match left {
+    left_value => {
+      match right {
+        right_value => left_value == right_value,
+        _ => false,
+      }
+    },
+    _ => right.is_none(),
+  }
+}
+
+private fn same_span_style(left: SpanStyle, right: SpanStyle) Bool {
+  same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and same_optional_bool(left.bold, right.bold) and same_optional_bool(left.dim, right.dim) and same_optional_bool(left.italic, right.italic) and same_optional_bool(left.underline, right.underline) and same_optional_bool(left.blink, right.blink) and same_optional_bool(left.reverse, right.reverse) and same_optional_bool(left.strike, right.strike) and same_optional_bool(left.hidden, right.hidden)
+}
+
+private fn same_styled_text(left: StyledText, right: StyledText) Bool {
+  if left.spans.size() != right.spans.size() {
+    false
+  } else {
+    mut same = true
+    for value, index in left.spans {
+      let other = right.spans.at(index).expect("styled Text comparison span")
+      if value.text != other.text or (not same_span_style(value.style, other.style)) or (not same_optional_str(value.link, other.link)) {
+        same = false
+        break
+      }
+    }
+    same
+  }
+}
+
+private struct StyleRun {
+  start: Int,
+  end: Int,
+  style: TextStyle,
+  selected_style: TextStyle,
+  link: Str?,
+}
+
+private struct StyleCache {
+  runs: [StyleRun],
+}
+
+private fn new_style_cache(runs: [StyleRun]) Any {
+  (mut StyleCache{runs: runs})
+}
+
+private fn cached_style_runs(value: Any) [StyleRun] {
+  unsafe::cast<mut StyleCache>(value).expect("Text style cache").runs
+}
+
+private fn resolve_span_style(base: TextStyle, configured: SpanStyle) TextStyle {
+  let resolved = mut base
+  match configured.foreground {
+    value => { resolved.foreground = Maybe::new<color::Color>(value) },
+    _ => (),
+  }
+  match configured.background {
+    value => { resolved.background = Maybe::new<color::Color>(value) },
+    _ => (),
+  }
+  resolved.bold = configured.bold.or(resolved.bold)
+  resolved.dim = configured.dim.or(resolved.dim)
+  resolved.italic = configured.italic.or(resolved.italic)
+  resolved.underline = configured.underline.or(resolved.underline)
+  resolved.blink = configured.blink.or(resolved.blink)
+  resolved.reverse = configured.reverse.or(resolved.reverse)
+  resolved.strike = configured.strike.or(resolved.strike)
+  resolved.hidden = configured.hidden.or(resolved.hidden)
+  resolved.@
+}
+
+private fn styled_runs(
+  content: StyledText,
+  base: TextStyle,
+  selection_patch: fn(mut TextStyle),
+) [StyleRun] {
+  let runs = mut List::new<StyleRun>()
+  mut offset = 0
+  for value in content.spans {
+    let end = offset + value.text.size()
+    if end > offset {
+      let resolved = resolve_span_style(base, value.style)
+      runs.push(
+        StyleRun{
+          start: offset,
+          end: end,
+          style: resolved,
+          selected_style: apply_style_patch(resolved, selection_patch),
+          link: value.link,
+        },
+      )
+    }
+    offset = end
+  }
+  runs.@
 }
 
 private struct Line {
@@ -117,6 +335,7 @@ private struct SourceGlyph {
   offset_start: Int,
   offset_end: Int,
   newline: Bool,
+  style_index: Int,
 }
 
 private struct VisualGlyph {
@@ -128,6 +347,7 @@ private struct VisualGlyph {
   offset_end: Int,
   x: Int,
   y: Int,
+  style_index: Int,
 }
 
 private struct WordGlyph {
@@ -154,6 +374,7 @@ struct SelectedGlyph {
   x: Int,
   y: Int,
   width: Int,
+  style: TextStyle,
 }
 
 private fn word_glyphs(content: Str) [WordGlyph] {
@@ -252,15 +473,26 @@ private fn word_source_range(content: Str, source_index: Int) SourceRange? {
   }
 }
 
-private fn source_glyphs(content: Str, measure: fn(Str) Int) [SourceGlyph] {
+private fn source_glyphs(content: Str, runs: [StyleRun], measure: fn(Str) Int) [SourceGlyph] {
   let iterator = mut unicode::NewGraphemeIterator(content)
   let output = mut List::new<SourceGlyph>()
   mut offset = 0
+  mut run_index = 0
   mut reading = true
   while reading {
     match iterator.Next() {
       grapheme => {
+        mut locating = true
+        while locating and run_index < runs.size() {
+          let candidate = runs.at(run_index).expect("styled source run cursor")
+          if grapheme.Start >= candidate.end {
+            run_index =+ 1
+          } else {
+            locating = false
+          }
+        }
         let value = content.slice(start: grapheme.Start, end: grapheme.End).or("")
+        let _ = runs.at(run_index).expect("styled source glyph run")
         let line_break = newline(value)
         if line_break {
           output.push(
@@ -272,6 +504,7 @@ private fn source_glyphs(content: Str, measure: fn(Str) Int) [SourceGlyph] {
               offset_start: offset,
               offset_end: offset + 1,
               newline: true,
+              style_index: run_index,
             },
           )
           offset =+ 1
@@ -290,6 +523,7 @@ private fn source_glyphs(content: Str, measure: fn(Str) Int) [SourceGlyph] {
                 offset_start: offset,
                 offset_end: offset + width,
                 newline: false,
+                style_index: run_index,
               },
             )
             offset = offset + width
@@ -302,8 +536,8 @@ private fn source_glyphs(content: Str, measure: fn(Str) Int) [SourceGlyph] {
   output.@
 }
 
-private fn visual_glyphs(content: Str, layout: Layout, measure: fn(Str) Int) [VisualGlyph] {
-  let source = source_glyphs(content, measure)
+private fn visual_glyphs(content: Str, layout: Layout, runs: [StyleRun], measure: fn(Str) Int) [VisualGlyph] {
+  let source = source_glyphs(content, runs, measure)
   let output = mut List::new<VisualGlyph>()
   mut source_index = 0
   for line, y in layout.lines {
@@ -334,6 +568,7 @@ private fn visual_glyphs(content: Str, layout: Layout, measure: fn(Str) Int) [Vi
                   offset_end: candidate.offset_end,
                   x: x,
                   y: y,
+                  style_index: candidate.style_index,
                 },
               )
               x = x + candidate.width
@@ -583,13 +818,87 @@ private fn constrained(value: Float32, available: Float32, mode: node::MeasureMo
   }
 }
 
+private fn paint_visual_glyphs(
+  ctx: mut paint::Context,
+  glyphs: [VisualGlyph],
+  runs: [StyleRun],
+  measure: fn(Str) Int,
+) {
+  mut index = 0
+  while index < glyphs.size() {
+    let first = glyphs.at(index).expect("visual paint run start")
+    let first_run = runs.at(first.style_index).expect("visual paint style run")
+    let parts = mut List::new<Str>()
+    parts.push(first.text)
+    let x = first.x
+    let y = first.y
+    mut end_x = first.x + first.width
+    index =+ 1
+    mut collecting = true
+    while collecting and index < glyphs.size() {
+      let next = glyphs.at(index).expect("visual paint run glyph")
+      let next_run = runs.at(next.style_index).expect("visual paint next style run")
+      if next.y == y and next.x == end_x and same_text_style(first_run.style, next_run.style) and same_optional_str(first_run.link, next_run.link) {
+        parts.push(next.text)
+        end_x = end_x + next.width
+        index =+ 1
+      } else {
+        collecting = false
+      }
+    }
+    ctx.write_measured(
+      x,
+      y,
+      strings::Join(parts, ""),
+      measure,
+      text_style: cell_style(first_run.style),
+    )
+  }
+}
+
+private fn paint_selected_glyphs(
+  ctx: mut paint::Context,
+  glyphs: [SelectedGlyph],
+  measure: fn(Str) Int,
+) {
+  mut index = 0
+  while index < glyphs.size() {
+    let first = glyphs.at(index).expect("selected paint run start")
+    let parts = mut List::new<Str>()
+    parts.push(first.text)
+    let x = first.x
+    let y = first.y
+    mut end_x = first.x + first.width
+    index =+ 1
+    mut collecting = true
+    while collecting and index < glyphs.size() {
+      let next = glyphs.at(index).expect("selected paint run glyph")
+      if next.y == y and next.x == end_x and same_text_style(first.style, next.style) {
+        parts.push(next.text)
+        end_x = end_x + next.width
+        index =+ 1
+      } else {
+        collecting = false
+      }
+    }
+    ctx.write_measured(
+      x,
+      y,
+      strings::Join(parts, ""),
+      measure,
+      text_style: cell_style(first.style),
+    )
+  }
+}
+
 struct Text {
   node_ref: mut node::Node,
   content: Str,
+  styled_value: StyledText,
+  style_cache: Any,
   wrap_mode: TextWrap,
   text_style: TextStyle,
   selection_patch: fn(mut TextStyle),
-  selected_style: TextStyle,
   selected_range: selection::Range?,
   selected_text_value: Str,
   selected_glyphs: [SelectedGlyph],
@@ -599,23 +908,25 @@ struct Text {
 
 fn new(
   ctx: mut context::Context,
-  content: Str,
+  content: TextContent,
   wrap: TextWrap?,
   styles: layout_style::Style?,
   text_style: TextStyle?,
   selectable: Bool?,
   selection_style: (fn(mut TextStyle))?,
 ) mut Text {
+  let snapshot = snapshot_content(content)
   let retained = context::internal_state(ctx).create_node(styles.or(layout_style::new()))
   let base_style = text_style.or(default_style)
   let patch = selection_style.or(default_selection_style)
   let text = mut Text{
     node_ref: retained,
-    content: content,
+    content: snapshot.content,
+    styled_value: snapshot.styled,
+    style_cache: new_style_cache(styled_runs(snapshot.styled, base_style, patch)),
     wrap_mode: wrap.or(TextWrap::none),
     text_style: base_style,
     selection_patch: patch,
-    selected_style: apply_style_patch(base_style, patch),
     selected_range: Maybe::new<selection::Range>(),
     selected_text_value: "",
     selected_glyphs: [],
@@ -654,25 +965,31 @@ impl node::Renderable for Text {
       self.node_ref.layout().screen.width,
       self.width_measurer,
     )
-    for line, y in measured.lines {
-      ctx.write_measured(
-        0,
-        y,
-        line.text,
+    let runs = cached_style_runs(self.style_cache)
+    if runs.size() <= 1 {
+      let applied = match runs.at(0) {
+        run => run.style,
+        _ => self.text_style,
+      }
+      for line, y in measured.lines {
+        ctx.write_measured(
+          0,
+          y,
+          line.text,
+          self.width_measurer,
+          text_style: cell_style(applied),
+        )
+      }
+    } else {
+      paint_visual_glyphs(
+        ctx,
+        visual_glyphs(self.content, measured, runs, self.width_measurer),
+        runs,
         self.width_measurer,
-        text_style: cell_style(self.text_style),
       )
     }
     if self.selected_glyphs.size() > 0 {
-      for glyph in self.selected_glyphs {
-        ctx.write_measured(
-          glyph.x,
-          glyph.y,
-          glyph.text,
-          self.width_measurer,
-          text_style: cell_style(self.selected_style),
-        )
-      }
+      paint_selected_glyphs(ctx, self.selected_glyphs, self.width_measurer)
     }
   }
 
@@ -689,7 +1006,7 @@ impl Text {
       self.node_ref.layout().screen.width,
       self.width_measurer,
     )
-    visual_glyphs(self.content, measured, self.width_measurer)
+    visual_glyphs(self.content, measured, cached_style_runs(self.style_cache), self.width_measurer)
   }
 
   private fn expansion_from_source(value: SourceRange) node::SelectionExpansion? {
@@ -807,7 +1124,7 @@ impl Text {
       self.width_measurer,
     )
     mut accepted = false
-    for glyph in visual_glyphs(self.content, measured, self.width_measurer) {
+    for glyph in visual_glyphs(self.content, measured, cached_style_runs(self.style_cache), self.width_measurer) {
       if glyph.y == local_y and local_x >= glyph.x and local_x < glyph.x + glyph.width {
         accepted = true
         break
@@ -847,7 +1164,8 @@ impl Text {
       mut started = false
       mut all_selected_visible = true
       let screen = self.node_ref.layout().screen
-      for glyph in visual_glyphs(self.content, measured, self.width_measurer) {
+      let runs = cached_style_runs(self.style_cache)
+      for glyph in visual_glyphs(self.content, measured, runs, self.width_measurer) {
         let glyph_end = glyph.x + glyph.width
         let clip_end = local.clip.x + local.clip.width
         let visible = glyph.y >= local.clip.y and glyph.y < local.clip.y + local.clip.height and glyph.x >= local.clip.x and glyph_end <= clip_end
@@ -857,7 +1175,8 @@ impl Text {
           _ => coordinate_selected,
         }
         if selected_by_range {
-          selected.push(SelectedGlyph{text: glyph.text, x: glyph.x, y: glyph.y, width: glyph.width})
+          let selected_style = runs.at(glyph.style_index).expect("selected glyph style run").selected_style
+          selected.push(SelectedGlyph{text: glyph.text, x: glyph.x, y: glyph.y, width: glyph.width, style: selected_style})
           if not visible {
             all_selected_visible = false
           }
@@ -928,15 +1247,27 @@ impl Text {
     self.content
   }
 
-  fn mut set_content(content: Str) {
+  fn styled_content() StyledText {
+    styled_text(self.styled_value.spans)
+  }
+
+  fn mut set_content(content: TextContent) {
     self.node_ref.require_live()
-    if self.content != content {
-      if self.source_revision == math::MaxInt {
+    let snapshot = snapshot_content(content)
+    if not same_styled_text(self.styled_value, snapshot.styled) {
+      let source_changed = self.content != snapshot.content
+      if source_changed and self.source_revision == math::MaxInt {
         panic("Text source revision overflow")
       }
-      self.content = content
-      self.source_revision =+ 1
-      self.node_ref.mark_measure_dirty()
+      self.content = snapshot.content
+      self.styled_value = snapshot.styled
+      self.style_cache = new_style_cache(styled_runs(snapshot.styled, self.text_style, self.selection_patch))
+      if source_changed {
+        self.source_revision =+ 1
+        self.node_ref.mark_measure_dirty()
+      } else {
+        self.node_ref.request_redraw()
+      }
     }
   }
 
@@ -980,7 +1311,7 @@ impl Text {
   fn mut set_selection_style(patch: fn(mut TextStyle)) {
     self.node_ref.require_live()
     self.selection_patch = patch
-    self.selected_style = apply_style_patch(self.text_style, patch)
+    self.style_cache = new_style_cache(styled_runs(self.styled_value, self.text_style, patch))
     self.node_ref.request_redraw()
   }
 
@@ -988,7 +1319,7 @@ impl Text {
     self.node_ref.require_live()
     if not same_text_style(self.text_style, next) {
       self.text_style = next
-      self.selected_style = apply_style_patch(next, self.selection_patch)
+      self.style_cache = new_style_cache(styled_runs(self.styled_value, next, self.selection_patch))
       self.node_ref.request_redraw()
     }
   }
@@ -1012,6 +1343,21 @@ impl Text {
   fn mut destroy(recursive: Bool?) {
     self.node_ref.destroy(recursive)
   }
+}
+
+test fn styled_text_helpers_snapshot_and_resolve_tristate_styles() Void!Str {
+  let spans = mut List::new<Span>()
+  spans.push(span(""))
+  spans.push(span("value", style: span_style(bold: false, hidden: true), link: "https://example.com"))
+  let snapshot = styled_text(spans.@)
+  spans.set(1, span("changed"))
+
+  try testing::assert(snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("empty span snapshot").text == "", "Expected empty span preserved")
+  try testing::assert(snapshot.spans.at(1).expect("copied span").text == "value", "Expected defensive span list copy")
+  let resolved = resolve_span_style(style(bold: true, italic: true), snapshot.spans.at(1).expect("resolved span").style)
+  try testing::assert((not resolved.bold) and resolved.italic and resolved.hidden, "Expected nullable span attributes to inherit or explicitly disable")
+  try testing::assert(valid_link("https://example.com/path"), "Expected ordinary Unicode link data")
+  testing::assert(not valid_link("bad\nlink"), "Expected terminal control rejection")
 }
 
 test fn word_ranges_group_editor_oriented_unicode_classes() Void!Str {

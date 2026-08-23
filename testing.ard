@@ -12,6 +12,7 @@ struct Cell {
   grapheme: Str,
   width: Int,
   style: text::TextStyle,
+  hyperlink: Str?,
 }
 
 struct Frame {
@@ -50,6 +51,7 @@ impl Frame {
             grapheme: value.grapheme,
             width: value.width,
             style: text_style(value.style),
+            hyperlink: value.style.hyperlink,
           },
         )
       },

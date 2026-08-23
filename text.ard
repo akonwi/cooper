@@ -174,7 +174,7 @@ private fn apply_style_patch(base: TextStyle, patch: fn(mut TextStyle)) TextStyl
   selected.@
 }
 
-private fn cell_style(value: TextStyle) paint::CellStyle {
+private fn cell_style(value: TextStyle, hyperlink: Str?) paint::CellStyle {
   paint::style(
     foreground: value.foreground,
     background: value.background,
@@ -186,6 +186,7 @@ private fn cell_style(value: TextStyle) paint::CellStyle {
     reverse: value.reverse,
     strike: value.strike,
     hidden: value.hidden,
+    hyperlink: hyperlink,
   )
 }
 
@@ -214,6 +215,19 @@ private fn same_optional_bool(left: Bool?, right: Bool?) Bool {
       }
     },
     _ => right.is_none(),
+  }
+}
+
+private fn paint_link(value: Str?) Str? {
+  match value {
+    link => {
+      if link.is_empty() {
+        Maybe::new<Str>()
+      } else {
+        Maybe::new<Str>(link)
+      }
+    },
+    _ => Maybe::new<Str>(),
   }
 }
 
@@ -307,7 +321,7 @@ private fn styled_runs(
           end: end,
           style: resolved,
           selected_style: apply_style_patch(resolved, selection_patch),
-          link: value.link,
+          link: paint_link(value.link),
         },
       )
     }
@@ -375,6 +389,7 @@ struct SelectedGlyph {
   y: Int,
   width: Int,
   style: TextStyle,
+  link: Str?,
 }
 
 private fn word_glyphs(content: Str) [WordGlyph] {
@@ -828,7 +843,7 @@ private fn paint_visual_glyphs(
       y,
       strings::Join(parts, ""),
       measure,
-      text_style: cell_style(first_run.style),
+      text_style: cell_style(first_run.style, hyperlink: first_run.link),
     )
   }
 }
@@ -850,7 +865,7 @@ private fn paint_selected_glyphs(
     mut collecting = true
     while collecting and index < glyphs.size() {
       let next = glyphs.at(index).expect("selected paint run glyph")
-      if next.y == y and next.x == end_x and same_text_style(first.style, next.style) {
+      if next.y == y and next.x == end_x and same_text_style(first.style, next.style) and same_optional_str(first.link, next.link) {
         parts.push(next.text)
         end_x = end_x + next.width
         index =+ 1
@@ -863,7 +878,7 @@ private fn paint_selected_glyphs(
       y,
       strings::Join(parts, ""),
       measure,
-      text_style: cell_style(first.style),
+      text_style: cell_style(first.style, hyperlink: first.link),
     )
   }
 }
@@ -946,8 +961,12 @@ impl node::Renderable for Text {
     )
     let runs = cached_style_runs(self.style_cache)
     if runs.size() <= 1 {
+      mut hyperlink = Maybe::new<Str>()
       let applied = match runs.at(0) {
-        run => run.style,
+        run => {
+          hyperlink = run.link
+          run.style
+        },
         _ => self.text_style,
       }
       for line, y in measured.lines {
@@ -956,7 +975,7 @@ impl node::Renderable for Text {
           y,
           line.text,
           self.width_measurer,
-          text_style: cell_style(applied),
+          text_style: cell_style(applied, hyperlink: hyperlink),
         )
       }
     } else {
@@ -1219,8 +1238,8 @@ impl Text {
           _ => coordinate_selected,
         }
         if selected_by_range {
-          let selected_style = runs.at(glyph.style_index).expect("selected glyph style run").selected_style
-          selected.push(SelectedGlyph{text: glyph.text, x: glyph.x, y: glyph.y, width: glyph.width, style: selected_style})
+          let selected_run = runs.at(glyph.style_index).expect("selected glyph style run")
+          selected.push(SelectedGlyph{text: glyph.text, x: glyph.x, y: glyph.y, width: glyph.width, style: selected_run.selected_style, link: selected_run.link})
           if not visible {
             all_selected_visible = false
           }
@@ -1444,6 +1463,9 @@ test fn styled_text_helpers_snapshot_and_resolve_tristate_styles() Void!Str {
   try testing::assert(snapshot.spans.at(1).expect("copied span").text == "value", "Expected defensive span list copy")
   let resolved = resolve_span_style(style(bold: true, italic: true), snapshot.spans.at(1).expect("resolved span").style)
   try testing::assert((not resolved.bold) and resolved.italic and resolved.hidden, "Expected nullable span attributes to inherit or explicitly disable")
+  let empty_link = span("plain", link: "")
+  let empty_runs = styled_runs(styled_text([empty_link]), style(), default_selection_style)
+  try testing::assert(empty_link.link.is_some() and empty_runs.at(0).expect("empty hyperlink run").link.is_none(), "Expected empty link preserved as value data without terminal annotation")
   try testing::assert(valid_link("https://example.com/path"), "Expected ordinary Unicode link data")
   testing::assert(not valid_link("bad\nlink"), "Expected terminal control rejection")
 }

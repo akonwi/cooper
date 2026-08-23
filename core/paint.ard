@@ -13,6 +13,7 @@ struct CellStyle {
   reverse: Bool,
   strike: Bool,
   hidden: Bool,
+  hyperlink: Str?,
 }
 
 fn style(
@@ -26,6 +27,7 @@ fn style(
   reverse: Bool?,
   strike: Bool?,
   hidden: Bool?,
+  hyperlink: Str?,
 ) CellStyle {
   CellStyle{
     foreground: foreground,
@@ -38,6 +40,7 @@ fn style(
     reverse: reverse.or(false),
     strike: strike.or(false),
     hidden: hidden.or(false),
+    hyperlink: hyperlink,
   }
 }
 

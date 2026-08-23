@@ -232,7 +232,7 @@ fn main() {
     ctx,
     content: text::styled_text(
       [
-        text::span("SELECTABLE", style: text::span_style(foreground: color::rgb(105, 190, 255), bold: true)),
+        text::span("SELECTABLE", style: text::span_style(foreground: color::rgb(105, 190, 255), bold: true, underline: true), link: "https://github.com/akonwi/cooper"),
         text::span(" TEXT — drag across "),
         text::span("Alpha", style: text::span_style(italic: true)),
         text::span(" élan", style: text::span_style(underline: true)),

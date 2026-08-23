@@ -57,6 +57,7 @@ private fn vaxis_style(style: paint::CellStyle) vaxis::Style {
     underline = vaxis::UnderlineSingle
   }
   vaxis::Style{
+    Hyperlink: style.hyperlink.or(""),
     Foreground: vaxis_color(style.foreground),
     Background: vaxis_color(style.background),
     UnderlineStyle: underline,

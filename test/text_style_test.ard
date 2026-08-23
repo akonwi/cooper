@@ -13,6 +13,7 @@ private fn styled_cell() paint::CellStyle {
     italic: true,
     underline: true,
     reverse: true,
+    hyperlink: "https://example.com/wide",
   )
 }
 
@@ -56,11 +57,19 @@ test fn painted_cells_preserve_and_clear_style_across_wide_spans() Void!Str {
     continuation.width == 0 and continuation.style.reverse,
     "Expected styled continuation",
   )
+  try testing::assert(
+    lead.style.hyperlink.or("") == "https://example.com/wide" and continuation.style.hyperlink.or("") == "https://example.com/wide",
+    "Expected complete wide span hyperlink metadata",
+  )
 
   ctx.write(1, 0, "x")
   try testing::assert(
     not buffer.cell_at(0, 0).expect("cleared lead").style.bold,
     "Expected cleared style",
+  )
+  try testing::assert(
+    buffer.cell_at(0, 0).expect("cleared hyperlink lead").style.hyperlink.is_none() and buffer.cell_at(1, 0).expect("plain hyperlink overwrite").style.hyperlink.is_none(),
+    "Expected overwrite to clear hyperlink metadata",
   )
   try testing::assert(
     buffer.cell_at(1, 0).expect("plain overwrite").style.foreground.expect("inherited foreground").red == Uint8::from(12),

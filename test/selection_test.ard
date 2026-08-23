@@ -75,8 +75,8 @@ test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str 
     application.context,
     content: text::styled_text(
       [
-        text::span("Hel", style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true)),
-        text::span("lo", style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true)),
+        text::span("Hel", style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true), link: "https://example.com/hello"),
+        text::span("lo", style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true), link: "https://example.com/world"),
       ],
     ),
     styles: fixed(5),
@@ -90,12 +90,13 @@ test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str 
   try testing::assert(message.selected_text() == "Hello", "Expected word selection across style boundary")
   try testing::assert(first.reverse and first.bold and first.foreground.expect("first selected color").red == Uint8::from(200), "Expected selected first span style")
   try testing::assert(second.reverse and second.italic and second.foreground.expect("second selected color").blue == Uint8::from(200), "Expected selected second span style")
+  try testing::assert(application.frame().cell(0, 0).expect("selected first link").hyperlink.or("") == "https://example.com/hello" and application.frame().cell(4, 0).expect("selected second link").hyperlink.or("") == "https://example.com/world", "Expected selection overlay to preserve per-span hyperlinks")
 
   message.set_content(
     text::styled_text(
       [
-        text::span("Hel", style: text::span_style(foreground: color::rgb(20, 200, 30))),
-        text::span("lo", style: text::span_style(underline: true)),
+        text::span("Hel", style: text::span_style(foreground: color::rgb(20, 200, 30)), link: "https://example.com/hello"),
+        text::span("lo", style: text::span_style(underline: true), link: "https://example.com/world"),
       ],
     ),
   )
@@ -103,6 +104,7 @@ test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str 
   let restyled = application.frame().cell(0, 0).expect("restyled locked selection").style
   try testing::assert(application.selection().expect("restyled source lock").selected_text == "Hello", "Expected presentation-only mutation to preserve source lock")
   try testing::assert(restyled.reverse and restyled.foreground.expect("restyled color").green == Uint8::from(200), "Expected locked selection to adopt new span style")
+  try testing::assert(application.frame().cell(0, 0).expect("restyled selection link").hyperlink.or("") == "https://example.com/hello", "Expected source-locked selection hyperlink after presentation mutation")
 
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected rich word selection cleanup")

@@ -33,9 +33,9 @@ test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!St
     content: text::styled_text(
       [
         text::span("Hi", style: text::span_style(bold: true)),
-        text::span("你好", style: text::span_style(foreground: color::rgb(20, 180, 220))),
+        text::span("你好", style: text::span_style(foreground: color::rgb(20, 180, 220)), link: "https://example.com/cjk"),
         text::span("🙂"),
-        text::span("world", style: text::span_style(underline: true)),
+        text::span("world", style: text::span_style(underline: true), link: "https://example.com/world"),
       ],
     ),
     styles: style::new(width: style::cells(6)),
@@ -47,8 +47,10 @@ test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!St
   try testing::assert(application.frame().cell(0, 0).expect("Latin line lead").grapheme == "H", "Expected short Latin prefix retained")
   try testing::assert(application.frame().cell(2, 0).expect("first CJK glyph").grapheme == "你", "Expected CJK break opportunities")
   try testing::assert(application.frame().cell(4, 0).expect("second CJK glyph").style.foreground.expect("CJK style").green == Uint8::from(180), "Expected styles across Unicode wrapping")
+  try testing::assert(application.frame().cell(2, 0).expect("linked CJK glyph").hyperlink.or("") == "https://example.com/cjk", "Expected CJK hyperlink metadata")
   try testing::assert(application.frame().cell(0, 1).expect("emoji line").grapheme == "🙂", "Expected complete emoji grapheme")
   try testing::assert(application.frame().cell(0, 2).expect("Latin word line").grapheme == "w" and application.frame().cell(4, 2).expect("Latin word end").style.underline, "Expected fitting Latin word not split")
+  try testing::assert(application.frame().cell(4, 2).expect("linked Latin word end").hyperlink.or("") == "https://example.com/world", "Expected hyperlink through wrapping")
 
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected Unicode wrapped Text cleanup")
@@ -76,12 +78,14 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
   application.render()
 
   let emphasized = application.frame().cell(0, 0).expect("styled span cell").style
-  let inherited = application.frame().cell(4, 0).expect("inherited span cell").style
+  let linked_cell = application.frame().cell(4, 0).expect("inherited span cell")
+  let inherited = linked_cell.style
   try testing::assert(label.content() == "RED plain", "Expected flattened rich content")
   try testing::assert(emphasized.foreground.expect("span foreground").red == Uint8::from(220), "Expected span foreground override")
   try testing::assert(emphasized.bold and emphasized.italic and emphasized.underline and (not emphasized.hidden), "Expected Text-level attributes inherited by span")
   try testing::assert((not inherited.bold) and inherited.italic and inherited.hidden, "Expected explicit false and hidden span overrides")
   try testing::assert(inherited.background.expect("common background").blue == Uint8::from(6), "Expected common color inheritance through span")
+  try testing::assert(linked_cell.hyperlink.or("") == "https://example.com", "Expected linked span cell metadata")
 
   let snapshot = label.styled_content()
   try testing::assert(snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("first snapshot span").text == "RED", "Expected helper and Text ingress snapshots")
@@ -99,6 +103,7 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
   label.set_content("plain")
   application.render()
   try testing::assert(label.content() == "plain" and label.styled_content().spans.size() == 1, "Expected plain union setter to create one span")
+  try testing::assert(application.frame().cell(0, 0).expect("plain replacement cell").hyperlink.is_none(), "Expected plain replacement to clear hyperlink")
 
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected styled Text cleanup")
@@ -110,8 +115,8 @@ test fn styled_text_uses_first_scalar_style_for_cross_span_grapheme() Void!Str {
     application.context,
     content: text::styled_text(
       [
-        text::span("e", style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true)),
-        text::span("́", style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true)),
+        text::span("e", style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true), link: "https://example.com/first"),
+        text::span("́", style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true), link: "https://example.com/second"),
       ],
     ),
     styles: style::new(width: style::cells(1), height: style::cells(1)),
@@ -123,6 +128,7 @@ test fn styled_text_uses_first_scalar_style_for_cross_span_grapheme() Void!Str {
   try testing::assert(painted.grapheme == "é", "Expected one cross-span grapheme")
   try testing::assert(painted.style.foreground.expect("first scalar foreground").red == Uint8::from(200), "Expected first scalar color")
   try testing::assert(painted.style.bold and (not painted.style.italic), "Expected complete first scalar style")
+  try testing::assert(painted.hyperlink.or("") == "https://example.com/first", "Expected first scalar hyperlink for cross-span grapheme")
 
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected cross-span Text cleanup")

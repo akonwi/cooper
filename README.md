@@ -8,6 +8,8 @@ focus, listeners, and selection in persistent Ard controls. Layout updates
 attached Nodes in place, and drawing writes directly into one logical cell
 buffer for Vaxis to diff.
 
+![Cooper operations dashboard example](./screenshots/dashboard.gif)
+
 ## Status
 
 Cooper is under active development and requires Ard v0.38.0 or newer. The

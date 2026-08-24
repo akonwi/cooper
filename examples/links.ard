@@ -1,0 +1,331 @@
+use cooper/app
+use cooper/box
+use cooper/color
+use cooper/context
+use cooper/event
+use cooper/style
+use cooper/text
+
+struct DemoState {
+  drag_enabled: Bool,
+  next_z: Int,
+  link_activity: Str,
+}
+
+struct DraggableCard {
+  panel: mut box::Box,
+  content: mut text::Text,
+  x: Int,
+  y: Int,
+  width: Int,
+  height: Int,
+  z: Int,
+  dragging: Bool,
+  drag_offset_x: Int,
+  drag_offset_y: Int,
+  background: color::Color,
+}
+
+private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
+  mut ceiling = maximum
+  if ceiling < minimum {
+    ceiling = minimum
+  }
+  if value < minimum {
+    minimum
+  } else if value > ceiling {
+    ceiling
+  } else {
+    value
+  }
+}
+
+// Cooper's border consumes layout rows, so horizontal-only padding preserves
+// OpenTUI's five-line project card within the same 40x8 outer dimensions.
+private fn horizontal_padding() style::Edges {
+  let padding = mut style::edges()
+  padding.left = style::cells(1)
+  padding.right = style::cells(1)
+  padding.@
+}
+
+private fn card_style(card: mut DraggableCard) style::Style {
+  style::new(
+    background: card.background,
+    border: style::Border::rounded,
+    border_color: color::hex("#FFFFFF"),
+    position: style::Position::absolute,
+    left: style::cells(card.x),
+    top: style::cells(card.y),
+    width: style::cells(card.width),
+    height: style::cells(card.height),
+    z_index: card.z,
+    padding: horizontal_padding(),
+    flex_direction: style::FlexDirection::column,
+    overflow: style::Overflow::hidden,
+  )
+}
+
+private fn make_card(
+  ctx: mut context::Context,
+  content: text::StyledText,
+  x: Int,
+  y: Int,
+  width: Int,
+  height: Int,
+  z: Int,
+  background: color::Color,
+) mut DraggableCard {
+  let content_view = text::new(
+    ctx,
+    content: content,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      flex_shrink: 0.0,
+      overflow: style::Overflow::hidden,
+    ),
+    selectable: false,
+    overflow: text::TextOverflow::clip,
+  )
+  let card = mut DraggableCard{
+    panel: box::new(ctx),
+    content: content_view,
+    x: x,
+    y: y,
+    width: width,
+    height: height,
+    z: z,
+    dragging: false,
+    drag_offset_x: 0,
+    drag_offset_y: 0,
+    background: background,
+  }
+  card.panel.set_style(card_style(card))
+  card.panel.add(content_view)
+  card
+}
+
+private fn header_content(drag_enabled: Bool, link_activity: Str) text::StyledText {
+  mut status = text::span(
+    "OFF",
+    style: text::span_style(foreground: color::hex("#F87171"), bold: true),
+  )
+  if drag_enabled {
+    status = text::span(
+      "ON",
+      style: text::span_style(foreground: color::hex("#34D399"), bold: true),
+    )
+  }
+  text::styled_text(
+    [
+      text::span(
+        "Cooper Interactive Link Demo\n",
+        style: text::span_style(foreground: color::hex("#38BDF8"), bold: true),
+      ),
+      text::span(
+        "Click the links to open them. ",
+        style: text::span_style(foreground: color::hex("#94A3B8")),
+      ),
+      text::span("Press ", style: text::span_style(foreground: color::hex("#64748B"))),
+      text::span("d", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+      text::span(" to toggle drag mode: ", style: text::span_style(foreground: color::hex("#64748B"))),
+      status,
+      text::span("\n"),
+      text::span(
+        "({link_activity})",
+        style: text::span_style(foreground: color::hex("#64748B"), italic: true),
+      ),
+    ],
+  )
+}
+
+private fn project_content() text::StyledText {
+  text::styled_text(
+    [
+      text::span(
+        "♥ Project Info\n\n",
+        style: text::span_style(foreground: color::hex("#F472B6"), bold: true),
+      ),
+      text::span("Source: ", style: text::span_style(foreground: color::hex("#E2E8F0"))),
+      text::span(
+        "GitHub Repository",
+        style: text::span_style(foreground: color::hex("#38BDF8"), underline: true),
+        link: "https://github.com/akonwi/cooper",
+      ),
+      text::span("\nWeb:    ", style: text::span_style(foreground: color::hex("#E2E8F0"))),
+      text::span(
+        "Ard Website",
+        style: text::span_style(foreground: color::hex("#34D399"), underline: true),
+        link: "https://ard.run",
+      ),
+      text::span("\nLicense: ", style: text::span_style(foreground: color::hex("#E2E8F0"))),
+      text::span(
+        "MIT",
+        style: text::span_style(foreground: color::hex("#FBBF24"), underline: true),
+        link: "https://github.com/akonwi/cooper/blob/main/LICENSE",
+      ),
+    ],
+  )
+}
+
+private fn documentation_content() text::StyledText {
+  text::styled_text(
+    [
+      text::span(
+        "📚 Documentation\n\n",
+        style: text::span_style(foreground: color::hex("#A78BFA"), bold: true),
+      ),
+      text::span("Get started with:\n", style: text::span_style(foreground: color::hex("#CBD5E1"))),
+      text::span("• ", style: text::span_style(foreground: color::hex("#CBD5E1"))),
+      text::span(
+        "Quick Start",
+        style: text::span_style(foreground: color::hex("#FFFFFF"), bold: true),
+        link: "https://github.com/akonwi/cooper#application-shape",
+      ),
+      text::span("\n• ", style: text::span_style(foreground: color::hex("#CBD5E1"))),
+      text::span(
+        "Examples",
+        style: text::span_style(foreground: color::hex("#FFFFFF")),
+        link: "https://github.com/akonwi/cooper/tree/main/examples",
+      ),
+      text::span("\n• ", style: text::span_style(foreground: color::hex("#CBD5E1"))),
+      text::span(
+        "Application API",
+        style: text::span_style(foreground: color::hex("#FFFFFF")),
+        link: "https://github.com/akonwi/cooper/blob/main/docs/adrs/0002-define-application-api.md",
+      ),
+    ],
+  )
+}
+
+private fn connect_content() text::StyledText {
+  text::styled_text(
+    [
+      text::span(
+        "👋 Connect\n\n",
+        style: text::span_style(foreground: color::hex("#2DD4BF"), bold: true),
+      ),
+      text::span(
+        "Cooper Issues",
+        style: text::span_style(foreground: color::hex("#60A5FA")),
+        link: "https://github.com/akonwi/cooper/issues",
+      ),
+      text::span("\n"),
+      text::span(
+        "Author on GitHub",
+        style: text::span_style(foreground: color::hex("#818CF8")),
+        link: "https://github.com/akonwi",
+      ),
+    ],
+  )
+}
+
+fn main() {
+  let application = app::new().expect("create Cooper interactive link demo")
+  defer application.destroy()
+  let ctx = application.context
+
+  let container = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      position: style::Position::relative,
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  application.root.add(container)
+
+  let state = mut DemoState{
+    drag_enabled: false,
+    next_z: 103,
+    link_activity: "OSC 8 metadata emitted; link activation is handled by Cooper",
+  }
+  let header = text::new(
+    ctx,
+    content: header_content(state.drag_enabled, state.link_activity),
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(2),
+      top: style::cells(1),
+      width: style::cells(80),
+      height: style::cells(4),
+      z_index: 10,
+    ),
+    selectable: false,
+    overflow: text::TextOverflow::clip,
+  )
+  container.add(header)
+
+  let cards: [mut DraggableCard] = [
+    make_card(ctx, project_content(), 5, 6, 40, 8, 100, color::hex("#1E293B")),
+    make_card(ctx, documentation_content(), 50, 8, 35, 9, 101, color::hex("#334155")),
+    make_card(ctx, connect_content(), 20, 16, 30, 7, 102, color::hex("#0F766E")),
+  ]
+  for card in cards {
+    container.add(card.panel)
+    let _ = card.content.on_link(fn(received: mut text::LinkEvent) {
+      if state.drag_enabled {
+        state.link_activity = "Drag mode blocked: {received.url}"
+        received.prevent_default()
+      } else {
+        state.link_activity = "Opening: {received.url}"
+      }
+      header.set_content(header_content(state.drag_enabled, state.link_activity))
+    })
+  }
+
+  for card in cards {
+    let target = card
+    let _ = card.panel.on_mouse(fn(received: mut event::MouseEvent) {
+      if state.drag_enabled and received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+        for candidate in cards {
+          candidate.dragging = false
+        }
+        target.dragging = true
+        target.drag_offset_x = received.local_x
+        target.drag_offset_y = received.local_y
+        target.z = state.next_z
+        state.next_z =+ 1
+        target.panel.set_style(card_style(target))
+        received.stop_propagation()
+      } else if state.drag_enabled and received.event_type == event::MouseEventType::drag and received.button == event::MouseButton::left and target.dragging {
+        let screen = container.layout().screen
+        target.x = clamp(
+          received.x - screen.x - target.drag_offset_x,
+          0,
+          screen.width - target.width,
+        )
+        target.y = clamp(
+          received.y - screen.y - target.drag_offset_y,
+          0,
+          screen.height - target.height,
+        )
+        target.panel.set_style(card_style(target))
+        received.stop_propagation()
+      } else if state.drag_enabled and received.event_type == event::MouseEventType::drag_end and received.button == event::MouseButton::left and target.dragging {
+        target.dragging = false
+        received.stop_propagation()
+      } else if received.event_type == event::MouseEventType::up and received.button == event::MouseButton::left {
+        target.dragging = false
+      }
+    })
+  }
+
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type == event::KeyEventType::press and received.matches("d") {
+      state.drag_enabled = not state.drag_enabled
+      if not state.drag_enabled {
+        for card in cards {
+          card.dragging = false
+        }
+      }
+      header.set_content(header_content(state.drag_enabled, state.link_activity))
+      received.prevent_default()
+    }
+  })
+
+  application.run().expect("run Cooper interactive link demo")
+}

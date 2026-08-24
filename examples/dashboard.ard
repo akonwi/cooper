@@ -1,0 +1,655 @@
+use ard/async
+use ard/list
+
+use cooper/app
+use cooper/box
+use cooper/color
+use cooper/context
+use cooper/event
+use cooper/scroll_box
+use cooper/style
+use cooper/text
+use go:math
+use go:strings
+use go:time
+
+struct MetricTile {
+  panel: mut box::Box,
+  value: mut text::Text,
+  gauge: mut text::Text,
+  detail: mut text::Text,
+}
+
+struct DashboardState {
+  tick: Int,
+  paused: Bool,
+  follow: Bool,
+  sequence: Int,
+  samples: [Int],
+  rows: [mut text::Text],
+}
+
+private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
+  if value < minimum {
+    minimum
+  } else if value > maximum {
+    maximum
+  } else {
+    value
+  }
+}
+
+private fn bar(value: Int, width: Int) Str {
+  let safe_width = clamp(width, 0, 40)
+  let filled = clamp(value, 0, 100) * safe_width / 100
+  "{strings::Repeat("█", filled)}{strings::Repeat("░", safe_width - filled)}"
+}
+
+private fn spark_glyph(value: Int) Str {
+  let glyphs = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+  glyphs.at(clamp(value, 0, 100) * 7 / 100).expect("sparkline glyph")
+}
+
+private fn sparkline(samples: [Int]) Str {
+  mut rendered = ""
+  for value in samples {
+    rendered = "{rendered}{spark_glyph(value)}"
+  }
+  rendered
+}
+
+private fn seed_samples() [Int] {
+  let samples = mut List::new<Int>()
+  mut index = 0
+  while index < 24 {
+    samples.push((index * 17 + 31) % 101)
+    index =+ 1
+  }
+  samples.@
+}
+
+private fn status_color(value: Int, warning: Int, critical: Int) color::Color {
+  if value >= critical {
+    color::hex("#F87171")
+  } else if value >= warning {
+    color::hex("#FBBF24")
+  } else {
+    color::hex("#4ADE80")
+  }
+}
+
+private fn content_clip(ctx: mut context::Context) mut box::Box {
+  box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      overflow: style::Overflow::hidden,
+      align_items: style::Align::center,
+    ),
+  )
+}
+
+private fn metric_tile(ctx: mut context::Context, title: Str, border_color: color::Color) MetricTile {
+  let panel = box::new(
+    ctx,
+    title: title,
+    styles: style::new(
+      background: color::hex("#0B1220"),
+      border: style::Border::rounded,
+      border_color: border_color,
+      width: style::cells(12),
+      height: style::percent(100.0),
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let content = content_clip(ctx)
+  let value = text::new(
+    ctx,
+    content: "--",
+    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::ellipsis,
+    text_style: text::style(foreground: color::hex("#E2E8F0"), bold: true),
+  )
+  let gauge = text::new(
+    ctx,
+    content: "░░░░░░░░░░",
+    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::ellipsis,
+    text_style: text::style(foreground: border_color),
+  )
+  let detail = text::new(
+    ctx,
+    content: "waiting",
+    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::ellipsis,
+    text_style: text::style(foreground: color::hex("#64748B")),
+  )
+  content.add(value)
+  content.add(gauge)
+  content.add(detail)
+  panel.add(content)
+  MetricTile{
+    panel: panel,
+    value: value,
+    gauge: gauge,
+    detail: detail,
+  }
+}
+
+private fn update_metric(
+  tile: MetricTile,
+  display: Str,
+  percentage: Int,
+  detail: Str,
+  tint: color::Color,
+) {
+  tile.value.set_content(display)
+  tile.value.set_text_style(text::style(foreground: tint, bold: true))
+  tile.gauge.set_content(bar(percentage, 10))
+  tile.gauge.set_text_style(text::style(foreground: tint))
+  tile.detail.set_content(detail)
+}
+
+private fn runtime_mode(state: mut DashboardState) Str {
+  if state.paused {
+    "PAUSED"
+  } else {
+    "RUNNING"
+  }
+}
+
+private fn follow_mode(state: mut DashboardState) Str {
+  if state.follow {
+    "ON"
+  } else {
+    "OFF"
+  }
+}
+
+private fn update_runtime_status(
+  state: mut DashboardState,
+  subtitle: mut text::Text,
+  status: mut text::Text,
+) {
+  subtitle.set_content("Synthetic telemetry · tick {state.tick} · {runtime_mode(state)}")
+  status.set_content(
+    "State: {runtime_mode(state)} · Follow: {follow_mode(state)} · Rows: {state.rows.size()} · Seq: {state.sequence} · Tick: {state.tick}",
+  )
+}
+
+private fn chart_content(state: mut DashboardState, requests: Int, rate: Int) text::StyledText {
+  let label = color::hex("#A78BFA")
+  let value = color::hex("#E2E8F0")
+  let muted = color::hex("#64748B")
+  text::styled_text(
+    [
+      text::span("CPU HISTORY  ", style: text::span_style(foreground: label, bold: true)),
+      text::span(
+        "{sparkline(state.samples)}\n",
+        style: text::span_style(foreground: color::hex("#60A5FA")),
+      ),
+      text::span("REQUESTS     ", style: text::span_style(foreground: label, bold: true)),
+      text::span("{requests} total", style: text::span_style(foreground: value, bold: true)),
+      text::span(" · {rate}/s\n", style: text::span_style(foreground: muted)),
+      text::span("WORKERS      ", style: text::span_style(foreground: label, bold: true)),
+      text::span("12 active", style: text::span_style(foreground: color::hex("#4ADE80"))),
+      text::span(" · 3 queued\n", style: text::span_style(foreground: muted)),
+      text::span("CACHE        ", style: text::span_style(foreground: label, bold: true)),
+      text::span("94.7% hit", style: text::span_style(foreground: color::hex("#FBBF24"))),
+      text::span(" · 2.1 GB\n", style: text::span_style(foreground: muted)),
+      text::span("REGION       ", style: text::span_style(foreground: label, bold: true)),
+      text::span("iad-1", style: text::span_style(foreground: value, bold: true)),
+      text::span(" · all systems nominal", style: text::span_style(foreground: muted)),
+    ],
+  )
+}
+
+private fn update_dashboard(
+  state: mut DashboardState,
+  cpu_tile: MetricTile,
+  memory_tile: MetricTile,
+  network_tile: MetricTile,
+  latency_tile: MetricTile,
+  subtitle: mut text::Text,
+  chart: mut text::Text,
+  status: mut text::Text,
+) {
+  let cpu = (state.tick * 13 + 17) % 101
+  let memory_delta = state.tick * 7 % 43
+  let network_delta = state.tick * 137 % 901
+  let latency_delta = state.tick * 11 % 55
+  let rate_delta = state.tick * 29 % 220
+  let memory = 48 + memory_delta
+  let network = 100 + network_delta
+  let latency = 12 + latency_delta
+  let requests = 12_480 + state.tick * 47
+  let rate = 180 + rate_delta
+
+  state.samples.push(cpu)
+  if state.samples.size() > 24 {
+    state.samples = list::drop(state.samples, 1)
+  }
+
+  update_metric(cpu_tile, "{cpu}%", cpu, "scheduler load", status_color(cpu, 65, 85))
+  update_metric(memory_tile, "{memory}%", memory, "heap committed", status_color(memory, 72, 88))
+  update_metric(
+    network_tile,
+    "{network} KB/s",
+    network / 10,
+    "ingress + egress",
+    status_color(network / 10, 70, 90),
+  )
+  update_metric(
+    latency_tile,
+    "{latency} ms",
+    latency * 100 / 80,
+    "p95 request",
+    status_color(latency, 42, 58),
+  )
+  chart.set_content(chart_content(state, requests, rate))
+  update_runtime_status(state, subtitle, status)
+}
+
+private fn log_content(sequence: Int, manual: Bool) text::StyledText {
+  let muted = color::hex("#64748B")
+  mut level = "INFO "
+  mut tint = color::hex("#60A5FA")
+  mut message = "telemetry snapshot committed"
+
+  if manual {
+    level = "MANUAL"
+    tint = color::hex("#F472B6")
+    message = "operator checkpoint inserted"
+  } else {
+    match sequence % 5 {
+      0 => {
+        level = "WARN "
+        tint = color::hex("#FBBF24")
+        message = "queue pressure above baseline"
+      },
+      1 => {
+        level = "INFO "
+        tint = color::hex("#60A5FA")
+        message = "telemetry snapshot committed"
+      },
+      2 => {
+        level = "OK   "
+        tint = color::hex("#4ADE80")
+        message = "worker heartbeat acknowledged"
+      },
+      3 => {
+        level = "TRACE"
+        tint = color::hex("#A78BFA")
+        message = "cache observation window rotated"
+      },
+      _ => {
+        level = "RETRY"
+        tint = color::hex("#F87171")
+        message = "synthetic retry recovered"
+      },
+    }
+  }
+
+  text::styled_text(
+    [
+      text::span("[{sequence}] ", style: text::span_style(foreground: muted)),
+      text::span(level, style: text::span_style(foreground: tint, bold: true)),
+      text::span("  {message}", style: text::span_style(foreground: color::hex("#CBD5E1"))),
+    ],
+  )
+}
+
+private fn log_row_style() style::Style {
+  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
+}
+
+private fn append_log(
+  ctx: mut context::Context,
+  viewport: mut scroll_box::ScrollBox,
+  state: mut DashboardState,
+  manual: Bool,
+) {
+  state.sequence =+ 1
+  let row = text::new(
+    ctx,
+    content: log_content(state.sequence, manual),
+    wrap: text::TextWrap::none,
+    styles: log_row_style(),
+    selectable: false,
+    overflow: text::TextOverflow::ellipsis,
+  )
+  viewport.add(row)
+  state.rows.push(row)
+
+  if state.rows.size() > 60 {
+    mut retained_scroll = 0
+    if not state.follow {
+      retained_scroll = clamp(viewport.scroll_top() - 1, 0, math::MaxInt)
+    }
+    match state.rows.at(0) {
+      oldest => {
+        let _ = viewport.remove(oldest)
+        oldest.destroy()
+        state.rows = list::drop(state.rows, 1)
+      },
+      _ => (),
+    }
+    if not state.follow {
+      let _ = viewport.scroll_to(retained_scroll)
+    }
+  }
+
+  if state.follow {
+    let _ = viewport.scroll_to(math::MaxInt)
+  }
+}
+
+private fn clear_logs(viewport: mut scroll_box::ScrollBox, state: mut DashboardState) {
+  for row in state.rows {
+    let _ = viewport.remove(row)
+    row.destroy()
+  }
+  state.rows = []
+  let _ = viewport.scroll_to(0)
+}
+
+fn main() {
+  let application = app::new().expect("create Cooper dashboard")
+  defer application.destroy()
+  let ctx = application.context
+
+  let root = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#020617"),
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      gap: style::cells(1),
+    ),
+  )
+
+  let header = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::heavy,
+      border_color: color::hex("#22D3EE"),
+      width: style::percent(100.0),
+      height: style::cells(4),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  header.add(
+    text::new(
+      ctx,
+      content: "COOPER OPERATIONS",
+      selectable: false,
+      text_style: text::style(foreground: color::hex("#67E8F9"), bold: true),
+    ),
+  )
+  let subtitle = text::new(
+    ctx,
+    content: "Synthetic telemetry · tick 0 · RUNNING",
+    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::ellipsis,
+    text_style: text::style(foreground: color::hex("#94A3B8")),
+  )
+  header.add(subtitle)
+
+  let metrics = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::cells(6),
+      flex_shrink: 0.0,
+      flex_direction: style::FlexDirection::row,
+      gap: style::cells(1),
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let cpu_tile = metric_tile(ctx, "CPU", color::hex("#60A5FA"))
+  let memory_tile = metric_tile(ctx, "MEMORY", color::hex("#A78BFA"))
+  let network_tile = metric_tile(ctx, "NETWORK", color::hex("#34D399"))
+  let latency_tile = metric_tile(ctx, "LATENCY", color::hex("#FBBF24"))
+  metrics.add(cpu_tile.panel)
+  metrics.add(memory_tile.panel)
+  metrics.add(network_tile.panel)
+  metrics.add(latency_tile.panel)
+
+  let body = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::cells(1),
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+      flex_direction: style::FlexDirection::row,
+      gap: style::cells(1),
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let chart_panel = box::new(
+    ctx,
+    title: "SYSTEM PULSE",
+    styles: style::new(
+      background: color::hex("#0B1220"),
+      border: style::Border::rounded,
+      border_color: color::hex("#A78BFA"),
+      width: style::percent(52.0),
+      height: style::percent(100.0),
+      flex_shrink: 0.0,
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let chart_clip = content_clip(ctx)
+  let chart = text::new(
+    ctx,
+    content: "",
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::percent(95.0), height: style::percent(100.0)),
+    selectable: false,
+    overflow: text::TextOverflow::clip,
+    text_style: text::style(foreground: color::hex("#E2E8F0")),
+  )
+  chart_clip.add(chart)
+  chart_panel.add(chart_clip)
+
+  let log_panel = box::new(
+    ctx,
+    title: "EVENT STREAM",
+    styles: style::new(
+      background: color::hex("#0B1220"),
+      border: style::Border::rounded,
+      border_color: color::hex("#F472B6"),
+      width: style::cells(1),
+      height: style::percent(100.0),
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let log = scroll_box::new(
+    ctx,
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+  )
+  log_panel.add(log)
+  body.add(chart_panel)
+  body.add(log_panel)
+
+  let footer = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::single,
+      border_color: color::hex("#334155"),
+      width: style::percent(100.0),
+      height: style::cells(4),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  let status = text::new(
+    ctx,
+    content: "",
+    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::ellipsis,
+    text_style: text::style(foreground: color::hex("#93C5FD"), bold: true),
+  )
+  footer.add(status)
+  footer.add(
+    text::new(
+      ctx,
+      content: text::styled_text(
+        [
+          text::span("Space", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" pause  ·  "),
+          text::span("F", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" follow  ·  "),
+          text::span("A", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" alert  ·  "),
+          text::span("C", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" clear  ·  "),
+          text::span("Q", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" quit  ·  arrows scroll"),
+        ],
+      ),
+      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      selectable: false,
+      wrap: text::TextWrap::none,
+      overflow: text::TextOverflow::ellipsis,
+      text_style: text::style(foreground: color::hex("#CBD5E1")),
+    ),
+  )
+
+  root.add(header)
+  root.add(metrics)
+  root.add(body)
+  root.add(footer)
+  application.root.add(root)
+
+  let state = mut DashboardState{
+    tick: 0,
+    paused: false,
+    follow: true,
+    sequence: 0,
+    samples: seed_samples(),
+    rows: [],
+  }
+  mut initial = 0
+  while initial < 8 {
+    append_log(ctx, log, state, false)
+    initial =+ 1
+  }
+  update_dashboard(
+    state,
+    cpu_tile,
+    memory_tile,
+    network_tile,
+    latency_tile,
+    subtitle,
+    chart,
+    status,
+  )
+  let _ = log.focus()
+
+  let advance = fn() {
+    if not state.paused {
+      state.tick =+ 1
+      if state.tick % 2 == 0 {
+        append_log(ctx, log, state, false)
+      }
+      update_dashboard(
+        state,
+        cpu_tile,
+        memory_tile,
+        network_tile,
+        latency_tile,
+        subtitle,
+        chart,
+        status,
+      )
+    }
+  }
+
+  let _ = log.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::scroll and received.scroll_y != 0 and state.follow {
+      state.follow = false
+      let _ = log.scroll_to(log.scroll_top())
+      update_runtime_status(state, subtitle, status)
+    }
+  })
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release and received.matches("end") {
+      state.follow = true
+      let _ = log.scroll_to(math::MaxInt)
+      update_runtime_status(state, subtitle, status)
+      received.prevent_default()
+    } else if received.event_type == event::KeyEventType::press {
+      if received.matches("q") {
+        received.prevent_default()
+        application.destroy()
+      } else if received.matches("space") {
+        state.paused = not state.paused
+        update_runtime_status(state, subtitle, status)
+        received.prevent_default()
+      } else if received.matches("f") {
+        state.follow = not state.follow
+        if state.follow {
+          let _ = log.scroll_to(math::MaxInt)
+        } else {
+          let _ = log.scroll_to(log.scroll_top())
+        }
+        update_runtime_status(state, subtitle, status)
+        received.prevent_default()
+      } else if received.matches("a") {
+        append_log(ctx, log, state, true)
+        update_runtime_status(state, subtitle, status)
+        received.prevent_default()
+      } else if received.matches("c") {
+        clear_logs(log, state)
+        update_runtime_status(state, subtitle, status)
+        received.prevent_default()
+      } else if received.matches("up") or received.matches("down") or received.matches("page_up") or received.matches("page_down") or received.matches("home") {
+        if state.follow {
+          state.follow = false
+          let _ = log.scroll_to(log.scroll_top())
+          update_runtime_status(state, subtitle, status)
+        }
+      }
+    }
+  })
+
+  let cancellation = ctx.cancellation
+  let dispatch = ctx.dispatch
+  async::start(fn() {
+    mut running = true
+    while running {
+      select {
+        cancellation.recv() => { running = false },
+        time::After(300 * time::Millisecond).recv() => {
+          if dispatch(advance).is_err() {
+            running = false
+          }
+        },
+      }
+    }
+  })
+
+  application.run().expect("run Cooper dashboard")
+}

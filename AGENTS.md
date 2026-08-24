@@ -68,16 +68,23 @@ Current validation entry points:
 ard test
 
 cd examples
-ARD=ard python3 test_input.py
-ARD=ard python3 test_form.py
-ARD=ard python3 test_scroll_form.py
-ARD=ard python3 test_async.py
-ARD=ard python3 test_lifecycle.py
-ARD=ard python3 test_explorer.py
-ARD=ard python3 test_interaction.py
+python3 test_layout_playground.py
+python3 test_text_gallery.py
+python3 test_dashboard.py
+python3 test_stacking.py
+python3 test_input_lab.py
+python3 test_event_inspector.py
+python3 test_links.py
+python3 test_terminal_focus.py
+python3 test_widgets.py
+python3 test_scroll_form.py
+python3 test_async.py
+python3 test_lifecycle.py
+python3 test_explorer.py
+python3 test_interaction.py
 
 cd ..
-ARD=ard python3 benchmarks/run.py
+python3 benchmarks/run.py
 ```
 
 ## References

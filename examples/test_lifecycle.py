@@ -6,17 +6,17 @@ import signal
 import sys
 import time
 
-from test_harness import Screen, build, read_for, spawn
+from test_harness import Screen, binary_path, build, read_for, spawn
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BIN = os.path.join(ROOT, "lifecycle")
-PRE_START_SIGNAL_BIN = os.path.join(ROOT, "pre_start_signal")
+BIN = binary_path("lifecycle")
+PRE_START_SIGNAL_BIN = binary_path("pre_start_signal")
 
 
 def main():
     os.chdir(ROOT)
-    build("lifecycle")
-    build("pre_start_signal")
+    build("lifecycle", source="fixtures/lifecycle.ard")
+    build("pre_start_signal", source="fixtures/pre_start_signal.ard")
     pid, fd = spawn(BIN, rows=4, cols=40)
     screen = Screen(4, 40)
     output = bytearray()

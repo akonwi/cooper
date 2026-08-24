@@ -15,6 +15,8 @@ import termios
 import time
 
 ARD_CMD = shlex.split(os.environ.get("ARD", "ard"))
+ROOT = os.path.dirname(os.path.abspath(__file__))
+ARD_OUT = os.path.normpath(os.path.join(ROOT, "..", "ard-out"))
 
 
 # ── Screen emulator ────────────────────────────────────────────────────
@@ -119,13 +121,22 @@ class Screen:
 
 # ── Build / spawn / IO ─────────────────────────────────────────────────
 
-def build(name):
-    """Build an example binary."""
+def binary_path(name):
+    """Return the absolute path for an example binary in ard-out."""
+    return os.path.join(ARD_OUT, name)
+
+
+def build(name, source=None):
+    """Build an example or fixture binary into ard-out and return its path."""
+    os.makedirs(ARD_OUT, exist_ok=True)
+    output = binary_path(name)
+    source = source or f"{name}.ard"
     subprocess.run(
-        [*ARD_CMD, "build", "--out", name, f"{name}.ard"],
-        cwd=os.path.dirname(os.path.abspath(__file__)),
+        [*ARD_CMD, "build", "--out", output, source],
+        cwd=ROOT,
         check=True,
     )
+    return output
 
 
 def spawn(binary, rows=24, cols=80):

@@ -5,11 +5,11 @@ import os
 import signal
 import sys
 
-from test_harness import Screen, build, send, spawn, wait_exit, wait_for
+from test_harness import Screen, binary_path, build, send, spawn, wait_exit, wait_for
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BIN = os.path.join(ROOT, "async")
-PRE_RUN_DESTROY_BIN = os.path.join(ROOT, "pre_run_destroy")
+BIN = binary_path("async")
+PRE_RUN_DESTROY_BIN = binary_path("pre_run_destroy")
 
 
 def run_pre_run_destroy():
@@ -53,8 +53,8 @@ def run_completed_work():
 
 
 def main():
-    build("async")
-    build("pre_run_destroy")
+    build("async", source="fixtures/async.ard")
+    build("pre_run_destroy", source="fixtures/pre_run_destroy.ard")
     run_pre_run_destroy()
     run_cancelled_work()
     run_completed_work()

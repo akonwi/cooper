@@ -1,0 +1,358 @@
+use cooper/app
+use cooper/box
+use cooper/color
+use cooper/context
+use cooper/event
+use cooper/style
+use cooper/text
+
+enum Preset {
+  horizontal,
+  vertical,
+  wrapped,
+  centered,
+  spaced,
+  reversed,
+  overlay,
+}
+
+impl Preset {
+  fn next() Preset {
+    match self {
+      Preset::horizontal => Preset::vertical,
+      Preset::vertical => Preset::wrapped,
+      Preset::wrapped => Preset::centered,
+      Preset::centered => Preset::spaced,
+      Preset::spaced => Preset::reversed,
+      Preset::reversed => Preset::overlay,
+      Preset::overlay => Preset::horizontal,
+    }
+  }
+
+  fn number() Int {
+    match self {
+      Preset::horizontal => 1,
+      Preset::vertical => 2,
+      Preset::wrapped => 3,
+      Preset::centered => 4,
+      Preset::spaced => 5,
+      Preset::reversed => 6,
+      Preset::overlay => 7,
+    }
+  }
+
+  fn label() Str {
+    match self {
+      Preset::horizontal => "HORIZONTAL FLOW",
+      Preset::vertical => "VERTICAL STACK",
+      Preset::wrapped => "RESPONSIVE WRAP",
+      Preset::centered => "CENTERED GROUP",
+      Preset::spaced => "SPACE BETWEEN",
+      Preset::reversed => "REVERSED FLOW",
+      Preset::overlay => "ABSOLUTE OVERLAY",
+    }
+  }
+
+  fn summary() Str {
+    match self {
+      Preset::horizontal => "row · flex-grow 1 · stretch",
+      Preset::vertical => "column · 25% heights · no gap",
+      Preset::wrapped => "row + wrap · 45% cards · two lines",
+      Preset::centered => "fixed cells · align center · justify center",
+      Preset::spaced => "fixed cells · justify space-between",
+      Preset::reversed => "row-reverse · retained child order",
+      Preset::overlay => "absolute offsets · sibling overlap · z-index",
+    }
+  }
+}
+
+private fn stage_style(preset: Preset) style::Style {
+  let next = mut style::new(
+    background: color::hex("#0B1220"),
+    border: style::Border::rounded,
+    border_color: color::hex("#475569"),
+    width: style::percent(100.0),
+    height: style::cells(1),
+    flex_grow: 1.0,
+    flex_shrink: 1.0,
+    overflow: style::Overflow::hidden,
+    gap: style::cells(1),
+  )
+
+  match preset {
+    Preset::horizontal => {
+      next.flex_direction = style::FlexDirection::row
+      next.align_items = style::Align::stretch
+    },
+    Preset::vertical => {
+      next.flex_direction = style::FlexDirection::column
+      next.gap = style::cells(0)
+    },
+    Preset::wrapped => {
+      next.flex_direction = style::FlexDirection::row
+      next.flex_wrap = style::FlexWrap::wrap
+      next.align_items = style::Align::stretch
+    },
+    Preset::centered => {
+      next.flex_direction = style::FlexDirection::row
+      next.align_items = style::Align::center
+      next.justify_content = style::Justify::center
+    },
+    Preset::spaced => {
+      next.flex_direction = style::FlexDirection::row
+      next.align_items = style::Align::center
+      next.justify_content = style::Justify::space_between
+    },
+    Preset::reversed => {
+      next.flex_direction = style::FlexDirection::row_reverse
+      next.align_items = style::Align::stretch
+    },
+    Preset::overlay => (),
+  }
+
+  next.@
+}
+
+private fn card_color(index: Int) color::Color {
+  match index {
+    0 => color::hex("#2563EB"),
+    1 => color::hex("#7C3AED"),
+    2 => color::hex("#059669"),
+    _ => color::hex("#D97706"),
+  }
+}
+
+private fn card_border(index: Int) color::Color {
+  match index {
+    0 => color::hex("#93C5FD"),
+    1 => color::hex("#C4B5FD"),
+    2 => color::hex("#6EE7B7"),
+    _ => color::hex("#FCD34D"),
+  }
+}
+
+private fn card_z_index(index: Int) Int {
+  match index {
+    0 => 10,
+    _ => index,
+  }
+}
+
+private fn card_style(preset: Preset, index: Int) style::Style {
+  let next = mut style::new(
+    background: card_color(index),
+    border: style::Border::single,
+    border_color: card_border(index),
+    width: style::cells(13),
+    height: style::cells(7),
+    flex_shrink: 0.0,
+    align_items: style::Align::center,
+    justify_content: style::Justify::center,
+  )
+
+  match preset {
+    Preset::horizontal => {
+      next.width = style::cells(10)
+      next.height = style::percent(100.0)
+      next.flex_grow = 1.0
+      next.flex_shrink = 1.0
+    },
+    Preset::vertical => {
+      next.width = style::percent(100.0)
+      next.height = style::percent(25.0)
+      next.flex_shrink = 1.0
+    },
+    Preset::wrapped => {
+      next.width = style::percent(45.0)
+      next.height = style::percent(45.0)
+      next.flex_grow = 1.0
+      next.flex_shrink = 1.0
+    },
+    Preset::reversed => {
+      next.width = style::cells(10)
+      next.height = style::percent(100.0)
+      next.flex_grow = 1.0
+      next.flex_shrink = 1.0
+    },
+    Preset::overlay => {
+      next.position = style::Position::absolute
+      next.left = style::cells(2 + index * 8)
+      next.top = style::cells(index * 2)
+      next.width = style::cells(22)
+      next.height = style::cells(7)
+      next.z_index = card_z_index(index)
+    },
+    _ => (),
+  }
+
+  next.@
+}
+
+private fn make_card(ctx: mut context::Context, index: Int, name: Str) mut box::Box {
+  let card = box::new(ctx, title: "{index + 1}")
+  card.add(
+    text::new(
+      ctx,
+      content: name,
+      selectable: false,
+      text_style: text::style(foreground: color::hex("#FFFFFF"), bold: true),
+    ),
+  )
+  card
+}
+
+private fn apply_preset(
+  preset: Preset,
+  stage: mut box::Box,
+  cards: [mut box::Box],
+  subtitle: mut text::Text,
+) {
+  stage.set_style(stage_style(preset))
+  stage.set_title("{preset.label()}")
+  for card, index in cards {
+    card.set_style(card_style(preset, index))
+  }
+  subtitle.set_content("Preset {preset.number()}/7 · {preset.summary()}")
+}
+
+private fn preset_for_key(key: mut event::KeyEvent, current: Preset) Preset? {
+  if key.matches("1") {
+    Maybe::new(Preset::horizontal)
+  } else if key.matches("2") {
+    Maybe::new(Preset::vertical)
+  } else if key.matches("3") {
+    Maybe::new(Preset::wrapped)
+  } else if key.matches("4") {
+    Maybe::new(Preset::centered)
+  } else if key.matches("5") {
+    Maybe::new(Preset::spaced)
+  } else if key.matches("6") {
+    Maybe::new(Preset::reversed)
+  } else if key.matches("7") {
+    Maybe::new(Preset::overlay)
+  } else if key.matches("space") {
+    Maybe::new(current.next())
+  } else {
+    Maybe::new<Preset>()
+  }
+}
+
+fn main() {
+  let application = app::new().expect("create Cooper layout playground")
+  defer application.destroy()
+  let ctx = application.context
+
+  let root = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#020617"),
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      gap: style::cells(1),
+    ),
+  )
+
+  let header = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::single,
+      border_color: color::hex("#38BDF8"),
+      width: style::percent(100.0),
+      height: style::cells(4),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  header.add(
+    text::new(
+      ctx,
+      content: "COOPER LAYOUT PLAYGROUND",
+      selectable: false,
+      text_style: text::style(foreground: color::hex("#7DD3FC"), bold: true),
+    ),
+  )
+  let subtitle = text::new(
+    ctx,
+    content: "",
+    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    selectable: false,
+    overflow: text::TextOverflow::ellipsis,
+    text_style: text::style(foreground: color::hex("#94A3B8")),
+  )
+  header.add(subtitle)
+
+  let stage = box::new(ctx, title: "HORIZONTAL FLOW")
+  let cards: [mut box::Box] = [
+    make_card(ctx, 0, "ALPHA"),
+    make_card(ctx, 1, "BRAVO"),
+    make_card(ctx, 2, "CHARLIE"),
+    make_card(ctx, 3, "DELTA"),
+  ]
+  for card in cards {
+    stage.add(card)
+  }
+
+  let footer = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::single,
+      border_color: color::hex("#334155"),
+      width: style::percent(100.0),
+      height: style::cells(3),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  footer.add(
+    text::new(
+      ctx,
+      content: text::styled_text(
+        [
+          text::span("1–7", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" preset  ·  "),
+          text::span("Space", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" next  ·  "),
+          text::span("Q", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" quit  ·  resize to reflow"),
+        ],
+      ),
+      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      selectable: false,
+      wrap: text::TextWrap::none,
+      overflow: text::TextOverflow::ellipsis,
+      text_style: text::style(foreground: color::hex("#CBD5E1")),
+    ),
+  )
+
+  root.add(header)
+  root.add(stage)
+  root.add(footer)
+  application.root.add(root)
+
+  mut current = Preset::horizontal
+  apply_preset(current, stage, cards, subtitle)
+
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type == event::KeyEventType::press {
+      if received.matches("q") {
+        received.prevent_default()
+        application.destroy()
+      } else {
+        match preset_for_key(received, current) {
+          selected => {
+            current = selected
+            apply_preset(current, stage, cards, subtitle)
+            received.prevent_default()
+          },
+          _ => (),
+        }
+      }
+    }
+  })
+
+  application.run().expect("run Cooper layout playground")
+}

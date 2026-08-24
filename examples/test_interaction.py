@@ -7,10 +7,10 @@ import sys
 
 os.environ.setdefault("ARD", "ard")
 
-from test_harness import Screen, build, read_for, send, spawn, wait_exit, wait_for
+from test_harness import Screen, binary_path, build, read_for, send, spawn, wait_exit, wait_for
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BIN = os.path.join(ROOT, "interaction_lab")
+BIN = binary_path("interaction_lab")
 
 
 def sgr(fd, code, col, row, final="M"):
@@ -34,7 +34,7 @@ def move(fd, col, row):
 
 def main():
     os.chdir(ROOT)
-    build("interaction_lab")
+    build("interaction_lab", source="fixtures/interaction_lab.ard")
     pid, fd = spawn(BIN, rows=24, cols=100)
     screen = Screen(24, 100)
     try:
@@ -117,8 +117,8 @@ def main():
 
 
 def test_focus_without_mouse():
-    build("terminal_focus")
-    pid, fd = spawn(os.path.join(ROOT, "terminal_focus"), rows=3, cols=40)
+    build("focus_without_mouse", source="fixtures/focus_without_mouse.ard")
+    pid, fd = spawn(binary_path("focus_without_mouse"), rows=3, cols=40)
     screen = Screen(3, 40)
     try:
         wait_for(fd, screen, "terminal: unknown")

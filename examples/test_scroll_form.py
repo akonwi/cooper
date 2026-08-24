@@ -5,14 +5,14 @@ import os
 import signal
 import sys
 
-from test_harness import Screen, build, drain, resize, send, spawn, wait_exit, wait_for
+from test_harness import Screen, binary_path, build, drain, resize, send, spawn, wait_exit, wait_for
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BIN = os.path.join(ROOT, "scroll_form")
+BIN = binary_path("scroll_form")
 
 
 def main():
-    build("scroll_form")
+    build("scroll_form", source="fixtures/scroll_form.ard")
     pid, fd = spawn(BIN, rows=8, cols=60)
     screen = Screen(8, 60)
     try:

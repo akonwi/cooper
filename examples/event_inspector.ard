@@ -1,0 +1,657 @@
+use cooper/app
+use cooper/box
+use cooper/color
+use cooper/context
+use cooper/event
+use cooper/geometry
+use cooper/style
+use cooper/text
+
+struct Marker {
+  view: mut text::Text,
+  x: Int,
+  y: Int,
+  visible: Bool,
+}
+
+struct Card {
+  name: Str,
+  panel: mut box::Box,
+  specimen: mut text::Text,
+  label: mut text::Text,
+  default_label: Str,
+  latched: Bool,
+  x: Int,
+  y: Int,
+  home_x: Int,
+  home_y: Int,
+  width: Int,
+  height: Int,
+  z: Int,
+  fill: color::Color,
+  drag_fill: color::Color,
+  border: color::Color,
+}
+
+struct DemoState {
+  trail_cursor: Int,
+  trail_count: Int,
+  activation_cursor: Int,
+  activation_count: Int,
+  dragging: Int,
+  drag_offset_x: Int,
+  drag_offset_y: Int,
+  moved: Bool,
+  next_z: Int,
+  last_event: Str,
+  cursor: mut Marker,
+  trails: [mut Marker],
+  activations: [mut Marker],
+}
+
+private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
+  mut ceiling = maximum
+  if ceiling < minimum {
+    ceiling = minimum
+  }
+  if value < minimum {
+    minimum
+  } else if value > ceiling {
+    ceiling
+  } else {
+    value
+  }
+}
+
+private fn marker_style(x: Int, y: Int, z: Int, visible: Bool) style::Style {
+  mut display = style::Display::none
+  if visible {
+    display = style::Display::flex
+  }
+  style::new(
+    display: display,
+    position: style::Position::absolute,
+    left: style::cells(x),
+    top: style::cells(y),
+    width: style::cells(1),
+    height: style::cells(1),
+    z_index: z,
+  )
+}
+
+private fn make_marker(ctx: mut context::Context, z: Int) mut Marker {
+  let view = text::new(
+    ctx,
+    content: "",
+    styles: marker_style(0, 0, z, false),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::clip,
+  )
+  let marker = mut Marker{
+    view: view,
+    x: 0,
+    y: 0,
+    visible: false,
+  }
+  marker
+}
+
+private fn show_marker(marker: mut Marker, x: Int, y: Int, z: Int, glyph: Str, tint: color::Color) {
+  marker.x = x
+  marker.y = y
+  marker.visible = true
+  marker.view.set_content(glyph)
+  marker.view.set_text_style(text::style(foreground: tint, bold: true))
+  marker.view.set_style(marker_style(x, y, z, true))
+}
+
+private fn hide_marker(marker: mut Marker, z: Int) {
+  marker.visible = false
+  marker.view.set_content("")
+  marker.view.set_style(marker_style(marker.x, marker.y, z, false))
+}
+
+private fn card_style(card: mut Card, dragging: Bool) style::Style {
+  mut fill = card.fill
+  mut border = card.border
+  if dragging {
+    fill = card.drag_fill
+    border = color::hex("#F8FAFC")
+  }
+  style::new(
+    background: fill,
+    border: style::Border::rounded,
+    border_color: border,
+    position: style::Position::absolute,
+    left: style::cells(card.x),
+    top: style::cells(card.y),
+    width: style::cells(card.width),
+    height: style::cells(card.height),
+    z_index: card.z,
+    align_items: style::Align::center,
+    justify_content: style::Justify::center,
+    overflow: style::Overflow::hidden,
+  )
+}
+
+private fn apply_card(card: mut Card, dragging: Bool) {
+  card.panel.set_style(card_style(card, dragging))
+  card.panel.set_title(card.name)
+}
+
+private fn make_card(
+  ctx: mut context::Context,
+  name: Str,
+  x: Int,
+  y: Int,
+  width: Int,
+  height: Int,
+  fill: color::Color,
+  drag_fill: color::Color,
+  border: color::Color,
+  specimen_text: Str,
+  default_label: Str,
+) mut Card {
+  let specimen = text::new(
+    ctx,
+    content: specimen_text,
+    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::clip,
+    text_style: text::style(foreground: color::hex("#FFFFFF"), bold: true),
+  )
+  let label = text::new(
+    ctx,
+    content: default_label,
+    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::ellipsis,
+    text_style: text::style(foreground: color::hex("#E2E8F0")),
+  )
+  let placeholder = mut Card{
+    name: name,
+    panel: box::new(ctx),
+    specimen: specimen,
+    label: label,
+    default_label: default_label,
+    latched: false,
+    x: x,
+    y: y,
+    home_x: x,
+    home_y: y,
+    width: width,
+    height: height,
+    z: 100,
+    fill: fill,
+    drag_fill: drag_fill,
+    border: border,
+  }
+  placeholder.panel.set_style(card_style(placeholder, false))
+  placeholder.panel.set_title(name)
+  placeholder.panel.add(specimen)
+  placeholder.panel.add(label)
+  placeholder
+}
+
+private fn reset_card(card: mut Card) {
+  card.x = card.home_x
+  card.y = card.home_y
+  card.z = 100
+  card.latched = false
+  apply_card(card, false)
+  card.label.set_content(card.default_label)
+}
+
+private fn reset_cards(cards: [mut Card]) {
+  for card in cards {
+    reset_card(card)
+  }
+}
+
+private fn update_status(state: mut DemoState, status: mut text::Text) {
+  status.set_content(
+    "{state.last_event} · trails {state.trail_count}/{state.trails.size()} · cells {state.activation_count} · C clear · R reset · Ctrl+C quit",
+  )
+}
+
+private fn stage_point(stage: mut box::Box, received: mut event::MouseEvent) geometry::Point {
+  let screen = stage.layout().screen
+  geometry::Point{x: received.x - screen.x - 1, y: received.y - screen.y - 1}
+}
+
+private fn drop_target(cards: [mut Card], source: Int, stage: mut box::Box, x: Int, y: Int) Int {
+  let stage_screen = stage.layout().screen
+  let inside_stage = x > stage_screen.x and x < stage_screen.x + stage_screen.width - 1 and y > stage_screen.y and y < stage_screen.y + stage_screen.height - 1
+  mut found = -1
+  for card, index in cards {
+    if inside_stage and index != source {
+      let screen = card.panel.layout().screen
+      let inside = x >= screen.x and x < screen.x + screen.width and y >= screen.y and y < screen.y + screen.height
+      if inside {
+        if found < 0 or card.z >= cards.at(found).expect("drop candidate").z {
+          found = index
+        }
+      }
+    }
+  }
+  found
+}
+
+private fn add_trail(
+  state: mut DemoState,
+  stage: mut box::Box,
+  received: mut event::MouseEvent,
+  dragging: Bool,
+) {
+  if state.trails.size() > 0 {
+    let point = stage_point(stage, received)
+    let screen = stage.layout().screen
+    let x = clamp(point.x, 0, screen.width - 3)
+    let y = clamp(point.y, 0, screen.height - 3)
+    let marker = state.trails.at(state.trail_cursor).expect("trail marker")
+    mut glyph = "·"
+    mut tint = color::hex("#2DD4BF")
+    if dragging {
+      glyph = "•"
+      tint = color::hex("#FB923C")
+    }
+    show_marker(marker, x, y, 1, glyph, tint)
+    show_marker(state.cursor, x, y, 3, "+", color::hex("#FFFFFF"))
+    state.trail_cursor = (state.trail_cursor + 1) % state.trails.size()
+    if state.trail_count < state.trails.size() {
+      state.trail_count =+ 1
+    }
+  }
+}
+
+private fn toggle_activation(
+  state: mut DemoState,
+  stage: mut box::Box,
+  received: mut event::MouseEvent,
+) {
+  let point = stage_point(stage, received)
+  let screen = stage.layout().screen
+  let x = clamp(point.x, 0, screen.width - 3)
+  let y = clamp(point.y, 0, screen.height - 3)
+  mut existing = -1
+  for marker, index in state.activations {
+    if marker.visible and marker.x == x and marker.y == y {
+      existing = index
+    }
+  }
+
+  if existing >= 0 {
+    hide_marker(state.activations.at(existing).expect("active cell"), 2)
+    state.activation_count =- 1
+    state.last_event = "cell off at {x},{y}"
+  } else if state.activations.size() > 0 {
+    mut slot = -1
+    for marker, index in state.activations {
+      if slot < 0 and not marker.visible {
+        slot = index
+      }
+    }
+    if slot < 0 {
+      slot = state.activation_cursor
+    } else {
+      state.activation_count =+ 1
+    }
+    show_marker(
+      state.activations.at(slot).expect("activation marker"),
+      x,
+      y,
+      2,
+      "█",
+      color::hex("#F43F8C"),
+    )
+    state.activation_cursor = (slot + 1) % state.activations.size()
+    state.last_event = "cell on at {x},{y}"
+  }
+}
+
+private fn clear_marks(state: mut DemoState) {
+  hide_marker(state.cursor, 3)
+  for marker in state.trails {
+    hide_marker(marker, 1)
+  }
+  for marker in state.activations {
+    hide_marker(marker, 2)
+  }
+  state.trail_cursor = 0
+  state.trail_count = 0
+  state.activation_cursor = 0
+  state.activation_count = 0
+}
+
+fn main() {
+  let application = app::new().expect("create Cooper mouse interaction demo")
+  defer application.destroy()
+  let ctx = application.context
+
+  let root = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F0F23"),
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      gap: style::cells(1),
+    ),
+  )
+
+  let header = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::heavy,
+      border_color: color::hex("#48D1CC"),
+      width: style::percent(100.0),
+      height: style::cells(4),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  header.add(
+    text::new(
+      ctx,
+      content: "MOUSE INTERACTION DEMO",
+      selectable: false,
+      text_style: text::style(foreground: color::hex("#48D1CC"), bold: true),
+    ),
+  )
+  header.add(
+    text::new(
+      ctx,
+      content: "Scroll boxes · Move: cyan trail + cursor · Drag: orange trail · Click empty cells: pink",
+      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      selectable: false,
+      wrap: text::TextWrap::none,
+      overflow: text::TextOverflow::ellipsis,
+      text_style: text::style(foreground: color::hex("#B0C4DE")),
+    ),
+  )
+
+  let stage = box::new(
+    ctx,
+    title: "DRAGGABLE OBJECTS",
+    styles: style::new(
+      background: color::hex("#0F0F23"),
+      border: style::Border::rounded,
+      border_color: color::hex("#334155"),
+      position: style::Position::relative,
+      width: style::percent(100.0),
+      height: style::cells(1),
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+      overflow: style::Overflow::hidden,
+    ),
+  )
+
+  let prepared_trails = mut List::new<mut Marker>()
+  mut trail_index = 0
+  while trail_index < 32 {
+    let marker = make_marker(ctx, 1)
+    prepared_trails.push(marker)
+    stage.add(marker.view)
+    trail_index =+ 1
+  }
+  let prepared_activations = mut List::new<mut Marker>()
+  mut activation_index = 0
+  while activation_index < 24 {
+    let marker = make_marker(ctx, 2)
+    prepared_activations.push(marker)
+    stage.add(marker.view)
+    activation_index =+ 1
+  }
+  let cursor = make_marker(ctx, 3)
+  stage.add(cursor.view)
+
+  let cards: [mut Card] = [
+    make_card(
+      ctx,
+      "BOX 1",
+      3,
+      1,
+      18,
+      6,
+      color::hex("#7C2D5A"),
+      color::hex("#3F1D35"),
+      color::hex("#F9A8D4"),
+      "BOX 1",
+      "drag me",
+    ),
+    make_card(
+      ctx,
+      "BOX 2",
+      18,
+      3,
+      18,
+      6,
+      color::hex("#166534"),
+      color::hex("#123524"),
+      color::hex("#86EFAC"),
+      "BOX 2",
+      "drag me",
+    ),
+    make_card(
+      ctx,
+      "BOX 3",
+      34,
+      5,
+      18,
+      6,
+      color::hex("#4338CA"),
+      color::hex("#29245F"),
+      color::hex("#C4B5FD"),
+      "BOX 3",
+      "drag me",
+    ),
+    make_card(
+      ctx,
+      "BOX 4 · O HIDDEN",
+      12,
+      7,
+      18,
+      6,
+      color::hex("#854D0E"),
+      color::hex("#422006"),
+      color::hex("#FDE68A"),
+      "This should be cut off to the right",
+      "overflow hidden",
+    ),
+  ]
+  let overflow_label = cards.at(3).expect("overflow card").specimen
+  overflow_label.set_style(
+    style::new(
+      width: style::cells(27),
+      height: style::cells(1),
+      flex_shrink: 0.0,
+      align_self: style::Align::start,
+    ),
+  )
+  overflow_label.set_wrap(text::TextWrap::none)
+  overflow_label.set_overflow(text::TextOverflow::clip)
+  for card in cards {
+    stage.add(card.panel)
+  }
+
+  let footer = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::single,
+      border_color: color::hex("#334155"),
+      width: style::percent(100.0),
+      height: style::cells(3),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  let status = text::new(
+    ctx,
+    content: "",
+    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::ellipsis,
+    text_style: text::style(foreground: color::hex("#E2E8F0"), bold: true),
+  )
+  footer.add(status)
+
+  root.add(header)
+  root.add(stage)
+  root.add(footer)
+  application.root.add(root)
+
+  let state = mut DemoState{
+    trail_cursor: 0,
+    trail_count: 0,
+    activation_cursor: 0,
+    activation_count: 0,
+    dragging: -1,
+    drag_offset_x: 0,
+    drag_offset_y: 0,
+    moved: false,
+    next_z: 101,
+    last_event: "ready",
+    cursor: cursor,
+    trails: prepared_trails.@,
+    activations: prepared_activations.@,
+  }
+
+  for card, index in cards {
+    let target = card
+    let target_index = index
+    let target_name = card.name
+    let _ = card.panel.on_mouse(fn(received: mut event::MouseEvent) {
+      if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+        for candidate in cards {
+          apply_card(candidate, false)
+        }
+        state.dragging = target_index
+        state.drag_offset_x = received.local_x
+        state.drag_offset_y = received.local_y
+        state.moved = false
+        target.latched = false
+        target.z = state.next_z
+        state.next_z =+ 1
+        apply_card(target, true)
+        target.label.set_content("picked up")
+        state.last_event = "{target_name} picked up"
+        update_status(state, status)
+        received.stop_propagation()
+      } else if received.event_type == event::MouseEventType::drag and received.button == event::MouseButton::left and state.dragging == target_index {
+        let screen = stage.layout().screen
+        target.x = clamp(
+          received.x - screen.x - 1 - state.drag_offset_x,
+          0,
+          screen.width - target.width - 2,
+        )
+        target.y = clamp(
+          received.y - screen.y - 1 - state.drag_offset_y,
+          0,
+          screen.height - target.height - 2,
+        )
+        apply_card(target, true)
+        target.label.set_content("dragging {target.x},{target.y}")
+        state.moved = true
+        state.last_event = "{target_name} drag at {received.x},{received.y}"
+        add_trail(state, stage, received, true)
+        update_status(state, status)
+        received.stop_propagation()
+      } else if received.event_type == event::MouseEventType::drag_end and received.button == event::MouseButton::left and state.dragging == target_index {
+        let destination = drop_target(cards, target_index, stage, received.x, received.y)
+        target.z = 100
+        apply_card(target, false)
+        match cards.at(destination) {
+          dropped_on => {
+            dropped_on.panel.set_border_color(color::hex("#F8FAFC"))
+            dropped_on.label.set_content("got {target_name}")
+            dropped_on.latched = true
+            target.label.set_content("dropped on {dropped_on.name}")
+            target.latched = true
+            state.last_event = "{target_name} dropped on {dropped_on.name}"
+          },
+          _ => {
+            target.label.set_content("released here")
+            target.latched = true
+            state.last_event = "{target_name} released"
+          },
+        }
+        state.dragging = -1
+        update_status(state, status)
+        received.stop_propagation()
+      } else if received.event_type == event::MouseEventType::up and received.button == event::MouseButton::left and state.dragging == target_index {
+        if not state.moved {
+          target.label.set_content("clicked")
+          target.latched = true
+          state.last_event = "{target_name} clicked"
+          state.dragging = -1
+          apply_card(target, false)
+          update_status(state, status)
+        }
+      } else if received.event_type == event::MouseEventType::move {
+        received.stop_propagation()
+      } else if received.event_type == event::MouseEventType::over and not target.latched {
+        target.label.set_content("pointer over")
+      } else if received.event_type == event::MouseEventType::out and state.dragging != target_index and (not target.latched) {
+        target.label.set_content("pointer out")
+      } else if received.event_type == event::MouseEventType::scroll {
+        mut direction = "down"
+        if received.scroll_y < 0 {
+          direction = "up"
+        } else if received.scroll_y == 0 and received.scroll_x < 0 {
+          direction = "left"
+        } else if received.scroll_y == 0 and received.scroll_x > 0 {
+          direction = "right"
+        }
+        target.label.set_content("scroll {direction}")
+        target.latched = true
+        state.last_event = "{target_name} scroll {direction}"
+        update_status(state, status)
+        received.stop_propagation()
+      }
+    })
+  }
+
+  let _ = stage.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::move {
+      add_trail(state, stage, received, false)
+      update_status(state, status)
+    } else if received.event_type == event::MouseEventType::drag {
+      add_trail(state, stage, received, true)
+      state.last_event = "drag at {received.x},{received.y}"
+      update_status(state, status)
+    } else if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+      toggle_activation(state, stage, received)
+      update_status(state, status)
+    }
+  })
+
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release {
+      if received.matches("c") {
+        clear_marks(state)
+        state.last_event = "trails and cells cleared"
+        update_status(state, status)
+        received.prevent_default()
+      } else if received.matches("r") {
+        clear_marks(state)
+        reset_cards(cards)
+        state.dragging = -1
+        state.moved = false
+        state.next_z = 101
+        state.last_event = "scene reset"
+        update_status(state, status)
+        received.prevent_default()
+      }
+    }
+  })
+
+  update_status(state, status)
+  application.run().expect("run Cooper mouse interaction demo")
+}

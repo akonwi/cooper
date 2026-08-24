@@ -1,0 +1,526 @@
+use cooper/app
+use cooper/box
+use cooper/color
+use cooper/context
+use cooper/event
+use cooper/input
+use cooper/scroll_box
+use cooper/selection
+use cooper/style
+use cooper/text
+
+struct LabState {
+  focus: Int,
+  last_event: Str,
+  input_count: Int,
+  change_count: Int,
+  submit_count: Int,
+  reject_count: Int,
+  paste_count: Int,
+  selected_text: Str,
+  email_touched: Bool,
+  email_valid: Bool,
+  name_rejected: Bool,
+}
+
+private fn field_frame(ctx: mut context::Context, title: Str, border: color::Color) mut box::Box {
+  box::new(
+    ctx,
+    title: title,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::rounded,
+      border_color: border,
+      width: style::percent(100.0),
+      height: style::cells(3),
+      flex_shrink: 0.0,
+      overflow: style::Overflow::hidden,
+    ),
+  )
+}
+
+private fn input_style() style::Style {
+  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
+}
+
+private fn value_style(foreground: color::Color) text::TextStyle {
+  text::style(foreground: foreground, background: color::hex("#0F172A"))
+}
+
+private fn placeholder_style() text::TextStyle {
+  text::style(
+    foreground: color::hex("#64748B"),
+    background: color::hex("#0F172A"),
+    dim: true,
+    italic: true,
+  )
+}
+
+private fn selected_style(selected: mut text::TextStyle) {
+  selected.foreground = Maybe::new(color::hex("#FFFFFF"))
+  selected.background = Maybe::new(color::hex("#1D4ED8"))
+  selected.bold = true
+}
+
+private fn email_shape(value: Str) Bool {
+  (not value.is_empty()) and value.contains("@") and value.contains(".")
+}
+
+private fn refresh_fields(fields: [mut input::Input], frames: [mut box::Box], state: mut LabState) {
+  let muted = color::hex("#475569")
+  mut name_border = color::hex("#38BDF8")
+  mut email_border = muted
+  let unicode_border = color::hex("#C084FC")
+  let local_border = color::hex("#F59E0B")
+
+  let name_minimum = fields.at(0).expect("name input").min_length()
+  let name_maximum = fields.at(0).expect("name input").max_length().or(-1)
+  mut name_title = "NAME · {name_minimum}–{name_maximum} GRAPHEMES"
+  if state.name_rejected {
+    name_border = color::hex("#FB7185")
+    name_title = "NAME · REJECTED (<2)"
+  }
+
+  mut email_title = "EMAIL · @ + DOT SHAPE CHECK"
+  mut email_text = color::hex("#E2E8F0")
+  if state.email_touched {
+    if state.email_valid {
+      email_border = color::hex("#4ADE80")
+      email_text = color::hex("#BBF7D0")
+      email_title = "EMAIL · SHAPE VALID"
+    } else {
+      email_border = color::hex("#FB7185")
+      email_text = color::hex("#FECDD3")
+      email_title = "EMAIL · SHAPE INVALID"
+    }
+  }
+
+  let borders = [name_border, email_border, unicode_border, local_border]
+  for frame, index in frames {
+    mut border = borders.at(index).expect("input lab border")
+    if index == state.focus {
+      border = color::hex("#F8FAFC")
+    }
+    frame.set_border_color(border)
+  }
+
+  frames.at(0).expect("name frame").set_title(name_title)
+  frames.at(1).expect("email frame").set_title(email_title)
+  mut name_text = color::hex("#E2E8F0")
+  if state.name_rejected {
+    name_text = color::hex("#FECDD3")
+  }
+  fields.at(0).expect("name input").set_text_style(value_style(name_text))
+  fields.at(1).expect("email input").set_text_style(value_style(email_text))
+}
+
+private fn diagnostics_content(state: mut LabState, names: [Str]) text::StyledText {
+  let label = color::hex("#94A3B8")
+  let value = color::hex("#F8FAFC")
+  let accent = color::hex("#67E8F9")
+  mut selected = state.selected_text
+  if selected.is_empty() {
+    selected = "none"
+  }
+  let focus_name = names.at(state.focus).or("none")
+  mut email = "untouched"
+  mut email_color = color::hex("#FBBF24")
+  if state.email_touched {
+    if state.email_valid {
+      email = "valid"
+      email_color = color::hex("#4ADE80")
+    } else {
+      email = "invalid"
+      email_color = color::hex("#FB7185")
+    }
+  }
+
+  text::styled_text(
+    [
+      text::span("FOCUS  ", style: text::span_style(foreground: label, bold: true)),
+      text::span("{focus_name}\n", style: text::span_style(foreground: accent, bold: true)),
+      text::span("LAST   ", style: text::span_style(foreground: label, bold: true)),
+      text::span("{state.last_event}\n\n", style: text::span_style(foreground: value)),
+      text::span("CALLBACKS\n", style: text::span_style(foreground: label, bold: true)),
+      text::span(
+        "input {state.input_count} · change {state.change_count}\n",
+        style: text::span_style(foreground: value),
+      ),
+      text::span(
+        "submit {state.submit_count} · reject {state.reject_count}\n",
+        style: text::span_style(foreground: value),
+      ),
+      text::span("paste bytes {state.paste_count}\n\n", style: text::span_style(foreground: value)),
+      text::span("SELECTION\n", style: text::span_style(foreground: label, bold: true)),
+      text::span("{selected}\n\n", style: text::span_style(foreground: color::hex("#A5B4FC"))),
+      text::span("EMAIL  ", style: text::span_style(foreground: label, bold: true)),
+      text::span(email, style: text::span_style(foreground: email_color, bold: true)),
+    ],
+  )
+}
+
+private fn refresh(
+  fields: [mut input::Input],
+  frames: [mut box::Box],
+  names: [Str],
+  state: mut LabState,
+  diagnostics: mut text::Text,
+) {
+  refresh_fields(fields, frames, state)
+  diagnostics.set_content(diagnostics_content(state, names))
+}
+
+private fn focused_index(fields: [mut input::Input]) Int {
+  mut focused = -1
+  for field, index in fields {
+    if field.is_focused() {
+      focused = index
+    }
+  }
+  focused
+}
+
+private fn focus_next(fields: [mut input::Input], reverse: Bool) {
+  let current = focused_index(fields)
+  mut next = current + 1
+  if reverse {
+    next = current - 1
+  }
+  if next < 0 {
+    next = fields.size() - 1
+  } else if next >= fields.size() {
+    next = 0
+  }
+  fields.at(next).expect("next input lab field").focus()
+}
+
+fn main() {
+  let application = app::new().expect("create Cooper input lab")
+  defer application.destroy()
+  let ctx = application.context
+
+  let root = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#020617"),
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      gap: style::cells(1),
+    ),
+  )
+
+  let header = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::heavy,
+      border_color: color::hex("#38BDF8"),
+      width: style::percent(100.0),
+      height: style::cells(4),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  header.add(
+    text::new(
+      ctx,
+      content: "COOPER INPUT LAB",
+      selectable: false,
+      text_style: text::style(foreground: color::hex("#7DD3FC"), bold: true),
+    ),
+  )
+  header.add(
+    text::new(
+      ctx,
+      content: "Single-line editing · selection · paste · validation · commit callbacks",
+      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      selectable: false,
+      wrap: text::TextWrap::none,
+      overflow: text::TextOverflow::ellipsis,
+      text_style: text::style(foreground: color::hex("#94A3B8")),
+    ),
+  )
+
+  let body = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::cells(1),
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+      flex_direction: style::FlexDirection::row,
+      gap: style::cells(1),
+      overflow: style::Overflow::hidden,
+    ),
+  )
+
+  let form_panel = box::new(
+    ctx,
+    title: "FIELDS — TAB / SHIFT+TAB",
+    styles: style::new(
+      background: color::hex("#0B1220"),
+      border: style::Border::rounded,
+      border_color: color::hex("#475569"),
+      width: style::percent(60.0),
+      height: style::percent(100.0),
+      flex_shrink: 0.0,
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let form = scroll_box::new(
+    ctx,
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+  )
+
+  let name_frame = field_frame(ctx, "NAME · 2–20 GRAPHEMES", color::hex("#38BDF8"))
+  let name = input::new(
+    ctx,
+    placeholder: "Ada Lovelace",
+    min_length: 2,
+    max_length: 20,
+    styles: input_style(),
+    text_style: value_style(color::hex("#E2E8F0")),
+    placeholder_style: placeholder_style(),
+    selection_style: selected_style,
+  )
+  name_frame.add(name)
+
+  let email_frame = field_frame(ctx, "EMAIL · @ + DOT SHAPE CHECK", color::hex("#475569"))
+  let email = input::new(
+    ctx,
+    placeholder: "name@example.com",
+    max_length: 36,
+    styles: input_style(),
+    text_style: value_style(color::hex("#E2E8F0")),
+    placeholder_style: placeholder_style(),
+    selection_style: selected_style,
+  )
+  email_frame.add(email)
+
+  let unicode_frame = field_frame(ctx, "UNICODE · MAX 8 GRAPHEMES", color::hex("#C084FC"))
+  let unicode = input::new(
+    ctx,
+    value: "élan🙂",
+    placeholder: "Grapheme-safe editing",
+    max_length: 8,
+    styles: input_style(),
+    text_style: value_style(color::hex("#E9D5FF")),
+    placeholder_style: placeholder_style(),
+    selection_style: selected_style,
+  )
+  unicode_frame.add(unicode)
+
+  let local_frame = field_frame(ctx, "LOCAL EDIT · GLOBAL SELECT OFF", color::hex("#F59E0B"))
+  let local = input::new(
+    ctx,
+    value: "still editable",
+    placeholder: "Selection disabled, editing enabled",
+    styles: input_style(),
+    text_style: value_style(color::hex("#FDE68A")),
+    placeholder_style: placeholder_style(),
+    selectable: false,
+  )
+  local_frame.add(local)
+
+  let fields: [mut input::Input] = [name, email, unicode, local]
+  let frames: [mut box::Box] = [name_frame, email_frame, unicode_frame, local_frame]
+  let names: [Str] = ["NAME", "EMAIL", "UNICODE", "LOCAL EDIT"]
+  for frame in frames {
+    form.add(frame)
+  }
+  form_panel.add(form)
+
+  let diagnostics_panel = box::new(
+    ctx,
+    title: "LIVE DIAGNOSTICS",
+    styles: style::new(
+      background: color::hex("#0B1220"),
+      border: style::Border::rounded,
+      border_color: color::hex("#A78BFA"),
+      width: style::cells(1),
+      height: style::percent(100.0),
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let diagnostics_clip = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let diagnostics = text::new(
+    ctx,
+    content: "",
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::clip,
+    text_style: text::style(foreground: color::hex("#E2E8F0")),
+  )
+  diagnostics_clip.add(diagnostics)
+  diagnostics_panel.add(diagnostics_clip)
+
+  body.add(form_panel)
+  body.add(diagnostics_panel)
+
+  let footer = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::single,
+      border_color: color::hex("#334155"),
+      width: style::percent(100.0),
+      height: style::cells(4),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  footer.add(
+    text::new(
+      ctx,
+      content: "Single-line only · terminal paste normalizes CR/LF + tabs · no clipboard or password API",
+      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      selectable: false,
+      wrap: text::TextWrap::none,
+      overflow: text::TextOverflow::ellipsis,
+      text_style: text::style(foreground: color::hex("#94A3B8")),
+    ),
+  )
+  footer.add(
+    text::new(
+      ctx,
+      content: text::styled_text(
+        [
+          text::span("Tab/Shift+Tab", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" focus  ·  "),
+          text::span("Return", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" submit  ·  "),
+          text::span("Esc", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" clear selection  ·  "),
+          text::span("Mouse", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" place/drag  ·  "),
+          text::span("Ctrl+C", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" quit"),
+        ],
+      ),
+      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      selectable: false,
+      wrap: text::TextWrap::none,
+      overflow: text::TextOverflow::ellipsis,
+      text_style: text::style(foreground: color::hex("#CBD5E1")),
+    ),
+  )
+
+  root.add(header)
+  root.add(body)
+  root.add(footer)
+  application.root.add(root)
+
+  let state = mut LabState{
+    focus: -1,
+    last_event: "ready",
+    input_count: 0,
+    change_count: 0,
+    submit_count: 0,
+    reject_count: 0,
+    paste_count: 0,
+    selected_text: "",
+    email_touched: false,
+    email_valid: false,
+    name_rejected: false,
+  }
+
+  for field, index in fields {
+    let target_index = index
+    let target_name = names.at(index).expect("input lab name")
+
+    let _ = field.on_focus(fn() {
+      state.focus = target_index
+      state.last_event = "focus · {target_name}"
+      refresh(fields, frames, names, state, diagnostics)
+    })
+    let _ = field.on_blur(fn() {
+      if state.focus == target_index {
+        state.focus = -1
+        state.last_event = "blur · {target_name}"
+        refresh(fields, frames, names, state, diagnostics)
+      }
+    })
+    let _ = field.on_input(fn(value: Str) {
+      state.input_count =+ 1
+      state.last_event = "input · {target_name} · {value}"
+      if target_index == 0 {
+        state.name_rejected = false
+      } else if target_index == 1 {
+        state.email_touched = true
+        state.email_valid = email_shape(value)
+      }
+      refresh(fields, frames, names, state, diagnostics)
+    })
+    let _ = field.on_change(fn(value: Str) {
+      state.change_count =+ 1
+      state.last_event = "change · {target_name} · {value}"
+      refresh(fields, frames, names, state, diagnostics)
+    })
+    let _ = field.on_submit(fn(value: Str) {
+      state.submit_count =+ 1
+      state.last_event = "submit · {target_name} · {value}"
+      refresh(fields, frames, names, state, diagnostics)
+    })
+  }
+
+  let _ = application.on_selection_change(fn(value: selection::Selection?) {
+    match value {
+      selected => { state.selected_text = selected.selected_text },
+      _ => { state.selected_text = "" },
+    }
+    refresh(fields, frames, names, state, diagnostics)
+  })
+
+  let _ = application.on_paste(fn(received: mut event::PasteEvent) {
+    state.paste_count =+ received.text.size()
+    state.last_event = "paste · {received.text.size()} bytes"
+    refresh(fields, frames, names, state, diagnostics)
+  })
+
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release {
+      if received.matches("tab", shift: true) {
+        focus_next(fields, true)
+        received.prevent_default()
+      } else if received.matches("tab") {
+        focus_next(fields, false)
+        received.prevent_default()
+      } else if received.matches("return") {
+        let current = focused_index(fields)
+        let current_name = names.at(current).or("field")
+        match fields.at(current) {
+          field => {
+            if not field.submit() {
+              state.reject_count =+ 1
+              state.last_event = "reject · {current_name} · minimum length"
+              if current == 0 {
+                state.name_rejected = true
+              }
+              refresh(fields, frames, names, state, diagnostics)
+            }
+          },
+          _ => (),
+        }
+        received.prevent_default()
+      } else if received.matches("escape") {
+        application.clear_selection()
+        received.prevent_default()
+      }
+    }
+  })
+
+  refresh(fields, frames, names, state, diagnostics)
+  application.run().expect("run Cooper input lab")
+}

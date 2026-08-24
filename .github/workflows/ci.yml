@@ -66,12 +66,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           python3 -m py_compile \
-            examples/test_input.py \
-            examples/test_form.py \
+            examples/test_layout_playground.py \
+            examples/test_text_gallery.py \
+            examples/test_dashboard.py \
+            examples/test_stacking.py \
+            examples/test_input_lab.py \
+            examples/test_event_inspector.py \
+            examples/test_links.py \
+            examples/test_terminal_focus.py \
+            examples/test_widgets.py \
             examples/test_scroll_form.py \
             examples/test_async.py \
             examples/test_lifecycle.py \
             examples/test_explorer.py \
+            examples/test_interaction.py \
             benchmarks/run.py
 
       - name: Test terminal examples
@@ -80,12 +88,20 @@ jobs:
         env:
           ARD: ard
         run: |
-          python3 test_input.py
-          python3 test_form.py
+          python3 test_layout_playground.py
+          python3 test_text_gallery.py
+          python3 test_dashboard.py
+          python3 test_stacking.py
+          python3 test_input_lab.py
+          python3 test_event_inspector.py
+          python3 test_links.py
+          python3 test_terminal_focus.py
+          python3 test_widgets.py
           python3 test_scroll_form.py
           python3 test_async.py
           python3 test_lifecycle.py
           python3 test_explorer.py
+          python3 test_interaction.py
 
       - name: Smoke-test benchmarks
         if: runner.os == 'Linux'

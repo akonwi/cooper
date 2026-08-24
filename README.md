@@ -118,13 +118,16 @@ The runnable examples exercise the public application and control APIs:
 ```sh
 cd examples
 ard run quickstart.ard
-ard run input.ard
-ard run form.ard
-ard run scroll_form.ard
-ard run async.ard
-ard run lifecycle.ard
+ard run layout_playground.ard
+ard run text_gallery.ard
+ard run dashboard.ard
+ard run stacking.ard
+ard run input_lab.ard
+ard run event_inspector.ard
+ard run links.ard
+ard run terminal_focus.ard
+ard run widgets.ard
 ard run explorer.ard
-ard run interaction_lab.ard
 ```
 
 See [`examples/README.md`](./examples/README.md) for behavior and PTY smoke
@@ -160,7 +163,8 @@ core/            unsupported runtime mechanisms
   selection_state.ard
 ffi/core/backend/ replaceable Vaxis and retained Yoga bindings
 test/            deterministic integration tests
-examples/        runnable PTY-tested applications
+examples/        curated runnable applications and PTY tests
+  fixtures/      focused non-gallery regression programs
 benchmarks/      retained layout and stress workloads
 ```
 
@@ -174,16 +178,23 @@ git diff --check
 go test ./...
 
 cd examples
-ARD=ard python3 test_input.py
-ARD=ard python3 test_form.py
-ARD=ard python3 test_scroll_form.py
-ARD=ard python3 test_async.py
-ARD=ard python3 test_lifecycle.py
-ARD=ard python3 test_explorer.py
-ARD=ard python3 test_interaction.py
+python3 test_layout_playground.py
+python3 test_text_gallery.py
+python3 test_dashboard.py
+python3 test_stacking.py
+python3 test_input_lab.py
+python3 test_event_inspector.py
+python3 test_links.py
+python3 test_terminal_focus.py
+python3 test_widgets.py
+python3 test_scroll_form.py
+python3 test_async.py
+python3 test_lifecycle.py
+python3 test_explorer.py
+python3 test_interaction.py
 
 cd ..
-ARD=ard python3 benchmarks/run.py
+python3 benchmarks/run.py
 ```
 
 ## Design principles

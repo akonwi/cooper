@@ -642,8 +642,8 @@ layout are unchanged.
 
 ### Reference validation program
 
-The end-to-end acceptance program is `examples/interaction_lab.ard`, paired with
-`examples/test_interaction.py`. It is an instrumented UI rather than a second
+The end-to-end acceptance fixture is `examples/fixtures/interaction_lab.ard`,
+paired with `examples/test_interaction.py`. It is an instrumented UI rather than a second
 test framework: every interaction updates a stable visible status field that a
 person or PTY test can inspect.
 

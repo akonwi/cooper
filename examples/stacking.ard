@@ -1,0 +1,625 @@
+use ard/async
+
+use cooper/app
+use cooper/box
+use cooper/color
+use cooper/context
+use cooper/event
+use cooper/style
+use cooper/text
+use go:time
+
+struct Layer {
+  name: Str,
+  group: mut box::Box,
+  panel: mut box::Box,
+  x: Int,
+  y: Int,
+  z: Int,
+  home_x: Int,
+  home_y: Int,
+  fill: color::Color,
+  border: color::Color,
+}
+
+struct StackingState {
+  active: Int,
+  autoplay: Bool,
+  last_hit: Str,
+  hits: Int,
+}
+
+private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
+  if value < minimum {
+    minimum
+  } else if value > maximum {
+    maximum
+  } else {
+    value
+  }
+}
+
+private fn group_style(x: Int, y: Int, z: Int) style::Style {
+  style::new(
+    position: style::Position::absolute,
+    left: style::cells(x),
+    top: style::cells(y),
+    width: style::cells(31),
+    height: style::cells(8),
+    overflow: style::Overflow::visible,
+    z_index: z,
+  )
+}
+
+private fn shadow_style() style::Style {
+  style::new(
+    background: color::hex("#030712"),
+    position: style::Position::absolute,
+    left: style::cells(1),
+    top: style::cells(1),
+    width: style::cells(30),
+    height: style::cells(7),
+    z_index: 0,
+  )
+}
+
+private fn panel_style(fill: color::Color, border: color::Color) style::Style {
+  style::new(
+    background: fill,
+    border: style::Border::rounded,
+    border_color: border,
+    position: style::Position::absolute,
+    left: style::cells(0),
+    top: style::cells(0),
+    width: style::cells(30),
+    height: style::cells(7),
+    overflow: style::Overflow::visible,
+    z_index: 1,
+    align_items: style::Align::center,
+    justify_content: style::Justify::center,
+  )
+}
+
+private fn badge_style(fill: color::Color) style::Style {
+  style::new(
+    background: fill,
+    border: style::Border::heavy,
+    border_color: color::hex("#F8FAFC"),
+    position: style::Position::absolute,
+    left: style::cells(17),
+    top: style::cells(4),
+    width: style::cells(13),
+    height: style::cells(3),
+    z_index: 99,
+    align_items: style::Align::center,
+    justify_content: style::Justify::center,
+  )
+}
+
+private fn make_layer(
+  ctx: mut context::Context,
+  name: Str,
+  x: Int,
+  y: Int,
+  z: Int,
+  fill: color::Color,
+  border: color::Color,
+  badge_fill: color::Color,
+) mut Layer {
+  let group = box::new(ctx, styles: group_style(x, y, z))
+  let shadow = box::new(ctx, styles: shadow_style())
+  let panel = box::new(ctx, title: name, styles: panel_style(fill, border))
+  panel.add(
+    text::new(
+      ctx,
+      content: "{name}\nparent context",
+      selectable: false,
+      text_style: text::style(foreground: color::hex("#FFFFFF"), bold: true),
+    ),
+  )
+  let badge = box::new(ctx, title: "CHILD", styles: badge_style(badge_fill))
+  badge.add(
+    text::new(
+      ctx,
+      content: "z = 99",
+      selectable: false,
+      text_style: text::style(foreground: color::hex("#FFFFFF"), bold: true),
+    ),
+  )
+  panel.add(badge)
+  group.add(shadow)
+  group.add(panel)
+  group.set_focusable(true)
+
+  let layer = mut Layer{
+    name: name,
+    group: group,
+    panel: panel,
+    x: x,
+    y: y,
+    z: z,
+    home_x: x,
+    home_y: y,
+    fill: fill,
+    border: border,
+  }
+  layer
+}
+
+private fn apply_layer(layer: mut Layer, active: Bool) {
+  mut applied_border = layer.border
+  if active {
+    applied_border = color::hex("#F8FAFC")
+  }
+  layer.group.set_style(group_style(layer.x, layer.y, layer.z))
+  layer.panel.set_style(panel_style(layer.fill, applied_border))
+  layer.panel.set_title("{layer.name} · parent z={layer.z}")
+}
+
+private fn refresh(layers: [mut Layer], active: Int) {
+  for layer, index in layers {
+    apply_layer(layer, index == active)
+  }
+}
+
+private fn raise_layer(layers: [mut Layer], index: Int) {
+  match layers.at(index) {
+    selected => {
+      let previous_z = selected.z
+      for layer in layers {
+        if layer.z > previous_z {
+          layer.z =- 1
+        }
+      }
+      selected.z = layers.size() - 1
+    },
+    _ => (),
+  }
+}
+
+private fn move_layer(layer: mut Layer, delta_x: Int, delta_y: Int) {
+  layer.x = clamp(layer.x + delta_x, 0, 30)
+  layer.y = clamp(layer.y + delta_y, 0, 6)
+}
+
+private fn reset_layers(layers: [mut Layer]) {
+  for layer, index in layers {
+    layer.x = layer.home_x
+    layer.y = layer.home_y
+    layer.z = index
+  }
+}
+
+private fn name_at_z(layers: [mut Layer], z: Int) Str {
+  mut found = "?"
+  for layer in layers {
+    if layer.z == z {
+      found = layer.name
+    }
+  }
+  found
+}
+
+private fn inspector_content(layers: [mut Layer], active: Int, autoplay: Bool) text::StyledText {
+  let selected = layers.at(active).expect("active stacking layer")
+  let label = color::hex("#94A3B8")
+  let accent = color::hex("#67E8F9")
+  let value = color::hex("#F8FAFC")
+  mut auto_color = color::hex("#FBBF24")
+  mut auto_label = "OFF"
+  if autoplay {
+    auto_color = color::hex("#4ADE80")
+    auto_label = "ON"
+  }
+  text::styled_text(
+    [
+      text::span("ACTIVE\n", style: text::span_style(foreground: label, bold: true)),
+      text::span("{selected.name}\n\n", style: text::span_style(foreground: accent, bold: true)),
+      text::span("BACK → FRONT\n", style: text::span_style(foreground: label, bold: true)),
+      text::span(
+        "{name_at_z(layers, 0)} · {name_at_z(layers, 1)} · {name_at_z(layers, 2)}\n\n",
+        style: text::span_style(foreground: value),
+      ),
+      text::span("CHILD Z\n", style: text::span_style(foreground: label, bold: true)),
+      text::span(
+        "99 (inside each parent)\n\n",
+        style: text::span_style(foreground: color::hex("#F472B6")),
+      ),
+      text::span("AUTOPLAY  ", style: text::span_style(foreground: label, bold: true)),
+      text::span(auto_label, style: text::span_style(foreground: auto_color, bold: true)),
+    ],
+  )
+}
+
+private fn update_status(
+  layers: [mut Layer],
+  active: Int,
+  autoplay: Bool,
+  last_hit: Str,
+  hits: Int,
+  inspector: mut text::Text,
+  status: mut text::Text,
+) {
+  let selected = layers.at(active).expect("active stacking layer")
+  inspector.set_content(inspector_content(layers, active, autoplay))
+  mut auto_label = "OFF"
+  if autoplay {
+    auto_label = "ON"
+  }
+  status.set_content(
+    "Active: {selected.name} · Parent z: {selected.z} · Position: {selected.x},{selected.y} · Auto: {auto_label} · Hit: {last_hit}#{hits}",
+  )
+}
+
+fn main() {
+  let application = app::new().expect("create Cooper stacking demo")
+  defer application.destroy()
+  let ctx = application.context
+
+  let root = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#020617"),
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      gap: style::cells(1),
+    ),
+  )
+
+  let header = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::heavy,
+      border_color: color::hex("#F472B6"),
+      width: style::percent(100.0),
+      height: style::cells(4),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  header.add(
+    text::new(
+      ctx,
+      content: "COOPER STACKING CONTEXTS",
+      selectable: false,
+      text_style: text::style(foreground: color::hex("#F9A8D4"), bold: true),
+    ),
+  )
+  header.add(
+    text::new(
+      ctx,
+      content: "A high-z child cannot escape its lower-z parent subtree",
+      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      selectable: false,
+      wrap: text::TextWrap::none,
+      overflow: text::TextOverflow::ellipsis,
+      text_style: text::style(foreground: color::hex("#94A3B8")),
+    ),
+  )
+
+  let body = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::cells(1),
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+      flex_direction: style::FlexDirection::row,
+      gap: style::cells(1),
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let stage = box::new(
+    ctx,
+    title: "NESTED LAYERS — CLICK EXPOSED EDGES",
+    styles: style::new(
+      background: color::hex("#0B1220"),
+      border: style::Border::rounded,
+      border_color: color::hex("#475569"),
+      position: style::Position::relative,
+      width: style::percent(68.0),
+      height: style::percent(100.0),
+      flex_shrink: 0.0,
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let stage_clip = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let inspector_panel = box::new(
+    ctx,
+    title: "STACK INSPECTOR",
+    styles: style::new(
+      background: color::hex("#0B1220"),
+      border: style::Border::rounded,
+      border_color: color::hex("#22D3EE"),
+      width: style::cells(1),
+      height: style::percent(100.0),
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let inspector_clip = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  let inspector = text::new(
+    ctx,
+    content: "",
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::percent(95.0), height: style::percent(100.0)),
+    selectable: false,
+    overflow: text::TextOverflow::clip,
+    text_style: text::style(foreground: color::hex("#E2E8F0")),
+  )
+  inspector_clip.add(inspector)
+  inspector_panel.add(inspector_clip)
+
+  let layers: [mut Layer] = [
+    make_layer(
+      ctx,
+      "ALPHA",
+      2,
+      1,
+      0,
+      color::hex("#1D4ED8"),
+      color::hex("#60A5FA"),
+      color::hex("#1E40AF"),
+    ),
+    make_layer(
+      ctx,
+      "BRAVO",
+      11,
+      3,
+      1,
+      color::hex("#6D28D9"),
+      color::hex("#C4B5FD"),
+      color::hex("#5B21B6"),
+    ),
+    make_layer(
+      ctx,
+      "CHARLIE",
+      20,
+      4,
+      2,
+      color::hex("#047857"),
+      color::hex("#6EE7B7"),
+      color::hex("#065F46"),
+    ),
+  ]
+  for layer in layers {
+    stage_clip.add(layer.group)
+  }
+  stage.add(stage_clip)
+
+  body.add(stage)
+  body.add(inspector_panel)
+
+  let footer = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#0F172A"),
+      border: style::Border::single,
+      border_color: color::hex("#334155"),
+      width: style::percent(100.0),
+      height: style::cells(4),
+      flex_shrink: 0.0,
+      align_items: style::Align::center,
+      justify_content: style::Justify::center,
+    ),
+  )
+  let status = text::new(
+    ctx,
+    content: "",
+    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    selectable: false,
+    wrap: text::TextWrap::none,
+    overflow: text::TextOverflow::ellipsis,
+    text_style: text::style(foreground: color::hex("#93C5FD"), bold: true),
+  )
+  footer.add(status)
+  footer.add(
+    text::new(
+      ctx,
+      content: text::styled_text(
+        [
+          text::span("1–3/Space", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" raise  ·  "),
+          text::span("Arrows", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" move  ·  "),
+          text::span("A", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" auto  ·  "),
+          text::span("R", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" reset  ·  "),
+          text::span("Q", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
+          text::span(" quit"),
+        ],
+      ),
+      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      selectable: false,
+      wrap: text::TextWrap::none,
+      overflow: text::TextOverflow::ellipsis,
+      text_style: text::style(foreground: color::hex("#CBD5E1")),
+    ),
+  )
+
+  root.add(header)
+  root.add(body)
+  root.add(footer)
+  application.root.add(root)
+
+  let state = mut StackingState{
+    active: 2,
+    autoplay: false,
+    last_hit: "none",
+    hits: 0,
+  }
+  refresh(layers, state.active)
+  update_status(layers, state.active, state.autoplay, state.last_hit, state.hits, inspector, status)
+
+  let activate = fn(index: Int) {
+    if index >= 0 and index < layers.size() {
+      state.active = index
+      raise_layer(layers, index)
+      refresh(layers, state.active)
+      update_status(
+        layers,
+        state.active,
+        state.autoplay,
+        state.last_hit,
+        state.hits,
+        inspector,
+        status,
+      )
+    }
+  }
+
+  for layer, index in layers {
+    let target_index = index
+    let hit_name = layer.name
+    let _ = layer.group.on_mouse(fn(received: mut event::MouseEvent) {
+      if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+        state.last_hit = hit_name
+        state.hits =+ 1
+        activate(target_index)
+      }
+    })
+  }
+
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type == event::KeyEventType::press {
+      if received.matches("q") {
+        received.prevent_default()
+        application.destroy()
+      } else if received.matches("1") {
+        activate(0)
+        received.prevent_default()
+      } else if received.matches("2") {
+        activate(1)
+        received.prevent_default()
+      } else if received.matches("3") {
+        activate(2)
+        received.prevent_default()
+      } else if received.matches("space") {
+        activate((state.active + 1) % layers.size())
+        received.prevent_default()
+      } else if received.matches("left") or received.matches("h") {
+        move_layer(layers.at(state.active).expect("active layer"), -1, 0)
+        refresh(layers, state.active)
+        update_status(
+          layers,
+          state.active,
+          state.autoplay,
+          state.last_hit,
+          state.hits,
+          inspector,
+          status,
+        )
+        received.prevent_default()
+      } else if received.matches("right") or received.matches("l") {
+        move_layer(layers.at(state.active).expect("active layer"), 1, 0)
+        refresh(layers, state.active)
+        update_status(
+          layers,
+          state.active,
+          state.autoplay,
+          state.last_hit,
+          state.hits,
+          inspector,
+          status,
+        )
+        received.prevent_default()
+      } else if received.matches("up") or received.matches("k") {
+        move_layer(layers.at(state.active).expect("active layer"), 0, -1)
+        refresh(layers, state.active)
+        update_status(
+          layers,
+          state.active,
+          state.autoplay,
+          state.last_hit,
+          state.hits,
+          inspector,
+          status,
+        )
+        received.prevent_default()
+      } else if received.matches("down") or received.matches("j") {
+        move_layer(layers.at(state.active).expect("active layer"), 0, 1)
+        refresh(layers, state.active)
+        update_status(
+          layers,
+          state.active,
+          state.autoplay,
+          state.last_hit,
+          state.hits,
+          inspector,
+          status,
+        )
+        received.prevent_default()
+      } else if received.matches("a") {
+        state.autoplay = not state.autoplay
+        update_status(
+          layers,
+          state.active,
+          state.autoplay,
+          state.last_hit,
+          state.hits,
+          inspector,
+          status,
+        )
+        received.prevent_default()
+      } else if received.matches("r") {
+        state.autoplay = false
+        state.active = 2
+        state.last_hit = "none"
+        state.hits = 0
+        reset_layers(layers)
+        refresh(layers, state.active)
+        update_status(
+          layers,
+          state.active,
+          state.autoplay,
+          state.last_hit,
+          state.hits,
+          inspector,
+          status,
+        )
+        received.prevent_default()
+      }
+    }
+  })
+
+  let autoplay_step = fn() {
+    if state.autoplay {
+      activate((state.active + 1) % layers.size())
+    }
+  }
+  let cancellation = ctx.cancellation
+  let dispatch = ctx.dispatch
+  async::start(fn() {
+    mut running = true
+    while running {
+      select {
+        cancellation.recv() => { running = false },
+        time::After(900 * time::Millisecond).recv() => {
+          if dispatch(autoplay_step).is_err() {
+            running = false
+          }
+        },
+      }
+    }
+  })
+
+  application.run().expect("run Cooper stacking demo")
+}

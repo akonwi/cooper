@@ -9,6 +9,7 @@ os.environ.setdefault("ARD", "ard")
 
 from test_harness import (
     Screen,
+    binary_path,
     build,
     read_for,
     resize,
@@ -19,7 +20,7 @@ from test_harness import (
 )
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BIN = os.path.join(ROOT, "explorer")
+BIN = binary_path("explorer")
 
 
 def click(fd, col, row):

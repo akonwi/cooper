@@ -375,28 +375,41 @@ model and readline-style default keybindings.
 
 ### ScrollBox
 
-ScrollBox is a vertical container with the Box tree operations and common
-control API:
+ScrollBox is a two-axis scrolling container whose public children remain
+vertically stacked. It exposes the Box tree operations and common control API:
 
 ```ard
+fn scroll_left() Int
 fn scroll_top() Int
+fn scroll_position() geometry::Point
+fn requested_scroll_left() Int
 fn requested_scroll_top() Int
+fn requested_scroll_position() geometry::Point
+fn maximum_scroll_left() Int
 fn maximum_scroll_top() Int
+fn maximum_scroll_position() geometry::Point
+fn scroll_width() Int
 fn scroll_height() Int
+fn mut scroll_to_x(x: Int) Bool
 fn mut scroll_to(y: Int) Bool
+fn mut scroll_to_position(position: geometry::Point) Bool
+fn mut scroll_by_x(delta: Int) Bool
 fn mut scroll_by(delta: Int) Bool
+fn mut scroll_by_position(delta: geometry::Point) Bool
 fn mut scroll_child_into_view(child: mut node::Renderable) Bool
 ```
 
-The requested offset persists across layout changes; the effective offset is
-clamped. Wheel input stops bubbling only when scrolling moves, allowing nested
-fallback. ScrollBox is focusable and handles arrows, Page Up/Down, Home, and
-End.
+Requested offsets persist across layout changes; effective offsets are clamped.
+Wheel input consumes only axes that move, allowing residual nested fallback;
+Shift+vertical wheel moves horizontally. ScrollBox is focusable and handles
+arrows, Page Up/Down, Home, End, and shifted horizontal page/edge variants.
+Focus and explicit child reveal settle through both axes.
 
-ADR 0007 adds the standalone Scrollbar primitive and a default automatic
-vertical ScrollBox bar with a stable gutter. It sequences horizontal ScrollBox
-scrolling immediately after the primitive and vertical integration are
-validated. Sticky scrolling, acceleration, and viewport culling remain deferred.
+ADR 0007 adds the standalone Scrollbar primitive, a default automatic vertical
+ScrollBox bar with a stable gutter, and horizontal ScrollBox scrolling after the
+primitive checkpoint. The horizontal bar is hidden by default and can be made
+automatic or always visible. Sticky scrolling, acceleration, and viewport
+culling remain deferred.
 
 ### Events, listeners, and focus
 

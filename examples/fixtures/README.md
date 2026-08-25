@@ -9,6 +9,8 @@ public example gallery:
 - `scroll_form.ard` covers direct multi-child ScrollBox reveal, its built-in
   proportional scrollbar and terminal mouse drag, translated mouse targeting,
   wheel fallback, and resize.
+- `horizontal_scroll.ard` covers two-axis ScrollBox state, both built-in bars,
+  corner ownership, Shift+wheel, arrow keys, and horizontal terminal mouse drag.
 - `async.ard` and `pre_run_destroy.ard` cover cancellation, dispatch, and
   destruction while work is pending.
 - `lifecycle.ard` and `pre_start_signal.ard` cover nonblocking startup,

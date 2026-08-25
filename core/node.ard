@@ -220,7 +220,9 @@ struct Node {
   selection_lock: (fn(Int, Int, Int, Int) SelectionExpansion?)?,
   selection_expand_word: (fn(Int, Int) SelectionExpansion?)?,
   selection_resolve: (fn(SelectionRange, SelectionRange, Int) SelectionExpansion?)?,
+  requested_scroll_x: Int,
   requested_scroll_y: Int,
+  children_offset_x: Int,
   children_offset_y: Int,
   request_render: fn(),
   on_destroy: fn(Int),
@@ -434,7 +436,9 @@ fn create(
     selection_lock: Maybe::new<fn(Int, Int, Int, Int) SelectionExpansion?>(),
     selection_expand_word: Maybe::new<fn(Int, Int) SelectionExpansion?>(),
     selection_resolve: Maybe::new<fn(SelectionRange, SelectionRange, Int) SelectionExpansion?>(),
+    requested_scroll_x: 0,
     requested_scroll_y: 0,
+    children_offset_x: 0,
     children_offset_y: 0,
     request_render: request_render,
     on_destroy: on_destroy,
@@ -1011,12 +1015,32 @@ impl Node {
     self.viewport
   }
 
+  fn scroll_x() Int {
+    0 - self.children_offset_x
+  }
+
   fn scroll_y() Int {
     0 - self.children_offset_y
   }
 
+  fn requested_scroll_x() Int {
+    self.requested_scroll_x
+  }
+
   fn requested_scroll_y() Int {
     self.requested_scroll_y
+  }
+
+  fn scroll_width() Int {
+    mut content_width = 0
+    for child in self.children {
+      let local = child.layout().local
+      let extent = saturating_add(local.x, local.width)
+      if extent > content_width {
+        content_width = extent
+      }
+    }
+    content_width
   }
 
   fn scroll_height() Int {
@@ -1029,6 +1053,15 @@ impl Node {
       }
     }
     content_height
+  }
+
+  fn max_scroll_x() Int {
+    let content_width = self.scroll_width()
+    if content_width > self.geometry.screen.width {
+      content_width - self.geometry.screen.width
+    } else {
+      0
+    }
   }
 
   fn max_scroll_y() Int {
@@ -1063,17 +1096,51 @@ impl Node {
 
     let viewport = self.geometry.screen
     let bounds = target.geometry.screen
-    mut requested = self.scroll_y()
+    mut requested_x = self.scroll_x()
+    if bounds.x < viewport.x {
+      requested_x = saturating_subtract(requested_x, saturating_subtract(viewport.x, bounds.x))
+    } else {
+      let viewport_right = saturating_add(viewport.x, viewport.width)
+      let target_right = saturating_add(bounds.x, bounds.width)
+      if target_right > viewport_right {
+        requested_x = saturating_add(requested_x, saturating_subtract(target_right, viewport_right))
+      }
+    }
+    mut requested_y = self.scroll_y()
     if bounds.y < viewport.y {
-      requested = saturating_subtract(requested, saturating_subtract(viewport.y, bounds.y))
+      requested_y = saturating_subtract(requested_y, saturating_subtract(viewport.y, bounds.y))
     } else {
       let viewport_bottom = saturating_add(viewport.y, viewport.height)
       let target_bottom = saturating_add(bounds.y, bounds.height)
       if target_bottom > viewport_bottom {
-        requested = saturating_add(requested, saturating_subtract(target_bottom, viewport_bottom))
+        requested_y = saturating_add(requested_y, saturating_subtract(target_bottom, viewport_bottom))
       }
     }
-    self.set_scroll_y(requested)
+    let moved_x = self.set_scroll_x(requested_x)
+    self.set_scroll_y(requested_y) or moved_x
+  }
+
+  fn mut set_scroll_x(requested: Int) Bool {
+    if self.destroyed {
+      panic("cannot scroll a destroyed retained Node")
+    }
+    self.requested_scroll_x = requested
+    if self.requested_scroll_x < 0 {
+      self.requested_scroll_x = 0
+    }
+    mut effective = self.requested_scroll_x
+    let maximum = self.max_scroll_x()
+    if effective > maximum {
+      effective = maximum
+    }
+    let translated = 0 - effective
+    let moved = translated != self.children_offset_x
+    if moved {
+      self.children_offset_x = translated
+      self.sync_children_geometry()
+      self.request_redraw()
+    }
+    moved
   }
 
   fn mut set_scroll_y(requested: Int) Bool {
@@ -1097,6 +1164,19 @@ impl Node {
       self.request_redraw()
     }
     moved
+  }
+
+  fn mut scroll_by_x(delta: Int) Bool {
+    let current = self.scroll_x()
+    mut requested = current
+    if delta > 0 and current > math::MaxInt - delta {
+      requested = math::MaxInt
+    } else if delta < 0 and current < math::MinInt - delta {
+      requested = math::MinInt
+    } else {
+      requested = current + delta
+    }
+    self.set_scroll_x(requested)
   }
 
   fn mut scroll_by(delta: Int) Bool {
@@ -1176,7 +1256,9 @@ impl Node {
       }
     }
     if next.overflow != style::Overflow::scroll {
+      self.requested_scroll_x = 0
       self.requested_scroll_y = 0
+      self.children_offset_x = 0
       self.children_offset_y = 0
     }
     for child in self.children {
@@ -1374,18 +1456,27 @@ impl Node {
     self.sync_children_geometry()
 
     if self.current_style.overflow == style::Overflow::scroll {
-      mut effective = self.requested_scroll_y
-      let maximum = self.max_scroll_y()
-      if effective > maximum {
-        effective = maximum
+      mut effective_x = self.requested_scroll_x
+      let maximum_x = self.max_scroll_x()
+      if effective_x > maximum_x {
+        effective_x = maximum_x
       }
-      let translated = 0 - effective
-      if translated != self.children_offset_y {
-        self.children_offset_y = translated
+      mut effective_y = self.requested_scroll_y
+      let maximum_y = self.max_scroll_y()
+      if effective_y > maximum_y {
+        effective_y = maximum_y
+      }
+      let translated_x = 0 - effective_x
+      let translated_y = 0 - effective_y
+      if translated_x != self.children_offset_x or translated_y != self.children_offset_y {
+        self.children_offset_x = translated_x
+        self.children_offset_y = translated_y
         self.sync_children_geometry()
       }
-    } else if self.children_offset_y != 0 or self.requested_scroll_y != 0 {
+    } else if self.children_offset_x != 0 or self.children_offset_y != 0 or self.requested_scroll_x != 0 or self.requested_scroll_y != 0 {
+      self.requested_scroll_x = 0
       self.requested_scroll_y = 0
+      self.children_offset_x = 0
       self.children_offset_y = 0
       self.sync_children_geometry()
     }
@@ -1393,9 +1484,10 @@ impl Node {
 
   private fn mut sync_children_geometry() {
     let screen = self.geometry.screen
+    let translated_x = saturating_add(screen.x, self.children_offset_x)
     let translated_y = saturating_add(screen.y, self.children_offset_y)
     for child in self.children {
-      child.sync_geometry(screen.x, translated_y)
+      child.sync_geometry(translated_x, translated_y)
     }
   }
 

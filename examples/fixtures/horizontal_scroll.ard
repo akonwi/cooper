@@ -1,0 +1,31 @@
+use cooper/app
+use cooper/scroll_box
+use cooper/scrollbar
+use cooper/style
+use cooper/text
+
+fn main() {
+  let application = app::new().expect("create Cooper horizontal scroll fixture")
+  defer application.destroy()
+  let viewport = scroll_box::new(
+    application.context,
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    horizontal_scrollbar_options: scrollbar::options(),
+  )
+  let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234567"
+  mut index = 0
+  while index < 8 {
+    viewport.add(
+      text::new(
+        application.context,
+        content: "{index}:{alphabet}",
+        wrap: text::TextWrap::none,
+        styles: style::new(width: style::cells(60), height: style::cells(1), flex_shrink: 0.0),
+      ),
+    )
+    index =+ 1
+  }
+  application.root.add(viewport)
+  viewport.focus()
+  application.run().expect("run Cooper horizontal scroll fixture")
+}

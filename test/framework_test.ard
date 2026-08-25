@@ -26,6 +26,17 @@ private fn fixed(width: Int, height: Int) style::Style {
   style::new(width: style::cells(width), height: style::cells(height), flex_shrink: 0.0)
 }
 
+private fn shifted_wheel_down() mut framework_event::MouseEvent {
+  framework_event::mouse(
+    framework_event::MouseEventType::scroll,
+    framework_event::MouseButton::none,
+    0,
+    0,
+    framework_event::Modifiers{shift: true, ctrl: false, alt: false, super: false},
+    scroll_y: 1,
+  )
+}
+
 private fn wheel_down() mut framework_event::MouseEvent {
   framework_event::mouse(
     framework_event::MouseEventType::scroll,
@@ -1050,6 +1061,39 @@ test fn retained_scroll_translates_clips_paint_and_hit_geometry() Void!Str {
   testing::assert(content.node().is_destroyed(), "Expected retained scroll cleanup")
 }
 
+test fn retained_horizontal_scroll_translates_clips_paint_and_hit_geometry() Void!Str {
+  let ctx = context::internal_new()
+  let content = box::new(
+    ctx,
+    styles: style::new(width: style::cells(4), height: style::cells(1), flex_shrink: 0.0),
+  )
+  let label = text::new(
+    ctx,
+    content: "ABCD",
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::cells(4), height: style::cells(1)),
+  )
+  content.add(label)
+  let view = scroll_box::new(ctx, styles: fixed(3, 2))
+  view.add(content)
+  context::internal_state(ctx).compute_layout(view, 3, 2)
+
+  try testing::assert(view.maximum_scroll_left() == 2, "Expected horizontal maximum beside vertical gutter")
+  try testing::assert(view.scroll_to_x(2), "Expected retained horizontal movement")
+  let after = paint::new_buffer(3, 2)
+  view.node().paint(after)
+  try testing::assert(
+    after.cell_at(0, 0).expect("horizontal first cell").grapheme == "C" and after.cell_at(1, 0).expect("horizontal second cell").grapheme == "D",
+    "Expected clipped horizontal translation",
+  )
+  try testing::assert(label.layout().screen.x == -2, "Expected horizontally translated cached geometry")
+  let target = hit::test(view, 0, 0).expect("horizontal pointer target")
+  try testing::assert(target.target == label.node_ref, "Expected translated horizontal hit target")
+
+  context::internal_state(ctx).destroy()
+  testing::assert(content.node().is_destroyed(), "Expected horizontal retained scroll cleanup")
+}
+
 test fn retained_scroll_preserves_requested_offset_across_layout_changes() Void!Str {
   let ctx = context::internal_new()
   let content = box::new(
@@ -1096,6 +1140,53 @@ test fn retained_scroll_wheel_bubbles_and_stops_at_boundaries() Void!Str {
   view.node().unmount_root()
   context::internal_state(ctx).destroy()
   testing::assert(content.node().is_destroyed(), "Expected wheel scroll cleanup")
+}
+
+test fn retained_shift_wheel_falls_back_horizontally_through_nested_scroll_boxes() Void!Str {
+  let ctx = context::internal_new()
+  let inner = scroll_box::new(ctx, styles: fixed(6, 2))
+  inner.add(box::new(ctx, styles: fixed(5, 1)))
+  let outer = scroll_box::new(ctx, styles: fixed(4, 2))
+  outer.add(inner)
+  context::internal_state(ctx).compute_layout(outer, 4, 2)
+  outer.node().mount_root(immediate_dispatch)
+
+  let focused = focus::new()
+  let outcome = router::dispatch_mouse(outer, inner.node(), shifted_wheel_down(), focused)
+  try testing::assert(outcome.handled, "Expected nested shifted wheel handling")
+  try testing::assert(inner.scroll_left() == 0, "Expected inner horizontal boundary")
+  try testing::assert(outer.scroll_left() == 3, "Expected outer horizontal fallback movement")
+
+  outer.node().unmount_root()
+  context::internal_state(ctx).destroy()
+  testing::assert(inner.node().is_destroyed(), "Expected nested horizontal fallback cleanup")
+}
+
+test fn retained_focus_reveal_scrolls_horizontal_descendant_into_view() Void!Str {
+  let ctx = context::internal_new()
+  let content = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(10),
+      height: style::cells(1),
+      flex_direction: style::FlexDirection::row,
+      flex_shrink: 0.0,
+    ),
+  )
+  content.add(box::new(ctx, styles: fixed(8, 1)))
+  let target = box::new(ctx, styles: fixed(2, 1))
+  target.set_focusable(true)
+  content.add(target)
+  let view = scroll_box::new(ctx, styles: fixed(6, 2))
+  view.add(content)
+  context::internal_state(ctx).compute_layout(view, 6, 2)
+
+  try testing::assert(focus::reveal(view, target.node()), "Expected horizontal focus reveal movement")
+  try testing::assert(view.scroll_left() == 5, "Expected horizontal focused offset")
+  try testing::assert(target.layout().screen.x == 3, "Expected horizontally revealed target geometry")
+
+  context::internal_state(ctx).destroy()
+  testing::assert(target.node().is_destroyed(), "Expected horizontal focus reveal cleanup")
 }
 
 test fn retained_focus_reveal_scrolls_direct_descendant_identity() Void!Str {

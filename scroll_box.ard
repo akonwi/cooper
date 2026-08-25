@@ -33,6 +33,7 @@ private struct Parts {
   viewport_column: mut Part,
   viewport: mut Part,
   vertical_bar: mut scrollbar::Scrollbar,
+  horizontal_bar: mut scrollbar::Scrollbar,
 }
 
 struct ScrollBox {
@@ -42,6 +43,18 @@ struct ScrollBox {
 
 private fn parts(value: Any) mut Parts {
   unsafe::cast<mut Parts>(value).expect("ScrollBox must be created by Cooper")
+}
+
+private fn wheel_step(value: Int) Int {
+  if value < 0 {
+    -3
+  } else {
+    3
+  }
+}
+
+private fn shifted(key: mut event::KeyEvent, name: Str) Bool {
+  key.name == name and key.modifiers.shift and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super)
 }
 
 private fn positive(value: Int) Int {
@@ -75,6 +88,10 @@ private fn configured_viewport(value: layout_style::Style) layout_style::Style {
   )
 }
 
+private fn hidden_scrollbar_options() scrollbar::Options {
+  scrollbar::options(visibility: scrollbar::Visibility::hidden)
+}
+
 private fn part(ctx: mut context::Context, styles: layout_style::Style) mut Part {
   let retained = context::internal_state(ctx).create_node(styles)
   let created = mut Part{node_ref: retained}
@@ -86,6 +103,7 @@ fn new(
   ctx: mut context::Context,
   styles: layout_style::Style?,
   scrollbar_options: scrollbar::Options?,
+  horizontal_scrollbar_options: scrollbar::Options?,
 ) mut ScrollBox {
   let public_style = styles.or(layout_style::new())
   let retained = context::internal_state(ctx).create_node(configured(public_style))
@@ -118,12 +136,21 @@ fn new(
     layout_style::new(),
     false,
   )
+  let horizontal_bar = scrollbar::internal_new(
+    ctx,
+    scrollbar::Orientation::horizontal,
+    scrollbar::state(),
+    horizontal_scrollbar_options.or(hidden_scrollbar_options()),
+    layout_style::new(),
+    false,
+  )
   let internal_parts = mut Parts{
     destroying: false,
     wrapper: wrapper,
     viewport_column: viewport_column,
     viewport: viewport,
     vertical_bar: vertical_bar,
+    horizontal_bar: horizontal_bar,
   }
   let scroll_box = mut ScrollBox{node_ref: retained, internal: internal_parts}
   retained.bind(scroll_box)
@@ -132,9 +159,13 @@ fn new(
   retained.add(wrapper.node_ref)
   wrapper.node_ref.add(viewport_column.node_ref)
   viewport_column.node_ref.add(viewport.node_ref)
+  viewport_column.node_ref.add(horizontal_bar.node_ref)
   wrapper.node_ref.add(vertical_bar.node_ref)
   let _ = vertical_bar.on_change(fn(position: Int) {
     let _ = viewport.node_ref.set_scroll_y(position)
+  })
+  let _ = horizontal_bar.on_change(fn(position: Int) {
+    let _ = viewport.node_ref.set_scroll_x(position)
   })
   scroll_box
 }
@@ -154,6 +185,13 @@ impl node::Renderable for ScrollBox {
         position: viewport.scroll_y(),
         viewport_size: viewport.layout().screen.height,
         content_size: viewport.scroll_height(),
+      ),
+    )
+    internal_parts.horizontal_bar.internal_sync_state(
+      scrollbar::state(
+        position: viewport.scroll_x(),
+        viewport_size: viewport.layout().screen.width,
+        content_size: viewport.scroll_width(),
       ),
     )
   }
@@ -203,20 +241,53 @@ impl ScrollBox {
     self.viewport().child_count()
   }
 
+  fn scroll_left() Int {
+    self.viewport().scroll_x()
+  }
+
   fn scroll_top() Int {
     self.viewport().scroll_y()
+  }
+
+  fn scroll_position() geometry::Point {
+    geometry::Point{x: self.scroll_left(), y: self.scroll_top()}
+  }
+
+  fn requested_scroll_left() Int {
+    self.viewport().requested_scroll_x()
   }
 
   fn requested_scroll_top() Int {
     self.viewport().requested_scroll_y()
   }
 
+  fn requested_scroll_position() geometry::Point {
+    geometry::Point{x: self.requested_scroll_left(), y: self.requested_scroll_top()}
+  }
+
+  fn maximum_scroll_left() Int {
+    self.viewport().max_scroll_x()
+  }
+
   fn maximum_scroll_top() Int {
     self.viewport().max_scroll_y()
   }
 
+  fn maximum_scroll_position() geometry::Point {
+    geometry::Point{x: self.maximum_scroll_left(), y: self.maximum_scroll_top()}
+  }
+
+  fn scroll_width() Int {
+    self.viewport().scroll_width()
+  }
+
   fn scroll_height() Int {
     self.viewport().scroll_height()
+  }
+
+  fn mut scroll_to_x(x: Int) Bool {
+    self.require_live()
+    self.viewport().set_scroll_x(x)
   }
 
   fn mut scroll_to(y: Int) Bool {
@@ -224,9 +295,26 @@ impl ScrollBox {
     self.viewport().set_scroll_y(y)
   }
 
+  fn mut scroll_to_position(position: geometry::Point) Bool {
+    self.require_live()
+    let moved_x = self.viewport().set_scroll_x(position.x)
+    self.viewport().set_scroll_y(position.y) or moved_x
+  }
+
+  fn mut scroll_by_x(delta: Int) Bool {
+    self.require_live()
+    self.viewport().scroll_by_x(delta)
+  }
+
   fn mut scroll_by(delta: Int) Bool {
     self.require_live()
     self.viewport().scroll_by(delta)
+  }
+
+  fn mut scroll_by_position(delta: geometry::Point) Bool {
+    self.require_live()
+    let moved_x = self.viewport().scroll_by_x(delta.x)
+    self.viewport().scroll_by(delta.y) or moved_x
   }
 
   fn mut scroll_child_into_view(child: mut node::Renderable) Bool {
@@ -238,9 +326,18 @@ impl ScrollBox {
     parts(self.internal).vertical_bar.options()
   }
 
+  fn horizontal_scrollbar_options() scrollbar::Options {
+    parts(self.internal).horizontal_bar.options()
+  }
+
   fn mut set_scrollbar_options(value: scrollbar::Options) {
     self.require_live()
     parts(self.internal).vertical_bar.set_options(value)
+  }
+
+  fn mut set_horizontal_scrollbar_options(value: scrollbar::Options) {
+    self.require_live()
+    parts(self.internal).horizontal_bar.set_options(value)
   }
 
   fn style() layout_style::Style {
@@ -307,32 +404,69 @@ impl ScrollBox {
   }
 
   private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
-    if mouse.event_type != event::MouseEventType::scroll or mouse.scroll_y == 0 {
+    if mouse.event_type != event::MouseEventType::scroll or mouse.scroll_x == 0 and mouse.scroll_y == 0 {
       event_delivery::Disposition::ignored
     } else {
-      mut delta = 3
-      if mouse.scroll_y < 0 {
-        delta = -3
+      mut changed = false
+      mut remaining = false
+      if mouse.scroll_x != 0 {
+        if self.scroll_by_x(wheel_step(mouse.scroll_x)) {
+          mouse.scroll_x = 0
+          changed = true
+        } else {
+          remaining = true
+        }
       }
-      let result = self.moved(ctx, self.scroll_by(delta))
-      if result == event_delivery::Disposition::handled {
-        ctx.stop_propagation()
+      if mouse.scroll_y != 0 {
+        mut moved = false
+        if mouse.modifiers.shift {
+          moved = self.scroll_by_x(wheel_step(mouse.scroll_y))
+        } else {
+          moved = self.scroll_by(wheel_step(mouse.scroll_y))
+        }
+        if moved {
+          mouse.scroll_y = 0
+          changed = true
+        } else {
+          remaining = true
+        }
       }
-      result
+      if changed {
+        ctx.preserve_focus_scroll()
+        ctx.request_redraw()
+        if not remaining {
+          ctx.stop_propagation()
+        }
+        event_delivery::Disposition::handled
+      } else {
+        event_delivery::Disposition::ignored
+      }
     }
   }
 
   private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
     if key.event_type == event::KeyEventType::release {
       event_delivery::Disposition::ignored
+    } else if key.matches("left") {
+      self.moved(ctx, self.scroll_by_x(-1))
+    } else if key.matches("right") {
+      self.moved(ctx, self.scroll_by_x(1))
     } else if key.matches("up") {
       self.moved(ctx, self.scroll_by(-1))
     } else if key.matches("down") {
       self.moved(ctx, self.scroll_by(1))
+    } else if shifted(key, "page_up") {
+      self.moved(ctx, self.scroll_by_x(0 - positive(self.viewport().layout().screen.width)))
+    } else if shifted(key, "page_down") {
+      self.moved(ctx, self.scroll_by_x(positive(self.viewport().layout().screen.width)))
     } else if key.matches("page_up") {
       self.moved(ctx, self.scroll_by(0 - positive(self.viewport().layout().screen.height)))
     } else if key.matches("page_down") {
       self.moved(ctx, self.scroll_by(positive(self.viewport().layout().screen.height)))
+    } else if shifted(key, "home") {
+      self.moved(ctx, self.scroll_to_x(0))
+    } else if shifted(key, "end") {
+      self.moved(ctx, self.scroll_to_x(self.maximum_scroll_left()))
     } else if key.matches("home") {
       self.moved(ctx, self.scroll_to(0))
     } else if key.matches("end") {

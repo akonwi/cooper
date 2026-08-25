@@ -204,6 +204,7 @@ python3 test_terminal_focus.py
 python3 test_widgets.py
 python3 test_clipboard.py
 python3 test_scroll_form.py
+python3 test_horizontal_scroll.py
 python3 test_async.py
 python3 test_lifecycle.py
 python3 test_explorer.py
@@ -217,7 +218,8 @@ commit callbacks, paste limits, draggable z-index objects, pointer trails,
 activated cells, drag/drop routing, interactive links, link-safe drag mode,
 terminal focus transitions, post-focus mouse resumption, app-local TabSelect,
 Select, and slider behavior, OSC 52 clipboard requests and responses, overflow
-clipping, editing, explicit focus policy, mouse input, scrolling, resize, App
+clipping, editing, explicit focus policy, mouse input, two-axis scrolling and
+scrollbar dragging, resize, App
 cancellation, asynchronous UI dispatch, nonblocking startup,
 suspension/resume, filesystem rows, drag capture/drop ordering, hover
 reconciliation, terminal focus, text and editable selection, and clean exit.

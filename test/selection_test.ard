@@ -4,6 +4,7 @@ use cooper/box
 use cooper/color
 use cooper/event
 use cooper/scroll_box
+use cooper/scrollbar
 use cooper/selection
 use cooper/style
 use cooper/testing as cooper_testing
@@ -646,6 +647,40 @@ test fn selection_after_scroll_uses_translated_visual_rows() Void!Str {
   try testing::assert(application.selection().expect("restored scrolled selection").selected_text == selected, "Expected logical selection restoration after scrolling back")
   application.destroy()
   testing::assert(view.node_ref.is_destroyed(), "Expected scrolled selection cleanup")
+}
+
+test fn selection_after_horizontal_scroll_uses_translated_visual_columns() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let view = scroll_box::new(
+    application.context,
+    styles: style::new(width: style::cells(8), height: style::cells(2)),
+    horizontal_scrollbar_options: scrollbar::options(),
+  )
+  let message = text::new(
+    application.context,
+    content: "0123456789",
+    wrap: text::TextWrap::none,
+    styles: style::new(width: style::cells(10), height: style::cells(1), flex_shrink: 0.0),
+  )
+  view.add(message)
+  application.root.add(view)
+  application.render()
+  let _ = view.scroll_to_x(3)
+  application.render()
+
+  application.drag(4, 0, 6, 0)
+  let selected = application.selection().expect("horizontal scrolled selection").selected_text
+  try testing::assert(selected == "789", "Expected translated horizontal selection, got {selected}")
+
+  let _ = view.scroll_to_x(0)
+  application.render()
+  try testing::assert(application.selection().expect("offscreen horizontal selection").selected_text == "", "Expected hidden horizontal selection fragment")
+  let _ = view.scroll_to_x(3)
+  application.render()
+  try testing::assert(application.selection().expect("restored horizontal selection").selected_text == selected, "Expected horizontal selection restoration")
+
+  application.destroy()
+  testing::assert(view.node_ref.is_destroyed(), "Expected horizontal selection cleanup")
 }
 
 test fn post_hover_anchor_invalidation_skips_stale_selection_notification() Void!Str {

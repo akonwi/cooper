@@ -104,8 +104,8 @@ yet a supported custom-control API.
   word wrapping by default, inheritable styles, plain-click/OSC 8 hyperlinks
   with pointer cursors, and optional ellipsis overflow;
 - `Input` — grapheme-aware CLI editing, editable selection, validation, and callbacks;
-- `ScrollBox` — focusable multi-child vertical scrolling container with a
-  built-in automatic proportional scrollbar and stable gutter.
+- `ScrollBox` — focusable two-axis retained scrolling container with a built-in
+  automatic vertical bar and configurable horizontal bar.
 - `Scrollbar` — standalone vertical or horizontal track/thumb control with
   pointer, keyboard, arrow, visibility, styling, and change-state APIs.
 
@@ -154,7 +154,7 @@ event.ard        Cooper-owned events, controls, and propagation state
 geometry.ard     Rect, Geometry, and geometry helpers
 input.ard        retained single-line Input
 root.ard         permanent Root and runtime bridge
-scroll_box.ard   retained vertical ScrollBox with built-in bar
+scroll_box.ard   retained two-axis ScrollBox with built-in bars
 scrollbar.ard    standalone vertical/horizontal Scrollbar
 selection.ard    global selection snapshots and local ranges
 style.ard        colors, layout values, stacking, and validation
@@ -200,6 +200,7 @@ python3 test_terminal_focus.py
 python3 test_widgets.py
 python3 test_clipboard.py
 python3 test_scroll_form.py
+python3 test_horizontal_scroll.py
 python3 test_async.py
 python3 test_lifecycle.py
 python3 test_explorer.py

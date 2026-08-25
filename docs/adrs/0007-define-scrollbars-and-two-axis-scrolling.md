@@ -180,8 +180,11 @@ reveal. Shift+vertical wheel maps to horizontal movement. Nested wheel fallback
 stops only an axis that actually moved. Keyboard behavior remains predictable
 and orientation-aware.
 
-The horizontal bar occupies the bottom of the viewport column. When both bars
-are enabled, the bottom-right corner belongs to the vertical bar, matching the
+The horizontal bar occupies the bottom of the viewport column. It is hidden by
+default so vertical-only ScrollBoxes do not permanently lose a content row;
+applications may select automatic stable-gutter or always-visible behavior.
+Horizontal offset APIs remain active when the bar is hidden. When both bars are
+enabled, the bottom-right corner belongs to the vertical bar, matching the
 composition above. Selection fragments, hit testing, focus reveal, clipping,
 and translated geometry must operate correctly with both offsets.
 
@@ -206,9 +209,9 @@ destruction, and public child operations require stronger tests. In return,
 paint and hit testing use normal retained composition instead of ScrollBox-only
 overlay exceptions.
 
-Separating primitive validation from horizontal integration limits simultaneous
-sources of failure while committing Cooper to two-axis scrolling as the next
-phase rather than leaving it indefinitely deferred.
+Separating primitive validation from horizontal integration limited simultaneous
+sources of failure while delivering two-axis scrolling immediately after the
+validated primitive checkpoint rather than leaving it indefinitely deferred.
 
 ## Related
 

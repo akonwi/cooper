@@ -136,6 +136,28 @@ fn reveal(root: mut node::Renderable, target: mut node::Node) Bool {
         if current.style().overflow == style::Overflow::scroll {
           let viewport = current.layout().screen
           let target_bounds = target.layout().screen
+          if viewport.width > 0 {
+            mut requested = current.scroll_x()
+            if target_bounds.x < viewport.x {
+              let distance = saturating_subtract(viewport.x, target_bounds.x)
+              requested = saturating_subtract(requested, distance)
+            } else if target_bounds.width >= viewport.width {
+              if target_bounds.x > viewport.x {
+                let distance = saturating_subtract(target_bounds.x, viewport.x)
+                requested = saturating_add(requested, distance)
+              }
+            } else {
+              let target_right = saturating_add(target_bounds.x, target_bounds.width)
+              let viewport_right = saturating_add(viewport.x, viewport.width)
+              if target_right > viewport_right {
+                let distance = saturating_subtract(target_right, viewport_right)
+                requested = saturating_add(requested, distance)
+              }
+            }
+            if current.set_scroll_x(requested) {
+              moved = true
+            }
+          }
           if viewport.height > 0 {
             mut requested = current.scroll_y()
             if target_bounds.y < viewport.y {

@@ -80,6 +80,7 @@ python3 test_terminal_focus.py
 python3 test_widgets.py
 python3 test_clipboard.py
 python3 test_scroll_form.py
+python3 test_horizontal_scroll.py
 python3 test_async.py
 python3 test_lifecycle.py
 python3 test_explorer.py

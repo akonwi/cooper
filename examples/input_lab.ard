@@ -384,7 +384,7 @@ fn main() {
   footer.add(
     text::new(
       ctx,
-      content: "Single-line only · terminal paste normalizes CR/LF + tabs · no clipboard or password API",
+      content: "Single-line only · paste normalizes CR/LF + tabs · clipboard is an App service · no password API",
       styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
       selectable: false,
       wrap: text::TextWrap::none,

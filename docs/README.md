@@ -13,6 +13,8 @@ Design decisions for Cooper's Ard-native retained-mode framework.
   Ard-native editor state, actions, and default CLI keybindings.
 - [ADR 0005](./adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md) — accepted
   rich Text spans, Unicode wrapping, overflow, links, and double-click selection.
+- [ADR 0006](./adrs/0006-define-terminal-clipboard-access.md) — accepted OSC 52
+  clipboard reads, writes, clears, and App-lifetime semantics.
 
 ## Architecture Decision Records
 
@@ -25,6 +27,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0003](./adrs/0003-define-interaction-focus-and-selection.md) | Accepted | Define interaction, focus, and selection |
 | [0004](./adrs/0004-define-input-editor-and-keybindings.md) | Accepted | Define Input editor state and CLI keybindings |
 | [0005](./adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md) | Accepted | Define rich Text, wrapping, and multi-click selection |
+| [0006](./adrs/0006-define-terminal-clipboard-access.md) | Accepted | Define terminal clipboard access |
 
 ### Add an ADR
 

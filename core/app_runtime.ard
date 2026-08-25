@@ -1,5 +1,6 @@
 use ard/async
 
+use cooper/clipboard
 use cooper/color
 use cooper/context
 use cooper/core/focus
@@ -11,6 +12,7 @@ use cooper/core/runtime
 use cooper/core/selection_state
 use cooper/event
 use cooper/selection as public_selection
+use go:github.com/akonwi/cooper/ffi/core/backend/clipboardbridge
 use go:github.com/akonwi/cooper/ffi/core/backend/clock
 use go:github.com/akonwi/cooper/ffi/core/backend/signalwatch
 use go:github.com/akonwi/cooper/ffi/core/backend/urlopen
@@ -175,6 +177,7 @@ struct PendingSelection {
 
 struct State {
   terminal: (mut vaxis::Vaxis)?,
+  clipboard_service: mut clipboard::Clipboard,
   terminal_io: mut sync::Mutex,
   terminal_suspended: Bool,
   terminal_closed: Bool,
@@ -232,6 +235,7 @@ struct State {
 
 private fn state(
   terminal: (mut vaxis::Vaxis)?,
+  clipboard_service: mut clipboard::Clipboard,
   signal_watcher: (mut signalwatch::Watcher)?,
   exit_on_ctrl_c: Bool,
   auto_focus: Bool,
@@ -245,6 +249,7 @@ private fn state(
   let updates = mut runtime::new_dispatch_queue()
   (mut State{
     terminal: terminal,
+    clipboard_service: clipboard_service,
     terminal_io: terminal_io,
     terminal_suspended: false,
     terminal_closed: not terminal.is_some(),
@@ -302,7 +307,25 @@ fn new_live(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Bool) (mut State)
   let watcher = signalwatch::New()
   match vaxis::New(vaxis::Options{DisableMouse: not use_mouse, NoSignals: true}) {
     ok(terminal) => {
-      let created = state(Maybe::new<mut vaxis::Vaxis>(terminal), Maybe::new<mut signalwatch::Watcher>(watcher), exit_on_ctrl_c, auto_focus, 0, 0, false, false)
+      let backend = clipboardbridge::New(terminal)
+      let clipboard_service = clipboard::internal_new(
+        fn() Str!Error { backend.Read() },
+        fn(value: Str) { backend.Write(value) },
+        fn() { backend.Suspend() },
+        fn() { backend.Resume() },
+        fn() { backend.Cancel() },
+      )
+      let created = state(
+        Maybe::new<mut vaxis::Vaxis>(terminal),
+        clipboard_service,
+        Maybe::new<mut signalwatch::Watcher>(watcher),
+        exit_on_ctrl_c,
+        auto_focus,
+        0,
+        0,
+        false,
+        false,
+      )
       Result::ok(created)
     },
     err(error) => {
@@ -316,7 +339,17 @@ fn new_headless(width: Int, height: Int) mut State {
   if width < 0 or height < 0 {
     panic("headless application dimensions must be non-negative")
   }
-  let created = state(Maybe::new<mut vaxis::Vaxis>(), Maybe::new<mut signalwatch::Watcher>(), true, true, width, height, true, true)
+  let created = state(
+    Maybe::new<mut vaxis::Vaxis>(),
+    clipboard::internal_memory(),
+    Maybe::new<mut signalwatch::Watcher>(),
+    true,
+    true,
+    width,
+    height,
+    true,
+    true,
+  )
   created
 }
 
@@ -587,6 +620,7 @@ impl State {
       self.selection_listeners = []
       self.pointer.clear()
       self.selection.destroy()
+      self.clipboard_service.internal_stop()
       self.close_cancellation()
       self.terminal_io.Lock()
       self.pointer_cursor = event::MouseCursor::default_cursor
@@ -646,6 +680,7 @@ impl State {
     self.lifecycle.Unlock()
 
     if stop_dispatch {
+      self.clipboard_service.internal_cancel()
       self.updates.stop()
     }
     if request_shutdown {
@@ -672,6 +707,7 @@ impl State {
     }
     self.lifecycle.Unlock()
     if stop_dispatch {
+      self.clipboard_service.internal_cancel()
       self.updates.stop()
     }
     finish_now
@@ -755,6 +791,7 @@ impl State {
       self.selection_listeners = []
       self.pointer.clear()
       self.selection.destroy()
+      self.clipboard_service.internal_stop()
       self.close_cancellation()
     }
 
@@ -1030,6 +1067,7 @@ impl State {
 
     if defer_app_cleanup {
       self.updates.stop()
+      self.clipboard_service.internal_stop()
       self.close_cancellation()
       let _ = self.release_terminal(Maybe::new<Error>())
     } else {
@@ -1103,6 +1141,10 @@ impl State {
       },
       _ => default_width,
     }
+  }
+
+  fn clipboard() mut clipboard::Clipboard {
+    self.clipboard_service
   }
 
   fn open_url() fn(Str) Void!Error {
@@ -1287,39 +1329,51 @@ impl State {
 
     mut outcome: Void!Error = Result::ok(())
     if available and (not already_suspended) {
-      let terminal = self.terminal.expect("live application terminal")
-      terminal.SetMouseShape(vaxis::MouseShapeDefault)
-      terminal.Render()
-      outcome = terminal.Suspend()
-      match outcome {
-        ok(_) => {
-          self.terminal_suspended = true
-          let events = terminal.Events()
-          mut draining = true
-          while draining {
-            select {
-              events.recv() => (),
-              _ => { draining = false },
+      if not self.clipboard_service.internal_suspend() {
+        self.lifecycle.Lock()
+        if self.phase == transition {
+          self.phase = previous
+        }
+        self.lifecycle.Unlock()
+        outcome = Result::err(
+          Error::new("application cannot suspend while a clipboard read is active"),
+        )
+      } else {
+        let terminal = self.terminal.expect("live application terminal")
+        terminal.SetMouseShape(vaxis::MouseShapeDefault)
+        terminal.Render()
+        outcome = terminal.Suspend()
+        match outcome {
+          ok(_) => {
+            self.terminal_suspended = true
+            let events = terminal.Events()
+            mut draining = true
+            while draining {
+              select {
+                events.recv() => (),
+                _ => { draining = false },
+              }
             }
-          }
-          self.lifecycle.Lock()
-          let committed = self.phase == transition
-          if committed {
-            self.phase = suspended
-          }
-          self.lifecycle.Unlock()
-          if not committed {
-            outcome = Result::err(Error::new("application was destroyed while suspending"))
-          }
-        },
-        err(error) => {
-          self.lifecycle.Lock()
-          if self.phase == transition {
-            self.phase = previous
-          }
-          self.lifecycle.Unlock()
-          outcome = Result::err(error)
-        },
+            self.lifecycle.Lock()
+            let committed = self.phase == transition
+            if committed {
+              self.phase = suspended
+            }
+            self.lifecycle.Unlock()
+            if not committed {
+              outcome = Result::err(Error::new("application was destroyed while suspending"))
+            }
+          },
+          err(error) => {
+            self.lifecycle.Lock()
+            if self.phase == transition {
+              self.phase = previous
+            }
+            self.lifecycle.Unlock()
+            self.clipboard_service.internal_resume()
+            outcome = Result::err(error)
+          },
+        }
       }
     }
     self.terminal_io.Unlock()
@@ -1372,6 +1426,7 @@ impl State {
           }
           self.lifecycle.Unlock()
           if committed {
+            self.clipboard_service.internal_resume()
             (self.request_render())()
           } else {
             outcome = Result::err(Error::new("application was destroyed while resuming"))

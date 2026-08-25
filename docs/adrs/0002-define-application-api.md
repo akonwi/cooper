@@ -39,6 +39,7 @@ application.run().expect("run Cooper app")
 struct App {
   context: mut context::Context,
   root: mut root::Root,
+  clipboard: mut clipboard::Clipboard,
 }
 
 fn new(
@@ -61,8 +62,9 @@ impl App {
 ```
 
 All three options default to `true`; `auto_focus` means focus on mouse-down.
-App is a copyable facade over shared runtime state held through Context and
-Root. Copies observe the same lifecycle.
+App is a copyable facade over shared runtime state held through Context, Root,
+and Clipboard. Copies observe the same lifecycle. Clipboard behavior is defined
+by [ADR 0006](./0006-define-terminal-clipboard-access.md).
 
 `start` mounts the permanent Root, commits the initial frame when the terminal
 is active, starts the App event pump, and returns. Repeated starts while the App
@@ -453,9 +455,10 @@ testing::assert_contains(test_app.frame().text(), "Hello")
 test_app.destroy()
 ```
 
-TestApp is an App-style value facade with Context and Root. Its non-mutating
-methods operate on shared test-runtime state. It provides explicit render,
-bounded flush, resize, key/paste/mouse/scroll input, read-only frame and cell
+TestApp is an App-style value facade with Context, Root, and deterministic
+in-memory Clipboard. Its non-mutating methods operate on shared test-runtime
+state. It provides explicit render, bounded flush, resize,
+key/paste/mouse/scroll input, read-only frame and cell
 snapshots, and idempotent destruction. It never initializes the host terminal.
 PTY tests retain responsibility for Vaxis parsing and terminal restoration.
 
@@ -473,7 +476,7 @@ PTY tests retain responsibility for Vaxis parsing and terminal restoration.
 Documented application modules are:
 
 ```text
-app  box  color  context  event  geometry
+app  box  clipboard  color  context  event  geometry
 input  root  scroll_box  style  testing  text  ui
 ```
 

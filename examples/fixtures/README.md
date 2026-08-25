@@ -3,6 +3,9 @@
 These programs support focused regression tests and are not part of Cooper's
 public example gallery:
 
+- `clipboard.ard` covers OSC 52 write, clear, asynchronous read, concurrent-read
+  rejection, suspend rejection/resume, response delivery, and App-lifetime
+  cancellation.
 - `scroll_form.ard` covers direct multi-child ScrollBox reveal, translated mouse
   targeting, wheel fallback, and resize.
 - `async.ard` and `pre_run_destroy.ard` cover cancellation, dispatch, and

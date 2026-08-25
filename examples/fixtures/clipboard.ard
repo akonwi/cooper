@@ -1,0 +1,70 @@
+use ard/async
+
+use cooper/app
+use cooper/event
+use cooper/style
+use cooper/text
+use go:time
+
+fn main() {
+  let application = app::new().expect("create Cooper clipboard fixture")
+  defer application.destroy()
+  let status = text::new(
+    application.context,
+    content: "Clipboard fixture ready · W write · C clear · R read · S suspend · B blocked read",
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+  )
+  application.root.add(status)
+
+  let clipboard = application.clipboard
+  let dispatch = application.context.dispatch
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type == event::KeyEventType::press and received.matches("w") {
+      clipboard.write("Cooper clipboard ✓")
+      status.set_content("WRITE EMITTED")
+      received.prevent_default()
+    } else if received.event_type == event::KeyEventType::press and received.matches("c") {
+      clipboard.clear()
+      status.set_content("CLEAR EMITTED")
+      received.prevent_default()
+    } else if received.event_type == event::KeyEventType::press and received.matches("r") {
+      async::start(fn() {
+        let result = clipboard.read()
+        let _ = dispatch(fn() {
+          match result {
+            ok(value) => status.set_content("READ: {value}"),
+            err(error) => status.set_content("READ ERROR: {error}"),
+          }
+        })
+      })
+      received.prevent_default()
+    } else if received.event_type == event::KeyEventType::press and received.matches("s") {
+      let suspended = application.suspend()
+      if suspended.is_err() {
+        status.set_content("SUSPEND ERROR")
+      } else {
+        async::start(fn() {
+          time::Sleep(200 * time::Millisecond)
+          let resumed = application.resume()
+          let _ = dispatch(fn() {
+            if resumed.is_ok() {
+              status.set_content("RESUMED")
+            } else {
+              status.set_content("RESUME ERROR")
+            }
+          })
+        })
+      }
+      received.prevent_default()
+    } else if received.event_type == event::KeyEventType::press and received.matches("b") {
+      async::start(fn() {
+        time::Sleep(100 * time::Millisecond)
+        application.destroy()
+      })
+      let _ = clipboard.read()
+      received.prevent_default()
+    }
+  })
+
+  application.run().expect("run Cooper clipboard fixture")
+}

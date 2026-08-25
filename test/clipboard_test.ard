@@ -1,0 +1,123 @@
+use ard/async
+use ard/testing
+
+use cooper/clipboard
+use cooper/testing as cooper_testing
+
+private struct ReadOutcome {
+  succeeded: Bool,
+}
+
+test fn clipboard_headless_read_write_and_clear() Void!Str {
+  let application = cooper_testing::new(8, 2)
+
+  let initial = application.clipboard.read().expect("clipboard read")
+  try testing::assert(initial == "", "Expected empty test clipboard")
+  application.clipboard.write("copied text")
+  let copied = application.clipboard.read().expect("clipboard read")
+  try testing::assert(copied == "copied text", "Expected clipboard write")
+  application.clipboard.clear()
+  let cleared = application.clipboard.read().expect("clipboard read")
+  try testing::assert(cleared == "", "Expected clipboard clear")
+
+  application.destroy()
+  testing::assert(
+    application.clipboard.read().is_err(),
+    "Expected clipboard read rejection after destroy",
+  )
+}
+
+test fn clipboard_rejects_a_concurrent_read() Void!Str {
+  let entered = Chan::new<Bool>()
+  let release = Chan::new<Bool>()
+  let done = Chan::new<Bool>()
+  let outcome = mut ReadOutcome{succeeded: false}
+  let service = clipboard::internal_new(
+    fn() Str!Error {
+      entered.close()
+      release.receiver().recv()
+      Result::ok("response")
+    },
+    fn(value: Str) {},
+    fn() {},
+    fn() {},
+    fn() {},
+  )
+
+  async::start(fn() {
+    outcome.succeeded = service.read().is_ok()
+    done.close()
+  })
+  entered.receiver().recv()
+  try testing::assert(service.read().is_err(), "Expected concurrent clipboard read rejection")
+  release.close()
+  done.receiver().recv()
+  try testing::assert(outcome.succeeded, "Expected original clipboard read completion")
+
+  service.internal_stop()
+  testing::assert(service.read().is_err(), "Expected stopped clipboard read rejection")
+}
+
+test fn clipboard_rejects_suspend_while_a_read_is_active() Void!Str {
+  let entered = Chan::new<Bool>()
+  let cancelled = Chan::new<Bool>()
+  let done = Chan::new<Bool>()
+  let outcome = mut ReadOutcome{succeeded: true}
+  let service = clipboard::internal_new(
+    fn() Str!Error {
+      entered.close()
+      cancelled.receiver().recv()
+      Result::err(Error::new("cancelled"))
+    },
+    fn(value: Str) {},
+    fn() {},
+    fn() {},
+    fn() {},
+  )
+
+  async::start(fn() {
+    outcome.succeeded = service.read().is_ok()
+    done.close()
+  })
+  entered.receiver().recv()
+  try testing::assert(not service.internal_suspend(), "Expected active read to reject suspension")
+  cancelled.close()
+  done.receiver().recv()
+  try testing::assert(not outcome.succeeded, "Expected released clipboard read error")
+
+  try testing::assert(service.internal_suspend(), "Expected idle clipboard suspension")
+  try testing::assert(service.read().is_err(), "Expected clipboard read rejection while suspended")
+  service.internal_resume()
+  service.internal_stop()
+  Result::ok(())
+}
+
+test fn clipboard_stop_cancels_and_joins_an_active_read() Void!Str {
+  let entered = Chan::new<Bool>()
+  let cancelled = Chan::new<Bool>()
+  let done = Chan::new<Bool>()
+  let outcome = mut ReadOutcome{succeeded: true}
+  let service = clipboard::internal_new(
+    fn() Str!Error {
+      entered.close()
+      cancelled.receiver().recv()
+      Result::err(Error::new("cancelled"))
+    },
+    fn(value: Str) {},
+    fn() {},
+    fn() {},
+    fn() {
+      cancelled.close()
+    },
+  )
+
+  async::start(fn() {
+    outcome.succeeded = service.read().is_ok()
+    done.close()
+  })
+  entered.receiver().recv()
+  service.internal_stop()
+  done.receiver().recv()
+
+  testing::assert(not outcome.succeeded, "Expected active clipboard read cancellation")
+}

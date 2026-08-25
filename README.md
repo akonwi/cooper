@@ -19,8 +19,9 @@ examples are implemented.
 The canonical design is defined by the accepted
 [application API ADR](./docs/adrs/0002-define-application-api.md),
 [interaction ADR](./docs/adrs/0003-define-interaction-focus-and-selection.md),
-[input editor ADR](./docs/adrs/0004-define-input-editor-and-keybindings.md), and
-[rich Text ADR](./docs/adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md).
+[input editor ADR](./docs/adrs/0004-define-input-editor-and-keybindings.md),
+[rich Text ADR](./docs/adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md), and
+[terminal clipboard ADR](./docs/adrs/0006-define-terminal-clipboard-access.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
@@ -92,6 +93,8 @@ yet a supported custom-control API.
   Text supports double-click word selection.
 - Input delegates logical editing to an Ard-native action model with familiar
   readline-style Ctrl, Alt, and Super keybindings.
+- App exposes OSC 52 clipboard read, write, and clear operations while terminal
+  access policy remains under terminal-host control.
 
 ## Initial controls
 
@@ -140,6 +143,7 @@ tests.
 ```text
 app.ard          public App facade
 box.ard          configurable retained flex container
+clipboard.ard    App-bound OSC 52 clipboard service
 color.ard        backend-independent RGB color
 context.ard      Context capability, ownership, and backing state
 event.ard        Cooper-owned events, controls, and propagation state
@@ -189,6 +193,7 @@ python3 test_event_inspector.py
 python3 test_links.py
 python3 test_terminal_focus.py
 python3 test_widgets.py
+python3 test_clipboard.py
 python3 test_scroll_form.py
 python3 test_async.py
 python3 test_lifecycle.py

@@ -1,0 +1,164 @@
+use ard/unsafe
+
+use go:sync
+
+private struct State {
+  lifecycle: mut sync::Mutex,
+  read_guard: mut sync::Mutex,
+  read_action: fn() Str!Error,
+  write_action: fn(Str),
+  suspend_action: fn(),
+  resume_action: fn(),
+  stop_action: fn(),
+  suspended: Bool,
+  stopped: Bool,
+}
+
+struct Clipboard {
+  internal: Any,
+}
+
+private fn internal_state(value: mut Clipboard) mut State {
+  unsafe::cast<mut State>(value.internal).expect("Clipboard must be created by Cooper")
+}
+
+fn internal_new(
+  read_action: fn() Str!Error,
+  write_action: fn(Str),
+  suspend_action: fn(),
+  resume_action: fn(),
+  stop_action: fn(),
+) mut Clipboard {
+  let lifecycle = mut sync::Mutex{}
+  let read_guard = mut sync::Mutex{}
+  let state = mut State{
+    lifecycle: lifecycle,
+    read_guard: read_guard,
+    read_action: read_action,
+    write_action: write_action,
+    suspend_action: suspend_action,
+    resume_action: resume_action,
+    stop_action: stop_action,
+    suspended: false,
+    stopped: false,
+  }
+  (mut Clipboard{internal: state})
+}
+
+private struct Memory {
+  mutex: mut sync::Mutex,
+  value: Str,
+}
+
+fn internal_memory() mut Clipboard {
+  let mutex = mut sync::Mutex{}
+  let memory = mut Memory{mutex: mutex, value: ""}
+  internal_new(
+    fn() Str!Error {
+      memory.mutex.Lock()
+      let value = memory.value
+      memory.mutex.Unlock()
+      Result::ok(value)
+    },
+    fn(value: Str) {
+      memory.mutex.Lock()
+      memory.value = value
+      memory.mutex.Unlock()
+    },
+    fn() {},
+    fn() {},
+    fn() {},
+  )
+}
+
+impl Clipboard {
+  // Blocks the calling fiber until the terminal responds or App lifetime ends.
+  // Only one read may be active for an App.
+  fn mut read() Str!Error {
+    let state = internal_state(self)
+    if not state.read_guard.TryLock() {
+      Result::err(Error::new("clipboard read already in progress"))
+    } else {
+      defer state.read_guard.Unlock()
+      state.lifecycle.Lock()
+      let stopped = state.stopped
+      let suspended = state.suspended
+      let action = state.read_action
+      state.lifecycle.Unlock()
+      if stopped {
+        Result::err(Error::new("clipboard is unavailable after App destruction"))
+      } else if suspended {
+        Result::err(Error::new("clipboard reads are unavailable while App is suspended"))
+      } else {
+        action()
+      }
+    }
+  }
+
+  // Emits an OSC 52 write request. Terminal acceptance is not observable.
+  fn mut write(value: Str) {
+    let state = internal_state(self)
+    state.lifecycle.Lock()
+    if state.stopped {
+      state.lifecycle.Unlock()
+      panic("cannot write to the clipboard after App destruction")
+    }
+    if state.suspended {
+      state.lifecycle.Unlock()
+      panic("cannot write to the clipboard while App is suspended")
+    }
+    state.write_action(value)
+    state.lifecycle.Unlock()
+  }
+
+  // Emits an empty OSC 52 write request.
+  fn mut clear() {
+    self.write("")
+  }
+
+  fn mut internal_suspend() Bool {
+    let state = internal_state(self)
+    if not state.read_guard.TryLock() {
+      false
+    } else {
+      state.lifecycle.Lock()
+      let available = not state.stopped and not state.suspended
+      if available {
+        state.suspended = true
+        state.suspend_action()
+      }
+      state.lifecycle.Unlock()
+      state.read_guard.Unlock()
+      available
+    }
+  }
+
+  fn mut internal_resume() {
+    let state = internal_state(self)
+    state.lifecycle.Lock()
+    if not state.stopped and state.suspended {
+      state.resume_action()
+      state.suspended = false
+    }
+    state.lifecycle.Unlock()
+  }
+
+  fn mut internal_cancel() {
+    let state = internal_state(self)
+    state.lifecycle.Lock()
+    if not state.stopped {
+      state.stopped = true
+      state.stop_action()
+    }
+    state.lifecycle.Unlock()
+  }
+
+  fn mut internal_stop() {
+    let state = internal_state(self)
+    self.internal_cancel()
+
+    // Cancellation unblocks an active read before Vaxis is released.
+    state.read_guard.Lock()
+    state.read_guard.Unlock()
+  }
+}

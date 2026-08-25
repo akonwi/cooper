@@ -1,6 +1,7 @@
 use ard/testing as assertions
 use ard/unsafe
 
+use cooper/clipboard
 use cooper/context
 use cooper/core/app_runtime
 use cooper/core/paint
@@ -106,6 +107,7 @@ private struct OpenedURLs {
 struct TestApp {
   context: mut context::Context,
   root: mut root::Root,
+  clipboard: mut clipboard::Clipboard,
   opened: Any,
 }
 
@@ -133,8 +135,9 @@ fn new(width: Int, height: Int) TestApp {
     },
   )
   let root = root::new(ctx, runtime)
+  let clipboard_service = runtime.clipboard()
   runtime.start_test(ctx, root)
-  TestApp{context: ctx, root: root, opened: opened}
+  TestApp{context: ctx, root: root, clipboard: clipboard_service, opened: opened}
 }
 
 impl TestApp {

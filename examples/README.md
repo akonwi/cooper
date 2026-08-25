@@ -93,8 +93,9 @@ ard run input_lab.ard
 
 Press Tab or Shift+Tab to traverse, Return to submit, or Escape to clear the
 selection. Mouse presses place the cursor and drags select text. Terminal paste
-is normalized and still respects maximum length; the lab deliberately does not
-claim unsupported clipboard, password, or multiline APIs. Press Ctrl+C to quit.
+is normalized and still respects maximum length. Clipboard access remains a
+separate App service rather than an Input command; password and multiline Inputs
+remain unsupported. Press Ctrl+C to quit.
 
 ## Mouse interaction demo
 
@@ -201,6 +202,7 @@ python3 test_event_inspector.py
 python3 test_links.py
 python3 test_terminal_focus.py
 python3 test_widgets.py
+python3 test_clipboard.py
 python3 test_scroll_form.py
 python3 test_async.py
 python3 test_lifecycle.py
@@ -214,8 +216,8 @@ bounded follow-mode logs, nested stacking and hit order, Input validation and
 commit callbacks, paste limits, draggable z-index objects, pointer trails,
 activated cells, drag/drop routing, interactive links, link-safe drag mode,
 terminal focus transitions, post-focus mouse resumption, app-local TabSelect,
-Select, and slider behavior, overflow clipping, editing, explicit focus policy,
-mouse input, scrolling, resize, App
+Select, and slider behavior, OSC 52 clipboard requests and responses, overflow
+clipping, editing, explicit focus policy, mouse input, scrolling, resize, App
 cancellation, asynchronous UI dispatch, nonblocking startup,
 suspension/resume, filesystem rows, drag capture/drop ordering, hover
 reconciliation, terminal focus, text and editable selection, and clean exit.

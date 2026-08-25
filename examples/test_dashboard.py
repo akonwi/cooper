@@ -88,7 +88,7 @@ def main():
         send(fd, "a")
         wait_for(fd, screen, "MANUAL")
         wait_for(fd, screen, f"Rows: {paused_rows + 1}")
-        assert "operator checkpoint inserted" in screen.text()
+        assert "operator checkpoint" in screen.text(), "manual event row was not visible"
 
         send(fd, "f")
         wait_for(fd, screen, "Follow: OFF")

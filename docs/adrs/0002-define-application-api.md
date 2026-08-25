@@ -393,8 +393,10 @@ clamped. Wheel input stops bubbling only when scrolling moves, allowing nested
 fallback. ScrollBox is focusable and handles arrows, Page Up/Down, Home, and
 End.
 
-Horizontal/sticky scrolling, scrollbars, acceleration, and viewport culling are
-deferred.
+ADR 0007 adds the standalone Scrollbar primitive and a default automatic
+vertical ScrollBox bar with a stable gutter. It sequences horizontal ScrollBox
+scrolling immediately after the primitive and vertical integration are
+validated. Sticky scrolling, acceleration, and viewport culling remain deferred.
 
 ### Events, listeners, and focus
 
@@ -477,7 +479,7 @@ Documented application modules are:
 
 ```text
 app  box  clipboard  color  context  event  geometry
-input  root  scroll_box  style  testing  text  ui
+input  root  scroll_box  scrollbar  style  testing  text  ui
 ```
 
 `ui` provides direct constructor and type aliases for built-in controls, such

@@ -18,6 +18,7 @@ def main():
     try:
         wait_for(fd, screen, "Scrollable retained form")
         wait_for(fd, screen, "Field 3")
+        assert screen.line(1).endswith("┃"), screen.text()
 
         # Focus traversal reveals a direct ScrollBox child at the viewport bottom.
         send(fd, "\t")
@@ -46,6 +47,12 @@ def main():
         send(fd, "three")
         wait_for(fd, screen, "three")
 
+        # The built-in proportional thumb accepts captured terminal mouse drag.
+        drag(fd, start_col=59, start_row=2, end_col=59, end_row=7)
+        wait_for(fd, screen, "Field 8")
+        assert screen.line(7).startswith("value 8"), screen.text()
+        assert screen.line(7).endswith("┃"), screen.text()
+
         send(fd, "\x03")
         status = wait_exit(pid, fd, screen, timeout=2.0)
         if status is None:
@@ -54,6 +61,16 @@ def main():
         print("✓ Cooper scrolling form smoke test passed")
     finally:
         cleanup(fd, pid)
+
+
+def sgr(fd, code, col, row, suffix="M"):
+    send(fd, f"\x1b[<{code};{col + 1};{row + 1}{suffix}")
+
+
+def drag(fd, start_col, start_row, end_col, end_row):
+    sgr(fd, 0, start_col, start_row)
+    sgr(fd, 32, end_col, end_row)
+    sgr(fd, 0, end_col, end_row, "m")
 
 
 def wheel(fd, down, col, row):

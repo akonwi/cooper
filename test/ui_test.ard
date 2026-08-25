@@ -27,19 +27,33 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
   })
   let field: mut ui::Input = ui::input(ctx, placeholder: "Ada")
   let viewport: mut ui::ScrollBox = ui::scroll_box(ctx, styles: style::new(height: style::cells(1)))
+  let bar: mut ui::Scrollbar = ui::scrollbar(
+    ctx,
+    ui::ScrollbarOrientation::vertical,
+    state: ui::scrollbar_state(viewport_size: 1, content_size: 2),
+    options: ui::scrollbar_options(
+      visibility: ui::ScrollbarVisibility::always,
+      theme: ui::scrollbar_theme(thumb_glyph: "#"),
+    ),
+  )
 
   viewport.add(field)
   panel.add(label)
   panel.add(viewport)
+  panel.add(bar)
 
-  try testing::assert(panel.child_count() == 2, "Expected ui::box to retain aliased controls")
+  try testing::assert(panel.child_count() == 3, "Expected ui::box to retain aliased controls")
   try testing::assert(panel.border() == ui::Border::single, "Expected ui::Border alias")
   try testing::assert(label.wrap() == ui::TextWrap::word, "Expected ui::TextWrap alias")
   try testing::assert(label.overflow() == ui::TextOverflow::ellipsis, "Expected ui::TextOverflow alias")
-  try testing::assert(label.content() == "Name" and label.styled_content().spans.size() == 1, "Expected rich Text aliases")
+  try testing::assert(
+    label.content() == "Name" and label.styled_content().spans.size() == 1,
+    "Expected rich Text aliases",
+  )
   try testing::assert(label.text_style().bold, "Expected ui::text_style alias")
   try testing::assert(field.placeholder() == "Ada", "Expected ui::input alias")
   try testing::assert(viewport.child_count() == 1, "Expected ui::scroll_box alias")
+  try testing::assert(bar.state().content_size == 2, "Expected Scrollbar aliases")
 
   context::internal_state(ctx).destroy()
   testing::assert(context::internal_state(ctx).is_destroyed(), "Expected ui alias test cleanup")

@@ -20,8 +20,9 @@ The canonical design is defined by the accepted
 [application API ADR](./docs/adrs/0002-define-application-api.md),
 [interaction ADR](./docs/adrs/0003-define-interaction-focus-and-selection.md),
 [input editor ADR](./docs/adrs/0004-define-input-editor-and-keybindings.md),
-[rich Text ADR](./docs/adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md), and
-[terminal clipboard ADR](./docs/adrs/0006-define-terminal-clipboard-access.md).
+[rich Text ADR](./docs/adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md),
+[terminal clipboard ADR](./docs/adrs/0006-define-terminal-clipboard-access.md), and
+[scrollbar ADR](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
@@ -103,7 +104,10 @@ yet a supported custom-control API.
   word wrapping by default, inheritable styles, plain-click/OSC 8 hyperlinks
   with pointer cursors, and optional ellipsis overflow;
 - `Input` — grapheme-aware CLI editing, editable selection, validation, and callbacks;
-- `ScrollBox` — focusable multi-child vertical scrolling container.
+- `ScrollBox` — focusable multi-child vertical scrolling container with a
+  built-in automatic proportional scrollbar and stable gutter.
+- `Scrollbar` — standalone vertical or horizontal track/thumb control with
+  pointer, keyboard, arrow, visibility, styling, and change-state APIs.
 
 Public layout and interaction use Ard-native Style, Color, Point, Rect,
 Geometry, and Selection values.
@@ -150,7 +154,8 @@ event.ard        Cooper-owned events, controls, and propagation state
 geometry.ard     Rect, Geometry, and geometry helpers
 input.ard        retained single-line Input
 root.ard         permanent Root and runtime bridge
-scroll_box.ard   retained vertical ScrollBox
+scroll_box.ard   retained vertical ScrollBox with built-in bar
+scrollbar.ard    standalone vertical/horizontal Scrollbar
 selection.ard    global selection snapshots and local ranges
 style.ard        colors, layout values, stacking, and validation
 testing.ard      headless TestApp and frame snapshots

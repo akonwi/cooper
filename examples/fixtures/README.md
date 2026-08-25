@@ -6,8 +6,9 @@ public example gallery:
 - `clipboard.ard` covers OSC 52 write, clear, asynchronous read, concurrent-read
   rejection, suspend rejection/resume, response delivery, and App-lifetime
   cancellation.
-- `scroll_form.ard` covers direct multi-child ScrollBox reveal, translated mouse
-  targeting, wheel fallback, and resize.
+- `scroll_form.ard` covers direct multi-child ScrollBox reveal, its built-in
+  proportional scrollbar and terminal mouse drag, translated mouse targeting,
+  wheel fallback, and resize.
 - `async.ard` and `pre_run_destroy.ard` cover cancellation, dispatch, and
   destruction while work is pending.
 - `lifecycle.ard` and `pre_start_signal.ard` cover nonblocking startup,

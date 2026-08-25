@@ -1,0 +1,767 @@
+use ard/unsafe
+
+use cooper/context
+use cooper/core/event_delivery
+use cooper/core/node
+use cooper/core/paint
+use cooper/event
+use cooper/geometry
+use cooper/style as layout_style
+use cooper/text
+use go:math
+
+enum Orientation {
+  vertical,
+  horizontal,
+}
+
+enum Visibility {
+  automatic,
+  always,
+  hidden,
+}
+
+struct State {
+  position: Int,
+  viewport_size: Int,
+  content_size: Int,
+}
+
+struct Theme {
+  track_glyph: Str?,
+  thumb_glyph: Str?,
+  start_arrow: Str?,
+  end_arrow: Str?,
+  track_style: text::TextStyle,
+  thumb_style: text::TextStyle,
+  arrow_style: text::TextStyle,
+}
+
+struct Options {
+  visibility: Visibility,
+  show_arrows: Bool,
+  scroll_step: Int,
+  theme: Theme,
+}
+
+fn state(position: Int?, viewport_size: Int?, content_size: Int?) State {
+  normalize_state(
+    State{
+      position: position.or(0),
+      viewport_size: viewport_size.or(0),
+      content_size: content_size.or(0),
+    },
+  )
+}
+
+fn theme(
+  track_glyph: Str?,
+  thumb_glyph: Str?,
+  start_arrow: Str?,
+  end_arrow: Str?,
+  track_style: text::TextStyle?,
+  thumb_style: text::TextStyle?,
+  arrow_style: text::TextStyle?,
+) Theme {
+  Theme{
+    track_glyph: track_glyph,
+    thumb_glyph: thumb_glyph,
+    start_arrow: start_arrow,
+    end_arrow: end_arrow,
+    track_style: track_style.or(text::style(dim: true)),
+    thumb_style: thumb_style.or(text::style(bold: true)),
+    arrow_style: arrow_style.or(text::style()),
+  }
+}
+
+fn options(visibility: Visibility?, show_arrows: Bool?, scroll_step: Int?, theme: Theme?) Options {
+  let step = scroll_step.or(1)
+  if step < 1 {
+    panic("Scrollbar scroll_step must be positive")
+  }
+  Options{
+    visibility: visibility.or(Visibility::automatic),
+    show_arrows: show_arrows.or(false),
+    scroll_step: step,
+    theme: theme.or(scrollbar_theme()),
+  }
+}
+
+private fn scrollbar_theme() Theme {
+  theme()
+}
+
+private fn normalize_state(value: State) State {
+  if value.viewport_size < 0 {
+    panic("Scrollbar viewport_size must be non-negative")
+  }
+  if value.content_size < 0 {
+    panic("Scrollbar content_size must be non-negative")
+  }
+  let maximum = maximum_for(value)
+  mut position = value.position
+  if position < 0 {
+    position = 0
+  } else if position > maximum {
+    position = maximum
+  }
+  State{
+    position: position,
+    viewport_size: value.viewport_size,
+    content_size: value.content_size,
+  }
+}
+
+private fn maximum_for(value: State) Int {
+  if value.content_size > value.viewport_size {
+    value.content_size - value.viewport_size
+  } else {
+    0
+  }
+}
+
+private struct ResolvedTheme {
+  track_glyph: Str,
+  thumb_glyph: Str,
+  start_arrow: Str,
+  end_arrow: Str,
+  track_style: text::TextStyle,
+  thumb_style: text::TextStyle,
+  arrow_style: text::TextStyle,
+}
+
+private struct Listener {
+  id: Int,
+  handler: fn(Int),
+}
+
+private struct InternalState {
+  orientation: Orientation,
+  value: State,
+  options: Options,
+  resolved_theme: ResolvedTheme,
+  layout_style: layout_style::Style,
+  measure_width: fn(Str) Int,
+  focusable: Bool,
+  live: Bool,
+  dragging: Bool,
+  drag_offset: Int,
+  next_listener_id: Int,
+  listeners: [Listener],
+}
+
+struct Scrollbar {
+  node_ref: mut node::Node,
+  internal: Any,
+}
+
+private struct TrackGeometry {
+  start: Int,
+  length: Int,
+  thumb_start: Int,
+  thumb_size: Int,
+}
+
+private fn internal_state(value: Any) mut InternalState {
+  unsafe::cast<mut InternalState>(value).expect("Scrollbar must be created by Cooper")
+}
+
+private fn default_track(orientation: Orientation) Str {
+  match orientation {
+    Orientation::vertical => "│",
+    Orientation::horizontal => "─",
+  }
+}
+
+private fn default_thumb(orientation: Orientation) Str {
+  match orientation {
+    Orientation::vertical => "┃",
+    Orientation::horizontal => "━",
+  }
+}
+
+private fn default_start_arrow(orientation: Orientation) Str {
+  match orientation {
+    Orientation::vertical => "▲",
+    Orientation::horizontal => "◀",
+  }
+}
+
+private fn default_end_arrow(orientation: Orientation) Str {
+  match orientation {
+    Orientation::vertical => "▼",
+    Orientation::horizontal => "▶",
+  }
+}
+
+private fn resolve_theme(orientation: Orientation, value: Theme) ResolvedTheme {
+  ResolvedTheme{
+    track_glyph: value.track_glyph.or(default_track(orientation)),
+    thumb_glyph: value.thumb_glyph.or(default_thumb(orientation)),
+    start_arrow: value.start_arrow.or(default_start_arrow(orientation)),
+    end_arrow: value.end_arrow.or(default_end_arrow(orientation)),
+    track_style: value.track_style,
+    thumb_style: value.thumb_style,
+    arrow_style: value.arrow_style,
+  }
+}
+
+private fn validate_theme(measure_width: fn(Str) Int, value: ResolvedTheme) {
+  if value.track_glyph == "" or measure_width(value.track_glyph) != 1 {
+    panic("Scrollbar track_glyph must occupy exactly one terminal cell")
+  }
+  if value.thumb_glyph == "" or measure_width(value.thumb_glyph) != 1 {
+    panic("Scrollbar thumb_glyph must occupy exactly one terminal cell")
+  }
+  if value.start_arrow == "" or measure_width(value.start_arrow) != 1 {
+    panic("Scrollbar start_arrow must occupy exactly one terminal cell")
+  }
+  if value.end_arrow == "" or measure_width(value.end_arrow) != 1 {
+    panic("Scrollbar end_arrow must occupy exactly one terminal cell")
+  }
+}
+
+private fn configured(value: layout_style::Style, orientation: Orientation, visibility: Visibility) layout_style::Style {
+  let applied = mut value
+  applied.flex_shrink = 0.0
+  match orientation {
+    Orientation::vertical => { applied.width = layout_style::cells(1) },
+    Orientation::horizontal => { applied.height = layout_style::cells(1) },
+  }
+  if visibility == Visibility::hidden {
+    applied.display = layout_style::Display::none
+  } else {
+    applied.display = layout_style::Display::flex
+  }
+  applied.@
+}
+
+fn new(
+  ctx: mut context::Context,
+  orientation: Orientation,
+  state: State?,
+  options: Options?,
+  styles: layout_style::Style?,
+) mut Scrollbar {
+  internal_new(
+    ctx,
+    orientation,
+    state.or(scrollbar_state()),
+    options.or(scrollbar_options()),
+    styles.or(layout_style::new()),
+    true,
+  )
+}
+
+private fn scrollbar_state() State {
+  state()
+}
+
+private fn scrollbar_options() Options {
+  options()
+}
+
+fn internal_new(
+  ctx: mut context::Context,
+  orientation: Orientation,
+  initial_state: State,
+  initial_options: Options,
+  styles: layout_style::Style,
+  focusable: Bool,
+) mut Scrollbar {
+  if initial_options.scroll_step < 1 {
+    panic("Scrollbar scroll_step must be positive")
+  }
+  let context_state = context::internal_state(ctx)
+  let measure_width = fn(glyph: Str) Int {
+    context_state.measure_text(glyph)
+  }
+  let resolved = resolve_theme(orientation, initial_options.theme)
+  validate_theme(measure_width, resolved)
+  let retained = context_state.create_node(
+    configured(styles, orientation, initial_options.visibility),
+  )
+  let shared = mut InternalState{
+    orientation: orientation,
+    value: normalize_state(initial_state),
+    options: initial_options,
+    resolved_theme: resolved,
+    layout_style: styles,
+    measure_width: measure_width,
+    focusable: focusable,
+    live: true,
+    dragging: false,
+    drag_offset: 0,
+    next_listener_id: 1,
+    listeners: [],
+  }
+  let created = mut Scrollbar{node_ref: retained, internal: shared}
+  retained.bind(created)
+  retained.set_focusable(focusable and visible(shared))
+  retained.on_cleanup(fn() {
+    shared.live = false
+    shared.dragging = false
+    shared.listeners = []
+  })
+  created
+}
+
+private fn same_state(left: State, right: State) Bool {
+  left.position == right.position and left.viewport_size == right.viewport_size and left.content_size == right.content_size
+}
+
+private fn text_style(value: text::TextStyle) paint::CellStyle {
+  paint::style(
+    foreground: value.foreground,
+    background: value.background,
+    bold: value.bold,
+    dim: value.dim,
+    italic: value.italic,
+    underline: value.underline,
+    blink: value.blink,
+    reverse: value.reverse,
+    strike: value.strike,
+    hidden: value.hidden,
+  )
+}
+
+private fn visible(shared: mut InternalState) Bool {
+  shared.options.visibility == Visibility::always or shared.options.visibility == Visibility::automatic and maximum_for(shared.value) > 0
+}
+
+private fn axis_size(retained: mut node::Node, orientation: Orientation) Int {
+  let bounds = retained.layout().screen
+  match orientation {
+    Orientation::vertical => bounds.height,
+    Orientation::horizontal => bounds.width,
+  }
+}
+
+private fn track_geometry(shared: mut InternalState, size: Int) TrackGeometry {
+  mut start = 0
+  mut length = size
+  if shared.options.show_arrows and size >= 3 {
+    start = 1
+    length = size - 2
+  }
+  if length < 0 {
+    length = 0
+  }
+
+  mut thumb_size = length
+  if length > 0 and shared.value.content_size > shared.value.viewport_size {
+    thumb_size = math::Floor(
+      length.to_f64() * shared.value.viewport_size.to_f64() / shared.value.content_size.to_f64(),
+    ).to_int()
+    if thumb_size < 1 {
+      thumb_size = 1
+    } else if thumb_size > length {
+      thumb_size = length
+    }
+    if length > 1 and thumb_size >= length {
+      thumb_size = length - 1
+    }
+  }
+
+  let maximum = maximum_for(shared.value)
+  let travel = length - thumb_size
+  mut thumb_start = 0
+  if maximum > 0 and travel > 0 {
+    thumb_start = math::Round(
+      shared.value.position.to_f64() * travel.to_f64() / maximum.to_f64(),
+    ).to_int()
+  }
+  TrackGeometry{
+    start: start,
+    length: length,
+    thumb_start: thumb_start,
+    thumb_size: thumb_size,
+  }
+}
+
+private fn coordinate(orientation: Orientation, mouse: mut event::MouseEvent) Int {
+  match orientation {
+    Orientation::vertical => mouse.local_y,
+    Orientation::horizontal => mouse.local_x,
+  }
+}
+
+private fn write_cell(
+  ctx: mut paint::Context,
+  orientation: Orientation,
+  position: Int,
+  glyph: Str,
+  style: text::TextStyle,
+) {
+  match orientation {
+    Orientation::vertical => ctx.write(0, position, glyph, text_style(style)),
+    Orientation::horizontal => ctx.write(position, 0, glyph, text_style(style)),
+  }
+}
+
+private fn notify(shared: mut InternalState, position: Int) {
+  let listeners = shared.listeners
+  for listener in listeners {
+    listener.handler(position)
+  }
+}
+
+impl node::Renderable for Scrollbar {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn mount(ctx: node::MountContext) {}
+
+  fn paint(ctx: mut paint::Context) {
+    let shared = internal_state(self.internal)
+    if visible(shared) {
+      let orientation = self.orientation()
+      let size = axis_size(self.node_ref, self.orientation())
+      let geometry = track_geometry(shared, size)
+      mut index = 0
+      while index < size {
+        mut glyph = shared.resolved_theme.track_glyph
+        mut style = shared.resolved_theme.track_style
+        if shared.options.show_arrows and size >= 3 and index == 0 {
+          glyph = shared.resolved_theme.start_arrow
+          style = shared.resolved_theme.arrow_style
+        } else if shared.options.show_arrows and size >= 3 and index == size - 1 {
+          glyph = shared.resolved_theme.end_arrow
+          style = shared.resolved_theme.arrow_style
+        } else {
+          let track_index = index - geometry.start
+          if track_index >= geometry.thumb_start and track_index < geometry.thumb_start + geometry.thumb_size {
+            glyph = shared.resolved_theme.thumb_glyph
+            style = shared.resolved_theme.thumb_style
+          }
+        }
+        write_cell(ctx, orientation, index, glyph, style)
+        index =+ 1
+      }
+    }
+  }
+
+  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    match ctx.mouse_event {
+      mouse => self.handle_mouse(ctx, mouse),
+      _ => {
+        match ctx.key_event {
+          key => {
+            if ctx.focused {
+              self.handle_key(ctx, key)
+            } else {
+              event_delivery::Disposition::ignored
+            }
+          },
+          _ => event_delivery::Disposition::ignored,
+        }
+      },
+    }
+  }
+}
+
+impl Scrollbar {
+  private fn require_live() {
+    self.node_ref.require_live()
+  }
+
+  private fn mut update_focusability() {
+    let shared = internal_state(self.internal)
+    self.node_ref.set_focusable(shared.focusable and visible(shared))
+  }
+
+  fn orientation() Orientation {
+    internal_state(self.internal).orientation
+  }
+
+  fn state() State {
+    internal_state(self.internal).value
+  }
+
+  fn scroll_position() Int {
+    internal_state(self.internal).value.position
+  }
+
+  fn viewport_size() Int {
+    internal_state(self.internal).value.viewport_size
+  }
+
+  fn content_size() Int {
+    internal_state(self.internal).value.content_size
+  }
+
+  fn maximum_scroll_position() Int {
+    maximum_for(internal_state(self.internal).value)
+  }
+
+  fn mut set_state(value: State) {
+    self.require_live()
+    let shared = internal_state(self.internal)
+    let normalized = normalize_state(value)
+    if not same_state(shared.value, normalized) {
+      shared.value = normalized
+      self.update_focusability()
+      self.node_ref.request_redraw()
+    }
+  }
+
+  fn mut internal_sync_state(value: State) {
+    let shared = internal_state(self.internal)
+    let normalized = normalize_state(value)
+    if not same_state(shared.value, normalized) {
+      shared.value = normalized
+      self.update_focusability()
+    }
+  }
+
+  private fn mut change_position(requested: Int) Bool {
+    self.require_live()
+    let shared = internal_state(self.internal)
+    let normalized = normalize_state(
+      State{
+        position: requested,
+        viewport_size: shared.value.viewport_size,
+        content_size: shared.value.content_size,
+      },
+    )
+    if normalized.position == shared.value.position {
+      false
+    } else {
+      shared.value = normalized
+      let emitted = normalized.position
+      self.node_ref.request_redraw()
+      notify(shared, emitted)
+      true
+    }
+  }
+
+  fn mut scroll_to(position: Int) Bool {
+    self.change_position(position)
+  }
+
+  fn mut scroll_by(delta: Int) Bool {
+    let current = self.scroll_position()
+    mut requested = current
+    if delta > 0 and current > math::MaxInt - delta {
+      requested = math::MaxInt
+    } else if delta < 0 and current < math::MinInt - delta {
+      requested = math::MinInt
+    } else {
+      requested = current + delta
+    }
+    self.change_position(requested)
+  }
+
+  fn options() Options {
+    internal_state(self.internal).options
+  }
+
+  fn mut set_options(value: Options) {
+    self.require_live()
+    if value.scroll_step < 1 {
+      panic("Scrollbar scroll_step must be positive")
+    }
+    let shared = internal_state(self.internal)
+    let resolved = resolve_theme(self.orientation(), value.theme)
+    validate_theme(shared.measure_width, resolved)
+    shared.options = value
+    shared.resolved_theme = resolved
+
+    // Blur before applying display:none so a blur listener may safely reenter
+    // options or destroy the control without interrupting Node style mutation.
+    self.update_focusability()
+    if shared.live {
+      self.node_ref.apply_style(
+        configured(shared.layout_style, self.orientation(), shared.options.visibility),
+      )
+      self.update_focusability()
+    }
+  }
+
+  fn style() layout_style::Style {
+    self.node_ref.style()
+  }
+
+  fn mut set_style(value: layout_style::Style) {
+    self.require_live()
+    let shared = internal_state(self.internal)
+    shared.layout_style = value
+    self.node_ref.apply_style(configured(value, self.orientation(), shared.options.visibility))
+  }
+
+  fn mut on_change(handler: fn(Int)) fn() {
+    self.require_live()
+    let shared = internal_state(self.internal)
+    if shared.next_listener_id == math::MaxInt {
+      panic("Scrollbar listener identity overflow")
+    }
+    let id = shared.next_listener_id
+    shared.next_listener_id =+ 1
+    shared.listeners.push(Listener{id: id, handler: handler})
+    fn() {
+      let retained = mut List::new<Listener>()
+      for listener in shared.listeners {
+        if listener.id != id {
+          retained.push(listener)
+        }
+      }
+      shared.listeners = retained.@
+    }
+  }
+
+  fn mut focus() Bool {
+    self.node_ref.focus()
+  }
+
+  fn mut blur() {
+    self.node_ref.blur()
+  }
+
+  fn is_focused() Bool {
+    self.node_ref.is_focused()
+  }
+
+  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+    self.node_ref.on_key(handler)
+  }
+
+  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+    self.node_ref.on_paste(handler)
+  }
+
+  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+    self.node_ref.on_mouse(handler)
+  }
+
+  fn mut on_focus(handler: fn()) fn() {
+    self.node_ref.on_focus(handler)
+  }
+
+  fn mut on_blur(handler: fn()) fn() {
+    self.node_ref.on_blur(handler)
+  }
+
+  fn layout() geometry::Geometry {
+    self.node_ref.layout()
+  }
+
+  private fn mut move_from_thumb_start(thumb_start: Int, geometry: TrackGeometry) Bool {
+    let maximum = self.maximum_scroll_position()
+    let travel = geometry.length - geometry.thumb_size
+    if maximum == 0 or travel <= 0 {
+      self.change_position(0)
+    } else {
+      mut clamped = thumb_start
+      if clamped < 0 {
+        clamped = 0
+      } else if clamped > travel {
+        clamped = travel
+      }
+      self.change_position(
+        math::Round(clamped.to_f64() * maximum.to_f64() / travel.to_f64()).to_int(),
+      )
+    }
+  }
+
+  private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
+    let shared = internal_state(self.internal)
+    if not visible(shared) or mouse.is_default_prevented() {
+      event_delivery::Disposition::ignored
+    } else if mouse.event_type == event::MouseEventType::down and mouse.button == event::MouseButton::left {
+      let size = axis_size(self.node_ref, self.orientation())
+      let geometry = track_geometry(shared, size)
+      let position = coordinate(self.orientation(), mouse)
+      mut changed = false
+      if shared.options.show_arrows and size >= 3 and position == 0 {
+        shared.dragging = false
+        changed = self.scroll_by(0 - shared.options.scroll_step)
+      } else if shared.options.show_arrows and size >= 3 and position == size - 1 {
+        shared.dragging = false
+        changed = self.scroll_by(shared.options.scroll_step)
+      } else if position >= geometry.start and position < geometry.start + geometry.length {
+        let track_position = position - geometry.start
+        shared.dragging = true
+        if track_position >= geometry.thumb_start and track_position < geometry.thumb_start + geometry.thumb_size {
+          shared.drag_offset = track_position - geometry.thumb_start
+        } else {
+          shared.drag_offset = geometry.thumb_size / 2
+          changed = self.move_from_thumb_start(track_position - shared.drag_offset, geometry)
+        }
+      }
+      mouse.prevent_default()
+      mouse.stop_propagation()
+      if changed {
+        ctx.preserve_focus_scroll()
+      }
+      if changed or shared.dragging {
+        ctx.request_redraw()
+      }
+      event_delivery::Disposition::handled
+    } else if mouse.event_type == event::MouseEventType::drag and mouse.button == event::MouseButton::left and shared.dragging {
+      let geometry = track_geometry(shared, axis_size(self.node_ref, self.orientation()))
+      let position = coordinate(self.orientation(), mouse) - geometry.start
+      let changed = self.move_from_thumb_start(position - shared.drag_offset, geometry)
+      mouse.stop_propagation()
+      if changed {
+        ctx.preserve_focus_scroll()
+        ctx.request_redraw()
+      }
+      event_delivery::Disposition::handled
+    } else if mouse.event_type == event::MouseEventType::drag_end or mouse.event_type == event::MouseEventType::up {
+      let was_dragging = shared.dragging
+      shared.dragging = false
+      if was_dragging {
+        mouse.stop_propagation()
+        event_delivery::Disposition::handled
+      } else {
+        event_delivery::Disposition::ignored
+      }
+    } else {
+      event_delivery::Disposition::ignored
+    }
+  }
+
+  private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
+    let shared = internal_state(self.internal)
+    if key.event_type == event::KeyEventType::release or not visible(shared) {
+      event_delivery::Disposition::ignored
+    } else {
+      mut handled = true
+      mut changed = false
+      if self.orientation() == Orientation::vertical and key.matches("up") {
+        changed = self.scroll_by(0 - shared.options.scroll_step)
+      } else if self.orientation() == Orientation::vertical and key.matches("down") {
+        changed = self.scroll_by(shared.options.scroll_step)
+      } else if self.orientation() == Orientation::horizontal and key.matches("left") {
+        changed = self.scroll_by(0 - shared.options.scroll_step)
+      } else if self.orientation() == Orientation::horizontal and key.matches("right") {
+        changed = self.scroll_by(shared.options.scroll_step)
+      } else if key.matches("page_up") {
+        changed = self.scroll_by(0 - shared.value.viewport_size)
+      } else if key.matches("page_down") {
+        changed = self.scroll_by(shared.value.viewport_size)
+      } else if key.matches("home") {
+        changed = self.scroll_to(0)
+      } else if key.matches("end") {
+        changed = self.scroll_to(maximum_for(shared.value))
+      } else {
+        handled = false
+      }
+      if handled {
+        key.prevent_default()
+        if changed {
+          ctx.preserve_focus_scroll()
+          ctx.request_redraw()
+        }
+        event_delivery::Disposition::handled
+      } else {
+        event_delivery::Disposition::ignored
+      }
+    }
+  }
+
+  fn mut destroy(recursive: Bool?) {
+    self.node_ref.destroy(recursive)
+  }
+}

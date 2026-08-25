@@ -53,7 +53,8 @@ Prefer deterministic headless tests for:
 - App/Root startup, waiting, suspend/resume, destruction, dispatch,
   cancellation, Context ownership, and clipboard lifetime;
 - persistent identity, indexed reorder/reparent, detach, and destruction;
-- layout, clipping, scrolling, wrapping, and translated geometry;
+- layout, clipping, two-axis scrolling, scrollbar interaction, wrapping, and
+  translated geometry;
 - direct cells, text styles, wide spans, and cursor placement;
 - listener order, event prevention, bubbling, and structural mutation;
 - explicit focus, no-fallback behavior, hit testing, and reveal;
@@ -92,5 +93,6 @@ python3 benchmarks/run.py
 
 - Application API: [`ADR 0002`](./docs/adrs/0002-define-application-api.md)
 - Terminal clipboard: [`ADR 0006`](./docs/adrs/0006-define-terminal-clipboard-access.md)
+- Scrollbars and two-axis scrolling: [`ADR 0007`](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md)
 - Vaxis source: `go.rockorager.dev/vaxis`
 - Ard docs: https://ard.run

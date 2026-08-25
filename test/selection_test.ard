@@ -634,7 +634,7 @@ test fn selection_after_scroll_uses_translated_visual_rows() Void!Str {
   application.drag(0, 0, 10, 1)
 
   let selected = application.selection().expect("scrolled selection").selected_text
-  try testing::assert(selected == "scroll row 3: selectable content\nscroll row ", "Expected translated scrolled selection, got {selected}")
+  try testing::assert(selected == "scroll row 3: selectable conten\nscroll row ", "Expected translated scrolled selection beside the stable scrollbar gutter, got {selected}")
 
   let _ = view.scroll_to(0)
   application.render()

@@ -42,8 +42,8 @@ def main():
 
         wide_details = screen.line(4).find("Details")
         assert wide_details >= 40, "details pane was not horizontally positioned"
-        first_label = screen.line(4)[:wide_details].lstrip("> ").rstrip()
-        second_label = screen.line(5)[:wide_details].lstrip("> ").rstrip()
+        first_label = screen.line(4)[:wide_details].lstrip("> ").rstrip(" │┃▲▼")
+        second_label = screen.line(5)[:wide_details].lstrip("> ").rstrip(" │┃▲▼")
         assert first_label and second_label, "explorer did not expose two persistent rows"
 
         # Initial focus belongs to Input; app policy moves Tab to the first row.
@@ -65,7 +65,7 @@ def main():
         wheel_down(fd, col=2, row=4)
         for _ in range(5):
             read_for(fd, screen, 0.1)
-        visible_label = screen.line(5)[:narrow_details].lstrip("> ").rstrip()
+        visible_label = screen.line(5)[:narrow_details].lstrip("> ").rstrip(" │┃▲▼")
         assert visible_label, "scroll did not expose another retained row"
         click(fd, col=2, row=5)
         wait_for(fd, screen, f"Selected: {visible_label}")

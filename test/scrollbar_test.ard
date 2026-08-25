@@ -1,0 +1,260 @@
+use ard/testing
+
+use cooper/event
+use cooper/scrollbar
+use cooper/style
+use cooper/testing as cooper_testing
+use go:math
+
+private fn key(name: Str) mut event::KeyEvent {
+  event::key(
+    name,
+    "",
+    event::KeyEventType::press,
+    event::Modifiers{
+      shift: false,
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
+}
+
+test fn vertical_scrollbar_paints_proportional_thumb_and_reflects_state() Void!Str {
+  let application = cooper_testing::new(1, 5)
+  let bar = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(position: 0, viewport_size: 2, content_size: 10),
+    styles: style::new(height: style::cells(5)),
+  )
+  application.root.add(bar)
+  application.render()
+
+  try testing::assert(
+    application.frame().text() == "┃\n│\n│\n│\n│",
+    "Expected vertical thumb at start",
+  )
+  try testing::assert(bar.maximum_scroll_position() == 8, "Expected vertical maximum")
+
+  bar.set_state(scrollbar::state(position: 8, viewport_size: 2, content_size: 10))
+  application.render()
+  try testing::assert(
+    application.frame().text() == "│\n│\n│\n│\n┃",
+    "Expected vertical thumb at end",
+  )
+
+  application.destroy()
+  testing::assert(bar.node_ref.is_destroyed(), "Expected vertical Scrollbar cleanup")
+}
+
+test fn scrollbar_visibility_controls_paint_and_gutter() Void!Str {
+  let application = cooper_testing::new(2, 4)
+  let automatic = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(viewport_size: 4, content_size: 4),
+    styles: style::new(height: style::cells(4)),
+  )
+  let hidden = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(viewport_size: 1, content_size: 4),
+    options: scrollbar::options(visibility: scrollbar::Visibility::hidden),
+    styles: style::new(height: style::cells(4)),
+  )
+  application.root.add(automatic)
+  application.root.add(hidden)
+  application.render()
+
+  try testing::assert(automatic.layout().screen.width == 1, "Expected automatic stable gutter")
+  try testing::assert(
+    not automatic.focus(),
+    "Expected invisible automatic Scrollbar outside focus traversal",
+  )
+  try testing::assert(hidden.layout().screen.width == 0, "Expected hidden Scrollbar to leave layout")
+  try testing::assert(
+    application.frame().text() == "  \n  \n  \n  ",
+    "Expected automatic no-overflow bar not to paint",
+  )
+
+  automatic.set_options(scrollbar::options(visibility: scrollbar::Visibility::always))
+  application.render()
+  try testing::assert(application.frame().text().contains("┃"), "Expected always-visible full thumb")
+  try testing::assert(automatic.focus(), "Expected always-visible standalone Scrollbar focus")
+
+  application.destroy()
+  testing::assert(hidden.node_ref.is_destroyed(), "Expected hidden Scrollbar cleanup")
+}
+
+test fn scrollbar_pointer_keyboard_arrows_and_callbacks_control_position() Void!Str {
+  let application = cooper_testing::new(1, 6)
+  let bar = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(viewport_size: 2, content_size: 10),
+    options: scrollbar::options(show_arrows: true, scroll_step: 2),
+    styles: style::new(height: style::cells(6)),
+  )
+  mut changes = 0
+  mut latest = -1
+  let remove = bar.on_change(fn(position: Int) {
+    changes =+ 1
+    latest = position
+  })
+  application.root.add(bar)
+  application.render()
+
+  application.click(0, 5)
+  try testing::assert(bar.scroll_position() == 2 and latest == 2, "Expected end arrow step")
+  let before_reflection = changes
+  bar.set_state(scrollbar::state(position: 4, viewport_size: 2, content_size: 10))
+  try testing::assert(changes == before_reflection, "Expected non-notifying state reflection")
+
+  application.render()
+  application.drag(0, 2, 0, 5)
+  try testing::assert(bar.scroll_position() == 8, "Expected captured thumb drag to end")
+  try testing::assert(bar.focus(), "Expected standalone Scrollbar focus")
+  application.key(key("home"))
+  try testing::assert(bar.scroll_position() == 0, "Expected Home keyboard movement")
+  application.key(key("page_down"))
+  try testing::assert(bar.scroll_position() == 2, "Expected viewport keyboard movement")
+
+  remove()
+  remove()
+  let retained = changes
+  let _ = bar.scroll_to(8)
+  try testing::assert(changes == retained, "Expected idempotent listener removal")
+
+  application.destroy()
+  testing::assert(latest >= 0, "Expected Scrollbar change callbacks")
+}
+
+test fn scrollbar_option_visibility_is_reentrant_and_destroy_safe() Void!Str {
+  let application = cooper_testing::new(2, 4)
+  let reconfigured = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(viewport_size: 4, content_size: 4),
+    options: scrollbar::options(visibility: scrollbar::Visibility::always),
+    styles: style::new(height: style::cells(4)),
+  )
+  let destroyed = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(viewport_size: 4, content_size: 4),
+    options: scrollbar::options(visibility: scrollbar::Visibility::always),
+    styles: style::new(height: style::cells(4)),
+  )
+  application.root.add(reconfigured)
+  application.root.add(destroyed)
+  application.render()
+
+  try testing::assert(reconfigured.focus(), "Expected reentrant Scrollbar focus")
+  mut reentered = false
+  let _ = reconfigured.on_blur(fn() {
+    if not reentered {
+      reentered = true
+      reconfigured.set_options(scrollbar::options(visibility: scrollbar::Visibility::always))
+    }
+  })
+  reconfigured.set_options(scrollbar::options(visibility: scrollbar::Visibility::hidden))
+  application.render()
+  try testing::assert(reentered, "Expected reentrant visibility change")
+  try testing::assert(
+    reconfigured.options().visibility == scrollbar::Visibility::always,
+    "Expected latest reentrant options",
+  )
+  try testing::assert(
+    reconfigured.layout().screen.width == 1,
+    "Expected reentrant options and layout agreement",
+  )
+
+  try testing::assert(destroyed.focus(), "Expected destroy-safe Scrollbar focus")
+  let _ = destroyed.on_blur(fn() {
+    destroyed.destroy()
+  })
+  destroyed.set_options(scrollbar::options(visibility: scrollbar::Visibility::hidden))
+  try testing::assert(destroyed.node_ref.is_destroyed(), "Expected blur-time Scrollbar destruction")
+
+  application.destroy()
+  testing::assert(reconfigured.node_ref.is_destroyed(), "Expected reentrant option cleanup")
+}
+
+test fn scrollbar_change_notification_snapshots_reentrant_position() Void!Str {
+  let application = cooper_testing::new(1, 5)
+  let bar = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(viewport_size: 2, content_size: 10),
+    styles: style::new(height: style::cells(5)),
+  )
+  mut second_position = -1
+  let _ = bar.on_change(fn(position: Int) {
+    bar.set_state(scrollbar::state(position: 5, viewport_size: 2, content_size: 10))
+  })
+  let _ = bar.on_change(fn(position: Int) {
+    second_position = position
+  })
+  application.root.add(bar)
+  application.render()
+
+  let _ = bar.scroll_to(2)
+  try testing::assert(second_position == 2, "Expected one stable position for a change emission")
+  try testing::assert(bar.scroll_position() == 5, "Expected reentrant reflected state")
+
+  application.destroy()
+  testing::assert(bar.node_ref.is_destroyed(), "Expected reentrant Scrollbar cleanup")
+}
+
+test fn overflowing_large_state_preserves_thumb_travel() Void!Str {
+  let application = cooper_testing::new(1, 5)
+  let bar = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(
+      position: 0,
+      viewport_size: math::MaxInt - 1,
+      content_size: math::MaxInt,
+    ),
+    styles: style::new(height: style::cells(5)),
+  )
+  application.root.add(bar)
+  application.render()
+
+  try testing::assert(bar.maximum_scroll_position() == 1, "Expected large-state movement range")
+  try testing::assert(
+    application.frame().cell(0, 4).expect("large-state travel cell").grapheme == "│",
+    "Expected overflow thumb travel cell",
+  )
+
+  application.destroy()
+  testing::assert(bar.node_ref.is_destroyed(), "Expected large-state Scrollbar cleanup")
+}
+
+test fn horizontal_scrollbar_uses_horizontal_track_and_drag_axis() Void!Str {
+  let application = cooper_testing::new(6, 1)
+  let bar = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::horizontal,
+    state: scrollbar::state(viewport_size: 3, content_size: 12),
+    styles: style::new(width: style::cells(6)),
+  )
+  application.root.add(bar)
+  application.render()
+
+  try testing::assert(
+    application.frame().text() == "━─────",
+    "Expected horizontal thumb at start",
+  )
+  application.drag(0, 0, 5, 0)
+  try testing::assert(bar.scroll_position() == 9, "Expected horizontal drag to maximum")
+  application.render()
+  try testing::assert(
+    application.frame().text() == "─────━",
+    "Expected horizontal thumb at end",
+  )
+
+  application.destroy()
+  testing::assert(bar.node_ref.is_destroyed(), "Expected horizontal Scrollbar cleanup")
+}

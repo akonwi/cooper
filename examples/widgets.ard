@@ -5,7 +5,7 @@ use cooper/box
 use cooper/color
 use cooper/context
 use cooper/event
-use cooper/scroll_box
+use cooper/select as select_control
 use cooper/style
 use cooper/text
 use go:strings
@@ -23,37 +23,18 @@ struct ShellState {
 
 struct TabDemo {
   root: mut box::Box,
-  control: mut box::Box,
-  tabs: mut text::Text,
-  description: mut text::Text,
+  control: mut select_control::Select,
   status: mut text::Text,
-  options: [Choice],
-  highlighted: Int,
-  activated: Int,
-  offset: Int,
-  focused: Bool,
   show_underline: Bool,
   show_description: Bool,
   show_arrows: Bool,
   wrap: Bool,
 }
 
-struct SelectRow {
-  panel: mut box::Box,
-  name: mut text::Text,
-  description: mut text::Text,
-}
-
 struct SelectDemo {
   root: mut box::Box,
-  viewport: mut scroll_box::ScrollBox,
-  indicator: mut text::Text,
+  control: mut select_control::Select,
   status: mut text::Text,
-  rows: [mut SelectRow],
-  options: [Choice],
-  highlighted: Int,
-  activated: Int,
-  focused: Bool,
   show_description: Bool,
   show_indicator: Bool,
   wrap: Bool,
@@ -301,139 +282,102 @@ private fn tab_page_style(show: Bool) style::Style {
   )
 }
 
-private fn render_tabs(demo: mut TabDemo) {
-  if demo.highlighted < demo.offset {
-    demo.offset = demo.highlighted
-  } else if demo.highlighted >= demo.offset + 5 {
-    demo.offset = demo.highlighted - 4
+private fn control_options(values: [Choice]) [select_control::Option] {
+  let options = mut List::new<select_control::Option>()
+  for value in values {
+    options.push(
+      select_control::option(value.name, description: value.description, value: value.value),
+    )
   }
-  mut left_arrow = "  "
-  if demo.show_arrows and demo.offset > 0 {
-    left_arrow = "‹ "
-  }
-  let spans = mut [
-    text::span(left_arrow, style: text::span_style(foreground: color::hex("#94A3B8"), bold: true)),
-  ]
-  mut slot = 0
-  while slot < 5 {
-    let option_index = demo.offset + slot
-    match demo.options.at(option_index) {
-      option => {
-        mut foreground = color::hex("#E2E8F0")
-        mut background = color::hex("#1E293B")
-        mut bold = false
-        mut underline = false
-        if option_index == demo.activated {
-          foreground = color::hex("#FFFFFF")
-          background = color::hex("#3B82F6")
-          bold = true
-        }
-        if option_index == demo.highlighted and demo.focused {
-          foreground = color::hex("#F7FAFC")
-          if option_index != demo.activated {
-            background = color::hex("#2D3748")
-          }
-          underline = demo.show_underline
-        }
-        spans.push(
-          text::span(
-            " {padded(option.name, 10)} ",
-            style: text::span_style(
-              foreground: foreground,
-              background: background,
-              bold: bold,
-              underline: underline,
-            ),
-          ),
-        )
-      },
-      _ => spans.push(text::span(strings::Repeat(" ", 12))),
-    }
-    slot =+ 1
-  }
-  let more = demo.offset + 5 < demo.options.size()
-  mut right_arrow = "  "
-  if demo.show_arrows and more {
-    right_arrow = " ›"
-  }
-  spans.push(
-    text::span(right_arrow, style: text::span_style(foreground: color::hex("#94A3B8"), bold: true)),
-  )
-  demo.tabs.set_content(text::styled_text(spans.@))
-
-  match demo.options.at(demo.highlighted) {
-    option => {
-      if demo.show_description {
-        demo.description.set_content(option.description)
-      } else {
-        demo.description.set_content("Descriptions hidden — press P")
-      }
-      mut selected = "No item selected yet (press Enter to select)"
-      match demo.options.at(demo.activated) {
-        active => { selected = "Last Selected: {active.name} ({active.value})" },
-        _ => (),
-      }
-      mut focus_text = "Tab selector is BLURRED"
-      mut focus_color = color::hex("#FF0000")
-      if demo.focused {
-        focus_text = "Tab selector is FOCUSED"
-        focus_color = color::hex("#00FF00")
-      }
-      mut underline_text = "off"
-      if demo.show_underline {
-        underline_text = "on"
-      }
-      mut description_text = "off"
-      if demo.show_description {
-        description_text = "on"
-      }
-      mut arrows_text = "off"
-      if demo.show_arrows {
-        arrows_text = "on"
-      }
-      mut wrap_text = "off"
-      if demo.wrap {
-        wrap_text = "on"
-      }
-      demo.status.set_content(
-        text::styled_text(
-          [
-            text::span(
-              "Highlighted: {option.name} ({option.value}) - Index: {demo.highlighted}\n",
-              style: text::span_style(foreground: color::hex("#00FF00")),
-            ),
-            text::span("{selected}\n", style: text::span_style(foreground: color::hex("#FFFF00"))),
-            text::span("{focus_text}\n", style: text::span_style(foreground: focus_color)),
-            text::span(
-              "Underline: {underline_text} | Description: {description_text} | Scroll arrows: {arrows_text} | Wrap: {wrap_text}",
-              style: text::span_style(foreground: color::hex("#CCCCCC")),
-            ),
-          ],
-        ),
-      )
-    },
-    _ => (),
-  }
+  options.@
 }
 
-private fn move_tab(demo: mut TabDemo, delta: Int) {
-  mut next = demo.highlighted + delta
-  if demo.wrap {
-    if next < 0 {
-      next = demo.options.size() - 1
-    } else if next >= demo.options.size() {
-      next = 0
-    }
-  } else {
-    next = clamp(next, 0, demo.options.size() - 1)
+private fn widget_appearance() select_control::Appearance {
+  select_control::appearance(
+    normal: text::span_style(foreground: color::hex("#E2E8F0")),
+    description: text::span_style(foreground: color::hex("#94A3B8")),
+    highlighted: text::span_style(
+      foreground: color::hex("#FFFFFF"),
+      background: color::hex("#2D3748"),
+      bold: true,
+    ),
+    selected: text::span_style(
+      foreground: color::hex("#FFFFFF"),
+      background: color::hex("#3B82F6"),
+      reverse: false,
+      bold: true,
+    ),
+    selected_description: text::span_style(foreground: color::hex("#DBEAFE")),
+    indicator: text::span_style(foreground: color::hex("#94A3B8"), bold: true),
+  )
+}
+
+private fn render_tabs(demo: mut TabDemo) {
+  let highlighted = try demo.control.highlighted() -> _ { () }
+  mut selected = "No item selected yet (press Enter to select)"
+  match demo.control.selected() {
+    active => { selected = "Last Selected: {active.option.label} ({active.option.value.or("")})" },
+    _ => (),
   }
-  demo.highlighted = next
+  mut focus_text = "Tab selector is BLURRED"
+  mut focus_color = color::hex("#FF0000")
+  if demo.control.is_focused() {
+    focus_text = "Tab selector is FOCUSED"
+    focus_color = color::hex("#00FF00")
+  }
+  mut underline_text = "off"
+  if demo.show_underline {
+    underline_text = "on"
+  }
+  mut description_text = "off"
+  mut description_notice = "Descriptions hidden — press P\n"
+  if demo.show_description {
+    description_text = "on"
+    description_notice = ""
+  }
+  mut arrows_text = "off"
+  if demo.show_arrows {
+    arrows_text = "on"
+  }
+  mut wrap_text = "off"
+  if demo.wrap {
+    wrap_text = "on"
+  }
+  demo.status.set_content(
+    text::styled_text(
+      [
+        text::span(
+          "Highlighted: {highlighted.option.label} ({highlighted.option.value.or("")}) - Index: {highlighted.index}\n",
+          style: text::span_style(foreground: color::hex("#00FF00")),
+        ),
+        text::span("{selected}\n", style: text::span_style(foreground: color::hex("#FFFF00"))),
+        text::span("{description_notice}", style: text::span_style(foreground: color::hex("#CBD5E1"))),
+        text::span("{focus_text}\n", style: text::span_style(foreground: focus_color)),
+        text::span(
+          "Underline: {underline_text} | Description: {description_text} | Scroll arrows: {arrows_text} | Wrap: {wrap_text}",
+          style: text::span_style(foreground: color::hex("#CCCCCC")),
+        ),
+      ],
+    ),
+  )
+}
+
+private fn apply_tab_config(demo: mut TabDemo) {
+  demo.control.set_tab_config(
+    select_control::tab_config(
+      tab_width: 12,
+      show_description: demo.show_description,
+      show_underline: demo.show_underline,
+      show_arrows: demo.show_arrows,
+      wrap_selection: demo.wrap,
+    ),
+  )
   render_tabs(demo)
 }
 
 private fn make_tab_demo(ctx: mut context::Context) mut TabDemo {
   let root = box::new(ctx, styles: tab_page_style(true))
-  let control = box::new(
+  let panel = box::new(
     ctx,
     title: "TAB SELECT",
     styles: style::new(
@@ -449,27 +393,15 @@ private fn make_tab_demo(ctx: mut context::Context) mut TabDemo {
       overflow: style::Overflow::hidden,
     ),
   )
-  control.set_focusable(true)
-  let tabs = text::new(
+  let control = select_control::tabs(
     ctx,
-    content: "",
-    styles: style::new(width: style::cells(64), height: style::cells(1), flex_shrink: 0.0),
-    selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::clip,
+    control_options(tab_options()),
+    config: select_control::tab_config(tab_width: 12),
+    appearance: widget_appearance(),
+    styles: style::new(width: style::cells(64), flex_shrink: 0.0),
   )
-  let description = text::new(
-    ctx,
-    content: "",
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
-    selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#CBD5E1")),
-  )
-  control.add(tabs)
-  control.add(description)
-  root.add(control)
+  panel.add(control)
+  root.add(panel)
 
   let details = box::new(
     ctx,
@@ -527,23 +459,15 @@ private fn make_tab_demo(ctx: mut context::Context) mut TabDemo {
   details.add(status_panel)
   root.add(details)
 
-  let demo = mut TabDemo{
+  (mut TabDemo{
     root: root,
     control: control,
-    tabs: tabs,
-    description: description,
     status: status,
-    options: tab_options(),
-    highlighted: 0,
-    activated: -1,
-    offset: 0,
-    focused: false,
     show_underline: true,
     show_description: true,
     show_arrows: true,
     wrap: false,
-  }
-  demo
+  })
 }
 
 private fn select_page_style(show: Bool) style::Style {
@@ -558,90 +482,16 @@ private fn select_page_style(show: Bool) style::Style {
   )
 }
 
-private fn select_row_style(highlighted: Bool, activated: Bool, focused: Bool, description: Bool) style::Style {
-  mut background = color::hex("#1E293B")
-  mut height = 2
-  if description {
-    height = 3
-  }
-  if highlighted and focused {
-    background = color::hex("#2D3748")
-  }
-  if activated {
-    background = color::hex("#3B82F6")
-  }
-  style::new(
-    background: background,
-    width: style::percent(100.0),
-    height: style::cells(height),
-    flex_shrink: 0.0,
-    padding: horizontal_padding(),
-    overflow: style::Overflow::hidden,
-  )
-}
-
-private fn select_indicator(index: Int, count: Int) Str {
-  mut rendered = "▲\n"
-  let thumb = index * 7 / (count - 1)
-  mut row = 0
-  while row < 8 {
-    if row == thumb {
-      rendered = "{rendered}█"
-    } else {
-      rendered = "{rendered}│"
-    }
-    if row < 7 {
-      rendered = "{rendered}\n"
-    }
-    row =+ 1
-  }
-  "{rendered}\n▼"
-}
-
 private fn render_select(demo: mut SelectDemo) {
-  for row, index in demo.rows {
-    let highlighted = index == demo.highlighted
-    let activated = index == demo.activated
-    row.panel.set_style(
-      select_row_style(highlighted, activated, demo.focused, demo.show_description),
-    )
-    mut marker = "  "
-    mut foreground = color::hex("#E2E8F0")
-    if highlighted {
-      marker = "▶ "
-    }
-    if activated or highlighted {
-      foreground = color::hex("#FFFFFF")
-    }
-    row.name.set_content("{marker}{demo.options.at(index).expect("row option").name}")
-    row.name.set_text_style(text::style(foreground: foreground, bold: highlighted))
-    row.description.set_style(
-      style::new(
-        display: visible(demo.show_description),
-        width: style::percent(100.0),
-        height: style::cells(1),
-        flex_shrink: 0.0,
-      ),
-    )
-  }
-  demo.indicator.set_content(select_indicator(demo.highlighted, demo.options.size()))
-  demo.indicator.set_style(
-    style::new(
-      display: visible(demo.show_indicator),
-      width: style::cells(1),
-      height: style::percent(100.0),
-      flex_shrink: 0.0,
-    ),
-  )
-  let option = demo.options.at(demo.highlighted).expect("highlighted option")
+  let highlighted = try demo.control.highlighted() -> _ { () }
   mut selected = "No item activated yet"
-  match demo.options.at(demo.activated) {
-    active => { selected = "*** ACTIVATED: {active.name} ({active.value}) ***" },
+  match demo.control.selected() {
+    active => { selected = "*** ACTIVATED: {active.option.label} ({active.option.value.or("")}) ***" },
     _ => (),
   }
   mut focus_text = "Select element is BLURRED"
   mut focus_color = color::hex("#FF0000")
-  if demo.focused {
+  if demo.control.is_focused() {
     focus_text = "Select element is FOCUSED"
     focus_color = color::hex("#00FF00")
   }
@@ -661,7 +511,7 @@ private fn render_select(demo: mut SelectDemo) {
     text::styled_text(
       [
         text::span(
-          "Selection: {option.name} ({option.value}) - Index: {demo.highlighted}\n",
+          "Selection: {highlighted.option.label} ({highlighted.option.value.or("")}) - Index: {highlighted.index}\n",
           style: text::span_style(foreground: color::hex("#00FF00")),
         ),
         text::span("{focus_text}\n", style: text::span_style(foreground: focus_color)),
@@ -673,33 +523,17 @@ private fn render_select(demo: mut SelectDemo) {
       ],
     ),
   )
-  match demo.rows.at(demo.highlighted) {
-    row => {
-      let _ = demo.viewport.scroll_child_into_view(row.panel)
-    },
-    _ => (),
-  }
 }
 
-private fn pin_select(demo: mut SelectDemo) {
-  mut row_height = 2
-  if demo.show_description {
-    row_height = 3
-  }
-  let _ = demo.viewport.scroll_to(demo.highlighted * row_height)
-}
-
-private fn move_select(demo: mut SelectDemo, delta: Int) {
-  mut next = demo.highlighted + delta
-  if demo.wrap {
-    while next < 0 {
-      next =+ demo.options.size()
-    }
-    next = next % demo.options.size()
-  } else {
-    next = clamp(next, 0, demo.options.size() - 1)
-  }
-  demo.highlighted = next
+private fn apply_select_config(demo: mut SelectDemo) {
+  demo.control.set_config(
+    select_control::config(
+      show_descriptions: demo.show_description,
+      show_indicator: demo.show_indicator,
+      fast_step: 5,
+      wrap_selection: demo.wrap,
+    ),
+  )
   render_select(demo)
 }
 
@@ -715,28 +549,17 @@ private fn make_select_demo(ctx: mut context::Context) mut SelectDemo {
       width: style::percent(56.0),
       height: style::percent(100.0),
       padding: style::edges(style::cells(1)),
-      flex_direction: style::FlexDirection::row,
       overflow: style::Overflow::hidden,
     ),
   )
-  let viewport = scroll_box::new(
+  let control = select_control::new(
     ctx,
-    styles: style::new(
-      width: style::cells(1),
-      height: style::percent(100.0),
-      flex_grow: 1.0,
-      flex_shrink: 1.0,
-    ),
+    control_options(select_options()),
+    config: select_control::config(show_indicator: true),
+    appearance: widget_appearance(),
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
   )
-  let indicator = text::new(
-    ctx,
-    content: "",
-    styles: style::new(width: style::cells(1), height: style::percent(100.0), flex_shrink: 0.0),
-    selectable: false,
-    text_style: text::style(foreground: color::hex("#94A3B8")),
-  )
-  list_panel.add(viewport)
-  list_panel.add(indicator)
+  list_panel.add(control)
   root.add(list_panel)
 
   let side = box::new(
@@ -795,50 +618,14 @@ private fn make_select_demo(ctx: mut context::Context) mut SelectDemo {
   side.add(status_panel)
   root.add(side)
 
-  let rows = mut List::new<mut SelectRow>()
-  for option in select_options() {
-    let panel = box::new(ctx, styles: select_row_style(false, false, false, true))
-    let name = text::new(
-      ctx,
-      content: option.name,
-      styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
-      selectable: false,
-    )
-    let description = text::new(
-      ctx,
-      content: option.description,
-      styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
-      selectable: false,
-      wrap: text::TextWrap::none,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#94A3B8")),
-    )
-    panel.add(name)
-    panel.add(description)
-    viewport.add(panel)
-    let row = mut SelectRow{
-      panel: panel,
-      name: name,
-      description: description,
-    }
-    rows.push(row)
-  }
-
-  let demo = mut SelectDemo{
+  (mut SelectDemo{
     root: root,
-    viewport: viewport,
-    indicator: indicator,
+    control: control,
     status: status,
-    rows: rows.@,
-    options: select_options(),
-    highlighted: 0,
-    activated: -1,
-    focused: false,
     show_description: true,
     show_indicator: true,
     wrap: false,
-  }
-  demo
+  })
 }
 
 private fn slider_page_style(show: Bool) style::Style {
@@ -1188,7 +975,7 @@ private fn show_page(
     button.set_style(nav_style(button_index == index))
   }
   tab_demo.control.blur()
-  select_demo.viewport.blur()
+  select_demo.control.blur()
   for slider in sliders {
     slider.panel.blur()
   }
@@ -1199,11 +986,8 @@ private fn show_page(
       action.set_text_style(text::style(foreground: color::hex("#38BDF8"), bold: true))
     },
     1 => {
-      select_demo.viewport.focus()
-      pin_select(select_demo)
-      action.set_content(
-        "SELECT LIST · Navigate 20 options; highlight and activation stay distinct",
-      )
+      select_demo.control.focus()
+      action.set_content("SELECT · Compact input with anchored option menu")
       action.set_text_style(text::style(foreground: color::hex("#A78BFA"), bold: true))
     },
     _ => {
@@ -1240,7 +1024,7 @@ fn main() {
   header.add(
     text::new(
       ctx,
-      content: "WIDGET LAB — app-local controls composed from Box + Text",
+      content: "WIDGET LAB — built-in Selects + app-local sliders",
       styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
       selectable: false,
       text_style: text::style(foreground: color::hex("#38BDF8"), bold: true),
@@ -1261,7 +1045,7 @@ fn main() {
     box::new(ctx, styles: nav_style(false)),
     box::new(ctx, styles: nav_style(false)),
   ]
-  let nav_labels = ["F1 TAB SELECT", "F2 SELECT LIST", "F3 SLIDERS"]
+  let nav_labels = ["F1 TAB SELECT", "F2 SELECT", "F3 SLIDERS"]
   for button, index in nav {
     button.add(
       text::new(
@@ -1309,67 +1093,40 @@ fn main() {
   let state = mut ShellState{page: 0}
 
   let _ = tab_demo.control.on_focus(fn() {
-    tab_demo.focused = true
     render_tabs(tab_demo)
   })
   let _ = tab_demo.control.on_blur(fn() {
-    tab_demo.focused = false
     render_tabs(tab_demo)
   })
-  let _ = tab_demo.tabs.on_mouse(fn(received: mut event::MouseEvent) {
-    if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
-      let slot = (received.local_x - 2) / 12
-      if received.local_x >= 2 and slot >= 0 and slot < 5 {
-        let selected = tab_demo.offset + slot
-        if selected < tab_demo.options.size() {
-          tab_demo.highlighted = selected
-          tab_demo.activated = selected
-          tab_demo.control.focus()
-          render_tabs(tab_demo)
-          action.set_content(
-            "TAB SELECT activated {tab_demo.options.at(selected).expect("clicked tab").name}",
-          )
-        }
-      }
-    }
+  let _ = tab_demo.control.on_highlight(fn(value: select_control::Selection) {
+    render_tabs(tab_demo)
+    action.set_content("TAB SELECT navigation moved to {value.option.label}")
+  })
+  let _ = tab_demo.control.on_change(fn(value: select_control::Selection) {
+    render_tabs(tab_demo)
+  })
+  let _ = tab_demo.control.on_submit(fn(value: select_control::Selection) {
+    render_tabs(tab_demo)
+    action.set_content("TAB SELECT activated {value.option.label}")
   })
 
-  let _ = select_demo.viewport.on_focus(fn() {
-    select_demo.focused = true
+  let _ = select_demo.control.on_focus(fn() {
     render_select(select_demo)
   })
-  let _ = select_demo.viewport.on_blur(fn() {
-    select_demo.focused = false
+  let _ = select_demo.control.on_blur(fn() {
     render_select(select_demo)
   })
-  let _ = select_demo.viewport.on_mouse(fn(received: mut event::MouseEvent) {
-    if received.event_type == event::MouseEventType::scroll and received.scroll_y != 0 {
-      mut delta = 1
-      if received.scroll_y < 0 {
-        delta = -1
-      }
-      let _ = ctx.dispatch(fn() {
-        move_select(select_demo, delta)
-        action.set_content(
-          "SELECT navigation moved to {select_demo.options.at(select_demo.highlighted).expect("wheel option").name}",
-        )
-      })
-    }
+  let _ = select_demo.control.on_highlight(fn(value: select_control::Selection) {
+    render_select(select_demo)
+    action.set_content("SELECT navigation moved to {value.option.label}")
   })
-  for row, index in select_demo.rows {
-    let selected_index = index
-    let _ = row.panel.on_mouse(fn(received: mut event::MouseEvent) {
-      if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
-        select_demo.highlighted = selected_index
-        select_demo.activated = selected_index
-        select_demo.viewport.focus()
-        render_select(select_demo)
-        action.set_content(
-          "SELECT activated {select_demo.options.at(selected_index).expect("clicked option").name}",
-        )
-      }
-    })
-  }
+  let _ = select_demo.control.on_change(fn(value: select_control::Selection) {
+    render_select(select_demo)
+  })
+  let _ = select_demo.control.on_submit(fn(value: select_control::Selection) {
+    render_select(select_demo)
+    action.set_content("SELECT activated {value.option.label}")
+  })
 
   for slider, index in sliders {
     let selected_index = index
@@ -1417,68 +1174,42 @@ fn main() {
           }
         } else if received.matches("u") {
           tab_demo.show_underline = not tab_demo.show_underline
-          render_tabs(tab_demo)
+          apply_tab_config(tab_demo)
           action.set_content("TAB SELECT toggled underline")
         } else if received.matches("p") {
           tab_demo.show_description = not tab_demo.show_description
-          render_tabs(tab_demo)
+          apply_tab_config(tab_demo)
           action.set_content("TAB SELECT toggled descriptions")
         } else if received.matches("s") {
           tab_demo.show_arrows = not tab_demo.show_arrows
-          render_tabs(tab_demo)
+          apply_tab_config(tab_demo)
           action.set_content("TAB SELECT toggled scroll arrows")
         } else if received.matches("w") {
           tab_demo.wrap = not tab_demo.wrap
-          render_tabs(tab_demo)
+          apply_tab_config(tab_demo)
           action.set_content("TAB SELECT toggled wrap selection")
-        } else if tab_demo.control.is_focused() and (received.matches("right") or received.matches("]")) {
-          move_tab(tab_demo, 1)
-        } else if tab_demo.control.is_focused() and (received.matches("left") or received.matches("[")) {
-          move_tab(tab_demo, -1)
-        } else if tab_demo.control.is_focused() and received.matches("return") {
-          tab_demo.activated = tab_demo.highlighted
-          render_tabs(tab_demo)
-          action.set_content(
-            "TAB SELECT activated {tab_demo.options.at(tab_demo.activated).expect("active tab").name}",
-          )
         } else {
           handled = false
         }
       } else if state.page == 1 {
-        let fast = received.modifiers.shift
-        mut step = 1
-        if fast {
-          step = 5
-        }
         if received.matches("f") {
-          if select_demo.viewport.is_focused() {
-            select_demo.viewport.blur()
+          if select_demo.control.is_focused() {
+            select_demo.control.blur()
           } else {
-            select_demo.viewport.focus()
+            select_demo.control.focus()
           }
         } else if received.matches("d") {
           select_demo.show_description = not select_demo.show_description
-          render_select(select_demo)
-          pin_select(select_demo)
+          apply_select_config(select_demo)
           action.set_content("SELECT toggled descriptions")
         } else if received.matches("s") {
           select_demo.show_indicator = not select_demo.show_indicator
-          render_select(select_demo)
+          apply_select_config(select_demo)
           action.set_content("SELECT toggled scroll indicator")
         } else if received.matches("w") {
           select_demo.wrap = not select_demo.wrap
-          render_select(select_demo)
+          apply_select_config(select_demo)
           action.set_content("SELECT toggled wrap selection")
-        } else if select_demo.viewport.is_focused() and (received.matches("down") or received.matches("down", shift: true) or received.matches("j") or received.matches("j", shift: true)) {
-          move_select(select_demo, step)
-        } else if select_demo.viewport.is_focused() and (received.matches("up") or received.matches("up", shift: true) or received.matches("k") or received.matches("k", shift: true)) {
-          move_select(select_demo, 0 - step)
-        } else if select_demo.viewport.is_focused() and received.matches("return") {
-          select_demo.activated = select_demo.highlighted
-          render_select(select_demo)
-          action.set_content(
-            "SELECT activated {select_demo.options.at(select_demo.activated).expect("active option").name}",
-          )
         } else {
           handled = false
         }

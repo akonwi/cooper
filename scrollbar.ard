@@ -27,21 +27,21 @@ struct State {
   content_size: Int,
 }
 
-struct Theme {
+struct Appearance {
   track_glyph: Str?,
   thumb_glyph: Str?,
   start_arrow: Str?,
   end_arrow: Str?,
-  track_style: text::TextStyle,
-  thumb_style: text::TextStyle,
-  arrow_style: text::TextStyle,
+  track_style: text::SpanStyle?,
+  thumb_style: text::SpanStyle?,
+  arrow_style: text::SpanStyle?,
 }
 
 struct Options {
   visibility: Visibility,
   show_arrows: Bool,
   scroll_step: Int,
-  theme: Theme,
+  appearance: Appearance?,
 }
 
 fn state(position: Int?, viewport_size: Int?, content_size: Int?) State {
@@ -54,27 +54,27 @@ fn state(position: Int?, viewport_size: Int?, content_size: Int?) State {
   )
 }
 
-fn theme(
+fn appearance(
   track_glyph: Str?,
   thumb_glyph: Str?,
   start_arrow: Str?,
   end_arrow: Str?,
-  track_style: text::TextStyle?,
-  thumb_style: text::TextStyle?,
-  arrow_style: text::TextStyle?,
-) Theme {
-  Theme{
+  track_style: text::SpanStyle?,
+  thumb_style: text::SpanStyle?,
+  arrow_style: text::SpanStyle?,
+) Appearance {
+  Appearance{
     track_glyph: track_glyph,
     thumb_glyph: thumb_glyph,
     start_arrow: start_arrow,
     end_arrow: end_arrow,
-    track_style: track_style.or(text::style(dim: true)),
-    thumb_style: thumb_style.or(text::style(bold: true)),
-    arrow_style: arrow_style.or(text::style()),
+    track_style: track_style,
+    thumb_style: thumb_style,
+    arrow_style: arrow_style,
   }
 }
 
-fn options(visibility: Visibility?, show_arrows: Bool?, scroll_step: Int?, theme: Theme?) Options {
+fn options(visibility: Visibility?, show_arrows: Bool?, scroll_step: Int?, appearance: Appearance?) Options {
   let step = scroll_step.or(1)
   if step < 1 {
     panic("Scrollbar scroll_step must be positive")
@@ -83,12 +83,8 @@ fn options(visibility: Visibility?, show_arrows: Bool?, scroll_step: Int?, theme
     visibility: visibility.or(Visibility::automatic),
     show_arrows: show_arrows.or(false),
     scroll_step: step,
-    theme: theme.or(scrollbar_theme()),
+    appearance: appearance,
   }
-}
-
-private fn scrollbar_theme() Theme {
-  theme()
 }
 
 private fn normalize_state(value: State) State {
@@ -120,7 +116,7 @@ private fn maximum_for(value: State) Int {
   }
 }
 
-private struct ResolvedTheme {
+private struct ResolvedAppearance {
   track_glyph: Str,
   thumb_glyph: Str,
   start_arrow: Str,
@@ -139,7 +135,7 @@ private struct InternalState {
   orientation: Orientation,
   value: State,
   options: Options,
-  resolved_theme: ResolvedTheme,
+  resolved_appearance: ResolvedAppearance,
   layout_style: layout_style::Style,
   measure_width: fn(Str) Int,
   focusable: Bool,
@@ -194,19 +190,70 @@ private fn default_end_arrow(orientation: Orientation) Str {
   }
 }
 
-private fn resolve_theme(orientation: Orientation, value: Theme) ResolvedTheme {
-  ResolvedTheme{
-    track_glyph: value.track_glyph.or(default_track(orientation)),
-    thumb_glyph: value.thumb_glyph.or(default_thumb(orientation)),
-    start_arrow: value.start_arrow.or(default_start_arrow(orientation)),
-    end_arrow: value.end_arrow.or(default_end_arrow(orientation)),
-    track_style: value.track_style,
-    thumb_style: value.thumb_style,
-    arrow_style: value.arrow_style,
+private fn patched(base: text::TextStyle, patch: text::SpanStyle?) text::TextStyle {
+  let resolved = mut base
+  match patch {
+    value => {
+      match value.foreground {
+        color => { resolved.foreground = color },
+        _ => (),
+      }
+      match value.background {
+        color => { resolved.background = color },
+        _ => (),
+      }
+      match value.bold {
+        enabled => { resolved.bold = enabled },
+        _ => (),
+      }
+      match value.dim {
+        enabled => { resolved.dim = enabled },
+        _ => (),
+      }
+      match value.italic {
+        enabled => { resolved.italic = enabled },
+        _ => (),
+      }
+      match value.underline {
+        enabled => { resolved.underline = enabled },
+        _ => (),
+      }
+      match value.blink {
+        enabled => { resolved.blink = enabled },
+        _ => (),
+      }
+      match value.reverse {
+        enabled => { resolved.reverse = enabled },
+        _ => (),
+      }
+      match value.strike {
+        enabled => { resolved.strike = enabled },
+        _ => (),
+      }
+      match value.hidden {
+        enabled => { resolved.hidden = enabled },
+        _ => (),
+      }
+    },
+    _ => (),
+  }
+  resolved.@
+}
+
+private fn resolve_appearance(orientation: Orientation, value: Appearance?) ResolvedAppearance {
+  let local = value.or(appearance())
+  ResolvedAppearance{
+    track_glyph: local.track_glyph.or(default_track(orientation)),
+    thumb_glyph: local.thumb_glyph.or(default_thumb(orientation)),
+    start_arrow: local.start_arrow.or(default_start_arrow(orientation)),
+    end_arrow: local.end_arrow.or(default_end_arrow(orientation)),
+    track_style: patched(text::style(dim: true), local.track_style),
+    thumb_style: patched(text::style(bold: true), local.thumb_style),
+    arrow_style: patched(text::style(), local.arrow_style),
   }
 }
 
-private fn validate_theme(measure_width: fn(Str) Int, value: ResolvedTheme) {
+private fn validate_appearance(measure_width: fn(Str) Int, value: ResolvedAppearance) {
   if value.track_glyph == "" or measure_width(value.track_glyph) != 1 {
     panic("Scrollbar track_glyph must occupy exactly one terminal cell")
   }
@@ -276,8 +323,8 @@ fn internal_new(
   let measure_width = fn(glyph: Str) Int {
     context_state.measure_text(glyph)
   }
-  let resolved = resolve_theme(orientation, initial_options.theme)
-  validate_theme(measure_width, resolved)
+  let resolved = resolve_appearance(orientation, initial_options.appearance)
+  validate_appearance(measure_width, resolved)
   let retained = context_state.create_node(
     configured(styles, orientation, initial_options.visibility),
   )
@@ -285,7 +332,7 @@ fn internal_new(
     orientation: orientation,
     value: normalize_state(initial_state),
     options: initial_options,
-    resolved_theme: resolved,
+    resolved_appearance: resolved,
     layout_style: styles,
     measure_width: measure_width,
     focusable: focusable,
@@ -421,19 +468,19 @@ impl node::Renderable for Scrollbar {
       let geometry = track_geometry(shared, size)
       mut index = 0
       while index < size {
-        mut glyph = shared.resolved_theme.track_glyph
-        mut style = shared.resolved_theme.track_style
+        mut glyph = shared.resolved_appearance.track_glyph
+        mut style = shared.resolved_appearance.track_style
         if shared.options.show_arrows and size >= 3 and index == 0 {
-          glyph = shared.resolved_theme.start_arrow
-          style = shared.resolved_theme.arrow_style
+          glyph = shared.resolved_appearance.start_arrow
+          style = shared.resolved_appearance.arrow_style
         } else if shared.options.show_arrows and size >= 3 and index == size - 1 {
-          glyph = shared.resolved_theme.end_arrow
-          style = shared.resolved_theme.arrow_style
+          glyph = shared.resolved_appearance.end_arrow
+          style = shared.resolved_appearance.arrow_style
         } else {
           let track_index = index - geometry.start
           if track_index >= geometry.thumb_start and track_index < geometry.thumb_start + geometry.thumb_size {
-            glyph = shared.resolved_theme.thumb_glyph
-            style = shared.resolved_theme.thumb_style
+            glyph = shared.resolved_appearance.thumb_glyph
+            style = shared.resolved_appearance.thumb_style
           }
         }
         write_cell(ctx, orientation, index, glyph, style)
@@ -443,20 +490,24 @@ impl node::Renderable for Scrollbar {
   }
 
   fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
-    match ctx.mouse_event {
-      mouse => self.handle_mouse(ctx, mouse),
-      _ => {
-        match ctx.key_event {
-          key => {
-            if ctx.focused {
-              self.handle_key(ctx, key)
-            } else {
-              event_delivery::Disposition::ignored
-            }
-          },
-          _ => event_delivery::Disposition::ignored,
-        }
-      },
+    if ctx.is_default_prevented() {
+      event_delivery::Disposition::ignored
+    } else {
+      match ctx.mouse_event {
+        mouse => self.handle_mouse(ctx, mouse),
+        _ => {
+          match ctx.key_event {
+            key => {
+              if ctx.focused {
+                self.handle_key(ctx, key)
+              } else {
+                event_delivery::Disposition::ignored
+              }
+            },
+            _ => event_delivery::Disposition::ignored,
+          }
+        },
+      }
     }
   }
 }
@@ -563,10 +614,10 @@ impl Scrollbar {
       panic("Scrollbar scroll_step must be positive")
     }
     let shared = internal_state(self.internal)
-    let resolved = resolve_theme(self.orientation(), value.theme)
-    validate_theme(shared.measure_width, resolved)
+    let resolved = resolve_appearance(self.orientation(), value.appearance)
+    validate_appearance(shared.measure_width, resolved)
     shared.options = value
-    shared.resolved_theme = resolved
+    shared.resolved_appearance = resolved
 
     // Blur before applying display:none so a blur listener may safely reenter
     // options or destroy the control without interrupting Node style mutation.

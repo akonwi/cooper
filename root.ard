@@ -35,7 +35,12 @@ fn new(ctx: mut context::Context, runtime: mut app_runtime::State) mut Root {
 
 impl Root {
   fn mut add(child: mut node::Renderable, index: Int?) {
-    self.node_ref.add(child.node(), index)
+    match index {
+      requested => {
+        self.node_ref.add(child.node(), self.node_ref.public_child_index(requested, child.node()))
+      },
+      _ => self.node_ref.add(child.node()),
+    }
   }
 
   fn mut remove(child: mut node::Renderable) Bool {
@@ -43,6 +48,6 @@ impl Root {
   }
 
   fn child_count() Int {
-    self.node_ref.child_count()
+    self.node_ref.public_child_count()
   }
 }

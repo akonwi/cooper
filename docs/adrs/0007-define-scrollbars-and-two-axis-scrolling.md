@@ -58,17 +58,18 @@ struct Options {
   visibility: Visibility,
   show_arrows: Bool,
   scroll_step: Int,
-  theme: Theme,
+  appearance: Appearance?,
 }
 ```
 
-Provide helper constructors for validated State, Theme, and Options values.
+Provide helper constructors for validated State, Appearance, and Options values.
 Sizes and positions use Ard Int, sizes must be non-negative, scroll step must be
 positive, and position is clamped to `0...max(0, content_size -
-viewport_size)`. Theme glyphs must each occupy exactly one terminal cell.
+viewport_size)`. Appearance glyphs must each occupy exactly one terminal cell.
+Appearance fields are optional local patches as amended by ADR 0008.
 
 Scrollbar exposes state snapshots, non-notifying state synchronization,
-position and maximum getters, option/theme setters, the common control API, and
+position and maximum getters, option/appearance setters, the common control API, and
 idempotently removable change listeners. User interaction updates its local
 position and notifies listeners with the resulting position. External state
 changes call `set_state`; this reflection path does not emit change and therefore

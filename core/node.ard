@@ -1,13 +1,13 @@
 use ard/unsafe
 
 use cooper/color
-use cooper/event
 use cooper/core/event_delivery
-use go:github.com/akonwi/cooper/ffi/core/backend/retainedyoga as yoga
-use cooper/geometry
 use cooper/core/paint
 use cooper/core/runtime
+use cooper/event
+use cooper/geometry
 use cooper/style
+use go:github.com/akonwi/cooper/ffi/core/backend/retainedyoga as yoga
 use go:math
 
 enum MeasureMode {
@@ -174,7 +174,13 @@ struct SelectionResult {
 }
 
 fn empty_selection_result() SelectionResult {
-  SelectionResult{has_selection: false, start: 0, end: 0, source_text: Maybe::new<Str>(), fragments: []}
+  SelectionResult{
+    has_selection: false,
+    start: 0,
+    end: 0,
+    source_text: Maybe::new<Str>(),
+    fragments: [],
+  }
 }
 
 struct Node {
@@ -197,11 +203,12 @@ struct Node {
   focused: Bool,
   mounted_root: Bool,
   application_root: Bool,
+  internal_overlay: Bool,
   mount_generation: Int,
   mount_scope: (mut runtime::MountScope)?,
   mount_dispatch_base: (fn(fn()) Void!event::DispatchError)?,
   mount_focus_base: (fn(Int) Bool)?,
-  mount_blur_base: (fn(Int))?,
+  mount_blur_base: fn(Int)?,
   selection_start_base: fn(Int, Int, Int) Bool,
   selection_update_base: fn(Int, Int, Int, Bool) Bool,
   selection_owns_base: fn(Int) Bool,
@@ -413,6 +420,7 @@ fn create(
     focused: false,
     mounted_root: false,
     application_root: false,
+    internal_overlay: false,
     mount_generation: 0,
     mount_scope: Maybe::new<mut runtime::MountScope>(),
     mount_dispatch_base: Maybe::new<fn(fn()) Void!event::DispatchError>(),
@@ -464,6 +472,39 @@ impl Node {
     self.children.size()
   }
 
+  fn public_child_count() Int {
+    mut count = 0
+    for child in self.children {
+      if not child.internal_overlay {
+        count =+ 1
+      }
+    }
+    count
+  }
+
+  fn public_child_index(index: Int, moving: mut Node) Int {
+    if index < 0 {
+      panic("child index must be non-negative")
+    }
+    mut public_index = 0
+    mut actual_index = 0
+    for child in self.children {
+      if child != moving {
+        if public_index == index {
+          break
+        }
+        if not child.internal_overlay {
+          public_index =+ 1
+        }
+        actual_index =+ 1
+      }
+    }
+    if public_index != index {
+      panic("child index exceeds public child count")
+    }
+    actual_index
+  }
+
   fn mut find(target_id: Int) (mut Node)? {
     if self.id == target_id {
       Maybe::new<mut Node>(self)
@@ -478,6 +519,13 @@ impl Node {
     }
   }
 
+  fn mut mark_internal_overlay() {
+    if self.parent.is_some() or self.destroyed {
+      panic("only a live detached Node can become an internal overlay")
+    }
+    self.internal_overlay = true
+  }
+
   fn mut mark_application_root() {
     if self.application_root or self.destroyed or self.parent.is_some() or self.mounted_root {
       panic("only a live detached retained Node can become the application Root")
@@ -486,7 +534,7 @@ impl Node {
   }
 
   fn can_have_children() Bool {
-    (not self.measured) and (not self.destroyed)
+    (not self.measured) and not self.destroyed
   }
 
   fn is_focusable() Bool {
@@ -494,7 +542,7 @@ impl Node {
   }
 
   fn is_focused() Bool {
-    self.focused and (not self.destroyed)
+    self.focused and not self.destroyed
   }
 
   fn mut set_focused(value: Bool) {
@@ -512,7 +560,7 @@ impl Node {
   }
 
   fn mut focus() Bool {
-    if self.destroyed or (not self.focusable) {
+    if self.destroyed or not self.focusable {
       false
     } else {
       (self.mount_focus_base.or(reject_focus))(self.id)
@@ -601,7 +649,11 @@ impl Node {
     }
   }
 
-  fn resolve_selection(logical_range: SelectionRange, source_range: SelectionRange, source_revision: Int) SelectionExpansion? {
+  fn resolve_selection(
+    logical_range: SelectionRange,
+    source_range: SelectionRange,
+    source_revision: Int,
+  ) SelectionExpansion? {
     match self.selection_resolve {
       resolve => resolve(logical_range, source_range, source_revision),
       _ => Maybe::new<SelectionExpansion>(),
@@ -629,7 +681,9 @@ impl Node {
 
   fn mut clear_selection_callbacks() {
     match self.selection_update {
-      update => { let _ = update(Maybe::new<LocalSelection>()) },
+      update => {
+        let _ = update(Maybe::new<LocalSelection>())
+      },
       _ => (),
     }
     self.selection_hit = Maybe::new<fn(Int, Int) Bool>()
@@ -655,7 +709,9 @@ impl Node {
   fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
     let id = self.next_listener()
     self.key_listeners.push(KeyListener{id: id, handler: handler})
-    fn() { self.remove_key_listener(id) }
+    fn() {
+      self.remove_key_listener(id)
+    }
   }
 
   private fn mut remove_key_listener(id: Int) {
@@ -671,7 +727,9 @@ impl Node {
   fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
     let id = self.next_listener()
     self.paste_listeners.push(PasteListener{id: id, handler: handler})
-    fn() { self.remove_paste_listener(id) }
+    fn() {
+      self.remove_paste_listener(id)
+    }
   }
 
   private fn mut remove_paste_listener(id: Int) {
@@ -691,7 +749,9 @@ impl Node {
     if was_empty {
       self.request_redraw()
     }
-    fn() { self.remove_mouse_listener(id) }
+    fn() {
+      self.remove_mouse_listener(id)
+    }
   }
 
   private fn mut remove_mouse_listener(id: Int) {
@@ -711,7 +771,9 @@ impl Node {
   fn mut on_focus(handler: fn()) fn() {
     let id = self.next_listener()
     self.focus_listeners.push(VoidListener{id: id, handler: handler})
-    fn() { self.remove_focus_listener(id) }
+    fn() {
+      self.remove_focus_listener(id)
+    }
   }
 
   private fn mut remove_focus_listener(id: Int) {
@@ -727,7 +789,9 @@ impl Node {
   fn mut on_blur(handler: fn()) fn() {
     let id = self.next_listener()
     self.blur_listeners.push(VoidListener{id: id, handler: handler})
-    fn() { self.remove_blur_listener(id) }
+    fn() {
+      self.remove_blur_listener(id)
+    }
   }
 
   private fn mut remove_blur_listener(id: Int) {
@@ -742,8 +806,16 @@ impl Node {
 
   fn mut on_value(kind: Int, handler: fn(Str)) fn() {
     let id = self.next_listener()
-    self.value_listeners.push(ValueListener{id: id, kind: kind, handler: handler})
-    fn() { self.remove_value_listener(id) }
+    self.value_listeners.push(
+      ValueListener{
+        id: id,
+        kind: kind,
+        handler: handler,
+      },
+    )
+    fn() {
+      self.remove_value_listener(id)
+    }
   }
 
   private fn mut remove_value_listener(id: Int) {
@@ -994,7 +1066,7 @@ impl Node {
     }
     self.mounted_root = true
     self.mount_subtree(base)
-    if (not self.mounted_root) or (not self.mount_scope.is_some()) {
+    if (not self.mounted_root) or not self.mount_scope.is_some() {
       panic("retained root was unmounted while mounting")
     }
   }
@@ -1113,7 +1185,10 @@ impl Node {
       let viewport_bottom = saturating_add(viewport.y, viewport.height)
       let target_bottom = saturating_add(bounds.y, bounds.height)
       if target_bottom > viewport_bottom {
-        requested_y = saturating_add(requested_y, saturating_subtract(target_bottom, viewport_bottom))
+        requested_y = saturating_add(
+          requested_y,
+          saturating_subtract(target_bottom, viewport_bottom),
+        )
       }
     }
     let moved_x = self.set_scroll_x(requested_x)
@@ -1414,7 +1489,7 @@ impl Node {
   }
 
   fn mut mark_measure_dirty() {
-    if self.destroyed or (not self.measured) {
+    if self.destroyed or not self.measured {
       panic("only a live measured retained Node can be marked dirty")
     }
     self.yoga.MarkDirty()
@@ -1498,12 +1573,7 @@ impl Node {
       width: buffer.width,
       height: buffer.height,
     }
-    self.paint_with_clip(
-      buffer,
-      root_clip,
-      Maybe::new<color::Color>(),
-      Maybe::new<color::Color>(),
-    )
+    self.paint_with_clip(buffer, root_clip, Maybe::new<color::Color>(), Maybe::new<color::Color>())
   }
 
   private fn mut paint_with_clip(
@@ -1544,10 +1614,10 @@ impl Node {
     if self.mounted_root {
       panic("cannot destroy a mounted retained root")
     }
-    if self.application_root and (not allow_application_root) {
+    if self.application_root and not allow_application_root {
       panic("the application Root cannot be directly destroyed")
     }
-    if self.destroyed or (self.destroying and (not already_destroying.or(false))) {
+    if self.destroyed or self.destroying and (not already_destroying.or(false)) {
       ()
     } else {
       self.destroying = true
@@ -1593,10 +1663,10 @@ impl Node {
     if self.mounted_root {
       panic("cannot destroy a mounted retained root")
     }
-    if self.application_root and (not allow_application_root) {
+    if self.application_root and not allow_application_root {
       panic("the application Root cannot be directly destroyed")
     }
-    if (not self.destroyed) and (not self.destroying) {
+    if (not self.destroyed) and not self.destroying {
       self.destroying = true
       let owned = self.children
       for child in owned {

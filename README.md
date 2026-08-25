@@ -21,8 +21,9 @@ The canonical design is defined by the accepted
 [interaction ADR](./docs/adrs/0003-define-interaction-focus-and-selection.md),
 [input editor ADR](./docs/adrs/0004-define-input-editor-and-keybindings.md),
 [rich Text ADR](./docs/adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md),
-[terminal clipboard ADR](./docs/adrs/0006-define-terminal-clipboard-access.md), and
-[scrollbar ADR](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md).
+[terminal clipboard ADR](./docs/adrs/0006-define-terminal-clipboard-access.md),
+[scrollbar ADR](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md), and
+[Select ADR](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
@@ -108,6 +109,9 @@ yet a supported custom-control API.
   automatic vertical bar and configurable horizontal bar.
 - `Scrollbar` — standalone vertical or horizontal track/thumb control with
   pointer, keyboard, arrow, visibility, styling, and change-state APIs.
+- `Select` — compact non-editable field with an anchored option menu and
+  independent highlight/selection state;
+- `TabSelect` — fixed-width horizontal tabs with overflow and mouse support.
 
 Public layout and interaction use Ard-native Style, Color, Point, Rect,
 Geometry, and Selection values.
@@ -156,6 +160,7 @@ input.ard        retained single-line Input
 root.ard         permanent Root and runtime bridge
 scroll_box.ard   retained two-axis ScrollBox with built-in bars
 scrollbar.ard    standalone vertical/horizontal Scrollbar
+select.ard       compact Select and horizontal TabSelect
 selection.ard    global selection snapshots and local ranges
 style.ard        colors, layout values, stacking, and validation
 testing.ard      headless TestApp and frame snapshots
@@ -201,6 +206,7 @@ python3 test_widgets.py
 python3 test_clipboard.py
 python3 test_scroll_form.py
 python3 test_horizontal_scroll.py
+python3 test_select.py
 python3 test_async.py
 python3 test_lifecycle.py
 python3 test_explorer.py

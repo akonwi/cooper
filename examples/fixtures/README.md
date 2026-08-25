@@ -11,6 +11,9 @@ public example gallery:
   wheel fallback, and resize.
 - `horizontal_scroll.ard` covers two-axis ScrollBox state, both built-in bars,
   corner ownership, Shift+wheel, arrow keys, and horizontal terminal mouse drag.
+- `select.ard` covers compact Select menu and TabSelect rendering, navigation,
+  fast movement, activation callbacks, wheel/click input, indicator dragging,
+  focus, overflow arrows, and resize.
 - `async.ard` and `pre_run_destroy.ard` cover cancellation, dispatch, and
   destruction while work is pending.
 - `lifecycle.ard` and `pre_start_signal.ard` cover nonblocking startup,

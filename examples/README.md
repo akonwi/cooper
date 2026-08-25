@@ -150,24 +150,23 @@ reporting leave the state `UNKNOWN`. Press Ctrl+C to quit.
 
 ## Widget lab
 
-`widgets.ard` combines close app-local adaptations of OpenTUI's
-`tab-select-demo.ts`, `select-demo.ts`, and `slider-demo.ts`. F1 presents a
+`widgets.ard` combines Cooper's built-in Select and TabSelect controls with a
+close app-local adaptation of OpenTUI's `slider-demo.ts`. F1 presents a
 12-option horizontally scrolling TabSelect with separate highlight and
-activation state. F2 presents a 20-option Select with descriptions, fast
-scrolling, reveal, wrapping, and an indicator. F3 presents three horizontal and
-four vertical sliders with different ranges, dimensions, mouse dragging,
-keyboard adjustment, reset, and two animated specimens.
+selection state. F2 presents a compact 20-option Select whose anchored menu has
+descriptions, fast scrolling, wrapping, mouse activation, and an indicator. F3 presents three
+horizontal and four vertical sliders with different ranges, dimensions, mouse
+dragging, keyboard adjustment, reset, and two animated specimens.
 
 ```sh
 ard run widgets.ard
 ```
 
 Use F1–F3 or click the header controls to switch pages. Each page lists its own
-keys; slider numbers 1–7 focus individual sliders. The controls are intentionally
-composed only from persistent public Box, Text, and ScrollBox controls rather
-than presented as built-ins. Their behavior is the functional-parity fixture for
-future built-in Select and TabSelect APIs. Cooper uses Unicode block cells in
-place of OpenTUI's sub-cell slider renderer. Press Ctrl+C to quit.
+keys; slider numbers 1–7 focus individual sliders. The choice-control pages
+validate compact Select menu and TabSelect behavior.
+Cooper uses Unicode block cells in place of OpenTUI's sub-cell slider renderer.
+Press Ctrl+C to quit.
 
 ## Filesystem explorer
 
@@ -205,6 +204,7 @@ python3 test_widgets.py
 python3 test_clipboard.py
 python3 test_scroll_form.py
 python3 test_horizontal_scroll.py
+python3 test_select.py
 python3 test_async.py
 python3 test_lifecycle.py
 python3 test_explorer.py
@@ -216,8 +216,8 @@ rich text, wrapping, overflow, links, selection, live dispatched metrics,
 bounded follow-mode logs, nested stacking and hit order, Input validation and
 commit callbacks, paste limits, draggable z-index objects, pointer trails,
 activated cells, drag/drop routing, interactive links, link-safe drag mode,
-terminal focus transitions, post-focus mouse resumption, app-local TabSelect,
-Select, and slider behavior, OSC 52 clipboard requests and responses, overflow
+terminal focus transitions, post-focus mouse resumption, built-in Select menu
+and TabSelect behavior, app-local sliders, OSC 52 clipboard requests and responses, overflow
 clipping, editing, explicit focus policy, mouse input, two-axis scrolling and
 scrollbar dragging, resize, App
 cancellation, asynchronous UI dispatch, nonblocking startup,

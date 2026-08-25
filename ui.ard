@@ -2,6 +2,7 @@ use cooper/box as box_control
 use cooper/input as input_control
 use cooper/scroll_box as scroll_box_control
 use cooper/scrollbar as scrollbar_control
+use cooper/select as select_control
 use cooper/selection as selection_value
 use cooper/text as text_control
 
@@ -13,8 +14,15 @@ type Scrollbar = scrollbar_control::Scrollbar
 type ScrollbarOptions = scrollbar_control::Options
 type ScrollbarOrientation = scrollbar_control::Orientation
 type ScrollbarState = scrollbar_control::State
-type ScrollbarTheme = scrollbar_control::Theme
+type ScrollbarAppearance = scrollbar_control::Appearance
 type ScrollbarVisibility = scrollbar_control::Visibility
+type Select = select_control::Select
+type SelectAppearance = select_control::Appearance
+type SelectConfig = select_control::SelectConfig
+type SelectOption = select_control::Option
+type SelectSelection = select_control::Selection
+type SelectTabConfig = select_control::TabConfig
+type TabSelect = select_control::TabSelect
 type Selection = selection_value::Selection
 type SelectionRange = selection_value::Range
 type Text = text_control::Text
@@ -31,9 +39,15 @@ let box = box_control::new
 let input = input_control::new
 let scroll_box = scroll_box_control::new
 let scrollbar = scrollbar_control::new
+let scrollbar_appearance = scrollbar_control::appearance
 let scrollbar_options = scrollbar_control::options
 let scrollbar_state = scrollbar_control::state
-let scrollbar_theme = scrollbar_control::theme
+let select_appearance = select_control::appearance
+let select_config = select_control::config
+let select_input = select_control::new
+let select_option = select_control::option
+let select_tab_config = select_control::tab_config
+let tab_select = select_control::tabs
 let span = text_control::span
 let span_style = text_control::span_style
 let styled_text = text_control::styled_text

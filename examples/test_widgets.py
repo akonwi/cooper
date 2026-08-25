@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PTY validation for Cooper's app-local OpenTUI-style widget compositions."""
+"""PTY validation for Cooper's built-in Selects and app-local sliders."""
 
 import os
 import signal
@@ -36,14 +36,14 @@ def main():
     pid, fd = spawn(BIN, rows=24, cols=100)
     screen = Screen(24, 100)
     try:
-        wait_for(fd, screen, "WIDGET LAB — app-local controls composed from Box + Text")
+        wait_for(fd, screen, "WIDGET LAB — built-in Selects + app-local sliders")
         wait_for(fd, screen, "Highlighted: Home (home) - Index: 0")
         drain(fd, screen, 0.15)
 
         initial = screen.text()
         for expected in (
             "F1 TAB SELECT",
-            "F2 SELECT LIST",
+            "F2 SELECT",
             "F3 SLIDERS",
             "TAB SELECT",
             "Profile",
@@ -70,14 +70,18 @@ def main():
         send(fd, "\x1b[D")
         wait_for(fd, screen, "Highlighted: API (api) - Index: 11")
 
-        # The shell tabs are mouse-operable. Select rows are retained controls
-        # with mouse activation, keyboard navigation, fast scroll, and reveal.
+        # The shell tabs are mouse-operable. Select uses a compact trigger and
+        # anchored menu with mouse activation and fast keyboard navigation.
         click(fd, col=25, row=1)
-        wait_for(fd, screen, "SELECT LIST · Navigate 20 options")
+        wait_for(fd, screen, "SELECT · Compact input with anchored option menu")
         wait_for(fd, screen, "Selection: Home (home) - Index: 0")
         click(fd, col=10, row=6)
+        wait_for(fd, screen, "Navigate to the home page")
+        click(fd, col=10, row=7)
         wait_for(fd, screen, "SELECT activated Home")
+        click(fd, col=10, row=6)
         wheel_down(fd, col=10, row=8)
+        send(fd, "\x1b[B")
         wait_for(fd, screen, "Selection: Profile (profile) - Index: 1")
         assert "▶ Profile" in screen.text(), "wheel navigation detached viewport from highlight"
         send(fd, "\x1b[1;2B")
@@ -131,7 +135,7 @@ def main():
         send(fd, "\x1bOQ")
         wait_for(fd, narrow, "Selection: Users (users)")
         wait_for(fd, narrow, "Index: 6")
-        wait_for(fd, narrow, "▶ Users")
+        wait_for(fd, narrow, "Users")
         send(fd, "\x1bOR")
         wait_for(fd, narrow, "Focused H1 · Value 25")
         wait_for(fd, narrow, "H2 - 3h×48w")
@@ -142,7 +146,7 @@ def main():
             raise AssertionError("widget lab did not exit after Ctrl+C")
         assert status == 0, f"exit status {status}"
 
-        print("✓ Cooper app-local widget lab PTY test passed")
+        print("✓ Cooper built-in Select widget lab PTY test passed")
     finally:
         cleanup(fd, pid)
 

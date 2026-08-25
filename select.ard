@@ -1,0 +1,2236 @@
+use ard/unsafe
+
+use cooper/color
+use cooper/context
+use cooper/core/event_delivery
+use cooper/core/node
+use cooper/core/paint
+use cooper/event
+use cooper/geometry
+use cooper/scrollbar as scrollbar_control
+use cooper/style as layout_style
+use cooper/text
+use go:github.com/rockorager/go-uucode as unicode
+use go:math
+
+struct Option {
+  label: Str,
+  description: Str?,
+  value: Str?,
+}
+
+fn Option::new(label: Str, description: Str?, value: Str?) Option {
+  Option{
+    label: label,
+    description: description,
+    value: value,
+  }
+}
+
+fn option(label: Str, description: Str?, value: Str?) Option {
+  Option::new(label, description: description, value: value)
+}
+
+struct Selection {
+  index: Int,
+  option: Option,
+}
+
+struct SelectConfig {
+  placeholder: Str,
+  max_visible: Int,
+  show_descriptions: Bool,
+  show_indicator: Bool,
+  item_spacing: Int,
+  fast_step: Int,
+  wrap_selection: Bool,
+}
+
+fn SelectConfig::new(
+  placeholder: Str?,
+  max_visible: Int?,
+  show_descriptions: Bool?,
+  show_indicator: Bool?,
+  item_spacing: Int?,
+  fast_step: Int?,
+  wrap_selection: Bool?,
+) SelectConfig {
+  let spacing = item_spacing.or(0)
+  let step = fast_step.or(5)
+  let visible = max_visible.or(8)
+  if spacing < 0 or spacing > math::MaxInt - 2 {
+    panic("Select item_spacing must be non-negative and leave room for item content")
+  }
+  if step < 1 {
+    panic("Select fast_step must be positive")
+  }
+  if visible < 1 {
+    panic("Select max_visible must be positive")
+  }
+  let descriptions = show_descriptions.or(true)
+  mut item_height = spacing + 1
+  if descriptions {
+    item_height =+ 1
+  }
+  if visible > math::MaxInt / item_height {
+    panic("Select max_visible and item_spacing overflow menu height")
+  }
+  SelectConfig{
+    placeholder: placeholder.or("Select…"),
+    max_visible: visible,
+    show_descriptions: descriptions,
+    show_indicator: show_indicator.or(true),
+    item_spacing: spacing,
+    fast_step: step,
+    wrap_selection: wrap_selection.or(false),
+  }
+}
+
+fn config(
+  placeholder: Str?,
+  max_visible: Int?,
+  show_descriptions: Bool?,
+  show_indicator: Bool?,
+  item_spacing: Int?,
+  fast_step: Int?,
+  wrap_selection: Bool?,
+) SelectConfig {
+  SelectConfig::new(
+    placeholder: placeholder,
+    max_visible: max_visible,
+    show_descriptions: show_descriptions,
+    show_indicator: show_indicator,
+    item_spacing: item_spacing,
+    fast_step: fast_step,
+    wrap_selection: wrap_selection,
+  )
+}
+
+struct TabConfig {
+  tab_width: Int,
+  show_description: Bool,
+  show_underline: Bool,
+  show_arrows: Bool,
+  wrap_selection: Bool,
+}
+
+fn TabConfig::new(
+  tab_width: Int?,
+  show_description: Bool?,
+  show_underline: Bool?,
+  show_arrows: Bool?,
+  wrap_selection: Bool?,
+) TabConfig {
+  let width = tab_width.or(20)
+  if width < 1 {
+    panic("Select tab_width must be positive")
+  }
+  TabConfig{
+    tab_width: width,
+    show_description: show_description.or(true),
+    show_underline: show_underline.or(true),
+    show_arrows: show_arrows.or(true),
+    wrap_selection: wrap_selection.or(false),
+  }
+}
+
+fn tab_config(
+  tab_width: Int?,
+  show_description: Bool?,
+  show_underline: Bool?,
+  show_arrows: Bool?,
+  wrap_selection: Bool?,
+) TabConfig {
+  TabConfig::new(
+    tab_width: tab_width,
+    show_description: show_description,
+    show_underline: show_underline,
+    show_arrows: show_arrows,
+    wrap_selection: wrap_selection,
+  )
+}
+
+type Presentation = SelectConfig | TabConfig
+
+fn Presentation::menu(config: SelectConfig?) Presentation {
+  config.or(SelectConfig::new())
+}
+
+fn Presentation::tabs(config: TabConfig?) Presentation {
+  config.or(TabConfig::new())
+}
+
+struct Appearance {
+  normal: text::SpanStyle?,
+  description: text::SpanStyle?,
+  focused: text::SpanStyle?,
+  highlighted: text::SpanStyle?,
+  selected: text::SpanStyle?,
+  selected_description: text::SpanStyle?,
+  indicator: text::SpanStyle?,
+  marker: Str?,
+  underline_glyph: Str?,
+  left_arrow: Str?,
+  right_arrow: Str?,
+  closed_arrow: Str?,
+  open_arrow: Str?,
+  scrollbar: scrollbar_control::Appearance?,
+}
+
+fn appearance(
+  normal: text::SpanStyle?,
+  description: text::SpanStyle?,
+  focused: text::SpanStyle?,
+  highlighted: text::SpanStyle?,
+  selected: text::SpanStyle?,
+  selected_description: text::SpanStyle?,
+  indicator: text::SpanStyle?,
+  marker: Str?,
+  underline_glyph: Str?,
+  left_arrow: Str?,
+  right_arrow: Str?,
+  closed_arrow: Str?,
+  open_arrow: Str?,
+  scrollbar: scrollbar_control::Appearance?,
+) Appearance {
+  Appearance{
+    normal: normal,
+    description: description,
+    focused: focused,
+    highlighted: highlighted,
+    selected: selected,
+    selected_description: selected_description,
+    indicator: indicator,
+    marker: marker,
+    underline_glyph: underline_glyph,
+    left_arrow: left_arrow,
+    right_arrow: right_arrow,
+    closed_arrow: closed_arrow,
+    open_arrow: open_arrow,
+    scrollbar: scrollbar,
+  }
+}
+
+private struct Glyph {
+  value: Str,
+  width: Int,
+}
+
+private struct Listener {
+  id: Int,
+  handler: fn(Selection),
+}
+
+private struct Model {
+  live: Bool,
+  options: [Option],
+  highlighted: Int,
+  selected: Int,
+  presentation: Presentation,
+  appearance: Appearance,
+  layout_style: layout_style::Style,
+  inherited_foreground: color::Color?,
+  inherited_background: color::Color?,
+  menu_offset: Int,
+  menu_visible: Int,
+  open: Bool,
+  revision: Int,
+  next_listener_id: Int,
+  highlight_listeners: [Listener],
+  change_listeners: [Listener],
+  submit_listeners: [Listener],
+}
+
+private struct Popup {
+  node_ref: mut node::Node,
+  model: mut Model,
+  owner: mut node::Node,
+  scrollbar: mut scrollbar_control::Scrollbar,
+  measure_width: fn(Str) Int,
+  anchor_x: Int,
+  anchor_y: Int,
+  anchor_width: Int,
+  anchor_height: Int,
+  inherited_foreground: color::Color?,
+  inherited_background: color::Color?,
+}
+
+private struct InternalState {
+  model: mut Model,
+  popup: mut Popup,
+  remove_scroll_listener: fn(),
+  layout_style: layout_style::Style,
+  measure_width: fn(Str) Int,
+}
+
+struct Select {
+  node_ref: mut node::Node,
+  internal: Any,
+}
+
+type TabSelect = Select
+
+private fn internal_state(value: Any) mut InternalState {
+  unsafe::cast<mut InternalState>(value).expect("Select must be created by Cooper")
+}
+
+private fn copy_options(values: [Option]) [Option] {
+  let output = mut List::new<Option>()
+  for value in values {
+    output.push(value)
+  }
+  output.@
+}
+
+private fn clamp_index(value: Int, count: Int) Int {
+  if count == 0 {
+    -1
+  } else if value < 0 {
+    0
+  } else if value >= count {
+    count - 1
+  } else {
+    value
+  }
+}
+
+private fn initial_highlight(requested: Int?, count: Int) Int {
+  clamp_index(requested.or(0), count)
+}
+
+private fn initial_selection(requested: Int?, count: Int) Int {
+  match requested {
+    index => clamp_index(index, count),
+    _ => -1,
+  }
+}
+
+private fn validate_presentation(value: Presentation) {
+  match value {
+    SelectConfig => {
+      if it.item_spacing < 0 or it.item_spacing > math::MaxInt - 2 {
+        panic("Select item_spacing must be non-negative and leave room for item content")
+      }
+      if it.fast_step < 1 {
+        panic("Select fast_step must be positive")
+      }
+      if it.max_visible < 1 {
+        panic("Select max_visible must be positive")
+      }
+      let item_height = list_item_height(it)
+      if it.max_visible > math::MaxInt / item_height {
+        panic("Select max_visible and item_spacing overflow menu height")
+      }
+    },
+    TabConfig => {
+      if it.tab_width < 1 {
+        panic("Select tab_width must be positive")
+      }
+    },
+  }
+}
+
+private fn same_optional_color(first: color::Color?, second: color::Color?) Bool {
+  match first {
+    left => {
+      match second {
+        right => left.red == right.red and left.green == right.green and left.blue == right.blue,
+        _ => false,
+      }
+    },
+    _ => not second.is_some(),
+  }
+}
+
+private fn patched(base: text::TextStyle, patch: text::SpanStyle?) text::TextStyle {
+  let resolved = mut base
+  match patch {
+    value => {
+      match value.foreground {
+        color => { resolved.foreground = color },
+        _ => (),
+      }
+      match value.background {
+        color => { resolved.background = color },
+        _ => (),
+      }
+      match value.bold {
+        enabled => { resolved.bold = enabled },
+        _ => (),
+      }
+      match value.dim {
+        enabled => { resolved.dim = enabled },
+        _ => (),
+      }
+      match value.italic {
+        enabled => { resolved.italic = enabled },
+        _ => (),
+      }
+      match value.underline {
+        enabled => { resolved.underline = enabled },
+        _ => (),
+      }
+      match value.blink {
+        enabled => { resolved.blink = enabled },
+        _ => (),
+      }
+      match value.reverse {
+        enabled => { resolved.reverse = enabled },
+        _ => (),
+      }
+      match value.strike {
+        enabled => { resolved.strike = enabled },
+        _ => (),
+      }
+      match value.hidden {
+        enabled => { resolved.hidden = enabled },
+        _ => (),
+      }
+    },
+    _ => (),
+  }
+  resolved.@
+}
+
+private fn paint_style(value: text::TextStyle) paint::CellStyle {
+  paint::style(
+    foreground: value.foreground,
+    background: value.background,
+    bold: value.bold,
+    dim: value.dim,
+    italic: value.italic,
+    underline: value.underline,
+    blink: value.blink,
+    reverse: value.reverse,
+    strike: value.strike,
+    hidden: value.hidden,
+  )
+}
+
+private fn glyphs(value: Str, measure_width: fn(Str) Int) [Glyph] {
+  let iterator = mut unicode::NewGraphemeIterator(value)
+  let output = mut List::new<Glyph>()
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      grapheme => {
+        let rendered = value.slice(start: grapheme.Start, end: grapheme.End).or("")
+        output.push(Glyph{value: rendered, width: measure_width(rendered)})
+      },
+      _ => { reading = false },
+    }
+  }
+  output.@
+}
+
+private fn single_line(value: Str) Str {
+  value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", "    ")
+}
+
+private fn fit(value: Str, width: Int, measure_width: fn(Str) Int) Str {
+  if width <= 0 {
+    ""
+  } else {
+    let rendered = single_line(value)
+    if measure_width(rendered) <= width {
+      rendered
+    } else if width == 1 {
+      "…"
+    } else {
+      mut output = ""
+      mut used = 0
+      mut fitting = true
+      for glyph in glyphs(rendered, measure_width) {
+        if fitting and glyph.width > 0 and used + glyph.width <= width - 1 {
+          output = "{output}{glyph.value}"
+          used = used + glyph.width
+        } else if glyph.width > 0 {
+          fitting = false
+        }
+      }
+      "{output}…"
+    }
+  }
+}
+
+private fn selection_at(model: mut Model, index: Int) Selection? {
+  match model.options.at(index) {
+    value => Maybe::new<Selection>(Selection{index: index, option: value}),
+    _ => Maybe::new<Selection>(),
+  }
+}
+
+private fn notify(listeners: [Listener], selected: Selection) {
+  let snapshot = listeners
+  for listener in snapshot {
+    listener.handler(selected)
+  }
+}
+
+private fn change_highlight(model: mut Model, requested: Int, emit: Bool) Bool {
+  if not model.live or model.options.size() == 0 {
+    false
+  } else {
+    let index = clamp_index(requested, model.options.size())
+    if index == model.highlighted {
+      false
+    } else {
+      model.highlighted = index
+      if emit {
+        match selection_at(model, index) {
+          selected => notify(model.highlight_listeners, selected),
+          _ => (),
+        }
+      }
+      true
+    }
+  }
+}
+
+private fn move_highlight(model: mut Model, delta: Int) Bool {
+  if model.highlighted < 0 or model.options.size() == 0 or delta == 0 {
+    false
+  } else {
+    mut wrap = false
+    match model.presentation {
+      SelectConfig => { wrap = it.wrap_selection },
+      TabConfig => { wrap = it.wrap_selection },
+    }
+    let count = model.options.size()
+    mut requested = model.highlighted
+    if wrap {
+      let normalized = delta % count
+      if normalized >= 0 {
+        let remaining = count - model.highlighted
+        if normalized >= remaining {
+          requested = normalized - remaining
+        } else {
+          requested = model.highlighted + normalized
+        }
+      } else {
+        let distance = 0 - normalized
+        if distance > model.highlighted {
+          requested = count - (distance - model.highlighted)
+        } else {
+          requested = model.highlighted - distance
+        }
+      }
+    } else if delta > 0 and model.highlighted > math::MaxInt - delta {
+      requested = math::MaxInt
+    } else if delta < 0 and model.highlighted < math::MinInt - delta {
+      requested = math::MinInt
+    } else {
+      requested = model.highlighted + delta
+    }
+    let changed = change_highlight(model, requested, true)
+    if changed {
+      match model.presentation {
+        SelectConfig => ensure_menu_highlight(model, it),
+        _ => (),
+      }
+    }
+    changed
+  }
+}
+
+private fn set_selected(model: mut Model, index: Int, emit: Bool) Bool {
+  if not model.live or index < 0 or index >= model.options.size() {
+    false
+  } else if model.selected == index {
+    false
+  } else {
+    model.selected = index
+    if emit {
+      match selection_at(model, index) {
+        selected => notify(model.change_listeners, selected),
+        _ => (),
+      }
+    }
+    true
+  }
+}
+
+private fn advance_revision(model: mut Model) {
+  if model.revision == math::MaxInt {
+    panic("Select state revision overflow")
+  }
+  model.revision =+ 1
+}
+
+private fn click_context_valid(
+  model: mut Model,
+  owner: mut node::Node,
+  revision: Int,
+  attachment: Int,
+) Bool {
+  model.live and model.revision == revision and owner.is_mounted() and owner.attachment_generation() == attachment and owner.is_focused()
+}
+
+private fn activate_click(
+  model: mut Model,
+  owner: mut node::Node,
+  index: Int,
+  revision: Int,
+  attachment: Int,
+) Bool {
+  if (not click_context_valid(model, owner, revision, attachment)) or index < 0 or index >= model.options.size() {
+    false
+  } else {
+    match selection_at(model, index) {
+      current => {
+        let _ = change_highlight(model, index, true)
+        if (not click_context_valid(model, owner, revision, attachment)) or model.highlighted != index {
+          false
+        } else {
+          let submit_listeners = model.submit_listeners
+          let _ = set_selected(model, index, true)
+          if model.live {
+            notify(submit_listeners, current)
+          }
+          true
+        }
+      },
+      _ => false,
+    }
+  }
+}
+
+private fn list_item_height(config: SelectConfig) Int {
+  mut height = 1 + config.item_spacing
+  if config.show_descriptions {
+    height =+ 1
+  }
+  height
+}
+
+private fn visible_list_items(height: Int, config: SelectConfig) Int {
+  let item_height = list_item_height(config)
+  mut visible = 1
+  if item_height > 0 and height > 0 {
+    visible = height / item_height
+    if visible < 1 {
+      visible = 1
+    }
+  }
+  visible
+}
+
+private fn visible_tabs(width: Int, config: TabConfig) Int {
+  mut visible = width / config.tab_width
+  if visible < 1 {
+    visible = 1
+  }
+  visible
+}
+
+private fn window_offset(index: Int, count: Int, visible: Int) Int {
+  if count <= visible or index < 0 {
+    0
+  } else {
+    let half = visible / 2
+    mut offset = index - half
+    let maximum = count - visible
+    if offset < 0 {
+      offset = 0
+    } else if offset > maximum {
+      offset = maximum
+    }
+    offset
+  }
+}
+
+private fn clamp_menu_offset(model: mut Model, visible: Int) {
+  mut maximum = model.options.size() - visible
+  if maximum < 0 {
+    maximum = 0
+  }
+  if model.menu_offset < 0 {
+    model.menu_offset = 0
+  }
+  if model.menu_offset > maximum {
+    model.menu_offset = maximum
+  }
+}
+
+private fn ensure_menu_highlight(model: mut Model, config: SelectConfig) {
+  mut visible = config.max_visible
+  if model.menu_visible > 0 {
+    visible = model.menu_visible
+  }
+  if model.highlighted < model.menu_offset {
+    model.menu_offset = model.highlighted
+  } else if model.highlighted >= model.menu_offset + visible {
+    model.menu_offset = model.highlighted - visible + 1
+  }
+  mut maximum = 0
+  if model.options.size() > visible {
+    maximum = model.options.size() - visible
+  }
+  if model.menu_offset < 0 {
+    model.menu_offset = 0
+  }
+  if model.menu_offset > maximum {
+    model.menu_offset = maximum
+  }
+}
+
+private fn scroll_menu(model: mut Model, config: SelectConfig, delta: Int) Bool {
+  mut visible = config.max_visible
+  if model.menu_visible > 0 {
+    visible = model.menu_visible
+  }
+  if model.options.size() < visible {
+    visible = model.options.size()
+  }
+  mut maximum = model.options.size() - visible
+  if maximum < 0 {
+    maximum = 0
+  }
+  mut requested = model.menu_offset
+  if delta > 0 and requested > math::MaxInt - delta {
+    requested = math::MaxInt
+  } else if delta < 0 and requested < math::MinInt - delta {
+    requested = math::MinInt
+  } else {
+    requested =+ delta
+  }
+  if requested < 0 {
+    requested = 0
+  }
+  if requested > maximum {
+    requested = maximum
+  }
+  if requested == model.menu_offset {
+    false
+  } else {
+    model.menu_offset = requested
+    true
+  }
+}
+
+private fn scroll_menu_from_track(model: mut Model, config: SelectConfig, height: Int, y: Int) Bool {
+  if y <= 0 {
+    scroll_menu(model, config, -1)
+  } else if y >= height - 1 {
+    scroll_menu(model, config, 1)
+  } else {
+    mut visible = model.menu_visible
+    if visible < 1 {
+      visible = config.max_visible
+    }
+    mut maximum = model.options.size() - visible
+    if maximum < 0 {
+      maximum = 0
+    }
+    mut track = height - 2
+    if track < 1 {
+      track = 1
+    }
+    mut requested = 0
+    if track > 1 {
+      requested = math::Round((y - 1).to_f64() * maximum.to_f64() / (track - 1).to_f64()).to_int()
+    }
+    if requested == model.menu_offset {
+      false
+    } else {
+      model.menu_offset = requested
+      true
+    }
+  }
+}
+
+private fn tab_height(config: TabConfig) Int {
+  mut height = 1
+  if config.show_underline {
+    height =+ 1
+  }
+  if config.show_description {
+    height =+ 1
+  }
+  height
+}
+
+private fn configured(value: layout_style::Style, presentation: Presentation) layout_style::Style {
+  let applied = mut value
+  match presentation {
+    SelectConfig => {
+      applied.height = layout_style::cells(1)
+      applied.flex_grow = 0.0
+      applied.flex_shrink = 0.0
+      applied.overflow = layout_style::Overflow::visible
+    },
+    TabConfig => {
+      if applied.height.kind == layout_style::LengthKind::undefined or applied.height.kind == layout_style::LengthKind::auto {
+        applied.height = layout_style::cells(tab_height(it))
+      }
+    },
+  }
+  applied.@
+}
+
+private fn owner_style(model: mut Model) layout_style::Style {
+  configured(model.layout_style, model.presentation)
+}
+
+private fn sync_owner_style(owner: mut node::Node, model: mut Model) {
+  if model.live {
+    owner.apply_style(owner_style(model))
+  }
+}
+
+private fn popup_height(model: mut Model) Int {
+  mut visible = 0
+  match model.presentation {
+    SelectConfig => {
+      visible = model.options.size()
+      if visible > it.max_visible {
+        visible = it.max_visible
+      }
+      visible = visible * list_item_height(it)
+    },
+    _ => (),
+  }
+  visible
+}
+
+private fn popup_style(model: mut Model) layout_style::Style {
+  layout_style::new(
+    display: layout_style::Display::none,
+    position: layout_style::Position::absolute,
+    left: layout_style::cells(0),
+    top: layout_style::cells(1),
+    width: layout_style::percent(100.0),
+    height: layout_style::cells(popup_height(model)),
+    overflow: layout_style::Overflow::hidden,
+    z_index: 1000,
+  )
+}
+
+private struct PopupAnchor {
+  x: Int,
+  y: Int,
+  width: Int,
+  height: Int,
+}
+
+private fn popup_anchor(popup: mut Popup) PopupAnchor {
+  let owner = popup.owner.layout().screen
+  mut root_bounds = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: owner.x + owner.width,
+    height: owner.y + owner.height + popup_height(popup.model),
+  }
+  match application_root(popup.owner) {
+    root => { root_bounds = root.layout().screen },
+    _ => (),
+  }
+  mut x = owner.x
+  if x < root_bounds.x {
+    x = root_bounds.x
+  }
+  mut width = owner.width
+  let available_width = root_bounds.x + root_bounds.width - x
+  if width > available_width {
+    width = available_width
+  }
+  if width < 0 {
+    width = 0
+  }
+  
+  let desired = popup_height(popup.model)
+  mut below = root_bounds.y + root_bounds.height - (owner.y + owner.height)
+  mut above = owner.y - root_bounds.y
+  if below < 0 {
+    below = 0
+  }
+  if above < 0 {
+    above = 0
+  }
+  mut y = owner.y + owner.height
+  mut height = desired
+  if below >= desired {
+    ()
+  } else if above >= desired {
+    y = owner.y - desired
+  } else if below >= above {
+    height = below
+  } else {
+    height = above
+    y = owner.y - height
+  }
+  PopupAnchor{
+    x: x,
+    y: y,
+    width: width,
+    height: height,
+  }
+}
+
+private fn popup_open_style(popup: mut Popup) layout_style::Style {
+  let anchor = popup_anchor(popup)
+  layout_style::new(
+    display: layout_style::Display::flex,
+    position: layout_style::Position::absolute,
+    left: layout_style::cells(anchor.x),
+    top: layout_style::cells(anchor.y),
+    width: layout_style::cells(anchor.width),
+    height: layout_style::cells(anchor.height),
+    overflow: layout_style::Overflow::hidden,
+    foreground: popup.inherited_foreground,
+    background: popup.inherited_background,
+    z_index: math::MaxInt,
+  )
+}
+
+private fn application_root(owner: mut node::Node) (mut node::Node)? {
+  mut walking = Maybe::new<mut node::Node>(owner)
+  mut found = Maybe::new<mut node::Node>()
+  mut searching = true
+  while searching {
+    match walking {
+      current => {
+        if current.application_root {
+          found = Maybe::new<mut node::Node>(current)
+          searching = false
+        } else {
+          walking = current.parent
+        }
+      },
+      _ => { searching = false },
+    }
+  }
+  found
+}
+
+private fn sync_popup_anchor(popup: mut Popup) {
+  let anchor = popup_anchor(popup)
+  match popup.model.presentation {
+    SelectConfig => { popup.model.menu_visible = visible_list_items(anchor.height, it) },
+    _ => { popup.model.menu_visible = 0 },
+  }
+  if anchor.x != popup.anchor_x or anchor.y != popup.anchor_y or anchor.width != popup.anchor_width or anchor.height != popup.anchor_height {
+    popup.anchor_x = anchor.x
+    popup.anchor_y = anchor.y
+    popup.anchor_width = anchor.width
+    popup.anchor_height = anchor.height
+    popup.node_ref.apply_style(popup_open_style(popup))
+  }
+}
+
+private fn portal_popup(popup: mut Popup) Bool {
+  match application_root(popup.owner) {
+    root => {
+      match popup.node_ref.parent {
+        parent => {
+          let _ = parent.remove(popup.node_ref)
+        },
+        _ => (),
+      }
+      sync_popup_anchor(popup)
+      root.add(popup.node_ref)
+      true
+    },
+    _ => false,
+  }
+}
+
+private fn unportal_popup(popup: mut Popup) {
+  popup.anchor_x = -1
+  popup.anchor_y = -1
+  popup.anchor_width = -1
+  popup.anchor_height = -1
+  match popup.node_ref.parent {
+    parent => {
+      if parent != popup.owner {
+        let _ = parent.remove(popup.node_ref)
+        if popup.owner.destroyed or popup.owner.destroying {
+          if not popup.node_ref.is_destroyed() {
+            popup.node_ref.destroy(true)
+          }
+        } else {
+          popup.node_ref.apply_style(popup_style(popup.model))
+          popup.owner.add(popup.node_ref)
+        }
+      } else if not popup.owner.destroyed and not popup.owner.destroying {
+        popup.node_ref.apply_style(popup_style(popup.model))
+      }
+    },
+    _ => (),
+  }
+}
+
+private fn sync_popup(popup: mut Popup) Bool {
+  if popup.model.open {
+    match popup.node_ref.parent {
+      parent => {
+        if parent == popup.owner {
+          portal_popup(popup)
+        } else {
+          sync_popup_anchor(popup)
+          true
+        }
+      },
+      _ => portal_popup(popup),
+    }
+  } else {
+    unportal_popup(popup)
+    true
+  }
+}
+
+private fn default_scrollbar_appearance() scrollbar_control::Appearance {
+  scrollbar_control::appearance(
+    track_glyph: "│",
+    thumb_glyph: "█",
+    start_arrow: "▲",
+    end_arrow: "▼",
+  )
+}
+
+private fn scrollbar_appearance(model: mut Model) scrollbar_control::Appearance {
+  let base = default_scrollbar_appearance()
+  match model.appearance.scrollbar {
+    local => {
+      scrollbar_control::appearance(
+        track_glyph: local.track_glyph.or(base.track_glyph.or("│")),
+        thumb_glyph: local.thumb_glyph.or(base.thumb_glyph.or("█")),
+        start_arrow: local.start_arrow.or(base.start_arrow.or("▲")),
+        end_arrow: local.end_arrow.or(base.end_arrow.or("▼")),
+        track_style: local.track_style.or(base.track_style.or(text::span_style())),
+        thumb_style: local.thumb_style.or(base.thumb_style.or(text::span_style())),
+        arrow_style: local.arrow_style.or(base.arrow_style.or(text::span_style())),
+      )
+    },
+    _ => base,
+  }
+}
+
+private fn bar_options(model: mut Model) scrollbar_control::Options {
+  mut visibility = scrollbar_control::Visibility::hidden
+  mut show_arrows = false
+  match model.presentation {
+    SelectConfig => {
+      if it.show_indicator {
+        visibility = scrollbar_control::Visibility::automatic
+        show_arrows = true
+      }
+    },
+    _ => (),
+  }
+  scrollbar_control::options(
+    visibility: visibility,
+    show_arrows: show_arrows,
+    appearance: scrollbar_appearance(model),
+  )
+}
+
+private fn validate_appearance(value: Appearance, measure_width: fn(Str) Int) {
+  let marker = value.marker.or("▶ ")
+  if marker == "" or measure_width(marker) < 1 {
+    panic("Select marker must occupy at least one terminal cell")
+  }
+  for glyph in [
+    value.underline_glyph.or("▬"),
+    value.left_arrow.or("‹"),
+    value.right_arrow.or("›"),
+    value.closed_arrow.or("▾"),
+    value.open_arrow.or("▴"),
+  ] {
+    if glyph == "" or measure_width(glyph) != 1 {
+      panic("Select underline and arrow glyphs must each occupy one terminal cell")
+    }
+  }
+}
+
+private fn internal_new(
+  ctx: mut context::Context,
+  options: [Option],
+  presentation: Presentation?,
+  highlighted_index: Int?,
+  selected_index: Int?,
+  appearance: Appearance?,
+  styles: layout_style::Style?,
+) mut Select {
+  let selected_presentation = presentation.or(Presentation::menu())
+  validate_presentation(selected_presentation)
+  let selected_appearance = appearance.or(select_appearance())
+  let context_state = context::internal_state(ctx)
+  let measure_width = fn(value: Str) Int {
+    context_state.measure_text(value)
+  }
+  validate_appearance(selected_appearance, measure_width)
+  let initial_style = styles.or(layout_style::new())
+  let retained = context_state.create_node(configured(initial_style, selected_presentation))
+  let copied = copy_options(options)
+  let model = mut Model{
+    live: true,
+    options: copied,
+    highlighted: initial_highlight(highlighted_index, copied.size()),
+    selected: initial_selection(selected_index, copied.size()),
+    presentation: selected_presentation,
+    appearance: selected_appearance,
+    layout_style: initial_style,
+    inherited_foreground: Maybe::new<color::Color>(),
+    inherited_background: Maybe::new<color::Color>(),
+    menu_offset: 0,
+    menu_visible: 0,
+    open: false,
+    revision: 0,
+    next_listener_id: 1,
+    highlight_listeners: [],
+    change_listeners: [],
+    submit_listeners: [],
+  }
+  let popup_node = context_state.create_node(popup_style(model))
+  popup_node.mark_internal_overlay()
+  let bar = scrollbar_control::internal_new(
+    ctx,
+    scrollbar_control::Orientation::vertical,
+    scrollbar_control::state(),
+    bar_options(model),
+    layout_style::new(
+      position: layout_style::Position::absolute,
+      top: layout_style::cells(0),
+      right: layout_style::cells(0),
+      height: layout_style::percent(100.0),
+    ),
+    false,
+  )
+  let remove_scroll_listener = bar.on_change(fn(position: Int) {
+    match model.presentation {
+      SelectConfig => {
+        mut visible = it.max_visible
+        if model.menu_visible > 0 {
+          visible = model.menu_visible
+        }
+        if model.options.size() < visible {
+          visible = model.options.size()
+        }
+        mut maximum = model.options.size() - visible
+        if maximum < 0 {
+          maximum = 0
+        }
+        mut resolved = position
+        if resolved < 0 {
+          resolved = 0
+        }
+        if resolved > maximum {
+          resolved = maximum
+        }
+        model.menu_offset = resolved
+      },
+      _ => (),
+    }
+  })
+  let popup = mut Popup{
+    node_ref: popup_node,
+    model: model,
+    owner: retained,
+    scrollbar: bar,
+    measure_width: measure_width,
+    anchor_x: -1,
+    anchor_y: -1,
+    anchor_width: -1,
+    anchor_height: -1,
+    inherited_foreground: Maybe::new<color::Color>(),
+    inherited_background: Maybe::new<color::Color>(),
+  }
+  let shared = mut InternalState{
+    model: model,
+    popup: popup,
+    remove_scroll_listener: remove_scroll_listener,
+    layout_style: styles.or(layout_style::new()),
+    measure_width: measure_width,
+  }
+  let created = mut Select{node_ref: retained, internal: shared}
+  retained.bind(created)
+  retained.set_focusable(true)
+  popup_node.bind(popup)
+  popup_node.set_focusable(false)
+  popup_node.add(bar.node_ref)
+  retained.add(popup_node)
+  let pointer_bar = bar
+  let _ = bar.on_mouse(fn(received: mut event::MouseEvent) {
+    mut overflow = false
+    mut visible = 0
+    match model.presentation {
+      SelectConfig => {
+        visible = it.max_visible
+        if model.menu_visible > 0 {
+          visible = model.menu_visible
+        }
+        if model.options.size() < visible {
+          visible = model.options.size()
+        }
+        overflow = it.show_indicator and model.options.size() > visible
+      },
+      _ => (),
+    }
+    if overflow and (received.event_type == event::MouseEventType::move or received.event_type == event::MouseEventType::over) {
+      received.stop_propagation()
+    } else if overflow and (received.event_type == event::MouseEventType::down or received.event_type == event::MouseEventType::drag) and received.button == event::MouseButton::left {
+      let revision = model.revision
+      let attachment = retained.attachment_generation()
+      mut focused = retained.is_focused()
+      if not focused {
+        focused = retained.focus()
+      }
+      if focused and click_context_valid(model, retained, revision, attachment) {
+        match model.presentation {
+          SelectConfig => {
+            if scroll_menu_from_track(model, it, pointer_bar.node_ref.layout().screen.height, received.local_y) {
+              retained.request_redraw()
+            }
+          },
+          _ => (),
+        }
+      }
+      received.prevent_default()
+      received.stop_propagation()
+    }
+  })
+  let _ = retained.on_blur(fn() {
+    if model.open {
+      model.open = false
+      if not popup_node.is_destroyed() {
+        let _ = sync_popup(popup)
+      }
+      sync_owner_style(retained, model)
+    }
+  })
+  retained.on_cleanup(fn() {
+    if model.open {
+      model.open = false
+      let _ = sync_popup(popup)
+    }
+    model.live = false
+    remove_scroll_listener()
+    model.options = []
+    model.highlight_listeners = []
+    model.change_listeners = []
+    model.submit_listeners = []
+  })
+  created
+}
+
+private fn select_appearance() Appearance {
+  appearance()
+}
+
+fn new(
+  ctx: mut context::Context,
+  options: [Option],
+  config: SelectConfig?,
+  highlighted_index: Int?,
+  selected_index: Int?,
+  appearance: Appearance?,
+  styles: layout_style::Style?,
+) mut Select {
+  internal_new(
+    ctx,
+    options,
+    presentation: Presentation::menu(config),
+    highlighted_index: highlighted_index,
+    selected_index: selected_index,
+    appearance: appearance,
+    styles: styles,
+  )
+}
+
+fn tabs(
+  ctx: mut context::Context,
+  options: [Option],
+  config: TabConfig?,
+  highlighted_index: Int?,
+  selected_index: Int?,
+  appearance: Appearance?,
+  styles: layout_style::Style?,
+) mut Select {
+  internal_new(
+    ctx,
+    options,
+    presentation: Presentation::tabs(config),
+    highlighted_index: highlighted_index,
+    selected_index: selected_index,
+    appearance: appearance,
+    styles: styles,
+  )
+}
+
+private fn state_style(model: mut Model, index: Int, description: Bool, focused: Bool) text::TextStyle {
+  mut resolved = text::style(
+    foreground: model.inherited_foreground,
+    background: model.inherited_background,
+  )
+  if description {
+    resolved = text::style(
+      foreground: model.inherited_foreground,
+      background: model.inherited_background,
+      dim: true,
+    )
+  }
+  if description {
+    resolved = patched(resolved, model.appearance.description)
+  } else {
+    resolved = patched(resolved, model.appearance.normal)
+  }
+  if focused {
+    resolved = patched(resolved, model.appearance.focused)
+  }
+  if index == model.highlighted and focused {
+    resolved = patched(resolved, text::span_style(bold: true))
+    resolved = patched(resolved, model.appearance.highlighted)
+  }
+  if index == model.selected {
+    resolved = patched(resolved, text::span_style(reverse: true))
+    resolved = patched(resolved, model.appearance.selected)
+    if description {
+      resolved = patched(resolved, model.appearance.selected_description)
+    }
+  }
+  resolved
+}
+
+private fn indicator_style(model: mut Model) text::TextStyle {
+  patched(text::style(dim: true), model.appearance.indicator)
+}
+
+private fn fill_line(
+  ctx: mut paint::Context,
+  y: Int,
+  start: Int,
+  width: Int,
+  style: text::TextStyle,
+) {
+  mut x = start
+  while x < start + width {
+    ctx.write(x, y, " ", paint_style(style))
+    x =+ 1
+  }
+}
+
+private fn paint_list(
+  ctx: mut paint::Context,
+  model: mut Model,
+  config: SelectConfig,
+  focused: Bool,
+  measure_width: fn(Str) Int,
+) {
+  let width = ctx.bounds.width
+  let height = ctx.bounds.height
+  let item_height = list_item_height(config)
+  mut visible = visible_list_items(height, config)
+  if visible > config.max_visible {
+    visible = config.max_visible
+  }
+  mut content_width = width
+  if config.show_indicator and model.options.size() > visible and content_width > 0 {
+    content_width =- 1
+  }
+  if content_width <= 0 or height <= 0 or model.options.size() == 0 {
+    ()
+  } else {
+    let offset = model.menu_offset
+    let marker = model.appearance.marker.or("▶ ")
+    let marker_width = measure_width(marker)
+    mut slot = 0
+    while slot < visible {
+      let index = offset + slot
+      match model.options.at(index) {
+        current => {
+          let y = slot * item_height
+          if y < height {
+            let selected_style = state_style(model, index, false, focused)
+            if index == model.selected or index == model.highlighted and focused {
+              mut fill_height = 1
+              if config.show_descriptions {
+                fill_height = 2
+              }
+              mut line = 0
+              while line < fill_height and y + line < height {
+                fill_line(ctx, y + line, 0, content_width, selected_style)
+                line =+ 1
+              }
+            }
+            if index == model.highlighted {
+              ctx.write(
+                0,
+                y,
+                marker,
+                paint_style(patched(selected_style, model.appearance.indicator)),
+              )
+            }
+            let text_x = marker_width
+            ctx.write(
+              text_x,
+              y,
+              fit(current.label, content_width - text_x, measure_width),
+              paint_style(selected_style),
+            )
+            if config.show_descriptions and y + 1 < height {
+              let description = current.description.or("")
+              ctx.write(
+                text_x,
+                y + 1,
+                fit(description, content_width - text_x, measure_width),
+                paint_style(state_style(model, index, true, focused)),
+              )
+            }
+          }
+        },
+        _ => (),
+      }
+      slot =+ 1
+    }
+  }
+}
+
+private fn paint_tabs(
+  ctx: mut paint::Context,
+  model: mut Model,
+  config: TabConfig,
+  focused: Bool,
+  measure_width: fn(Str) Int,
+) {
+  let width = ctx.bounds.width
+  let height = ctx.bounds.height
+  if width <= 0 or height <= 0 or model.options.size() == 0 {
+    ()
+  } else {
+    let visible = visible_tabs(width, config)
+    let offset = window_offset(model.highlighted, model.options.size(), visible)
+    mut slot = 0
+    while slot < visible {
+      let index = offset + slot
+      match model.options.at(index) {
+        current => {
+          let x = slot * config.tab_width
+          if x < width {
+            mut tab_width = config.tab_width
+            if x + tab_width > width {
+              tab_width = width - x
+            }
+            let rendered_style = state_style(model, index, false, focused)
+            if index == model.selected or index == model.highlighted and focused {
+              fill_line(ctx, 0, x, tab_width, rendered_style)
+            }
+            ctx.write(
+              x + 1,
+              0,
+              fit(current.label, tab_width - 2, measure_width),
+              paint_style(rendered_style),
+            )
+            if index == model.highlighted and config.show_underline and height > 1 {
+              let glyph = model.appearance.underline_glyph.or("▬")
+              mut underline_x = 0
+              while underline_x < tab_width {
+                ctx.write(x + underline_x, 1, glyph, paint_style(rendered_style))
+                underline_x =+ 1
+              }
+            }
+          }
+        },
+        _ => (),
+      }
+      slot =+ 1
+    }
+    
+    if config.show_description {
+      mut description_y = 1
+      if config.show_underline {
+        description_y = 2
+      }
+      if description_y < height {
+        match model.options.at(model.highlighted) {
+          current => {
+            ctx.write(
+              1,
+              description_y,
+              fit(current.description.or(""), width - 2, measure_width),
+              paint_style(state_style(model, model.highlighted, true, focused)),
+            )
+          },
+          _ => (),
+        }
+      }
+    }
+    
+    if config.show_arrows and model.options.size() > visible {
+      let chrome = paint_style(indicator_style(model))
+      if offset > 0 {
+        ctx.write(0, 0, model.appearance.left_arrow.or("‹"), chrome)
+      }
+      if offset + visible < model.options.size() {
+        ctx.write(width - 1, 0, model.appearance.right_arrow.or("›"), chrome)
+      }
+    }
+  }
+}
+
+private fn paint_trigger(
+  ctx: mut paint::Context,
+  model: mut Model,
+  config: SelectConfig,
+  focused: Bool,
+  measure_width: fn(Str) Int,
+) {
+  let width = ctx.bounds.width
+  if width > 0 {
+    mut rendered = config.placeholder
+    mut rendered_style = patched(text::style(dim: true), model.appearance.normal)
+    match selection_at(model, model.selected) {
+      current => {
+        rendered = current.option.label
+        rendered_style = patched(text::style(), model.appearance.normal)
+      },
+      _ => (),
+    }
+    if focused {
+      rendered_style = patched(rendered_style, model.appearance.focused)
+    }
+    if model.open {
+      rendered_style = patched(rendered_style, model.appearance.highlighted)
+    }
+    if focused or model.open {
+      fill_line(ctx, 0, 0, width, rendered_style)
+    }
+    ctx.write(1, 0, fit(rendered, width - 4, measure_width), paint_style(rendered_style))
+    mut arrow = model.appearance.closed_arrow.or("▾")
+    if model.open {
+      arrow = model.appearance.open_arrow.or("▴")
+    }
+    ctx.write(width - 2, 0, arrow, paint_style(indicator_style(model)))
+  }
+}
+
+private fn option_index_at_y(model: mut Model, config: SelectConfig, height: Int, y: Int) Int? {
+  let item_height = list_item_height(config)
+  mut visible = visible_list_items(height, config)
+  if visible > config.max_visible {
+    visible = config.max_visible
+  }
+  let offset = model.menu_offset
+  let slot = y / item_height
+  let within_content = y % item_height < item_height - config.item_spacing
+  let index = offset + slot
+  if y >= 0 and slot >= 0 and slot < visible and within_content and index >= 0 and index < model.options.size() {
+    Maybe::new<Int>(index)
+  } else {
+    Maybe::new<Int>()
+  }
+}
+
+impl node::Renderable for Popup {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+  
+  fn mount(ctx: node::MountContext) {}
+  
+  fn paint(ctx: mut paint::Context) {
+    let background = patched(
+      text::style(
+        foreground: self.model.inherited_foreground,
+        background: self.model.inherited_background,
+      ),
+      self.model.appearance.normal,
+    )
+    mut y = 0
+    while y < ctx.bounds.height {
+      fill_line(ctx, y, 0, ctx.bounds.width, background)
+      y =+ 1
+    }
+    match self.model.presentation {
+      SelectConfig => {
+        mut visible = visible_list_items(ctx.bounds.height, it)
+        if visible > it.max_visible {
+          visible = it.max_visible
+        }
+        if visible > self.model.options.size() {
+          visible = self.model.options.size()
+        }
+        self.model.menu_visible = visible
+        clamp_menu_offset(self.model, visible)
+        self.scrollbar.internal_sync_state(
+          scrollbar_control::state(
+            position: self.model.menu_offset,
+            viewport_size: visible,
+            content_size: self.model.options.size(),
+          ),
+        )
+        paint_list(ctx, self.model, it, self.owner.is_focused(), self.measure_width)
+      },
+      _ => (),
+    }
+  }
+  
+  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    if ctx.is_default_prevented() {
+      event_delivery::Disposition::ignored
+    } else {
+      match ctx.mouse_event {
+        mouse => {
+          match self.model.presentation {
+            SelectConfig => {
+              mut visible = self.model.menu_visible
+              if visible < 1 {
+                visible = it.max_visible
+              }
+              let has_scrollbar = it.show_indicator and self.model.options.size() > visible
+              let pointer_width = self.owner.layout().screen.width
+              if has_scrollbar and (mouse.event_type == event::MouseEventType::down or mouse.event_type == event::MouseEventType::drag) and mouse.button == event::MouseButton::left and mouse.local_x >= pointer_width - 1 {
+                let changed = scroll_menu_from_track(
+                  self.model,
+                  it,
+                  self.node_ref.layout().screen.height,
+                  mouse.local_y,
+                )
+                mouse.prevent_default()
+                mouse.stop_propagation()
+                if changed {
+                  ctx.request_redraw()
+                }
+                event_delivery::Disposition::handled
+              } else if mouse.event_type == event::MouseEventType::scroll and mouse.scroll_y != 0 {
+                let delta = mouse.scroll_y
+                if scroll_menu(self.model, it, delta) {
+                  mouse.scroll_y = 0
+                  if mouse.scroll_x == 0 {
+                    mouse.stop_propagation()
+                  }
+                  ctx.preserve_focus_scroll()
+                  ctx.request_redraw()
+                  event_delivery::Disposition::handled
+                } else {
+                  event_delivery::Disposition::ignored
+                }
+              } else if mouse.event_type == event::MouseEventType::move or mouse.event_type == event::MouseEventType::over {
+                match option_index_at_y(self.model, it, self.node_ref.layout().screen.height, mouse.local_y) {
+                  index => {
+                    if change_highlight(self.model, index, true) {
+                      ensure_menu_highlight(self.model, it)
+                      ctx.request_redraw()
+                    }
+                    event_delivery::Disposition::handled
+                  },
+                  _ => event_delivery::Disposition::ignored,
+                }
+              } else if mouse.event_type == event::MouseEventType::down and mouse.button == event::MouseButton::left {
+                match option_index_at_y(self.model, it, self.node_ref.layout().screen.height, mouse.local_y) {
+                  index => {
+                    let revision = self.model.revision
+                    let attachment = self.owner.attachment_generation()
+                    mouse.prevent_default()
+                    mouse.stop_propagation()
+                    let focused = self.owner.focus()
+                    if focused and activate_click(self.model, self.owner, index, revision, attachment) and self.model.live {
+                      self.model.open = false
+                      let _ = sync_popup(self)
+                      sync_owner_style(self.owner, self.model)
+                    }
+                    ctx.request_redraw()
+                    event_delivery::Disposition::handled
+                  },
+                  _ => event_delivery::Disposition::ignored,
+                }
+              } else {
+                event_delivery::Disposition::ignored
+              }
+            },
+            _ => event_delivery::Disposition::ignored,
+          }
+        },
+        _ => event_delivery::Disposition::ignored,
+      }
+    }
+  }
+}
+
+impl node::Renderable for Select {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+  
+  fn mount(ctx: node::MountContext) {}
+  
+  fn paint(ctx: mut paint::Context) {
+    let shared = internal_state(self.internal)
+    let model = shared.model
+    let inherited_foreground = ctx.foreground
+    let inherited_background = ctx.background
+    model.inherited_foreground = inherited_foreground
+    model.inherited_background = inherited_background
+    if not same_optional_color(shared.popup.inherited_foreground, inherited_foreground) or not same_optional_color(shared.popup.inherited_background, inherited_background) {
+      shared.popup.inherited_foreground = inherited_foreground
+      shared.popup.inherited_background = inherited_background
+      shared.popup.anchor_x = -1
+    }
+    if model.open {
+      let _ = sync_popup(shared.popup)
+    }
+    match model.presentation {
+      SelectConfig => paint_trigger(ctx, model, it, self.node_ref.is_focused(), shared.measure_width),
+      TabConfig => paint_tabs(ctx, model, it, self.node_ref.is_focused(), shared.measure_width),
+    }
+  }
+  
+  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    if ctx.is_default_prevented() {
+      event_delivery::Disposition::ignored
+    } else {
+      match ctx.mouse_event {
+        mouse => self.handle_mouse(ctx, mouse),
+        _ => {
+          match ctx.key_event {
+            key => {
+              if ctx.focused {
+                self.handle_key(ctx, key)
+              } else {
+                event_delivery::Disposition::ignored
+              }
+            },
+            _ => event_delivery::Disposition::ignored,
+          }
+        },
+      }
+    }
+  }
+}
+
+impl Select {
+  private fn require_live() {
+    self.node_ref.require_live()
+  }
+  
+  fn options() [Option] {
+    copy_options(internal_state(self.internal).model.options)
+  }
+  
+  fn presentation() Presentation {
+    internal_state(self.internal).model.presentation
+  }
+  
+  fn appearance() Appearance {
+    internal_state(self.internal).model.appearance
+  }
+  
+  fn highlighted() Selection? {
+    let model = internal_state(self.internal).model
+    selection_at(model, model.highlighted)
+  }
+  
+  fn selected() Selection? {
+    let model = internal_state(self.internal).model
+    selection_at(model, model.selected)
+  }
+  
+  fn highlighted_index() Int? {
+    let index = internal_state(self.internal).model.highlighted
+    if index < 0 {
+      Maybe::new<Int>()
+    } else {
+      Maybe::new<Int>(index)
+    }
+  }
+  
+  fn selected_index() Int? {
+    let index = internal_state(self.internal).model.selected
+    if index < 0 {
+      Maybe::new<Int>()
+    } else {
+      Maybe::new<Int>(index)
+    }
+  }
+  
+  fn mut set_options(values: [Option]) {
+    self.require_live()
+    let model = internal_state(self.internal).model
+    advance_revision(model)
+    model.options = copy_options(values)
+    if model.options.size() == 0 {
+      model.highlighted = -1
+      model.selected = -1
+    } else {
+      model.highlighted = clamp_index(model.highlighted, model.options.size())
+      if model.selected >= 0 {
+        model.selected = clamp_index(model.selected, model.options.size())
+      }
+    }
+    if model.options.size() == 0 {
+      model.open = false
+      model.menu_offset = 0
+    } else {
+      match model.presentation {
+        SelectConfig => ensure_menu_highlight(model, it),
+        _ => (),
+      }
+    }
+    let _ = sync_popup(internal_state(self.internal).popup)
+    if not model.open {}
+    sync_owner_style(self.node_ref, model)
+    self.node_ref.request_redraw()
+  }
+  
+  fn mut set_config(value: SelectConfig) {
+    self.set_presentation(Presentation::menu(value))
+  }
+  
+  fn mut set_tab_config(value: TabConfig) {
+    self.set_presentation(Presentation::tabs(value))
+  }
+  
+  fn mut set_presentation(value: Presentation) {
+    self.require_live()
+    validate_presentation(value)
+    let shared = internal_state(self.internal)
+    advance_revision(shared.model)
+    shared.model.presentation = value
+    shared.model.open = false
+    sync_owner_style(self.node_ref, shared.model)
+    let _ = sync_popup(shared.popup)
+    shared.popup.scrollbar.set_options(bar_options(shared.model))
+  }
+  
+  fn mut set_appearance(value: Appearance) {
+    self.require_live()
+    let shared = internal_state(self.internal)
+    validate_appearance(value, shared.measure_width)
+    advance_revision(shared.model)
+    shared.model.appearance = value
+    shared.popup.scrollbar.set_options(bar_options(shared.model))
+    self.node_ref.request_redraw()
+  }
+  
+  fn is_open() Bool {
+    internal_state(self.internal).model.open
+  }
+  
+  fn scroll_offset() Int {
+    internal_state(self.internal).model.menu_offset
+  }
+  
+  fn visible_option_count() Int {
+    internal_state(self.internal).model.menu_visible
+  }
+  
+  fn mut open() Bool {
+    self.require_live()
+    let shared = internal_state(self.internal)
+    mut menu = false
+    match shared.model.presentation {
+      SelectConfig => { menu = true },
+      _ => (),
+    }
+    if (not menu) or shared.model.open or shared.model.options.size() == 0 {
+      false
+    } else {
+      let revision = shared.model.revision
+      let attachment = self.node_ref.attachment_generation()
+      mut focused = self.node_ref.is_focused()
+      if not focused {
+        focused = self.node_ref.focus()
+      }
+      if (not focused) or not click_context_valid(shared.model, self.node_ref, revision, attachment) or shared.model.open {
+        false
+      } else {
+        match shared.model.presentation {
+          SelectConfig => {
+            shared.model.menu_offset = window_offset(
+              shared.model.highlighted,
+              shared.model.options.size(),
+              it.max_visible,
+            )
+            shared.model.open = true
+            sync_owner_style(self.node_ref, shared.model)
+            let opened = sync_popup(shared.popup)
+            if opened {
+              ensure_menu_highlight(shared.model, it)
+            } else {
+              shared.model.open = false
+            }
+            self.node_ref.request_redraw()
+            opened
+          },
+          _ => false,
+        }
+      }
+    }
+  }
+  
+  fn mut close() Bool {
+    self.require_live()
+    let shared = internal_state(self.internal)
+    if shared.model.open {
+      shared.model.open = false
+      let _ = sync_popup(shared.popup)
+      sync_owner_style(self.node_ref, shared.model)
+      self.node_ref.request_redraw()
+      true
+    } else {
+      false
+    }
+  }
+  
+  fn mut set_highlighted_index(index: Int) Bool {
+    self.require_live()
+    let model = internal_state(self.internal).model
+    if index < 0 or index >= model.options.size() {
+      false
+    } else {
+      let changed = change_highlight(model, index, true)
+      if changed {
+        match model.presentation {
+          SelectConfig => ensure_menu_highlight(model, it),
+          _ => (),
+        }
+        self.node_ref.request_redraw()
+      }
+      changed
+    }
+  }
+  
+  fn mut select(index: Int) Bool {
+    self.require_live()
+    let model = internal_state(self.internal).model
+    if index < 0 or index >= model.options.size() {
+      false
+    } else {
+      let revision = model.revision
+      let highlighted = change_highlight(model, index, true)
+      if (not model.live) or model.revision != revision {
+        false
+      } else {
+        if highlighted {
+          match model.presentation {
+            SelectConfig => ensure_menu_highlight(model, it),
+            _ => (),
+          }
+        }
+        let changed = set_selected(model, index, true)
+        if highlighted or changed {
+          self.node_ref.request_redraw()
+        }
+        changed
+      }
+    }
+  }
+  
+  fn mut move_by(delta: Int) Bool {
+    self.require_live()
+    let changed = move_highlight(internal_state(self.internal).model, delta)
+    if changed {
+      self.node_ref.request_redraw()
+    }
+    changed
+  }
+  
+  fn mut submit() Bool {
+    self.require_live()
+    let model = internal_state(self.internal).model
+    match selection_at(model, model.highlighted) {
+      current => {
+        let submit_listeners = model.submit_listeners
+        let _ = set_selected(model, current.index, true)
+        self.node_ref.request_redraw()
+        if model.live {
+          notify(submit_listeners, current)
+        }
+        if model.live {
+          match model.presentation {
+            SelectConfig => {
+              model.open = false
+              let _ = sync_popup(internal_state(self.internal).popup)
+              sync_owner_style(self.node_ref, model)
+            },
+            _ => (),
+          }
+        }
+        true
+      },
+      _ => false,
+    }
+  }
+  
+  private fn mut next_listener() Int {
+    let model = internal_state(self.internal).model
+    if model.next_listener_id == math::MaxInt {
+      panic("Select listener identity overflow")
+    }
+    let id = model.next_listener_id
+    model.next_listener_id =+ 1
+    id
+  }
+  
+  fn mut on_highlight(handler: fn(Selection)) fn() {
+    self.require_live()
+    let model = internal_state(self.internal).model
+    let id = self.next_listener()
+    model.highlight_listeners.push(Listener{id: id, handler: handler})
+    fn() {
+      let retained = mut List::new<Listener>()
+      for listener in model.highlight_listeners {
+        if listener.id != id {
+          retained.push(listener)
+        }
+      }
+      model.highlight_listeners = retained.@
+    }
+  }
+  
+  fn mut on_change(handler: fn(Selection)) fn() {
+    self.require_live()
+    let model = internal_state(self.internal).model
+    let id = self.next_listener()
+    model.change_listeners.push(Listener{id: id, handler: handler})
+    fn() {
+      let retained = mut List::new<Listener>()
+      for listener in model.change_listeners {
+        if listener.id != id {
+          retained.push(listener)
+        }
+      }
+      model.change_listeners = retained.@
+    }
+  }
+  
+  fn mut on_submit(handler: fn(Selection)) fn() {
+    self.require_live()
+    let model = internal_state(self.internal).model
+    let id = self.next_listener()
+    model.submit_listeners.push(Listener{id: id, handler: handler})
+    fn() {
+      let retained = mut List::new<Listener>()
+      for listener in model.submit_listeners {
+        if listener.id != id {
+          retained.push(listener)
+        }
+      }
+      model.submit_listeners = retained.@
+    }
+  }
+  
+  fn style() layout_style::Style {
+    internal_state(self.internal).model.layout_style
+  }
+  
+  fn mut set_style(value: layout_style::Style) {
+    self.require_live()
+    let shared = internal_state(self.internal)
+    advance_revision(shared.model)
+    shared.layout_style = value
+    shared.model.layout_style = value
+    sync_owner_style(self.node_ref, shared.model)
+  }
+  
+  fn mut focus() Bool {
+    self.node_ref.focus()
+  }
+  
+  fn mut blur() {
+    self.node_ref.blur()
+  }
+  
+  fn is_focused() Bool {
+    self.node_ref.is_focused()
+  }
+  
+  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+    self.node_ref.on_key(handler)
+  }
+  
+  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+    self.node_ref.on_paste(handler)
+  }
+  
+  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+    self.node_ref.on_mouse(handler)
+  }
+  
+  fn mut on_focus(handler: fn()) fn() {
+    self.node_ref.on_focus(handler)
+  }
+  
+  fn mut on_blur(handler: fn()) fn() {
+    self.node_ref.on_blur(handler)
+  }
+  
+  fn layout() geometry::Geometry {
+    self.node_ref.layout()
+  }
+  
+  private fn mut handled(ctx: mut event_delivery::Context, changed: Bool) event_delivery::Disposition {
+    if changed {
+      ctx.preserve_focus_scroll()
+      ctx.request_redraw()
+      event_delivery::Disposition::handled
+    } else {
+      event_delivery::Disposition::ignored
+    }
+  }
+  
+  private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
+    if key.event_type == event::KeyEventType::release {
+      event_delivery::Disposition::ignored
+    } else {
+      let model = internal_state(self.internal).model
+      mut recognized = true
+      mut changed = false
+      match model.presentation {
+        SelectConfig => {
+          if key.matches("escape") and model.open {
+            changed = self.close()
+          } else if key.matches("return") or key.matches("linefeed") {
+            if model.open {
+              changed = self.submit()
+            } else {
+              changed = self.open()
+            }
+          } else if key.matches("space") and not model.open {
+            changed = self.open()
+          } else if model.open and (key.matches("up") or key.matches("k")) {
+            changed = self.move_by(-1)
+          } else if model.open and (key.matches("down") or key.matches("j")) {
+            changed = self.move_by(1)
+          } else if model.open and (key.matches("up", shift: true) or key.matches("k", shift: true)) {
+            changed = self.move_by(0 - it.fast_step)
+          } else if model.open and (key.matches("down", shift: true) or key.matches("j", shift: true)) {
+            changed = self.move_by(it.fast_step)
+          } else if (not model.open) and (key.matches("up") or key.matches("down")) {
+            changed = self.open()
+          } else {
+            recognized = false
+          }
+        },
+        TabConfig => {
+          if key.matches("left") or key.matches("[") {
+            changed = self.move_by(-1)
+          } else if key.matches("right") or key.matches("]") {
+            changed = self.move_by(1)
+          } else if key.matches("return") or key.matches("linefeed") {
+            changed = self.submit()
+          } else {
+            recognized = false
+          }
+        },
+      }
+      if recognized {
+        key.prevent_default()
+        if changed {
+          ctx.preserve_focus_scroll()
+          ctx.request_redraw()
+        }
+        event_delivery::Disposition::handled
+      } else {
+        event_delivery::Disposition::ignored
+      }
+    }
+  }
+  
+  private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
+    let model = internal_state(self.internal).model
+    match model.presentation {
+      SelectConfig => {
+        if mouse.event_type == event::MouseEventType::down and mouse.button == event::MouseButton::left {
+          let revision = model.revision
+          let attachment = self.node_ref.attachment_generation()
+          let was_open = model.open
+          mouse.prevent_default()
+          mouse.stop_propagation()
+          if ctx.request_focus() and click_context_valid(model, self.node_ref, revision, attachment) and model.open == was_open {
+            if was_open {
+              let _ = self.close()
+            } else {
+              let _ = self.open()
+            }
+          }
+          ctx.request_redraw()
+          event_delivery::Disposition::handled
+        } else {
+          event_delivery::Disposition::ignored
+        }
+      },
+      TabConfig => {
+        if mouse.event_type == event::MouseEventType::scroll and (mouse.scroll_x != 0 or mouse.scroll_y != 0) {
+          let uses_x = mouse.scroll_x != 0
+          mut received = mouse.scroll_y
+          if uses_x {
+            received = mouse.scroll_x
+          }
+          mut delta = 1
+          if received < 0 {
+            delta = -1
+          }
+          let result = self.handled(ctx, self.move_by(delta))
+          if result == event_delivery::Disposition::handled {
+            if uses_x {
+              mouse.scroll_x = 0
+            } else {
+              mouse.scroll_y = 0
+            }
+            if mouse.scroll_x == 0 and mouse.scroll_y == 0 {
+              mouse.stop_propagation()
+            }
+          }
+          result
+        } else if mouse.event_type == event::MouseEventType::down and mouse.button == event::MouseButton::left and mouse.local_y == 0 {
+          let width = self.node_ref.layout().screen.width
+          let visible = visible_tabs(width, it)
+          let offset = window_offset(model.highlighted, model.options.size(), visible)
+          let slot = mouse.local_x / it.tab_width
+          let index = offset + slot
+          let revision = model.revision
+          let attachment = self.node_ref.attachment_generation()
+          let can_move_left = it.show_arrows and model.options.size() > visible and offset > 0
+          let can_move_right = it.show_arrows and model.options.size() > visible and offset + visible < model.options.size()
+          mut arrow_delta = 0
+          if width == 1 {
+            if can_move_right {
+              arrow_delta = 1
+            } else if can_move_left {
+              arrow_delta = -1
+            }
+          } else if mouse.local_x == 0 and can_move_left {
+            arrow_delta = -1
+          } else if mouse.local_x == width - 1 and can_move_right {
+            arrow_delta = 1
+          }
+          if arrow_delta != 0 {
+            mouse.prevent_default()
+            mouse.stop_propagation()
+            let focused = ctx.request_focus()
+            if focused and click_context_valid(model, self.node_ref, revision, attachment) {
+              self.handled(ctx, self.move_by(arrow_delta))
+            } else {
+              event_delivery::Disposition::handled
+            }
+          } else if mouse.local_x >= 0 and slot >= 0 and slot < visible and index >= 0 and index < model.options.size() {
+            mouse.prevent_default()
+            mouse.stop_propagation()
+            let focused = ctx.request_focus()
+            if focused {
+              let _ = activate_click(model, self.node_ref, index, revision, attachment)
+            }
+            ctx.request_redraw()
+            event_delivery::Disposition::handled
+          } else {
+            event_delivery::Disposition::ignored
+          }
+        } else {
+          event_delivery::Disposition::ignored
+        }
+      },
+    }
+  }
+  
+  fn mut destroy(recursive: Bool?) {
+    if not self.node_ref.is_destroyed() {
+      let shared = internal_state(self.internal)
+      if shared.model.open {
+        shared.model.open = false
+        let _ = sync_popup(shared.popup)
+      }
+      self.node_ref.destroy(true)
+    }
+  }
+}

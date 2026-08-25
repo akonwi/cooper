@@ -78,6 +78,7 @@ jobs:
             examples/test_clipboard.py \
             examples/test_scroll_form.py \
             examples/test_horizontal_scroll.py \
+            examples/test_select.py \
             examples/test_async.py \
             examples/test_lifecycle.py \
             examples/test_explorer.py \
@@ -102,6 +103,7 @@ jobs:
           python3 test_clipboard.py
           python3 test_scroll_form.py
           python3 test_horizontal_scroll.py
+          python3 test_select.py
           python3 test_async.py
           python3 test_lifecycle.py
           python3 test_explorer.py

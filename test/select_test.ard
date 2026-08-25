@@ -1,0 +1,493 @@
+use ard/testing
+
+use cooper/box
+use cooper/color
+use cooper/event
+use cooper/select as select_control
+use cooper/style
+use cooper/testing as cooper_testing
+use cooper/text
+
+private fn choice(index: Int) select_control::Option {
+  select_control::option(
+    "Option {index}",
+    description: "Description {index}",
+    value: "value-{index}",
+  )
+}
+
+private fn choices(count: Int) [select_control::Option] {
+  let values = mut List::new<select_control::Option>()
+  mut index = 0
+  while index < count {
+    values.push(choice(index))
+    index =+ 1
+  }
+  values.@
+}
+
+private fn key(name: Str, shift: Bool?) mut event::KeyEvent {
+  event::key(
+    name,
+    "",
+    event::KeyEventType::press,
+    event::Modifiers{
+      shift: shift.or(false),
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
+}
+
+test fn select_is_compact_closed_and_opens_anchored_option_menu() Void!Str {
+  let application = cooper_testing::new(20, 10)
+  let control = select_control::new(
+    application.context,
+    choices(4),
+    config: select_control::config(max_visible: 3),
+    styles: style::new(width: style::cells(20), height: style::cells(8)),
+  )
+  application.root.add(control)
+  application.render()
+  
+  try testing::assert(control.layout().screen.height == 1, "Expected compact one-row Select")
+  try testing::assert(application.frame().text().contains("Select…"), "Expected closed placeholder")
+  try testing::assert(not application.frame().text().contains("Option 0"), "Expected closed menu hidden")
+  try testing::assert(
+    application.frame().cell(18, 0).expect("closed arrow").grapheme == "▾",
+    "Expected closed arrow",
+  )
+  
+  try testing::assert(control.focus(), "Expected focusable Select")
+  application.key(key("return"))
+  try testing::assert(control.is_open(), "Expected Enter to open Select")
+  try testing::assert(application.frame().text().contains("Option 0"), "Expected anchored menu options")
+  try testing::assert(
+    application.frame().cell(18, 0).expect("open arrow").grapheme == "▴",
+    "Expected open arrow",
+  )
+  try testing::assert(
+    application.frame().cell(19, 4).expect("viewport thumb").grapheme == "█",
+    "Expected scrollbar thumb sized from visible viewport",
+  )
+  try testing::assert(control.layout().screen.height == 1, "Expected popup not to expand Select layout")
+  
+  application.key(key("escape"))
+  try testing::assert(
+    not control.is_open() and not control.selected().is_some(),
+    "Expected Escape to close without selection",
+  )
+  
+  application.destroy()
+  testing::assert(control.node_ref.is_destroyed(), "Expected Select cleanup")
+}
+
+test fn select_keyboard_separates_highlight_change_and_submit() Void!Str {
+  let application = cooper_testing::new(20, 10)
+  let control = select_control::new(
+    application.context,
+    choices(8),
+    config: select_control::config(max_visible: 4, fast_step: 3),
+    styles: style::new(width: style::cells(20)),
+  )
+  mut highlights = 0
+  mut changes = 0
+  mut submissions = 0
+  let _ = control.on_highlight(fn(value: select_control::Selection) {
+    highlights =+ 1
+  })
+  let _ = control.on_change(fn(value: select_control::Selection) {
+    changes =+ 1
+  })
+  let _ = control.on_submit(fn(value: select_control::Selection) {
+    submissions =+ 1
+  })
+  application.root.add(control)
+  application.render()
+  let _ = control.focus()
+  
+  application.key(key("space"))
+  application.key(key("down"))
+  application.key(key("down", shift: true))
+  try testing::assert(
+    control.highlighted_index().or(-1) == 4 and highlights == 2,
+    "Expected open-menu navigation",
+  )
+  application.key(key("return"))
+  try testing::assert(not control.is_open(), "Expected commit to close menu")
+  try testing::assert(control.selected_index().or(-1) == 4, "Expected committed option")
+  try testing::assert(changes == 1 and submissions == 1, "Expected change and submit callbacks")
+  try testing::assert(
+    application.frame().text().contains("Option 4"),
+    "Expected trigger to display committed value",
+  )
+  
+  application.key(key("return"))
+  application.key(key("return"))
+  try testing::assert(
+    changes == 1 and submissions == 2,
+    "Expected repeated submit without duplicate change",
+  )
+  
+  application.destroy()
+  testing::assert(control.node_ref.is_destroyed(), "Expected keyboard Select cleanup")
+}
+
+test fn select_pointer_opens_menu_and_click_commits_option() Void!Str {
+  let application = cooper_testing::new(18, 10)
+  let control = select_control::new(
+    application.context,
+    choices(5),
+    config: select_control::config(show_descriptions: false, max_visible: 4),
+    styles: style::new(width: style::cells(18)),
+  )
+  application.root.add(control)
+  application.render()
+  
+  application.click(2, 0)
+  try testing::assert(
+    control.is_open() and control.is_focused(),
+    "Expected trigger click to focus and open",
+  )
+  application.render()
+  application.mouse_move(3, 2)
+  try testing::assert(
+    control.highlighted_index().or(-1) == 1,
+    "Expected pointer hover highlight, got {control.highlighted_index().or(-1)}",
+  )
+  application.scroll(3, 2, 1)
+  try testing::assert(control.scroll_offset() == 1, "Expected popup mouse-wheel viewport movement")
+  try testing::assert(control.highlighted_index().or(-1) == 1, "Expected wheel not to move cursor")
+  application.click(3, 2)
+  try testing::assert(not control.is_open(), "Expected menu click to close")
+  try testing::assert(control.selected_index().or(-1) == 2, "Expected clicked option commit")
+  try testing::assert(
+    application.frame().text().contains("Option 2"),
+    "Expected clicked value in trigger",
+  )
+  
+  application.destroy()
+  testing::assert(control.node_ref.is_destroyed(), "Expected pointer Select cleanup")
+}
+
+test fn select_popup_wheel_indicator_and_blur_preserve_commit_state() Void!Str {
+  let application = cooper_testing::new(16, 12)
+  let control = select_control::new(
+    application.context,
+    choices(10),
+    config: select_control::config(show_descriptions: false, max_visible: 5),
+    selected_index: 2,
+    styles: style::new(width: style::cells(16)),
+  )
+  application.root.add(control)
+  application.render()
+  application.click(2, 0)
+  application.render()
+  application.render()
+  mut option_y = -1
+  mut arrow_y = -1
+  mut row = 1
+  while row < 12 {
+    if application.frame().cell(2, row).expect("popup scan").grapheme == "O" and option_y < 0 {
+      option_y = row
+    }
+    if application.frame().cell(15, row).expect("scrollbar scan").grapheme == "▼" {
+      arrow_y = row
+    }
+    row =+ 1
+  }
+  try testing::assert(option_y >= 0, "Expected visible popup option")
+  application.mouse_move(3, option_y + 1)
+  application.scroll(3, option_y + 1, 1)
+  try testing::assert(
+    control.scroll_offset() == 1,
+    "Expected popup wheel viewport navigation, got {control.scroll_offset()} with {control.visible_option_count()} visible at row {option_y}",
+  )
+  try testing::assert(
+    control.highlighted_index().or(-1) == 1,
+    "Expected wheel not to move hovered cursor",
+  )
+  application.scroll(3, option_y + 1, 5)
+  application.render()
+  try testing::assert(control.scroll_offset() == 5, "Expected viewport to scroll past the cursor")
+  try testing::assert(
+    control.highlighted_index().or(-1) == 1,
+    "Expected offscreen cursor to remain unchanged",
+  )
+  try testing::assert(
+    application.frame().text().contains("Option 5"),
+    "Expected scrolled viewport content",
+  )
+  try testing::assert(arrow_y >= 0, "Expected popup scrollbar end arrow")
+  control.blur()
+  try testing::assert(not control.is_open(), "Expected blur to close popup")
+  try testing::assert(control.selected_index().or(-1) == 2, "Expected blur not to commit highlight")
+  
+  application.destroy()
+  testing::assert(control.node_ref.is_destroyed(), "Expected popup Select cleanup")
+}
+
+test fn select_popup_layers_above_later_siblings() Void!Str {
+  let application = cooper_testing::new(16, 6)
+  let control = select_control::new(
+    application.context,
+    choices(3),
+    config: select_control::config(show_descriptions: false),
+    styles: style::new(width: style::cells(16)),
+  )
+  let panel = box::new(
+    application.context,
+    styles: style::new(
+      width: style::cells(16),
+      height: style::cells(1),
+      overflow: style::Overflow::visible,
+    ),
+  )
+  let cover = box::new(
+    application.context,
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(0),
+      top: style::cells(1),
+      width: style::cells(16),
+      height: style::cells(3),
+    ),
+  )
+  mut cover_clicks = 0
+  let _ = cover.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down {
+      cover_clicks =+ 1
+    }
+  })
+  panel.add(control)
+  application.root.add(panel)
+  application.root.add(cover)
+  application.render()
+  let _ = control.open()
+  application.render()
+  
+  application.click(3, 1)
+  try testing::assert(control.selected_index().or(-1) == 0, "Expected popup above later sibling")
+  try testing::assert(cover_clicks == 0, "Expected popup to own overlapping hit")
+  
+  application.destroy()
+  testing::assert(control.node_ref.is_destroyed(), "Expected layered Select cleanup")
+}
+
+test fn select_open_focus_space_and_submit_destruction_are_safe() Void!Str {
+  let application = cooper_testing::new(16, 6)
+  let control = select_control::new(
+    application.context,
+    choices(2),
+    config: select_control::config(show_descriptions: false),
+    styles: style::new(width: style::cells(16)),
+  )
+  application.root.add(control)
+  application.render()
+  
+  try testing::assert(control.open() and control.is_focused(), "Expected programmatic open to focus")
+  application.key(key("space"))
+  try testing::assert(
+    control.is_open() and not control.selected().is_some(),
+    "Expected Space not to commit open menu",
+  )
+  let _ = control.on_submit(fn(value: select_control::Selection) {
+    control.destroy()
+  })
+  application.key(key("return"))
+  try testing::assert(control.node_ref.is_destroyed(), "Expected safe submit-time destruction")
+  
+  application.destroy()
+  testing::assert(control.node_ref.is_destroyed(), "Expected destroyed Select cleanup")
+}
+
+test fn select_portal_stays_private_and_parent_destruction_is_safe() Void!Str {
+  let application = cooper_testing::new(16, 6)
+  let panel = box::new(
+    application.context,
+    styles: style::new(
+      width: style::cells(16),
+      height: style::cells(2),
+      overflow: style::Overflow::visible,
+    ),
+  )
+  let control = select_control::new(
+    application.context,
+    choices(2),
+    config: select_control::config(show_descriptions: false),
+    styles: style::new(width: style::cells(16)),
+  )
+  panel.add(control)
+  application.root.add(panel)
+  application.render()
+  let _ = control.open()
+  application.render()
+  try testing::assert(
+    application.root.child_count() == 1,
+    "Expected private portal outside Root child model",
+  )
+  
+  panel.destroy(true)
+  try testing::assert(
+    control.node_ref.is_destroyed(),
+    "Expected recursive owner destruction with open popup",
+  )
+  
+  application.destroy()
+  testing::assert(panel.node_ref.is_destroyed(), "Expected portal destruction cleanup")
+}
+
+test fn select_options_snapshot_programmatic_selection_and_empty_state() Void!Str {
+  let application = cooper_testing::new(16, 6)
+  let source = mut choices(3)
+  let control = select_control::new(
+    application.context,
+    source.@,
+    config: select_control::config(show_descriptions: false),
+    styles: style::new(width: style::cells(16)),
+  )
+  source.set(0, select_control::option("Mutated"))
+  application.root.add(control)
+  application.render()
+  
+  try testing::assert(
+    control.options().at(0).expect("snapshot").label == "Option 0",
+    "Expected option snapshot",
+  )
+  try testing::assert(control.select(1), "Expected programmatic selection")
+  try testing::assert(
+    control.selected().expect("selection").option.value.or("") == "value-1",
+    "Expected selected value",
+  )
+  control.set_options([])
+  try testing::assert(
+    not control.open() and not control.selected().is_some(),
+    "Expected inert empty Select",
+  )
+  
+  application.destroy()
+  testing::assert(control.node_ref.is_destroyed(), "Expected option Select cleanup")
+}
+
+test fn tab_select_retains_horizontal_navigation_activation_and_overflow() Void!Str {
+  let application = cooper_testing::new(12, 3)
+  let tabs: mut select_control::TabSelect = select_control::tabs(
+    application.context,
+    choices(6),
+    config: select_control::tab_config(tab_width: 6, wrap_selection: true),
+    styles: style::new(width: style::cells(12)),
+  )
+  application.root.add(tabs)
+  application.render()
+  try testing::assert(tabs.focus(), "Expected TabSelect focus")
+  
+  application.key(key("left"))
+  try testing::assert(tabs.highlighted_index().or(-1) == 5, "Expected wrapped tab navigation")
+  application.key(key("return"))
+  try testing::assert(tabs.selected_index().or(-1) == 5, "Expected tab activation")
+  try testing::assert(application.frame().text().contains("Descript"), "Expected tab description")
+  application.click(0, 0)
+  try testing::assert(tabs.highlighted_index().or(-1) == 4, "Expected overflow arrow navigation")
+  
+  application.destroy()
+  testing::assert(tabs.node_ref.is_destroyed(), "Expected TabSelect cleanup")
+}
+
+test fn select_popup_preserves_inherited_colors_and_marker_row_background() Void!Str {
+  let application = cooper_testing::new(16, 6)
+  let panel = box::new(
+    application.context,
+    styles: style::new(
+      foreground: color::hex("#DDEEFF"),
+      background: color::hex("#112233"),
+      width: style::cells(16),
+      height: style::cells(2),
+      overflow: style::Overflow::visible,
+    ),
+  )
+  let control = select_control::new(
+    application.context,
+    choices(2),
+    config: select_control::config(show_descriptions: false),
+    appearance: select_control::appearance(
+      highlighted: text::span_style(background: color::hex("#3366CC")),
+    ),
+    styles: style::new(width: style::cells(16)),
+  )
+  panel.add(control)
+  application.root.add(panel)
+  application.render()
+  try testing::assert(
+    application.frame().cell(
+      1,
+      0,
+    ).expect("inherited trigger").style.background.expect("trigger background").blue == Uint8::from(51),
+    "Expected trigger inheritance",
+  )
+  let _ = control.open()
+  application.render()
+  
+  let marker = application.frame().cell(0, 1).expect("highlight marker")
+  let label = application.frame().cell(2, 1).expect("highlight label")
+  try testing::assert(
+    marker.style.background.expect("marker background").blue == Uint8::from(204),
+    "Expected marker to retain row background",
+  )
+  try testing::assert(
+    label.style.background.expect("label background").blue == Uint8::from(204),
+    "Expected highlighted row background",
+  )
+  let inherited = application.frame().cell(2, 2).expect("inherited popup row")
+  try testing::assert(inherited.grapheme == "O", "Expected second popup option, got {inherited.grapheme}")
+  try testing::assert(
+    inherited.style.background.expect("popup background").blue == Uint8::from(51),
+    "Expected popup inherited background",
+  )
+  try testing::assert(
+    inherited.style.foreground.expect("popup foreground").blue == Uint8::from(255),
+    "Expected popup inherited foreground",
+  )
+  
+  application.destroy()
+  testing::assert(control.node_ref.is_destroyed(), "Expected popup color cleanup")
+}
+
+test fn select_appearance_patches_trigger_menu_and_arrows() Void!Str {
+  let application = cooper_testing::new(14, 6)
+  let control = select_control::new(
+    application.context,
+    [choice(0)],
+    config: select_control::config(show_descriptions: false),
+    appearance: select_control::appearance(
+      normal: text::span_style(italic: true),
+      marker: "• ",
+      closed_arrow: "+",
+      open_arrow: "-",
+    ),
+    styles: style::new(width: style::cells(14)),
+  )
+  application.root.add(control)
+  application.render()
+  try testing::assert(
+    application.frame().cell(12, 0).expect("custom closed arrow").grapheme == "+",
+    "Expected custom trigger arrow",
+  )
+  try testing::assert(
+    application.frame().cell(1, 0).expect("trigger style").style.italic,
+    "Expected trigger appearance",
+  )
+  let _ = control.open()
+  application.render()
+  try testing::assert(
+    application.frame().cell(12, 0).expect("custom open arrow").grapheme == "-",
+    "Expected custom open arrow",
+  )
+  try testing::assert(
+    application.frame().cell(0, 1).expect("custom menu marker").grapheme == "•",
+    "Expected custom menu marker",
+  )
+  
+  application.destroy()
+  testing::assert(control.node_ref.is_destroyed(), "Expected appearance Select cleanup")
+}

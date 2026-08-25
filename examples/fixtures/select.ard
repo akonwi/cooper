@@ -1,0 +1,142 @@
+use cooper/app
+use cooper/box
+use cooper/color
+use cooper/event
+use cooper/select as select_control
+use cooper/style
+use cooper/text
+
+private fn options(count: Int) [select_control::Option] {
+  let values = mut List::new<select_control::Option>()
+  let labels = [
+    "Home",
+    "Profile",
+    "Settings",
+    "Users",
+    "Security",
+    "Notifications",
+    "Billing",
+    "Integrations",
+    "API",
+    "Logs",
+    "Backup",
+    "About",
+  ]
+  mut index = 0
+  while index < count {
+    let label = labels.at(index).expect("fixture option")
+    values.push(
+      select_control::option(label, description: "{label} description", value: "value-{index}"),
+    )
+    index =+ 1
+  }
+  values.@
+}
+
+fn main() {
+  let application = app::new().expect("create Cooper Select fixture")
+  defer application.destroy()
+  let ctx = application.context
+  let root = box::new(
+    ctx,
+    styles: style::new(
+      background: color::hex("#001122"),
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      gap: style::cells(1),
+      overflow: style::Overflow::hidden,
+    ),
+  )
+  root.add(
+    text::new(
+      ctx,
+      content: "BUILT-IN SELECTS · Tab switches focus · Ctrl+C quits",
+      styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+      selectable: false,
+      text_style: text::style(foreground: color::hex("#38BDF8"), bold: true),
+    ),
+  )
+
+  let control_appearance = select_control::appearance(
+    normal: text::span_style(foreground: color::hex("#E2E8F0")),
+    description: text::span_style(foreground: color::hex("#94A3B8")),
+    highlighted: text::span_style(background: color::hex("#2D3748"), bold: true),
+    selected: text::span_style(
+      foreground: color::hex("#FFFFFF"),
+      background: color::hex("#3B82F6"),
+      reverse: false,
+      bold: true,
+    ),
+    selected_description: text::span_style(foreground: color::hex("#DBEAFE")),
+    indicator: text::span_style(foreground: color::hex("#CBD5E1")),
+  )
+
+  let tabs = select_control::tabs(
+    ctx,
+    options(12),
+    config: select_control::tab_config(tab_width: 12),
+    appearance: control_appearance,
+    styles: style::new(width: style::percent(100.0), flex_shrink: 0.0),
+  )
+  root.add(tabs)
+
+  let list = select_control::new(
+    ctx,
+    options(12),
+    config: select_control::config(show_indicator: true),
+    appearance: control_appearance,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::cells(1),
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+    ),
+  )
+  root.add(list)
+
+  let status = text::new(
+    ctx,
+    content: "Ready",
+    styles: style::new(width: style::percent(100.0), height: style::cells(2), flex_shrink: 0.0),
+    selectable: false,
+    text_style: text::style(foreground: color::hex("#FDE047")),
+  )
+  root.add(status)
+  application.root.add(root)
+
+  let _ = tabs.on_highlight(fn(value: select_control::Selection) {
+    status.set_content("Tab highlight: {value.option.label} · index {value.index}")
+  })
+  let _ = tabs.on_change(fn(value: select_control::Selection) {
+    status.set_content("Tab selected: {value.option.label} · {value.option.value.or("")}")
+  })
+  let _ = tabs.on_submit(fn(value: select_control::Selection) {
+    status.set_content("Tab submitted: {value.option.label} · index {value.index}")
+  })
+  let _ = list.on_highlight(fn(value: select_control::Selection) {
+    status.set_content("Select highlight: {value.option.label} · index {value.index}")
+  })
+  let _ = list.on_change(fn(value: select_control::Selection) {
+    status.set_content("Select selected: {value.option.label} · {value.option.value.or("")}")
+  })
+  let _ = list.on_submit(fn(value: select_control::Selection) {
+    status.set_content("Select submitted: {value.option.label} · index {value.index}")
+  })
+
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.event_type != event::KeyEventType::release and received.matches("tab") {
+      if tabs.is_focused() {
+        list.focus()
+        status.set_content("Focus: Select")
+      } else {
+        tabs.focus()
+        status.set_content("Focus: tabs")
+      }
+      received.prevent_default()
+      received.stop_propagation()
+    }
+  })
+
+  tabs.focus()
+  application.run().expect("run Cooper Select fixture")
+}

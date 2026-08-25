@@ -81,6 +81,7 @@ python3 test_widgets.py
 python3 test_clipboard.py
 python3 test_scroll_form.py
 python3 test_horizontal_scroll.py
+python3 test_select.py
 python3 test_async.py
 python3 test_lifecycle.py
 python3 test_explorer.py
@@ -95,5 +96,6 @@ python3 benchmarks/run.py
 - Application API: [`ADR 0002`](./docs/adrs/0002-define-application-api.md)
 - Terminal clipboard: [`ADR 0006`](./docs/adrs/0006-define-terminal-clipboard-access.md)
 - Scrollbars and two-axis scrolling: [`ADR 0007`](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md)
+- Select controls and Appearance overrides: [`ADR 0008`](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md)
 - Vaxis source: `go.rockorager.dev/vaxis`
 - Ard docs: https://ard.run

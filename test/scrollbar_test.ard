@@ -258,3 +258,30 @@ test fn horizontal_scrollbar_uses_horizontal_track_and_drag_axis() Void!Str {
   application.destroy()
   testing::assert(bar.node_ref.is_destroyed(), "Expected horizontal Scrollbar cleanup")
 }
+
+test fn scrollbar_prevent_default_suppresses_pointer_and_keyboard_behavior() Void!Str {
+  let application = cooper_testing::new(1, 5)
+  let bar = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(viewport_size: 1, content_size: 10),
+    styles: style::new(height: style::cells(5)),
+  )
+  let _ = bar.on_mouse(fn(received: mut event::MouseEvent) {
+    received.prevent_default()
+  })
+  let _ = bar.on_key(fn(received: mut event::KeyEvent) {
+    received.prevent_default()
+  })
+  application.root.add(bar)
+  application.render()
+
+  application.click(0, 4)
+  try testing::assert(bar.scroll_position() == 0, "Expected prevented pointer default")
+  try testing::assert(bar.focus(), "Expected explicit Scrollbar focus")
+  application.key(key("down"))
+  try testing::assert(bar.scroll_position() == 0, "Expected prevented keyboard default")
+
+  application.destroy()
+  testing::assert(bar.node_ref.is_destroyed(), "Expected prevented Scrollbar cleanup")
+}

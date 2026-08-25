@@ -411,6 +411,22 @@ primitive checkpoint. The horizontal bar is hidden by default and can be made
 automatic or always visible. Sticky scrolling, acceleration, and viewport
 culling remain deferred.
 
+### Select
+
+ADR 0008 adds compact Select and horizontal TabSelect controls. Options contain
+a label, optional description, and optional string value. Highlighted navigation
+and committed selection are independent optional states. Select occupies one
+row and opens an anchored, bounded option menu with keyboard, wheel, indicator,
+and click interaction. TabSelect supports fixed-width tabs, underline and
+description rows, overflow arrows, wrapping, and click activation.
+
+The controls expose option replacement, index movement, selection, submission,
+Appearance patches, and idempotently removable `on_highlight`, `on_change`, and
+`on_submit` listeners. Ard reserves `select`, so applications import
+`cooper/select` under an alias; `ui` exposes `ui::select_input` and
+`ui::tab_select` constructors. Cooper does not provide built-in ListBox or
+Combobox primitives.
+
 ### Events, listeners, and focus
 
 Cooper converts Vaxis input to backend-independent values. Key events contain a
@@ -492,7 +508,7 @@ Documented application modules are:
 
 ```text
 app  box  clipboard  color  context  event  geometry
-input  root  scroll_box  scrollbar  style  testing  text  ui
+input  root  scroll_box  scrollbar  select  style  testing  text  ui
 ```
 
 `ui` provides direct constructor and type aliases for built-in controls, such

@@ -17,6 +17,8 @@ Design decisions for Cooper's Ard-native retained-mode framework.
   clipboard reads, writes, clears, and App-lifetime semantics.
 - [ADR 0007](./adrs/0007-define-scrollbars-and-two-axis-scrolling.md) — accepted
   standalone Scrollbars, built-in ScrollBox gutters, and sequenced two-axis scrolling.
+- [ADR 0008](./adrs/0008-define-select-controls-and-appearance-overrides.md) — accepted
+  compact Select menus, TabSelect, committed choice state, and local Appearance patches.
 
 ## Architecture Decision Records
 
@@ -31,6 +33,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0005](./adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md) | Accepted | Define rich Text, wrapping, and multi-click selection |
 | [0006](./adrs/0006-define-terminal-clipboard-access.md) | Accepted | Define terminal clipboard access |
 | [0007](./adrs/0007-define-scrollbars-and-two-axis-scrolling.md) | Accepted | Define Scrollbars and two-axis scrolling |
+| [0008](./adrs/0008-define-select-controls-and-appearance-overrides.md) | Accepted | Define Select, TabSelect, and Appearance overrides |
 
 ### Add an ADR
 

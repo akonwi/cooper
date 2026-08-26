@@ -39,7 +39,12 @@ application.run().expect("run Cooper app")
 struct App {
   context: mut context::Context,
   root: mut root::Root,
+}
+
+struct Context {
   clipboard: mut clipboard::Clipboard,
+  dispatch: fn(fn()) Void!event::DispatchError,
+  cancellation: Receiver<Void>,
 }
 
 fn new(
@@ -62,9 +67,9 @@ impl App {
 ```
 
 All three options default to `true`; `auto_focus` means focus on mouse-down.
-App is a copyable facade over shared runtime state held through Context, Root,
-and Clipboard. Copies observe the same lifecycle. Clipboard behavior is defined
-by [ADR 0006](./0006-define-terminal-clipboard-access.md).
+App is a copyable facade over shared runtime state held through Context and
+Root. Copies observe the same lifecycle. Context exposes the App-bound Clipboard;
+its behavior is defined by [ADR 0006](./0006-define-terminal-clipboard-access.md).
 
 `start` mounts the permanent Root, commits the initial frame when the terminal
 is active, starts the App event pump, and returns. Repeated starts while the App
@@ -132,6 +137,8 @@ let _ = application.context.dispatch(fn() {
 })
 
 application.context.cancellation.recv()
+
+application.context.clipboard.write("copied text")
 
 let _ = application.context.notify("Background task finished", title: "Cooper")
 let _ = application.context.progress(terminal_progress::State::indeterminate)

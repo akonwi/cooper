@@ -16,7 +16,7 @@ fn main() {
   )
   application.root.add(status)
 
-  let clipboard = application.clipboard
+  let clipboard = application.context.clipboard
   let dispatch = application.context.dispatch
   let _ = application.on_key(fn(received: mut event::KeyEvent) {
     if received.event_type == event::KeyEventType::press and received.matches("w") {

@@ -97,8 +97,8 @@ yet a supported custom-control API.
   Text supports double-click word selection.
 - Input delegates logical editing to an Ard-native action model with familiar
   readline-style Ctrl, Alt, and Super keybindings.
-- App exposes OSC 52 clipboard read, write, and clear operations while terminal
-  access policy remains under terminal-host control.
+- Context exposes App-bound OSC 52 clipboard read, write, and clear operations
+  while terminal access policy remains under terminal-host control.
 - Context can request sanitized terminal-mediated desktop notifications and
   lifecycle-safe terminal-surface progress from callbacks or background fibers.
 
@@ -155,7 +155,7 @@ tests.
 ```text
 app.ard          public App facade
 box.ard          configurable retained flex container
-clipboard.ard    App-bound OSC 52 clipboard service
+clipboard.ard    Context-exposed OSC 52 clipboard service
 color.ard        backend-independent RGB color
 context.ard      Context capability, ownership, and backing state
 event.ard        Cooper-owned events, controls, and propagation state

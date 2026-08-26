@@ -26,16 +26,16 @@ read may never respond.
 
 ## Decision
 
-### App-bound clipboard service
+### Context-bound clipboard service
 
-Add an Ard-native public `clipboard.ard` module and expose one Clipboard from
-each App:
+Add an Ard-native public `clipboard.ard` module and expose one App-bound
+Clipboard through Context:
 
 ```ard
-struct App {
-  context: mut context::Context,
-  root: mut root::Root,
+struct Context {
   clipboard: mut clipboard::Clipboard,
+  dispatch: fn(fn()) Void!event::DispatchError,
+  cancellation: Receiver<Void>,
 }
 
 impl Clipboard {
@@ -98,8 +98,8 @@ responsible for serializing control output with terminal rendering.
 
 ### Headless behavior
 
-`testing::TestApp` exposes the same Clipboard facade backed by deterministic
-in-memory text. Tests can write, clear, and read without a terminal. Internal
+`testing::TestApp.context` exposes the same Clipboard facade backed by
+deterministic in-memory text. Tests can write, clear, and read without a terminal. Internal
 blocking fakes validate concurrent-read rejection and teardown cancellation.
 
 PTY coverage inspects emitted OSC 52 write, clear, and query sequences, sends a

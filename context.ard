@@ -1,5 +1,6 @@
 use ard/unsafe
 
+use cooper/clipboard
 use cooper/core/node
 use cooper/event
 use cooper/style
@@ -7,6 +8,7 @@ use cooper/terminal_progress
 use go:go.rockorager.dev/vaxis
 
 struct Context {
+  clipboard: mut clipboard::Clipboard,
   dispatch: fn(fn()) Void!event::DispatchError,
   cancellation: Receiver<Void>,
   internal: Any,
@@ -126,6 +128,7 @@ fn internal_new(
   open_url: (fn(Str) Void!Error)?,
   notify: (fn(Str, Str?) Bool)?,
   terminal_progress: (fn(terminal_progress::State, Int?) Bool)?,
+  clipboard_service: (mut clipboard::Clipboard)?,
 ) mut Context {
   let retained = new_state(
     request_render,
@@ -141,6 +144,7 @@ fn internal_new(
     terminal_progress,
   )
   (mut Context{
+    clipboard: clipboard_service.or(clipboard::internal_memory()),
     dispatch: dispatch.or(stopped_dispatch),
     cancellation: cancellation.or(open_cancellation()),
     internal: retained,

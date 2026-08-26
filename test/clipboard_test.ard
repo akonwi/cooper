@@ -11,18 +11,18 @@ private struct ReadOutcome {
 test fn clipboard_headless_read_write_and_clear() Void!Str {
   let application = cooper_testing::new(8, 2)
 
-  let initial = application.clipboard.read().expect("clipboard read")
+  let initial = application.context.clipboard.read().expect("clipboard read")
   try testing::assert(initial == "", "Expected empty test clipboard")
-  application.clipboard.write("copied text")
-  let copied = application.clipboard.read().expect("clipboard read")
+  application.context.clipboard.write("copied text")
+  let copied = application.context.clipboard.read().expect("clipboard read")
   try testing::assert(copied == "copied text", "Expected clipboard write")
-  application.clipboard.clear()
-  let cleared = application.clipboard.read().expect("clipboard read")
+  application.context.clipboard.clear()
+  let cleared = application.context.clipboard.read().expect("clipboard read")
   try testing::assert(cleared == "", "Expected clipboard clear")
 
   application.destroy()
   testing::assert(
-    application.clipboard.read().is_err(),
+    application.context.clipboard.read().is_err(),
     "Expected clipboard read rejection after destroy",
   )
 }

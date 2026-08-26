@@ -120,7 +120,6 @@ private struct TerminalProgressReports {
 struct TestApp {
   context: mut context::Context,
   root: mut root::Root,
-  clipboard: mut clipboard::Clipboard,
   opened: Any,
   notification_log: Any,
   terminal_progress_log: Any,
@@ -171,6 +170,7 @@ fn new(
     },
   )
   let opened = mut OpenedURLs{values: []}
+  let clipboard_service = runtime.clipboard()
   let ctx = context::internal_new(
     request_render: runtime.request_render(),
     width_measurer: runtime.width_measurer(),
@@ -192,14 +192,13 @@ fn new(
     terminal_progress: fn(progress_state: terminal_progress::State, percent: Int?) Bool {
       runtime.progress(progress_state, percent)
     },
+    clipboard_service: clipboard_service,
   )
   let root = root::new(ctx, runtime)
-  let clipboard_service = runtime.clipboard()
   runtime.start_test(ctx, root)
   TestApp{
     context: ctx,
     root: root,
-    clipboard: clipboard_service,
     opened: opened,
     notification_log: notification_log,
     terminal_progress_log: terminal_progress_log,

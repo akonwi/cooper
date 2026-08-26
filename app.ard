@@ -1,4 +1,3 @@
-use cooper/clipboard
 use cooper/context
 use cooper/core/app_runtime
 use cooper/event
@@ -9,12 +8,12 @@ use cooper/terminal_progress
 struct App {
   context: mut context::Context,
   root: mut root::Root,
-  clipboard: mut clipboard::Clipboard,
 }
 
 fn new(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?) App!Error {
   let runtime = try app_runtime::new_live(exit_on_ctrl_c.or(true), auto_focus.or(true), use_mouse.or(true))
   defer runtime.rollback_construction()
+  let clipboard_service = runtime.clipboard()
   let ctx = context::internal_new(
     request_render: runtime.request_render(),
     width_measurer: runtime.width_measurer(),
@@ -33,16 +32,15 @@ fn new(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?) App!Error {
     terminal_progress: fn(progress_state: terminal_progress::State, percent: Int?) Bool {
       runtime.progress(progress_state, percent)
     },
+    clipboard_service: clipboard_service,
   )
   let root = root::new(ctx, runtime)
-  let clipboard_service = runtime.clipboard()
   runtime.commit_construction()
   runtime.start_signal_monitor(ctx)
   Result::ok(
     App{
       context: ctx,
       root: root,
-      clipboard: clipboard_service,
     },
   )
 }

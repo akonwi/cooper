@@ -1,6 +1,6 @@
 module github.com/akonwi/cooper
 
-go 1.26
+go 1.27.0
 
 // Ard source imports these modules directly through the Go backend.
 require (

@@ -1,0 +1,88 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ARD_REF: 3fd626729f1e5be16d6bd074dc5f900060861f63
+  CGO_ENABLED: "1"
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux/amd64
+            runner: ubuntu-24.04
+          - target: linux/arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin/amd64
+            runner: macos-15-intel
+          - target: darwin/arm64
+            runner: macos-15
+
+    steps:
+      - name: Check out Cooper
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            examples/go.sum
+
+      - name: Verify native target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(go env GOOS)/$(go env GOARCH)" = "${{ matrix.target }}"
+          test "$(go env CGO_ENABLED)" = "1"
+
+      - name: Build Ard v0.39.0 compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/akonwi/ard.git "$RUNNER_TEMP/ard"
+          git -C "$RUNNER_TEMP/ard" checkout --quiet "$ARD_REF"
+          mkdir -p "$RUNNER_TEMP/bin"
+          (
+            cd "$RUNNER_TEMP/ard/compiler"
+            go build -o "$RUNNER_TEMP/bin/ard" .
+          )
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Download Go dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod download
+          (cd examples && go mod download)
+
+      - name: Build Go boundary
+        run: go build ./...
+
+      - name: Build Cooper quickstart
+        working-directory: examples
+        run: ard build quickstart.ard --out "$RUNNER_TEMP/cooper-quickstart"
+
+      - name: Inspect executable
+        shell: bash
+        run: file "$RUNNER_TEMP/cooper-quickstart"

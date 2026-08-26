@@ -14,8 +14,7 @@ permissions:
   contents: read
 
 env:
-  ARD_REF: 788616491f7489c0c873e7776de284d1cba352a5
-  GOEXPERIMENT: jsonv2
+  ARD_REF: 3fd626729f1e5be16d6bd074dc5f900060861f63
 
 jobs:
   test:
@@ -36,11 +35,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Build Ard v0.38.0 compiler
+      - name: Build Ard v0.39.0 compiler
         shell: bash
         run: |
           set -euo pipefail

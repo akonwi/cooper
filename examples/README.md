@@ -1,7 +1,7 @@
 # Cooper examples
 
 These applications exercise Cooper's accepted application API and require Ard
-v0.38.0 or newer.
+v0.39.0 or newer.
 
 Every example uses `App.context`, the permanent `App.root`, persistent public
 controls, and explicit focus policy. Most use blocking `run()`; the lifecycle

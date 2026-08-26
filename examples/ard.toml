@@ -1,5 +1,5 @@
 name = "examples"
-ard = ">= 0.38.0"
+ard = ">= 0.39.0"
 
 [dependencies]
 cooper = { path = ".." }

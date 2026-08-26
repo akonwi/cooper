@@ -1,6 +1,6 @@
 module cooper_examples
 
-go 1.26
+go 1.27.0
 
 replace github.com/akonwi/cooper => ..
 
@@ -11,7 +11,7 @@ require (
 )
 
 require (
-	github.com/AnatoleLucet/tess v1.0.0-rc.2 // indirect
+	github.com/AnatoleLucet/tess v1.0.0-rc.2.0.20260327154250-57529f93db9d // indirect
 	github.com/rockorager/go-uucode v1.2.0 // indirect
 	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/term v0.10.0 // indirect

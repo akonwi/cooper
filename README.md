@@ -12,7 +12,7 @@ buffer for Vaxis to diff.
 
 ## Status
 
-Cooper is under active development and requires Ard v0.38.0 or newer. The
+Cooper is under active development and requires Ard v0.39.0 or newer. The
 accepted application API, built-in controls, headless TestApp, and runnable
 examples are implemented.
 

@@ -10,6 +10,7 @@ use cooper/selection
 use cooper/style as layout_style
 use cooper/text
 use go:github.com/rockorager/go-uucode as unicode
+use go:strings
 
 private struct Glyph {
   text: Str,
@@ -207,7 +208,10 @@ private fn normalize_boundary(text: Str, cursor: Int) Int {
 }
 
 private fn single_line(value: Str) Str {
-  value.replace("\r\n", "").replace("\r", "").replace("\n", "").replace("\t", "    ")
+  let without_crlf = strings::ReplaceAll(value, "\r\n", "")
+  let without_cr = strings::ReplaceAll(without_crlf, "\r", "")
+  let without_lf = strings::ReplaceAll(without_cr, "\n", "")
+  strings::ReplaceAll(without_lf, "\t", "    ")
 }
 
 private fn grapheme_count(value: Str) Int {

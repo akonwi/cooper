@@ -1,0 +1,70 @@
+use cooper/app
+use cooper/box
+use cooper/event
+use cooper/style
+use cooper/text
+use cooper/text_area
+use go:strings
+
+fn main() {
+  let application = app::new().expect("create TextArea fixture")
+  let ctx = application.context
+  let root = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+      align_items: style::Align::start,
+      gap: style::cells(1),
+      padding: style::edges(style::cells(1)),
+    ),
+  )
+  let title = text::new(
+    ctx,
+    content: "TEXTAREA — Tab focus · Ctrl+Enter submit · Ctrl+C quit",
+    selectable: false,
+  )
+  let frame = box::new(
+    ctx,
+    title: "EDITOR",
+    styles: style::new(
+      border: style::Border::single,
+      width: style::cells(42),
+      height: style::cells(7),
+      flex_shrink: 0.0,
+    ),
+  )
+  let area = text_area::new(
+    ctx,
+    placeholder: "Write multiple lines…",
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::percent(100.0),
+    ),
+  )
+  let status = text::new(ctx, content: "status: ready", selectable: false)
+  frame.add(area)
+  root.add(title)
+  root.add(frame)
+  root.add(status)
+  application.root.add(root)
+
+  let _ = area.on_input(fn(value: Str) {
+    status.set_content("value: {strings::ReplaceAll(value, "\n", "↵")}")
+  })
+  let _ = area.on_key(fn(received: mut event::KeyEvent) {
+    if received.matches("return", ctrl: true) {
+      received.prevent_default()
+      status.set_content("submit: {strings::ReplaceAll(area.value(), "\n", "↵")}")
+    }
+  })
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    if received.matches("tab") {
+      received.prevent_default()
+      let _ = area.focus()
+      status.set_content("status: focused")
+    }
+  })
+
+  application.run().expect("run TextArea fixture")
+}

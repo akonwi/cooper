@@ -184,6 +184,15 @@ test fn input_inserts_pasted_ctrl_c_as_text() Void!Str {
   testing::assert(field.value() == "c", "Expected pasted Ctrl+C text")
 }
 
+test fn input_normalizes_every_pasted_line_ending() Void!Str {
+  let ctx = context::internal_new()
+  let field = input::new(ctx, styles: fixed(20))
+
+  let _ = send_paste(field, event::paste("a\r\nb\r\nc\rd\ne"))
+
+  testing::assert(field.value() == "abcde", "Expected complete single-line paste normalization")
+}
+
 test fn input_mouse_uses_target_local_coordinates_and_visible_start() Void!Str {
   let ctx = context::internal_new()
   let field = input::new(ctx, value: "hello", styles: fixed(5))

@@ -75,6 +75,7 @@ python3 test_text_gallery.py
 python3 test_dashboard.py
 python3 test_stacking.py
 python3 test_input_lab.py
+python3 test_text_area.py
 python3 test_event_inspector.py
 python3 test_links.py
 python3 test_terminal_focus.py

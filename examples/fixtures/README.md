@@ -23,6 +23,8 @@ public example gallery:
   suspend/resume, waiting, signals, and idempotent teardown.
 - `interaction_lab.ard` is the end-to-end interaction contract fixture for ADR
   0003.
+- `text_area.ard` covers multiline terminal input, hard-line navigation,
+  selection replacement, bracketed paste aggregation, and reserved submit keys.
 - `focus_without_mouse.ard` verifies terminal focus reporting independently of
   mouse mode.
 

@@ -222,6 +222,7 @@ struct Node {
   value_listeners: [ValueListener],
   cleanup_listeners: [fn()],
   mouse_cursor_resolver: (fn(Int, Int) event::MouseCursor)?,
+  focus_reveal_resolver: (fn() geometry::Rect)?,
   selection_hit: (fn(Int, Int) Bool)?,
   selection_update: (fn(LocalSelection?) SelectionResult)?,
   selection_lock: (fn(Int, Int, Int, Int) SelectionExpansion?)?,
@@ -439,6 +440,7 @@ fn create(
     value_listeners: [],
     cleanup_listeners: [],
     mouse_cursor_resolver: Maybe::new<fn(Int, Int) event::MouseCursor>(),
+    focus_reveal_resolver: Maybe::new<fn() geometry::Rect>(),
     selection_hit: Maybe::new<fn(Int, Int) Bool>(),
     selection_update: Maybe::new<fn(LocalSelection?) SelectionResult>(),
     selection_lock: Maybe::new<fn(Int, Int, Int, Int) SelectionExpansion?>(),
@@ -851,6 +853,18 @@ impl Node {
     match self.mouse_cursor_resolver {
       resolve => resolve(local_x, local_y),
       _ => event::MouseCursor::default_cursor,
+    }
+  }
+
+  fn mut set_focus_reveal_resolver(resolver: fn() geometry::Rect) {
+    self.require_live()
+    self.focus_reveal_resolver = Maybe::new<fn() geometry::Rect>(resolver)
+  }
+
+  fn focus_reveal_bounds() geometry::Rect {
+    match self.focus_reveal_resolver {
+      resolve => resolve(),
+      _ => self.geometry.screen,
     }
   }
 
@@ -1646,6 +1660,7 @@ impl Node {
       self.blur_listeners = []
       self.value_listeners = []
       self.mouse_cursor_resolver = Maybe::new<fn(Int, Int) event::MouseCursor>()
+      self.focus_reveal_resolver = Maybe::new<fn() geometry::Rect>()
       let cleanup = self.cleanup_listeners
       self.cleanup_listeners = []
       for handler in cleanup {

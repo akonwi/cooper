@@ -1,0 +1,1488 @@
+use ard/unsafe
+
+use cooper/color
+use cooper/context
+use cooper/core/event_delivery
+use cooper/core/node
+use cooper/core/paint
+use cooper/text_area_layout as area_layout
+use cooper/editor
+use cooper/event
+use cooper/geometry
+use cooper/selection
+use cooper/scrollbar
+use cooper/style as layout_style
+use cooper/text
+use go:math
+use go:strings
+
+private struct ByteRange {
+  start: Int,
+  end: Int,
+}
+
+private struct ViewState {
+  scroll_x: Int,
+  scroll_y: Int,
+  preferred_x: Int?,
+  last_width: Int,
+  last_height: Int,
+}
+
+private struct Part {
+  node_ref: mut node::Node,
+}
+
+impl node::Renderable for Part {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn mount(ctx: node::MountContext) {}
+
+  fn paint(ctx: mut paint::Context) {}
+
+  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    event_delivery::Disposition::ignored
+  }
+}
+
+private struct AreaKeyBinding {
+  name: Str,
+  action: editor::Action,
+  shift: Bool,
+  ctrl: Bool,
+  alt: Bool,
+  super: Bool,
+}
+
+private fn area_binding(
+  name: Str,
+  action: editor::Action,
+  shift: Bool?,
+  ctrl: Bool?,
+  alt: Bool?,
+  super: Bool?,
+) AreaKeyBinding {
+  AreaKeyBinding{
+    name: name,
+    action: action,
+    shift: shift.or(false),
+    ctrl: ctrl.or(false),
+    alt: alt.or(false),
+    super: super.or(false),
+  }
+}
+
+private fn area_editor_bindings() [AreaKeyBinding] {
+  [
+    area_binding("left", editor::Action::select_left, shift: true),
+    area_binding("right", editor::Action::select_right, shift: true),
+    area_binding("b", editor::Action::select_left, shift: true, ctrl: true),
+    area_binding("f", editor::Action::select_right, shift: true, ctrl: true),
+    area_binding("left", editor::Action::select_word_backward, shift: true, alt: true),
+    area_binding("left", editor::Action::select_word_backward, shift: true, ctrl: true),
+    area_binding("b", editor::Action::select_word_backward, shift: true, alt: true),
+    area_binding("right", editor::Action::select_word_forward, shift: true, alt: true),
+    area_binding("right", editor::Action::select_word_forward, shift: true, ctrl: true),
+    area_binding("f", editor::Action::select_word_forward, shift: true, alt: true),
+    area_binding("left", editor::Action::move_left),
+    area_binding("right", editor::Action::move_right),
+    area_binding("b", editor::Action::move_left, ctrl: true),
+    area_binding("f", editor::Action::move_right, ctrl: true),
+    area_binding("left", editor::Action::move_word_backward, alt: true),
+    area_binding("left", editor::Action::move_word_backward, ctrl: true),
+    area_binding("b", editor::Action::move_word_backward, alt: true),
+    area_binding("right", editor::Action::move_word_forward, alt: true),
+    area_binding("right", editor::Action::move_word_forward, ctrl: true),
+    area_binding("f", editor::Action::move_word_forward, alt: true),
+    area_binding("backspace", editor::Action::delete_backward),
+    area_binding("delete", editor::Action::delete_forward),
+    area_binding("d", editor::Action::delete_forward, ctrl: true),
+    area_binding("w", editor::Action::delete_word_backward, ctrl: true),
+    area_binding("backspace", editor::Action::delete_word_backward, ctrl: true),
+    area_binding("backspace", editor::Action::delete_word_backward, alt: true),
+    area_binding("d", editor::Action::delete_word_forward, alt: true),
+    area_binding("delete", editor::Action::delete_word_forward, alt: true),
+    area_binding("delete", editor::Action::delete_word_forward, ctrl: true),
+    area_binding("z", editor::Action::undo, super: true),
+    area_binding("z", editor::Action::redo, shift: true, super: true),
+    area_binding("-", editor::Action::undo, ctrl: true),
+    area_binding(".", editor::Action::redo, ctrl: true),
+  ]
+}
+
+private fn resolve_editor_action(name: Str, modifiers: event::Modifiers) editor::Action? {
+  mut resolved = Maybe::new<editor::Action>()
+  for configured in area_editor_bindings() {
+    if configured.name == name and configured.shift == modifiers.shift and configured.ctrl == modifiers.ctrl and configured.alt == modifiers.alt and configured.super == modifiers.super {
+      resolved = Maybe::new<editor::Action>(configured.action)
+      break
+    }
+  }
+  resolved
+}
+
+struct TextArea {
+  node_ref: mut node::Node,
+  viewport_ref: mut node::Node,
+  vertical_bar: mut scrollbar::Scrollbar,
+  editor_state: mut editor::State,
+  placeholder_text: Str,
+  wrap_mode: text::TextWrap,
+  value_style: text::TextStyle,
+  placeholder_text_style: text::TextStyle,
+  selection_patch: fn(mut text::TextStyle),
+  selected_style: text::TextStyle,
+  selection_generation: Int,
+  selection_version: Int,
+  selection_scroll_x: Int,
+  selection_scroll_y: Int,
+  selection_local_valid: Bool,
+  selection_local_anchor_x: Int,
+  selection_local_anchor_y: Int,
+  selection_local_focus_x: Int,
+  selection_local_focus_y: Int,
+  selected_range: selection::Range?,
+  selected_text_value: Str,
+  source_revision: Int,
+  width_measurer: fn(Str) Int,
+  internal: Any,
+}
+
+private fn view_state(value: Any) mut ViewState {
+  unsafe::cast<mut ViewState>(value).expect("TextArea must be created by Cooper")
+}
+
+private fn normalize_newlines(value: Str) Str {
+  strings::ReplaceAll(strings::ReplaceAll(value, "\r\n", "\n"), "\r", "\n")
+}
+
+private fn same_color(left: color::Color?, right: color::Color?) Bool {
+  match left {
+    left_color => {
+      match right {
+        right_color => {
+          left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue
+        },
+        _ => false,
+      }
+    },
+    _ => not right.is_some(),
+  }
+}
+
+private fn same_text_style(left: text::TextStyle, right: text::TextStyle) Bool {
+  same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike and left.hidden == right.hidden
+}
+
+private fn default_selection_style(value: mut text::TextStyle) {
+  value.reverse = not value.reverse
+}
+
+private fn apply_style_patch(base: text::TextStyle, patch: fn(mut text::TextStyle)) text::TextStyle {
+  let selected = mut base
+  patch(selected)
+  selected.@
+}
+
+private fn cell_style(value: text::TextStyle) paint::CellStyle {
+  paint::style(
+    foreground: value.foreground,
+    background: value.background,
+    bold: value.bold,
+    dim: value.dim,
+    italic: value.italic,
+    underline: value.underline,
+    blink: value.blink,
+    reverse: value.reverse,
+    strike: value.strike,
+    hidden: value.hidden,
+  )
+}
+
+private fn placeholder_paint_style(value: text::TextStyle, placeholder: text::TextStyle) text::TextStyle {
+  mut background = value.background
+  match placeholder.background {
+    configured => { background = Maybe::new<color::Color>(configured) },
+    _ => (),
+  }
+  text::TextStyle{
+    foreground: placeholder.foreground,
+    background: background,
+    bold: placeholder.bold,
+    dim: placeholder.dim,
+    italic: placeholder.italic,
+    underline: placeholder.underline,
+    blink: placeholder.blink,
+    reverse: placeholder.reverse,
+    strike: placeholder.strike,
+    hidden: placeholder.hidden,
+  }
+}
+
+private fn constrained(value: Float32, available: Float32, mode: node::MeasureMode) Float32 {
+  match mode {
+    node::MeasureMode::exactly => available,
+    node::MeasureMode::at_most => {
+      if value > available {
+        available
+      } else {
+        value
+      }
+    },
+    node::MeasureMode::undefined => value,
+  }
+}
+
+private fn default_text_area_style() layout_style::Style {
+  layout_style::new(min_height: layout_style::cells(1))
+}
+
+private fn configured(value: layout_style::Style) layout_style::Style {
+  let applied = mut value
+  applied.overflow = layout_style::Overflow::hidden
+  applied.flex_direction = layout_style::FlexDirection::column
+  applied.flex_wrap = layout_style::FlexWrap::no_wrap
+  applied.@
+}
+
+private fn wrapper_style() layout_style::Style {
+  layout_style::new(
+    flex_direction: layout_style::FlexDirection::row,
+    flex_wrap: layout_style::FlexWrap::no_wrap,
+    flex_grow: 1.0,
+    flex_shrink: 1.0,
+    align_items: layout_style::Align::stretch,
+    align_self: layout_style::Align::stretch,
+    min_width: layout_style::cells(0),
+    min_height: layout_style::cells(0),
+    gap: layout_style::cells(0),
+  )
+}
+
+private fn viewport_style() layout_style::Style {
+  layout_style::new(
+    flex_grow: 1.0,
+    flex_shrink: 1.0,
+    align_self: layout_style::Align::stretch,
+    min_width: layout_style::cells(0),
+    min_height: layout_style::cells(0),
+  )
+}
+
+private fn part(ctx: mut context::Context, styles: layout_style::Style) mut Part {
+  let retained = context::internal_state(ctx).create_node(styles)
+  let created = mut Part{node_ref: retained}
+  retained.bind(created)
+  created
+}
+
+private fn wheel_step(value: Int) Int {
+  if value < 0 {
+    -3
+  } else {
+    3
+  }
+}
+
+fn new(
+  ctx: mut context::Context,
+  value: Str?,
+  placeholder: Str?,
+  wrap: text::TextWrap?,
+  styles: layout_style::Style?,
+  text_style: text::TextStyle?,
+  placeholder_style: text::TextStyle?,
+  selectable: Bool?,
+  selection_style: fn(mut text::TextStyle)?,
+  scrollbar_options: scrollbar::Options?,
+) mut TextArea {
+  let initial_value = normalize_newlines(value.or(""))
+  let base_style = text_style.or(text::style())
+  let patch = selection_style.or(default_selection_style)
+  let internal_state = mut ViewState{
+    scroll_x: 0,
+    scroll_y: 0,
+    preferred_x: Maybe::new<Int>(),
+    last_width: -1,
+    last_height: -1,
+  }
+  let retained = context::internal_state(ctx).create_node(
+    configured(styles.or(default_text_area_style())),
+  )
+  let wrapper = part(ctx, wrapper_style())
+  let viewport = part(ctx, viewport_style())
+  let vertical_bar = scrollbar::internal_new(
+    ctx,
+    scrollbar::Orientation::vertical,
+    scrollbar::state(),
+    scrollbar_options.or(scrollbar::options()),
+    layout_style::new(),
+    false,
+  )
+  let area = mut TextArea{
+    node_ref: retained,
+    viewport_ref: viewport.node_ref,
+    vertical_bar: vertical_bar,
+    editor_state: mut editor::new(initial_value),
+    placeholder_text: normalize_newlines(placeholder.or("")),
+    wrap_mode: wrap.or(text::TextWrap::word),
+    value_style: base_style,
+    placeholder_text_style: placeholder_style.or(text::style(dim: true)),
+    selection_patch: patch,
+    selected_style: apply_style_patch(base_style, patch),
+    selection_generation: 0,
+    selection_version: 0,
+    selection_scroll_x: 0,
+    selection_scroll_y: 0,
+    selection_local_valid: false,
+    selection_local_anchor_x: 0,
+    selection_local_anchor_y: 0,
+    selection_local_focus_x: 0,
+    selection_local_focus_y: 0,
+    selected_range: Maybe::new<selection::Range>(),
+    selected_text_value: "",
+    source_revision: 1,
+    width_measurer: context::internal_state(ctx).width_measurer,
+    internal: internal_state,
+  }
+  retained.bind(area)
+  retained.set_focusable(true)
+  retained.add(wrapper.node_ref)
+  wrapper.node_ref.add(viewport.node_ref)
+  wrapper.node_ref.add(vertical_bar.node_ref)
+  area.viewport_ref.set_measure(fn(measurement: node::MeasureInput) node::MeasureSize {
+    mut display = area.editor_state.value()
+    if display.is_empty() {
+      display = area.placeholder_text
+    }
+    let intrinsic = area_layout::intrinsic(display, area.width_measurer)
+    let measured = match measurement.width_mode {
+      node::MeasureMode::undefined => intrinsic,
+      _ => {
+        area_layout::layout(
+          display,
+          area.wrap_mode,
+          node::measure_limit(measurement.width),
+          area.width_measurer,
+        )
+      },
+    }
+    mut desired_width = intrinsic.width + 1
+    if desired_width < 1 {
+      desired_width = 1
+    }
+    mut desired_height = measured.height
+    if desired_height < 1 {
+      desired_height = 1
+    }
+    node::MeasureSize{
+      width: constrained(Float32::from(desired_width), measurement.width, measurement.width_mode),
+      height: constrained(Float32::from(desired_height), measurement.height, measurement.height_mode),
+    }
+  })
+  let _ = vertical_bar.on_change(fn(position: Int) {
+    let state = view_state(area.internal)
+    state.scroll_y = position
+    state.last_width = area.viewport_width()
+    state.last_height = area.viewport_height()
+    area.node_ref.request_redraw()
+  })
+  retained.set_focus_reveal_resolver(fn() geometry::Rect {
+    let state = view_state(area.internal)
+    if state.last_width != area.viewport_width() or state.last_height != area.viewport_height() {
+      area.reveal_cursor()
+    }
+    let local = area.local_caret()
+    let bounds = area.viewport_ref.layout().screen
+    mut reveal_x = 0
+    mut reveal_y = 0
+    mut reveal_width = 0
+    mut reveal_height = 0
+    if bounds.width > 0 {
+      reveal_x = local.x
+      reveal_width = 1
+      if reveal_x < 0 {
+        reveal_x = 0
+      }
+      if reveal_x >= bounds.width {
+        reveal_x = bounds.width - 1
+      }
+    }
+    if bounds.height > 0 {
+      reveal_y = local.y
+      reveal_height = 1
+      if reveal_y < 0 {
+        reveal_y = 0
+      }
+      if reveal_y >= bounds.height {
+        reveal_y = bounds.height - 1
+      }
+    }
+    geometry::Rect{
+      x: bounds.x + reveal_x,
+      y: bounds.y + reveal_y,
+      width: reveal_width,
+      height: reveal_height,
+    }
+  })
+  let _ = retained.on_focus(fn() {
+    area.reveal_cursor()
+  })
+  if selectable.or(true) {
+    area.enable_selection()
+  }
+  area
+}
+
+impl node::Renderable for TextArea {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn mount(ctx: node::MountContext) {}
+
+  fn paint(ctx: mut paint::Context) {
+    let value = self.editor_state.value()
+    let state = view_state(self.internal)
+    let laid_out = self.current_layout()
+    self.clamp_viewport(laid_out)
+    let width = self.viewport_width()
+    let height = self.viewport_height()
+    let origin = self.viewport_origin()
+    self.vertical_bar.internal_sync_state(
+      scrollbar::state(
+        position: state.scroll_y,
+        viewport_size: height,
+        content_size: laid_out.height,
+      ),
+    )
+    ctx.fill(cell_style(self.value_style))
+    if value.is_empty() {
+      let placeholder_layout = area_layout::layout(
+        self.placeholder_text,
+        self.wrap_mode,
+        width,
+        self.width_measurer,
+      )
+      let applied = placeholder_paint_style(self.value_style, self.placeholder_text_style)
+      for glyph in placeholder_layout.glyphs {
+        let complete = (not glyph.newline) and glyph.x >= 0 and glyph.x + glyph.width <= width and glyph.y >= 0 and glyph.y < height
+        if complete {
+          ctx.write_measured(
+            origin.x + glyph.x,
+            origin.y + glyph.y,
+            glyph.text,
+            self.width_measurer,
+            text_style: cell_style(applied),
+          )
+        }
+      }
+    } else {
+      let selected = self.byte_selection()
+      for glyph in laid_out.glyphs {
+        let x = glyph.x - state.scroll_x
+        let y = glyph.y - state.scroll_y
+        let complete = x >= 0 and x + glyph.width <= width and y >= 0 and y < height
+        if complete {
+          let selected_glyph = match selected {
+            range => glyph.source_end > range.start and glyph.source_start < range.end,
+            _ => false,
+          }
+          if glyph.newline {
+            if selected_glyph and x < width {
+              ctx.write_measured(
+                origin.x + x,
+                origin.y + y,
+                " ",
+                self.width_measurer,
+                text_style: cell_style(self.selected_style),
+              )
+            }
+          } else {
+            let applied = match selected_glyph {
+              true => self.selected_style,
+              false => self.value_style,
+            }
+            ctx.write_measured(origin.x + x, origin.y + y, glyph.text, self.width_measurer, text_style: cell_style(applied))
+          }
+        }
+      }
+    }
+    if self.node_ref.is_focused() {
+      let cursor = self.local_caret()
+      if cursor.x >= 0 and cursor.x < self.viewport_width() and cursor.y >= 0 and cursor.y < self.viewport_height() {
+        ctx.show_cursor(origin.x + cursor.x, origin.y + cursor.y)
+      }
+    }
+  }
+
+  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    match ctx.mouse_event {
+      mouse => self.handle_mouse(ctx, mouse),
+      _ => {
+        match ctx.paste_event {
+          paste => {
+            if ctx.focused {
+              self.insert_text(ctx, paste.text)
+            } else {
+              event_delivery::Disposition::ignored
+            }
+          },
+          _ => {
+            match ctx.key_event {
+              key => {
+                if ctx.focused {
+                  self.handle_key(ctx, key)
+                } else {
+                  event_delivery::Disposition::ignored
+                }
+              },
+              _ => event_delivery::Disposition::ignored,
+            }
+          },
+        }
+      },
+    }
+  }
+}
+
+impl TextArea {
+  private fn viewport_origin() geometry::Point {
+    let root = self.node_ref.layout().screen
+    let viewport = self.viewport_ref.layout().screen
+    geometry::Point{x: viewport.x - root.x, y: viewport.y - root.y}
+  }
+
+  private fn viewport_width() Int {
+    self.viewport_ref.layout().screen.width
+  }
+
+  private fn viewport_height() Int {
+    self.viewport_ref.layout().screen.height
+  }
+
+  private fn current_layout() area_layout::Layout {
+    area_layout::layout(
+      self.editor_state.value(),
+      self.wrap_mode,
+      self.viewport_width(),
+      self.width_measurer,
+    )
+  }
+
+  private fn maximum_scroll_x(value: area_layout::Layout) Int {
+    if self.wrap_mode != text::TextWrap::none {
+      0
+    } else {
+      let maximum = value.width + 1 - self.viewport_width()
+      if maximum > 0 {
+        maximum
+      } else {
+        0
+      }
+    }
+  }
+
+  private fn maximum_scroll_y(value: area_layout::Layout) Int {
+    let maximum = value.height - self.viewport_height()
+    if maximum > 0 {
+      maximum
+    } else {
+      0
+    }
+  }
+
+  private fn clamp_viewport(value: area_layout::Layout) {
+    let state = view_state(self.internal)
+    if self.wrap_mode != text::TextWrap::none {
+      state.scroll_x = 0
+    }
+    let maximum_x = self.maximum_scroll_x(value)
+    let maximum_y = self.maximum_scroll_y(value)
+    if state.scroll_x < 0 {
+      state.scroll_x = 0
+    }
+    if state.scroll_x > maximum_x {
+      state.scroll_x = maximum_x
+    }
+    if state.scroll_y < 0 {
+      state.scroll_y = 0
+    }
+    if state.scroll_y > maximum_y {
+      state.scroll_y = maximum_y
+    }
+  }
+
+  private fn reveal_cursor() {
+    let state = view_state(self.internal)
+    let laid_out = self.current_layout()
+    self.clamp_viewport(laid_out)
+    let cursor = area_layout::caret(laid_out, self.editor_state.cursor())
+    let width = self.viewport_width()
+    let height = self.viewport_height()
+    if self.wrap_mode == text::TextWrap::none and width > 0 {
+      if cursor.x < state.scroll_x {
+        state.scroll_x = cursor.x
+      } else if cursor.x >= state.scroll_x + width {
+        state.scroll_x = cursor.x - width + 1
+      }
+    }
+    if height > 0 {
+      if cursor.y < state.scroll_y {
+        state.scroll_y = cursor.y
+      } else if cursor.y >= state.scroll_y + height {
+        state.scroll_y = cursor.y - height + 1
+      }
+    }
+    self.clamp_viewport(laid_out)
+    state.last_width = width
+    state.last_height = height
+  }
+
+  private fn local_caret() area_layout::Caret {
+    let state = view_state(self.internal)
+    let cursor = area_layout::caret(self.current_layout(), self.editor_state.cursor())
+    area_layout::Caret{x: cursor.x - state.scroll_x, y: cursor.y - state.scroll_y}
+  }
+
+  private fn cursor_for_local(
+    local_x: Int,
+    local_y: Int,
+    scroll_x: Int,
+    scroll_y: Int,
+    clamp_edge: Bool?,
+  ) Int {
+    let laid_out = self.current_layout()
+    mut column = local_x
+    if clamp_edge.or(false) {
+      if column < 0 {
+        column = 0
+      }
+      if column >= self.viewport_width() {
+        column = self.viewport_width() - 1
+      }
+    }
+    if local_y < 0 {
+      if clamp_edge.or(false) {
+        area_layout::cursor_at(laid_out, column + scroll_x, scroll_y)
+      } else {
+        0
+      }
+    } else if local_y >= self.viewport_height() {
+      if clamp_edge.or(false) {
+        area_layout::cursor_at(
+          laid_out,
+          column + scroll_x,
+          scroll_y + self.viewport_height() - 1,
+        )
+      } else {
+        self.editor_state.value().size()
+      }
+    } else {
+      area_layout::cursor_at(laid_out, column + scroll_x, local_y + scroll_y)
+    }
+  }
+
+  private fn byte_selection() ByteRange? {
+    match self.editor_state.selection() {
+      selected => Maybe::new<ByteRange>(ByteRange{start: selected.start, end: selected.end}),
+      _ => Maybe::new<ByteRange>(),
+    }
+  }
+
+  private fn mut bump_source_revision() {
+    if self.source_revision == math::MaxInt {
+      panic("TextArea source revision overflow")
+    }
+    self.source_revision =+ 1
+  }
+
+  private fn reset_preferred_column() {
+    view_state(self.internal).preferred_x = Maybe::new<Int>()
+  }
+
+  private fn mut clear_local_selection() node::SelectionResult {
+    self.editor_state.clear_selection()
+    self.selection_generation = 0
+    self.selection_version = 0
+    self.selection_scroll_x = 0
+    self.selection_scroll_y = 0
+    self.selection_local_valid = false
+    self.selected_range = Maybe::new<selection::Range>()
+    self.selected_text_value = ""
+    node::empty_selection_result()
+  }
+
+  private fn mut refresh_selected_value() {
+    match self.byte_selection() {
+      selected => {
+        let laid_out = self.current_layout()
+        self.selected_range = Maybe::new<selection::Range>(
+          selection::Range{
+            start: area_layout::offset_at(laid_out, selected.start),
+            end: area_layout::offset_at(laid_out, selected.end),
+          },
+        )
+        self.selected_text_value = self.editor_state.value().slice(
+          start: selected.start,
+          end: selected.end,
+        ).or("")
+      },
+      _ => {
+        self.selected_range = Maybe::new<selection::Range>()
+        self.selected_text_value = ""
+      },
+    }
+  }
+
+  private fn selection_accepts(local_x: Int, local_y: Int) Bool {
+    local_x >= 0 and local_x < self.viewport_width() and local_y >= 0 and local_y < self.viewport_height()
+  }
+
+  private fn expansion_from_bytes(start: Int, end: Int) node::SelectionExpansion? {
+    if start == end {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      let laid_out = self.current_layout()
+      let state = view_state(self.internal)
+      let anchor = area_layout::caret(laid_out, start)
+      let focus = area_layout::caret(laid_out, end)
+      Maybe::new<node::SelectionExpansion>(
+        node::SelectionExpansion{
+          anchor_x: anchor.x - state.scroll_x,
+          anchor_y: anchor.y - state.scroll_y,
+          focus_x: focus.x - state.scroll_x,
+          focus_y: focus.y - state.scroll_y,
+          logical_range: node::SelectionRange{
+            start: area_layout::offset_at(laid_out, start),
+            end: area_layout::offset_at(laid_out, end),
+          },
+          source_range: node::SelectionRange{start: start, end: end},
+          source_revision: self.source_revision,
+        },
+      )
+    }
+  }
+
+  private fn lock_expansion(anchor_x: Int, anchor_y: Int, focus_x: Int, focus_y: Int) node::SelectionExpansion? {
+    match self.byte_selection() {
+      selected => self.expansion_from_bytes(selected.start, selected.end),
+      _ => {
+        let state = view_state(self.internal)
+        let anchor = self.cursor_for_local(
+          anchor_x,
+          anchor_y,
+          self.selection_scroll_x,
+          self.selection_scroll_y,
+        )
+        let focus = self.cursor_for_local(focus_x, focus_y, state.scroll_x, state.scroll_y)
+        if anchor < focus {
+          self.expansion_from_bytes(anchor, focus)
+        } else {
+          self.expansion_from_bytes(focus, anchor)
+        }
+      },
+    }
+  }
+
+  private fn resolve_expansion(source_range: node::SelectionRange, source_revision: Int) node::SelectionExpansion? {
+    if source_revision != self.source_revision or source_range.start < 0 or source_range.end > self.editor_state.value().size() {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      self.expansion_from_bytes(source_range.start, source_range.end)
+    }
+  }
+
+  private fn mut apply_local_selection(value: node::LocalSelection?) node::SelectionResult {
+    let local = try value -> _ { self.clear_local_selection() }
+    let height = self.viewport_height()
+    let owns_selection = self.viewport_ref.owns_global_selection()
+    let outside_vertical_side = local.anchor_y < 0 and local.focus_y < 0 or local.anchor_y >= height and local.focus_y >= height
+    let outside_horizontal_side = local.anchor_y == local.focus_y and (local.anchor_x < 0 and local.focus_x < 0 or local.anchor_x >= self.viewport_width() and local.focus_x >= self.viewport_width())
+    let outside_same_side = (not owns_selection) and (outside_vertical_side or outside_horizontal_side)
+    if (not local.is_active) or outside_same_side {
+      self.clear_local_selection()
+    } else {
+      let state = view_state(self.internal)
+      let width = self.viewport_width()
+      let generation_changed = self.selection_generation != local.generation or not self.editor_state.anchor().is_some()
+      let version_changed = self.selection_version != local.version
+      let local_changed = (not self.selection_local_valid) or self.selection_local_anchor_x != local.anchor_x or self.selection_local_anchor_y != local.anchor_y or self.selection_local_focus_x != local.focus_x or self.selection_local_focus_y != local.focus_y
+      let preserve_initial = self.selection_generation == 0 and self.editor_state.anchor().is_some()
+      let has_locked_source = local.source_range.is_some()
+
+      if owns_selection and local.allow_edge_pan and version_changed {
+        let laid_out = self.current_layout()
+        if local.focus_y < 0 and state.scroll_y > 0 {
+          state.scroll_y =- 1
+        } else if local.focus_y >= height and state.scroll_y < self.maximum_scroll_y(laid_out) {
+          state.scroll_y =+ 1
+        }
+        if self.wrap_mode == text::TextWrap::none {
+          if local.focus_x < 0 and state.scroll_x > 0 {
+            state.scroll_x =- 1
+          } else if local.focus_x >= width and state.scroll_x < self.maximum_scroll_x(laid_out) {
+            state.scroll_x =+ 1
+          }
+        }
+      }
+
+      if generation_changed {
+        self.selection_generation = local.generation
+        self.selection_scroll_x = state.scroll_x
+        self.selection_scroll_y = state.scroll_y
+        if (not preserve_initial) and (not has_locked_source) {
+          self.editor_state.set_anchor(
+            self.cursor_for_local(
+              local.anchor_x,
+              local.anchor_y,
+              self.selection_scroll_x,
+              self.selection_scroll_y,
+            ),
+          )
+        }
+      } else if local_changed and (not owns_selection) and (not has_locked_source) {
+        self.editor_state.set_anchor(
+          self.cursor_for_local(
+            local.anchor_x,
+            local.anchor_y,
+            self.selection_scroll_x,
+            self.selection_scroll_y,
+          ),
+        )
+      }
+
+      if generation_changed or version_changed or local_changed {
+        if (not preserve_initial) and (not has_locked_source) {
+          self.editor_state.set_cursor(
+            self.cursor_for_local(
+              local.focus_x,
+              local.focus_y,
+              state.scroll_x,
+              state.scroll_y,
+              clamp_edge: owns_selection and local.allow_edge_pan,
+            ),
+          )
+        }
+        self.selection_version = local.version
+      }
+
+      match local.source_range {
+        locked => {
+          mut reversed = false
+          match self.editor_state.anchor() {
+            anchor => { reversed = anchor > self.editor_state.cursor() },
+            _ => (),
+          }
+          if reversed {
+            self.editor_state.set_selection(locked.end, locked.start)
+          } else {
+            self.editor_state.set_selection(locked.start, locked.end)
+          }
+        },
+        _ => (),
+      }
+
+      self.selection_local_valid = true
+      self.selection_local_anchor_x = local.anchor_x
+      self.selection_local_anchor_y = local.anchor_y
+      self.selection_local_focus_x = local.focus_x
+      self.selection_local_focus_y = local.focus_y
+      self.refresh_selected_value()
+      match self.byte_selection() {
+        selected => {
+          let selected_range = self.selected_range.expect("TextArea selected range")
+          let fragments = mut List::new<node::SelectionFragment>()
+          let clip_right = local.clip.x + local.clip.width
+          let clip_bottom = local.clip.y + local.clip.height
+          let intersects = width > 0 and height > 0 and local.clip.x < width and clip_right > 0 and local.clip.y < height and clip_bottom > 0
+          if intersects {
+            let laid_out = self.current_layout()
+            let first = area_layout::caret(laid_out, selected.start)
+            mut fragment_x = first.x - state.scroll_x
+            mut fragment_y = first.y - state.scroll_y
+            if fragment_x < 0 {
+              fragment_x = 0
+            }
+            if fragment_x >= width {
+              fragment_x = width - 1
+            }
+            if fragment_y < 0 {
+              fragment_y = 0
+            }
+            if fragment_y >= height {
+              fragment_y = height - 1
+            }
+            if fragment_x < local.clip.x {
+              fragment_x = local.clip.x
+            }
+            if fragment_x >= clip_right {
+              fragment_x = clip_right - 1
+            }
+            if fragment_y < local.clip.y {
+              fragment_y = local.clip.y
+            }
+            if fragment_y >= clip_bottom {
+              fragment_y = clip_bottom - 1
+            }
+            let screen = self.viewport_ref.layout().screen
+            fragments.push(
+              node::SelectionFragment{
+                screen_x: screen.x + fragment_x,
+                screen_y: screen.y + fragment_y,
+                cell_width: selected_range.end - selected_range.start,
+                text: self.selected_text_value,
+              },
+            )
+          }
+          node::SelectionResult{
+            has_selection: true,
+            start: selected_range.start,
+            end: selected_range.end,
+            source_text: Maybe::new<Str>(),
+            fragments: fragments.@,
+          }
+        },
+        _ => node::empty_selection_result(),
+      }
+    }
+  }
+
+  private fn mut enable_selection() {
+    self.viewport_ref.set_selection_callbacks(
+      fn(local_x: Int, local_y: Int) Bool {
+        self.selection_accepts(local_x, local_y)
+      },
+      fn(value: node::LocalSelection?) node::SelectionResult {
+        self.apply_local_selection(value)
+      },
+      Maybe::new<fn(Int, Int, Int, Int) node::SelectionExpansion?>(
+        fn(anchor_x: Int, anchor_y: Int, focus_x: Int, focus_y: Int) node::SelectionExpansion? {
+          self.lock_expansion(anchor_x, anchor_y, focus_x, focus_y)
+        },
+      ),
+      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(),
+      Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(
+        fn(logical_range: node::SelectionRange, source_range: node::SelectionRange, source_revision: Int) node::SelectionExpansion? {
+          self.resolve_expansion(source_range, source_revision)
+        },
+      ),
+    )
+  }
+
+  fn value() Str {
+    self.editor_state.value()
+  }
+
+  fn mut focus() Bool {
+    self.node_ref.focus()
+  }
+
+  fn mut blur() {
+    self.node_ref.blur()
+  }
+
+  fn is_focused() Bool {
+    self.node_ref.is_focused()
+  }
+
+  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+    self.node_ref.on_key(handler)
+  }
+
+  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+    self.node_ref.on_paste(handler)
+  }
+
+  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+    self.node_ref.on_mouse(handler)
+  }
+
+  fn mut on_focus(handler: fn()) fn() {
+    self.node_ref.on_focus(handler)
+  }
+
+  fn mut on_blur(handler: fn()) fn() {
+    self.node_ref.on_blur(handler)
+  }
+
+  fn mut on_input(handler: fn(Str)) fn() {
+    self.node_ref.on_value(1, handler)
+  }
+
+  fn placeholder() Str {
+    self.placeholder_text
+  }
+
+  fn mut set_placeholder(value: Str) {
+    self.node_ref.require_live()
+    let normalized = normalize_newlines(value)
+    if self.placeholder_text != normalized {
+      self.placeholder_text = normalized
+      self.viewport_ref.mark_measure_dirty()
+    }
+  }
+
+  fn wrap() text::TextWrap {
+    self.wrap_mode
+  }
+
+  fn mut set_wrap(value: text::TextWrap) {
+    self.node_ref.require_live()
+    if self.wrap_mode != value {
+      self.wrap_mode = value
+      self.reset_preferred_column()
+      self.reveal_cursor()
+      self.viewport_ref.mark_measure_dirty()
+    }
+  }
+
+  fn text_style() text::TextStyle {
+    self.value_style
+  }
+
+  fn mut set_text_style(value: text::TextStyle) {
+    self.node_ref.require_live()
+    if not same_text_style(self.value_style, value) {
+      self.value_style = value
+      self.selected_style = apply_style_patch(value, self.selection_patch)
+      self.node_ref.request_redraw()
+    }
+  }
+
+  fn placeholder_style() text::TextStyle {
+    self.placeholder_text_style
+  }
+
+  fn mut set_placeholder_style(value: text::TextStyle) {
+    self.node_ref.require_live()
+    if not same_text_style(self.placeholder_text_style, value) {
+      self.placeholder_text_style = value
+      self.node_ref.request_redraw()
+    }
+  }
+
+  fn selectable() Bool {
+    self.viewport_ref.is_selectable()
+  }
+
+  fn mut set_selectable(value: Bool) {
+    self.node_ref.require_live()
+    if value and not self.viewport_ref.is_selectable() {
+      self.enable_selection()
+    } else if (not value) and self.viewport_ref.is_selectable() {
+      self.viewport_ref.clear_selection_callbacks()
+    }
+  }
+
+  fn selection() selection::Range? {
+    self.selected_range
+  }
+
+  fn selected_text() Str {
+    self.selected_text_value
+  }
+
+  fn mut set_selection_style(patch: fn(mut text::TextStyle)) {
+    self.node_ref.require_live()
+    self.selection_patch = patch
+    self.selected_style = apply_style_patch(self.value_style, patch)
+    self.node_ref.request_redraw()
+  }
+
+  fn mut set_value(value: Str) {
+    self.node_ref.require_live()
+    let normalized = normalize_newlines(value)
+    let had_selection = self.editor_state.has_anchor()
+    let changed = self.editor_state.reset(normalized)
+    if had_selection {
+      self.viewport_ref.clear_global_selection()
+      let _ = self.clear_local_selection()
+    }
+    let state = view_state(self.internal)
+    state.scroll_x = 0
+    state.scroll_y = 0
+    state.preferred_x = Maybe::new<Int>()
+    state.last_width = -1
+    state.last_height = -1
+    if changed.text_changed {
+      self.bump_source_revision()
+      self.reveal_cursor()
+      self.viewport_ref.mark_measure_dirty()
+      self.node_ref.emit_value(1, normalized)
+    } else if changed.cursor_changed or changed.selection_changed {
+      self.reveal_cursor()
+      self.node_ref.request_redraw()
+    }
+  }
+
+  fn scrollbar_options() scrollbar::Options {
+    self.vertical_bar.options()
+  }
+
+  fn mut set_scrollbar_options(value: scrollbar::Options) {
+    self.node_ref.require_live()
+    self.vertical_bar.set_options(value)
+  }
+
+  fn style() layout_style::Style {
+    self.node_ref.style()
+  }
+
+  fn mut set_style(value: layout_style::Style) {
+    self.node_ref.apply_style(configured(value))
+  }
+
+  fn layout() geometry::Geometry {
+    self.node_ref.layout()
+  }
+
+  private fn mut changed(ctx: mut event_delivery::Context, text_changed: Bool) event_delivery::Disposition {
+    self.reveal_cursor()
+    if self.node_ref.is_focused() {
+      let _ = self.node_ref.focus()
+    }
+    if text_changed {
+      self.bump_source_revision()
+      self.viewport_ref.mark_measure_dirty()
+      self.node_ref.emit_value(1, self.editor_state.value())
+    } else {
+      self.node_ref.request_redraw()
+    }
+    ctx.request_redraw()
+    event_delivery::Disposition::handled
+  }
+
+  private fn mut finish_editor_outcome(
+    ctx: mut event_delivery::Context,
+    changed: editor::Outcome,
+    had_selection: Bool,
+  ) event_delivery::Disposition {
+    if had_selection and not self.editor_state.has_anchor() {
+      self.viewport_ref.clear_global_selection()
+      let _ = self.clear_local_selection()
+    }
+    if changed.text_changed {
+      self.reset_preferred_column()
+      self.changed(ctx, true)
+    } else if changed.cursor_changed or changed.selection_changed {
+      self.reset_preferred_column()
+      self.changed(ctx, false)
+    } else {
+      event_delivery::Disposition::handled
+    }
+  }
+
+  private fn mut begin_keyboard_selection() Bool {
+    if self.editor_state.has_anchor() and self.viewport_ref.owns_global_selection() {
+      true
+    } else {
+      if self.editor_state.has_anchor() {
+        let _ = self.clear_local_selection()
+      }
+      self.reveal_cursor()
+      let state = view_state(self.internal)
+      let caret = self.local_caret()
+      self.editor_state.set_anchor(self.editor_state.cursor())
+      self.selection_generation = 0
+      self.selection_version = 0
+      self.selection_scroll_x = state.scroll_x
+      self.selection_scroll_y = state.scroll_y
+      self.refresh_selected_value()
+      let accepted = self.viewport_ref.start_selection(caret.x, caret.y)
+      if not accepted {
+        let _ = self.clear_local_selection()
+      }
+      accepted
+    }
+  }
+
+  private fn mut finish_keyboard_selection() {
+    self.reveal_cursor()
+    let state = view_state(self.internal)
+    let caret = self.local_caret()
+    if self.viewport_ref.update_selection(caret.x, caret.y, true) {
+      self.selection_version =+ 1
+      self.selection_scroll_x = state.scroll_x
+      self.selection_scroll_y = state.scroll_y
+    }
+    self.refresh_selected_value()
+  }
+
+  private fn mut clear_keyboard_selection() {
+    if self.editor_state.has_anchor() {
+      self.viewport_ref.clear_global_selection()
+      let _ = self.clear_local_selection()
+    }
+  }
+
+  private fn mut insert_text(ctx: mut event_delivery::Context, value: Str) event_delivery::Disposition {
+    let inserted = normalize_newlines(value)
+    if inserted.is_empty() {
+      event_delivery::Disposition::handled
+    } else {
+      let had_selection = self.editor_state.has_anchor()
+      let changed = self.editor_state.insert_text(inserted)
+      self.finish_editor_outcome(ctx, changed, had_selection)
+    }
+  }
+
+  private fn mut perform_selection_action(ctx: mut event_delivery::Context, action: editor::Action) event_delivery::Disposition {
+    let selecting = self.begin_keyboard_selection()
+    if selecting {
+      let _ = self.editor_state.apply(action)
+      self.finish_keyboard_selection()
+    } else {
+      let fallback = match action {
+        editor::Action::select_left => editor::Action::move_left,
+        editor::Action::select_right => editor::Action::move_right,
+        editor::Action::select_word_backward => editor::Action::move_word_backward,
+        editor::Action::select_word_forward => editor::Action::move_word_forward,
+        _ => action,
+      }
+      let _ = self.editor_state.apply(fallback)
+    }
+    self.reset_preferred_column()
+    self.changed(ctx, false)
+  }
+
+  private fn mut move_to(
+    ctx: mut event_delivery::Context,
+    target: Int,
+    selecting: Bool,
+    preserve_preferred: Bool?,
+  ) event_delivery::Disposition {
+    if selecting {
+      if self.begin_keyboard_selection() {
+        self.editor_state.set_cursor(target)
+        self.finish_keyboard_selection()
+      } else {
+        self.editor_state.clear_selection()
+        self.editor_state.set_cursor(target)
+      }
+    } else {
+      self.clear_keyboard_selection()
+      self.editor_state.set_cursor(target)
+    }
+    if not preserve_preferred.or(false) {
+      self.reset_preferred_column()
+    }
+    self.changed(ctx, false)
+  }
+
+  private fn mut move_vertical(ctx: mut event_delivery::Context, delta: Int, selecting: Bool) event_delivery::Disposition {
+    let laid_out = self.current_layout()
+    let current = area_layout::caret(laid_out, self.editor_state.cursor())
+    let state = view_state(self.internal)
+    let preferred = state.preferred_x.or(current.x)
+    mut target_y = current.y + delta
+    if target_y < 0 {
+      target_y = 0
+    }
+    if target_y >= laid_out.height {
+      target_y = laid_out.height - 1
+    }
+    state.preferred_x = Maybe::new<Int>(preferred)
+    let target = area_layout::cursor_at(laid_out, preferred, target_y)
+    self.move_to(ctx, target, selecting, preserve_preferred: true)
+  }
+
+  private fn mut select_all(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    if self.editor_state.has_anchor() {
+      self.viewport_ref.clear_global_selection()
+      let _ = self.clear_local_selection()
+    }
+    self.editor_state.set_cursor(0)
+    if self.begin_keyboard_selection() {
+      let _ = self.editor_state.apply(editor::Action::select_end)
+      self.finish_keyboard_selection()
+    } else {
+      let _ = self.editor_state.apply(editor::Action::move_end)
+    }
+    self.reset_preferred_column()
+    self.changed(ctx, false)
+  }
+
+  private fn mut delete_line_side(ctx: mut event_delivery::Context, toward_start: Bool) event_delivery::Disposition {
+    let had_selection = self.editor_state.has_anchor()
+    let cursor = self.editor_state.cursor()
+    let target = match toward_start {
+      true => area_layout::hard_line_start(self.editor_state.value(), cursor),
+      false => area_layout::hard_line_end(self.editor_state.value(), cursor),
+    }
+    if (not had_selection) and target == cursor {
+      event_delivery::Disposition::handled
+    } else {
+      if not had_selection {
+        self.editor_state.set_selection(target, cursor)
+      }
+      let action = match toward_start {
+        true => editor::Action::delete_backward,
+        false => editor::Action::delete_forward,
+      }
+      let changed = self.editor_state.apply(action)
+      self.finish_editor_outcome(ctx, changed, had_selection)
+    }
+  }
+
+  private fn mut scroll_by(ctx: mut event_delivery::Context, delta_x: Int, delta_y: Int) event_delivery::Disposition {
+    let laid_out = self.current_layout()
+    let state = view_state(self.internal)
+    let previous_x = state.scroll_x
+    let previous_y = state.scroll_y
+    state.scroll_x = state.scroll_x + delta_x
+    state.scroll_y = state.scroll_y + delta_y
+    self.clamp_viewport(laid_out)
+    if state.scroll_x != previous_x or state.scroll_y != previous_y {
+      state.last_width = self.viewport_width()
+      state.last_height = self.viewport_height()
+      ctx.preserve_focus_scroll()
+      ctx.request_redraw()
+      event_delivery::Disposition::handled
+    } else {
+      event_delivery::Disposition::ignored
+    }
+  }
+
+  private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
+    if mouse.event_type == event::MouseEventType::scroll {
+      mut changed = false
+      mut remaining = false
+      if mouse.scroll_x != 0 {
+        let moved = match self.wrap_mode == text::TextWrap::none {
+          true => self.scroll_by(ctx, wheel_step(mouse.scroll_x), 0),
+          false => event_delivery::Disposition::ignored,
+        }
+        if moved == event_delivery::Disposition::handled {
+          mouse.scroll_x = 0
+          changed = true
+        } else {
+          remaining = true
+        }
+      }
+      if mouse.scroll_y != 0 {
+        let moved = match mouse.modifiers.shift and self.wrap_mode == text::TextWrap::none {
+          true => self.scroll_by(ctx, wheel_step(mouse.scroll_y), 0),
+          false => self.scroll_by(ctx, 0, wheel_step(mouse.scroll_y)),
+        }
+        if moved == event_delivery::Disposition::handled {
+          mouse.scroll_y = 0
+          changed = true
+        } else {
+          remaining = true
+        }
+      }
+      if changed {
+        if not remaining {
+          ctx.stop_propagation()
+        }
+        event_delivery::Disposition::handled
+      } else {
+        event_delivery::Disposition::ignored
+      }
+    } else if mouse.button != event::MouseButton::left or mouse.event_type != event::MouseEventType::down {
+      event_delivery::Disposition::ignored
+    } else {
+      let state = view_state(self.internal)
+      let origin = self.viewport_origin()
+      self.editor_state.set_cursor(
+        self.cursor_for_local(
+          mouse.local_x - origin.x,
+          mouse.local_y - origin.y,
+          state.scroll_x,
+          state.scroll_y,
+        ),
+      )
+      self.reset_preferred_column()
+      if self.viewport_ref.is_selectable() and self.viewport_ref.owns_global_selection() {
+        self.editor_state.set_anchor(self.editor_state.cursor())
+        self.selection_generation = 0
+        self.selection_version = 0
+        self.selection_scroll_x = state.scroll_x
+        self.selection_scroll_y = state.scroll_y
+        self.refresh_selected_value()
+      }
+      self.changed(ctx, false)
+    }
+  }
+
+  private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
+    if key.event_type == event::KeyEventType::release {
+      event_delivery::Disposition::ignored
+    } else if key.matches("return") {
+      self.insert_text(ctx, "\n")
+    } else if key.matches("up") {
+      self.move_vertical(ctx, -1, false)
+    } else if key.matches("down") {
+      self.move_vertical(ctx, 1, false)
+    } else if key.matches("up", shift: true) {
+      self.move_vertical(ctx, -1, true)
+    } else if key.matches("down", shift: true) {
+      self.move_vertical(ctx, 1, true)
+    } else if key.matches("page_up") {
+      self.move_vertical(ctx, 0 - self.viewport_height(), false)
+    } else if key.matches("page_down") {
+      self.move_vertical(ctx, self.viewport_height(), false)
+    } else if key.matches("page_up", shift: true) {
+      self.move_vertical(ctx, 0 - self.viewport_height(), true)
+    } else if key.matches("page_down", shift: true) {
+      self.move_vertical(ctx, self.viewport_height(), true)
+    } else if key.matches("home") or key.matches("a", ctrl: true) or key.matches("left", super: true) {
+      self.move_to(
+        ctx,
+        area_layout::hard_line_start(self.editor_state.value(), self.editor_state.cursor()),
+        false,
+      )
+    } else if key.matches("end") or key.matches("e", ctrl: true) or key.matches("right", super: true) {
+      self.move_to(
+        ctx,
+        area_layout::hard_line_end(self.editor_state.value(), self.editor_state.cursor()),
+        false,
+      )
+    } else if key.matches("home", shift: true) or key.matches("a", shift: true, ctrl: true) or key.matches("left", shift: true, super: true) {
+      self.move_to(
+        ctx,
+        area_layout::hard_line_start(self.editor_state.value(), self.editor_state.cursor()),
+        true,
+      )
+    } else if key.matches("end", shift: true) or key.matches("e", shift: true, ctrl: true) or key.matches("right", shift: true, super: true) {
+      self.move_to(
+        ctx,
+        area_layout::hard_line_end(self.editor_state.value(), self.editor_state.cursor()),
+        true,
+      )
+    } else if key.matches("u", ctrl: true) {
+      self.delete_line_side(ctx, true)
+    } else if key.matches("k", ctrl: true) {
+      self.delete_line_side(ctx, false)
+    } else if key.matches("a", super: true) {
+      self.select_all(ctx)
+    } else {
+      match resolve_editor_action(key.name, key.modifiers) {
+        action => {
+          let selecting = action == editor::Action::select_left or action == editor::Action::select_right or action == editor::Action::select_word_backward or action == editor::Action::select_word_forward
+          if selecting {
+            self.perform_selection_action(ctx, action)
+          } else {
+            let had_selection = self.editor_state.has_anchor()
+            let changed = self.editor_state.apply(action)
+            self.finish_editor_outcome(ctx, changed, had_selection)
+          }
+        },
+        _ => {
+          if (not key.text.is_empty()) and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super) {
+            self.insert_text(ctx, key.text)
+          } else {
+            event_delivery::Disposition::ignored
+          }
+        },
+      }
+    }
+  }
+
+  fn mut destroy(recursive: Bool?) {
+    self.node_ref.destroy(true)
+  }
+}

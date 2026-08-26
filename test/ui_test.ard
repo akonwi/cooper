@@ -26,6 +26,12 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
     received.prevent_default()
   })
   let field: mut ui::Input = ui::input(ctx, placeholder: "Ada")
+  let notes: mut ui::TextArea = ui::text_area(
+    ctx,
+    placeholder: "Notes",
+    wrap: ui::TextWrap::word,
+    styles: style::new(min_height: style::cells(2)),
+  )
   let viewport: mut ui::ScrollBox = ui::scroll_box(ctx, styles: style::new(height: style::cells(1)))
   let bar: mut ui::Scrollbar = ui::scrollbar(
     ctx,
@@ -51,11 +57,12 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
   viewport.add(field)
   panel.add(label)
   panel.add(viewport)
+  panel.add(notes)
   panel.add(bar)
   panel.add(menu)
   panel.add(tabs)
 
-  try testing::assert(panel.child_count() == 5, "Expected ui::box to retain aliased controls")
+  try testing::assert(panel.child_count() == 6, "Expected ui::box to retain aliased controls")
   try testing::assert(panel.border() == ui::Border::single, "Expected ui::Border alias")
   try testing::assert(label.wrap() == ui::TextWrap::word, "Expected ui::TextWrap alias")
   try testing::assert(label.overflow() == ui::TextOverflow::ellipsis, "Expected ui::TextOverflow alias")
@@ -65,6 +72,21 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
   )
   try testing::assert(label.text_style().bold, "Expected ui::text_style alias")
   try testing::assert(field.placeholder() == "Ada", "Expected ui::input alias")
+  try testing::assert(
+    notes.placeholder() == "Notes" and notes.wrap() == ui::TextWrap::word,
+    "Expected ui::text_area alias",
+  )
+  try testing::assert(
+    notes.scrollbar_options().visibility == ui::ScrollbarVisibility::automatic,
+    "Expected automatic TextArea scrollbar",
+  )
+  notes.set_scrollbar_options(
+    ui::scrollbar_options(visibility: ui::ScrollbarVisibility::hidden),
+  )
+  try testing::assert(
+    notes.scrollbar_options().visibility == ui::ScrollbarVisibility::hidden,
+    "Expected configurable TextArea scrollbar",
+  )
   try testing::assert(viewport.child_count() == 1, "Expected ui::scroll_box alias")
   try testing::assert(bar.state().content_size == 2, "Expected Scrollbar aliases")
   try testing::assert(

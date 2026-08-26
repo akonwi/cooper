@@ -2,6 +2,7 @@ package vaxisbridge
 
 import (
 	"strings"
+	"sync"
 
 	vaxis "go.rockorager.dev/vaxis"
 )
@@ -14,6 +15,75 @@ type KeyData struct {
 	Ctrl      bool
 	Alt       bool
 	Super     bool
+}
+
+// PasteText preserves line feeds and tabs that Vaxis reports with empty
+// Key.Text while bracketed paste is active.
+func PasteText(key vaxis.Key) string {
+	if key.Text != "" {
+		return key.Text
+	}
+	switch key.Keycode {
+	case vaxis.KeyEnter:
+		return "\r"
+	case vaxis.KeyTab:
+		return "\t"
+	case vaxis.KeySpace:
+		return " "
+	case 'j':
+		if key.Modifiers&vaxis.ModCtrl != 0 {
+			return "\n"
+		}
+	}
+	return ""
+}
+
+type PasteResult struct {
+	Value  string
+	Active bool
+}
+
+type PasteBuffer struct {
+	mu     sync.Mutex
+	value  strings.Builder
+	active bool
+}
+
+func NewPasteBuffer() *PasteBuffer { return &PasteBuffer{} }
+
+func (b *PasteBuffer) Start() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.value.Reset()
+	b.active = true
+}
+
+func (b *PasteBuffer) AppendKey(key vaxis.Key) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.active {
+		b.value.WriteString(PasteText(key))
+	}
+	return b.active
+}
+
+func (b *PasteBuffer) Finish() PasteResult {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.active {
+		return PasteResult{}
+	}
+	result := PasteResult{Value: b.value.String(), Active: true}
+	b.value.Reset()
+	b.active = false
+	return result
+}
+
+func (b *PasteBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.value.Reset()
+	b.active = false
 }
 
 func Key(key vaxis.Key) KeyData {

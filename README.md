@@ -25,7 +25,8 @@ The canonical design is defined by the accepted
 [scrollbar ADR](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md),
 [Select ADR](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md),
 [notification ADR](./docs/adrs/0009-define-terminal-mediated-notifications.md), and
-[terminal progress ADR](./docs/adrs/0010-define-terminal-progress-reporting.md).
+[terminal progress ADR](./docs/adrs/0010-define-terminal-progress-reporting.md), and
+[multiline TextArea ADR](./docs/adrs/0011-define-multiline-text-area.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
@@ -108,7 +109,9 @@ yet a supported custom-control API.
 - `Text` — selectable multiline plain or StyledText spans with Unicode-aware
   word wrapping by default, inheritable styles, plain-click/OSC 8 hyperlinks
   with pointer cursors, and optional ellipsis overflow;
-- `Input` — grapheme-aware CLI editing, editable selection, validation, and callbacks;
+- `Input` — grapheme-aware single-line CLI editing, editable selection, validation, and callbacks;
+- `TextArea` — multiline editing with Unicode wrapping, cursor navigation,
+  selection, and a configurable automatic overflow scrollbar;
 - `ScrollBox` — focusable two-axis retained scrolling container with a built-in
   automatic vertical bar and configurable horizontal bar.
 - `Scrollbar` — standalone vertical or horizontal track/thumb control with
@@ -171,6 +174,8 @@ style.ard        colors, layout values, stacking, and validation
 terminal_progress.ard terminal progress state and report values
 testing.ard      headless TestApp and frame snapshots
 text.ard         Text, StyledText spans, and TextStyle
+text_area.ard    retained multiline TextArea
+text_area_layout.ard source-preserving editable text layout
 ui.ard           convenience aliases for built-in controls
 core/            unsupported runtime mechanisms
   app_runtime.ard

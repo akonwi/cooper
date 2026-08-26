@@ -241,6 +241,7 @@ struct State {
   next_listener_id: Int,
   key_listeners: [KeyListener],
   paste_listeners: [PasteListener],
+  live_paste_buffer: mut bridge::PasteBuffer,
   terminal_focus_state: event::TerminalFocus?,
   terminal_focus_listeners: [TerminalFocusListener],
   selection_listeners: [SelectionListener],
@@ -316,6 +317,7 @@ private fn state(
     next_listener_id: 1,
     key_listeners: [],
     paste_listeners: [],
+    live_paste_buffer: bridge::NewPasteBuffer(),
     terminal_focus_state: Maybe::new<event::TerminalFocus>(),
     terminal_focus_listeners: [],
     selection_listeners: [],
@@ -828,6 +830,7 @@ impl State {
       self.updates.stop()
       self.key_listeners = []
       self.paste_listeners = []
+      self.live_paste_buffer.Reset()
       self.terminal_focus_listeners = []
       self.selection_listeners = []
       self.pointer.clear()
@@ -1398,6 +1401,19 @@ impl State {
     }
   }
 
+  private fn mut route_live_paste(root: mut node::Renderable, received: mut event::PasteEvent) router::Outcome {
+    self.emit_paste(received)
+    self.focused.reconcile(root)
+    if received.is_propagation_stopped() {
+      router::empty_outcome()
+    } else {
+      match self.focused.focused() {
+        target => router::dispatch_paste(target, received, self.focused),
+        _ => router::empty_outcome(),
+      }
+    }
+  }
+
   fn mut suspend_live() Void!Error {
     self.terminal_io.Lock()
     self.lifecycle.Lock()
@@ -1462,6 +1478,9 @@ impl State {
               self.phase = suspended
             }
             self.lifecycle.Unlock()
+            if committed {
+              self.live_paste_buffer.Reset()
+            }
             if not committed {
               outcome = Result::err(Error::new("application was destroyed while suspending"))
             }
@@ -1732,6 +1751,21 @@ impl State {
                           self.paint_live(ctx, root)
                         }
                       },
+                      vaxis::PasteStartEvent(_) => self.live_paste_buffer.Start(),
+                      vaxis::PasteEndEvent(_) => {
+                        let pasted = self.live_paste_buffer.Finish()
+                        if pasted.Active {
+                          let converted = event::paste(pasted.Value)
+                          let outcome = self.route_live_paste(root, converted)
+                          self.apply_outcome(outcome)
+                          if outcome.redraw or self.take_redraw_request() {
+                            self.paint_live(ctx, root)
+                          }
+                          if outcome.quit or self.post_frame_quit {
+                            running = false
+                          }
+                        }
+                      },
                       vaxis::Mouse(mouse) => {
                         let converted = mouse_event(mouse)
                         let outcome = self.pointer.process(root, converted, self.focused, self.selection, self.auto_focus, self.now_ms())
@@ -1746,23 +1780,16 @@ impl State {
                       },
                       vaxis::Key(key) => {
                         if key.EventType == vaxis::EventPaste {
-                          let converted = event::paste(key.Text)
-                          self.emit_paste(converted)
-                          self.focused.reconcile(root)
-                          match self.focused.focused() {
-                            target => {
-                              if not converted.is_propagation_stopped() {
-                                let outcome = router::dispatch_paste(target, converted, self.focused)
-                                self.apply_outcome(outcome)
-                                if outcome.redraw {
-                                  self.paint_live(ctx, root)
-                                }
-                                if outcome.quit {
-                                  running = false
-                                }
-                              }
-                            },
-                            _ => (),
+                          if not self.live_paste_buffer.AppendKey(key) {
+                            let converted = event::paste(bridge::PasteText(key))
+                            let outcome = self.route_live_paste(root, converted)
+                            self.apply_outcome(outcome)
+                            if outcome.redraw or self.take_redraw_request() {
+                              self.paint_live(ctx, root)
+                            }
+                            if outcome.quit or self.post_frame_quit {
+                              running = false
+                            }
                           }
                         } else {
                           let converted = key_event(key)

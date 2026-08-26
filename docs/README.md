@@ -23,6 +23,8 @@ Design decisions for Cooper's Ard-native retained-mode framework.
   Context notification requests, conservative protocol selection, and lifecycle semantics.
 - [ADR 0010](./adrs/0010-define-terminal-progress-reporting.md) — accepted
   Context terminal progress states, Ghostty OSC 9;4 output, and lifecycle cleanup.
+- [ADR 0011](./adrs/0011-define-multiline-text-area.md) — accepted
+  multiline editing, wrapping, viewport movement, cursor reveal, and editable selection.
 
 ## Architecture Decision Records
 
@@ -40,6 +42,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0008](./adrs/0008-define-select-controls-and-appearance-overrides.md) | Accepted | Define Select, TabSelect, and Appearance overrides |
 | [0009](./adrs/0009-define-terminal-mediated-notifications.md) | Accepted | Define terminal-mediated notifications |
 | [0010](./adrs/0010-define-terminal-progress-reporting.md) | Accepted | Define terminal progress reporting |
+| [0011](./adrs/0011-define-multiline-text-area.md) | Accepted | Define the multiline TextArea |
 
 ### Add an ADR
 

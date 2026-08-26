@@ -119,7 +119,7 @@ def main():
         wait_for(fd, screen, "paste bytes 19")
         wait_for(fd, screen, "abcd")
         assert "abcdef" not in screen.text(), "grapheme max_length did not truncate terminal paste"
-        assert "input 41 · change 2" in screen.text(), "Unicode paste emitted unexpected input callbacks"
+        assert "input 34 · change 2" in screen.text(), "Unicode paste emitted unexpected input callbacks"
 
         # Select-all intentionally does nothing for the non-selectable field;
         # editing remains enabled and therefore appends at its existing cursor.
@@ -130,7 +130,7 @@ def main():
         assert "none" in screen.text(), "non-selectable Input entered global selection"
         send(fd, "X")
         wait_for(fd, screen, "still editableX")
-        assert "input 42 · change 3" in screen.text(), "non-selectable edit emitted unexpected callbacks"
+        assert "input 35 · change 3" in screen.text(), "non-selectable edit emitted unexpected callbacks"
 
         # Readline-style actions remain part of the focused Input contract.
         # Selection is disabled for this field, but word and cursor editing are

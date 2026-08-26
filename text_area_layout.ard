@@ -1,0 +1,462 @@
+use ard/testing
+
+use cooper/text
+use go:github.com/rockorager/go-uucode as unicode
+
+struct Glyph {
+  text: Str,
+  width: Int,
+  source_start: Int,
+  source_end: Int,
+  offset_start: Int,
+  offset_end: Int,
+  x: Int,
+  y: Int,
+  newline: Bool,
+}
+
+struct Line {
+  start: Int,
+  end: Int,
+  width: Int,
+  y: Int,
+}
+
+struct Layout {
+  glyphs: [Glyph],
+  lines: [Line],
+  width: Int,
+  height: Int,
+}
+
+struct Caret {
+  x: Int,
+  y: Int,
+}
+
+private struct SourceGlyph {
+  text: Str,
+  width: Int,
+  source_start: Int,
+  source_end: Int,
+  offset_start: Int,
+  offset_end: Int,
+}
+
+private struct Segment {
+  glyphs: [SourceGlyph],
+  width: Int,
+  newline_start: Int?,
+  newline_end: Int?,
+  newline_offset_start: Int,
+  newline_offset_end: Int,
+}
+
+private struct Builder {
+  glyphs: [Glyph],
+  lines: [Line],
+  x: Int,
+  y: Int,
+  line_start: Int,
+  maximum_width: Int,
+  limit: Int,
+}
+
+private fn is_newline(grapheme: Str) Bool {
+  let rune = try grapheme.runes().at(0) -> _ { false }
+  let kind = unicode::LineBreak(Int32::from(rune))
+  kind == unicode::LineBreakBK or kind == unicode::LineBreakCR or kind == unicode::LineBreakLF or kind == unicode::LineBreakNL
+}
+
+private fn measured(value: Str, measure: fn(Str) Int) Int {
+  mut width = measure(value)
+  if width < 0 {
+    width = 0
+  }
+  width
+}
+
+private fn source_segments(content: Str, measure: fn(Str) Int) [Segment] {
+  let output = mut List::new<Segment>()
+  let iterator = mut unicode::NewLineIterator(content)
+  mut logical_offset = 0
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      segment => {
+        let source = content.slice(
+          start: segment.Start,
+          end: segment.End,
+        ).expect("TextArea line segment source")
+        let grapheme_iterator = mut unicode::NewGraphemeIterator(source)
+        let glyphs = mut List::new<SourceGlyph>()
+        mut width = 0
+        mut newline_start = Maybe::new<Int>()
+        mut newline_end = Maybe::new<Int>()
+        mut newline_offset_start = logical_offset
+        mut newline_offset_end = logical_offset
+        mut reading_graphemes = true
+        while reading_graphemes {
+          match grapheme_iterator.Next() {
+            grapheme => {
+              let value = source.slice(start: grapheme.Start, end: grapheme.End).or("")
+              let absolute_start = segment.Start + grapheme.Start
+              let absolute_end = segment.Start + grapheme.End
+              if is_newline(value) {
+                if newline_start.is_none() {
+                  newline_start = Maybe::new<Int>(absolute_start)
+                  newline_offset_start = logical_offset
+                }
+                newline_end = Maybe::new<Int>(absolute_end)
+                logical_offset =+ 1
+                newline_offset_end = logical_offset
+              } else {
+                let glyph_width = measured(value, measure)
+                glyphs.push(
+                  SourceGlyph{
+                    text: value,
+                    width: glyph_width,
+                    source_start: absolute_start,
+                    source_end: absolute_end,
+                    offset_start: logical_offset,
+                    offset_end: logical_offset + glyph_width,
+                  },
+                )
+                width = width + glyph_width
+                logical_offset = logical_offset + glyph_width
+              }
+            },
+            _ => { reading_graphemes = false },
+          }
+        }
+        output.push(
+          Segment{
+            glyphs: glyphs.@,
+            width: width,
+            newline_start: newline_start,
+            newline_end: newline_end,
+            newline_offset_start: newline_offset_start,
+            newline_offset_end: newline_offset_end,
+          },
+        )
+      },
+      _ => { reading = false },
+    }
+  }
+  output.@
+}
+
+impl Builder {
+  private fn mut finish_line(end: Int, next_start: Int) {
+    self.lines.push(
+      Line{
+        start: self.line_start,
+        end: end,
+        width: self.x,
+        y: self.y,
+      },
+    )
+    if self.x > self.maximum_width {
+      self.maximum_width = self.x
+    }
+    self.x = 0
+    self.y =+ 1
+    self.line_start = next_start
+  }
+
+  private fn mut place(glyph: SourceGlyph) {
+    self.glyphs.push(
+      Glyph{
+        text: glyph.text,
+        width: glyph.width,
+        source_start: glyph.source_start,
+        source_end: glyph.source_end,
+        offset_start: glyph.offset_start,
+        offset_end: glyph.offset_end,
+        x: self.x,
+        y: self.y,
+        newline: false,
+      },
+    )
+    self.x = self.x + glyph.width
+  }
+
+  private fn mut place_wrapped(glyph: SourceGlyph) {
+    if self.x > 0 and self.x + glyph.width > self.limit {
+      self.finish_line(glyph.source_start, glyph.source_start)
+    }
+    self.place(glyph)
+  }
+
+  private fn mut hard_break(segment: Segment) {
+    match segment.newline_start {
+      start => {
+        let end = segment.newline_end.expect("TextArea hard break end")
+        self.glyphs.push(
+          Glyph{
+            text: "\n",
+            width: 1,
+            source_start: start,
+            source_end: end,
+            offset_start: segment.newline_offset_start,
+            offset_end: segment.newline_offset_end,
+            x: self.x,
+            y: self.y,
+            newline: true,
+          },
+        )
+        self.finish_line(start, end)
+      },
+      _ => (),
+    }
+  }
+}
+
+private fn build(content: Str, wrap: text::TextWrap, requested_limit: Int, measure: fn(Str) Int) Layout {
+  mut limit = requested_limit
+  if limit < 1 {
+    limit = 1
+  }
+  let builder = mut Builder{
+    glyphs: [],
+    lines: [],
+    x: 0,
+    y: 0,
+    line_start: 0,
+    maximum_width: 0,
+    limit: limit,
+  }
+  for segment in source_segments(content, measure) {
+    match wrap {
+      text::TextWrap::none => {
+        for glyph in segment.glyphs {
+          builder.place(glyph)
+        }
+      },
+      text::TextWrap::character => {
+        for glyph in segment.glyphs {
+          builder.place_wrapped(glyph)
+        }
+      },
+      text::TextWrap::word => {
+        if segment.width > 0 and builder.x + segment.width > limit {
+          if builder.x > 0 {
+            let boundary = segment.glyphs.at(
+              0,
+            ).expect("non-empty TextArea wrap segment").source_start
+            builder.finish_line(boundary, boundary)
+          }
+          if segment.width <= limit {
+            for glyph in segment.glyphs {
+              builder.place(glyph)
+            }
+          } else {
+            for glyph in segment.glyphs {
+              builder.place_wrapped(glyph)
+            }
+          }
+        } else {
+          for glyph in segment.glyphs {
+            builder.place(glyph)
+          }
+        }
+      },
+    }
+    builder.hard_break(segment)
+  }
+
+  let exact_wrapped_end = wrap != text::TextWrap::none and builder.x >= limit and builder.line_start < content.size()
+  builder.lines.push(
+    Line{
+      start: builder.line_start,
+      end: content.size(),
+      width: builder.x,
+      y: builder.y,
+    },
+  )
+  if builder.x > builder.maximum_width {
+    builder.maximum_width = builder.x
+  }
+  if exact_wrapped_end {
+    builder.lines.push(
+      Line{
+        start: content.size(),
+        end: content.size(),
+        width: 0,
+        y: builder.y + 1,
+      },
+    )
+  }
+  Layout{
+    glyphs: builder.glyphs,
+    lines: builder.lines,
+    width: builder.maximum_width,
+    height: builder.lines.size(),
+  }
+}
+
+fn layout(content: Str, wrap: text::TextWrap, width: Int, measure: fn(Str) Int) Layout {
+  build(content, wrap, width, measure)
+}
+
+fn intrinsic(content: Str, measure: fn(Str) Int) Layout {
+  build(content, text::TextWrap::none, 1, measure)
+}
+
+fn caret(value: Layout, cursor: Int) Caret {
+  mut target = value.lines.at(
+    0,
+  ).or(
+    Line{
+      start: 0,
+      end: 0,
+      width: 0,
+      y: 0,
+    },
+  )
+  for line in value.lines {
+    if cursor >= line.start and cursor <= line.end {
+      target = line
+    }
+  }
+  mut x = 0
+  for glyph in value.glyphs {
+    if (not glyph.newline) and glyph.y == target.y {
+      if cursor <= glyph.source_start {
+        break
+      }
+      x = glyph.x + glyph.width
+      if cursor < glyph.source_end {
+        break
+      }
+    }
+  }
+  Caret{x: x, y: target.y}
+}
+
+fn cursor_at(value: Layout, column: Int, row: Int) Int {
+  mut target_row = row
+  if target_row < 0 {
+    target_row = 0
+  }
+  if target_row >= value.lines.size() {
+    target_row = value.lines.size() - 1
+  }
+  let line = value.lines.at(target_row).expect("TextArea cursor row")
+  if column <= 0 {
+    line.start
+  } else {
+    mut cursor = line.start
+    mut locating = true
+    for glyph in value.glyphs {
+      if locating and (not glyph.newline) and glyph.y == line.y {
+        if column < glyph.x + glyph.width {
+          if glyph.width > 1 and (column - glyph.x) * 2 >= glyph.width {
+            cursor = glyph.source_end
+          } else {
+            cursor = glyph.source_start
+          }
+          locating = false
+        } else {
+          cursor = glyph.source_end
+        }
+      }
+    }
+    if locating {
+      cursor = line.end
+    }
+    cursor
+  }
+}
+
+fn offset_at(value: Layout, boundary: Int) Int {
+  mut offset = 0
+  for glyph in value.glyphs {
+    if glyph.source_end <= boundary {
+      offset = glyph.offset_end
+    }
+  }
+  offset
+}
+
+fn hard_line_start(content: Str, cursor: Int) Int {
+  mut start = 0
+  let iterator = mut unicode::NewGraphemeIterator(content)
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      grapheme => {
+        let value = content.slice(start: grapheme.Start, end: grapheme.End).or("")
+        if grapheme.End <= cursor and is_newline(value) {
+          start = grapheme.End
+        }
+      },
+      _ => { reading = false },
+    }
+  }
+  start
+}
+
+fn hard_line_end(content: Str, cursor: Int) Int {
+  mut end = content.size()
+  let iterator = mut unicode::NewGraphemeIterator(content)
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      grapheme => {
+        let value = content.slice(start: grapheme.Start, end: grapheme.End).or("")
+        if grapheme.Start >= cursor and is_newline(value) {
+          end = grapheme.Start
+          reading = false
+        }
+      },
+      _ => { reading = false },
+    }
+  }
+  end
+}
+
+private fn unit_width(value: Str) Int {
+  if value == "界" or value == "🙂" {
+    2
+  } else if value == "\t" {
+    4
+  } else {
+    1
+  }
+}
+
+test fn text_area_layout_maps_hard_lines_wraps_and_trailing_caret() Void!Str {
+  let hard = layout("ab\n\ncd", text::TextWrap::word, 4, unit_width)
+  try testing::assert(hard.height == 3, "Expected hard and empty TextArea lines")
+  try testing::assert(caret(hard, 3).y == 1, "Expected caret after first newline")
+  try testing::assert(caret(hard, 4).y == 2, "Expected caret after empty line")
+
+  let wrapped = layout("abcd", text::TextWrap::character, 2, unit_width)
+  try testing::assert(wrapped.height == 3, "Expected exact wrapped end caret row")
+  try testing::assert(
+    caret(wrapped, 2).x == 0 and caret(wrapped, 2).y == 1,
+    "Expected wrap-boundary affinity",
+  )
+  testing::assert(
+    caret(wrapped, 4).x == 0 and caret(wrapped, 4).y == 2,
+    "Expected visible trailing caret",
+  )
+}
+
+test fn text_area_layout_keeps_tabs_atomic_while_wrapping() Void!Str {
+  let value = layout("\ta", text::TextWrap::character, 2, unit_width)
+  let tab = value.glyphs.at(0).expect("TextArea tab glyph")
+  let following = value.glyphs.at(1).expect("TextArea glyph after tab")
+  try testing::assert(tab.text == "\t" and tab.width == 4 and tab.y == 0, "Expected atomic tab glyph")
+  testing::assert(following.y == 1, "Expected wrap only after the complete tab")
+}
+
+test fn text_area_layout_snaps_wide_glyphs_and_preserves_source_offsets() Void!Str {
+  let value = layout("a界\nb", text::TextWrap::word, 5, unit_width)
+  try testing::assert(cursor_at(value, 1, 0) == 1, "Expected wide glyph leading boundary")
+  try testing::assert(cursor_at(value, 2, 0) == "a界".size(), "Expected wide glyph trailing boundary")
+  try testing::assert(offset_at(value, "a界\n".size()) == 4, "Expected newline logical offset")
+  try testing::assert(hard_line_start("one\ntwo", 6) == 4, "Expected hard line start")
+  testing::assert(hard_line_end("one\ntwo", 1) == 3, "Expected hard line end")
+}

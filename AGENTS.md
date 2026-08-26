@@ -51,7 +51,8 @@ Run formatting and compiler validation on every changed Ard file.
 Prefer deterministic headless tests for:
 
 - App/Root startup, waiting, suspend/resume, destruction, dispatch,
-  cancellation, Context ownership, and clipboard lifetime;
+  cancellation, Context ownership, clipboard lifetime, notification requests,
+  and terminal progress cleanup;
 - persistent identity, indexed reorder/reparent, detach, and destruction;
 - layout, clipping, two-axis scrolling, scrollbar interaction, wrapping, and
   translated geometry;
@@ -79,6 +80,7 @@ python3 test_links.py
 python3 test_terminal_focus.py
 python3 test_widgets.py
 python3 test_clipboard.py
+python3 test_notification.py
 python3 test_scroll_form.py
 python3 test_horizontal_scroll.py
 python3 test_select.py
@@ -97,5 +99,7 @@ python3 benchmarks/run.py
 - Terminal clipboard: [`ADR 0006`](./docs/adrs/0006-define-terminal-clipboard-access.md)
 - Scrollbars and two-axis scrolling: [`ADR 0007`](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md)
 - Select controls and Appearance overrides: [`ADR 0008`](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md)
+- Terminal-mediated notifications: [`ADR 0009`](./docs/adrs/0009-define-terminal-mediated-notifications.md)
+- Terminal progress reporting: [`ADR 0010`](./docs/adrs/0010-define-terminal-progress-reporting.md)
 - Vaxis source: `go.rockorager.dev/vaxis`
 - Ard docs: https://ard.run

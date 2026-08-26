@@ -4,6 +4,7 @@ use cooper/core/app_runtime
 use cooper/event
 use cooper/root
 use cooper/selection
+use cooper/terminal_progress
 
 struct App {
   context: mut context::Context,
@@ -26,6 +27,12 @@ fn new(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?) App!Error {
     selection_owns: runtime.selection_owns_request(),
     selection_clear: runtime.selection_clear_request(),
     open_url: runtime.open_url(),
+    notify: fn(message: Str, title: Str?) Bool {
+      runtime.notify(message, title)
+    },
+    terminal_progress: fn(progress_state: terminal_progress::State, percent: Int?) Bool {
+      runtime.progress(progress_state, percent)
+    },
   )
   let root = root::new(ctx, runtime)
   let clipboard_service = runtime.clipboard()

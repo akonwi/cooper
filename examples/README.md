@@ -202,6 +202,7 @@ python3 test_links.py
 python3 test_terminal_focus.py
 python3 test_widgets.py
 python3 test_clipboard.py
+python3 test_notification.py
 python3 test_scroll_form.py
 python3 test_horizontal_scroll.py
 python3 test_select.py
@@ -217,8 +218,10 @@ bounded follow-mode logs, nested stacking and hit order, Input validation and
 commit callbacks, paste limits, draggable z-index objects, pointer trails,
 activated cells, drag/drop routing, interactive links, link-safe drag mode,
 terminal focus transitions, post-focus mouse resumption, built-in Select menu
-and TabSelect behavior, app-local sliders, OSC 52 clipboard requests and responses, overflow
-clipping, editing, explicit focus policy, mouse input, two-axis scrolling and
+and TabSelect behavior, app-local sliders, OSC 52 clipboard requests and responses,
+terminal-mediated desktop notification output, Ghostty terminal progress states,
+overflow clipping, editing,
+explicit focus policy, mouse input, two-axis scrolling and
 scrollbar dragging, resize, App
 cancellation, asynchronous UI dispatch, nonblocking startup,
 suspension/resume, filesystem rows, drag capture/drop ordering, hover

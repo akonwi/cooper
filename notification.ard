@@ -1,0 +1,4 @@
+struct Notification {
+  message: Str,
+  title: Str?,
+}

@@ -22,8 +22,10 @@ The canonical design is defined by the accepted
 [input editor ADR](./docs/adrs/0004-define-input-editor-and-keybindings.md),
 [rich Text ADR](./docs/adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md),
 [terminal clipboard ADR](./docs/adrs/0006-define-terminal-clipboard-access.md),
-[scrollbar ADR](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md), and
-[Select ADR](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md).
+[scrollbar ADR](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md),
+[Select ADR](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md),
+[notification ADR](./docs/adrs/0009-define-terminal-mediated-notifications.md), and
+[terminal progress ADR](./docs/adrs/0010-define-terminal-progress-reporting.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
@@ -97,6 +99,8 @@ yet a supported custom-control API.
   readline-style Ctrl, Alt, and Super keybindings.
 - App exposes OSC 52 clipboard read, write, and clear operations while terminal
   access policy remains under terminal-host control.
+- Context can request sanitized terminal-mediated desktop notifications and
+  lifecycle-safe terminal-surface progress from callbacks or background fibers.
 
 ## Initial controls
 
@@ -157,12 +161,14 @@ context.ard      Context capability, ownership, and backing state
 event.ard        Cooper-owned events, controls, and propagation state
 geometry.ard     Rect, Geometry, and geometry helpers
 input.ard        retained single-line Input
+notification.ard accepted notification request snapshots
 root.ard         permanent Root and runtime bridge
 scroll_box.ard   retained two-axis ScrollBox with built-in bars
 scrollbar.ard    standalone vertical/horizontal Scrollbar
 select.ard       compact Select and horizontal TabSelect
 selection.ard    global selection snapshots and local ranges
 style.ard        colors, layout values, stacking, and validation
+terminal_progress.ard terminal progress state and report values
 testing.ard      headless TestApp and frame snapshots
 text.ard         Text, StyledText spans, and TextStyle
 ui.ard           convenience aliases for built-in controls
@@ -204,6 +210,7 @@ python3 test_links.py
 python3 test_terminal_focus.py
 python3 test_widgets.py
 python3 test_clipboard.py
+python3 test_notification.py
 python3 test_scroll_form.py
 python3 test_horizontal_scroll.py
 python3 test_select.py

@@ -6,9 +6,12 @@ use cooper/context
 use cooper/core/app_runtime
 use cooper/core/paint
 use cooper/event
+use cooper/notification
 use cooper/root
 use cooper/selection
+use cooper/terminal_progress
 use cooper/text
+use go:sync
 
 struct Cell {
   grapheme: Str,
@@ -104,19 +107,69 @@ private struct OpenedURLs {
   values: [Str],
 }
 
+private struct SentNotifications {
+  mutex: mut sync::Mutex,
+  values: [notification::Notification],
+}
+
+private struct TerminalProgressReports {
+  mutex: mut sync::Mutex,
+  values: [terminal_progress::Report],
+}
+
 struct TestApp {
   context: mut context::Context,
   root: mut root::Root,
   clipboard: mut clipboard::Clipboard,
   opened: Any,
+  notification_log: Any,
+  terminal_progress_log: Any,
 }
 
 private fn modifiers(value: event::Modifiers?) event::Modifiers {
   value.or(event::Modifiers{shift: false, ctrl: false, alt: false, super: false})
 }
 
-fn new(width: Int, height: Int) TestApp {
-  let runtime = app_runtime::new_headless(width, height)
+fn new(
+  width: Int,
+  height: Int,
+  notifications_supported: Bool?,
+  terminal_progress_supported: Bool?,
+  on_terminal_progress: (fn(terminal_progress::Report))?,
+) TestApp {
+  let supported = notifications_supported.or(true)
+  let progress_supported = terminal_progress_supported.or(true)
+  let notification_log = mut SentNotifications{mutex: mut sync::Mutex{}, values: []}
+  let terminal_progress_log = mut TerminalProgressReports{mutex: mut sync::Mutex{}, values: []}
+  let runtime = app_runtime::new_headless(
+    width,
+    height,
+    fn(message: Str, title: Str?) Bool {
+      if not supported {
+        false
+      } else {
+        notification_log.mutex.Lock()
+        notification_log.values.push(notification::Notification{message: message, title: title})
+        notification_log.mutex.Unlock()
+        true
+      }
+    },
+    fn(progress_state: terminal_progress::State, percent: Int?) Bool {
+      if not progress_supported {
+        false
+      } else {
+        let report = terminal_progress::Report{state: progress_state, percent: percent}
+        match on_terminal_progress {
+          observe => observe(report),
+          _ => (),
+        }
+        terminal_progress_log.mutex.Lock()
+        terminal_progress_log.values.push(report)
+        terminal_progress_log.mutex.Unlock()
+        true
+      }
+    },
+  )
   let opened = mut OpenedURLs{values: []}
   let ctx = context::internal_new(
     request_render: runtime.request_render(),
@@ -133,11 +186,24 @@ fn new(width: Int, height: Int) TestApp {
       opened.values.push(url)
       Result::ok(())
     },
+    notify: fn(message: Str, title: Str?) Bool {
+      runtime.notify(message, title)
+    },
+    terminal_progress: fn(progress_state: terminal_progress::State, percent: Int?) Bool {
+      runtime.progress(progress_state, percent)
+    },
   )
   let root = root::new(ctx, runtime)
   let clipboard_service = runtime.clipboard()
   runtime.start_test(ctx, root)
-  TestApp{context: ctx, root: root, clipboard: clipboard_service, opened: opened}
+  TestApp{
+    context: ctx,
+    root: root,
+    clipboard: clipboard_service,
+    opened: opened,
+    notification_log: notification_log,
+    terminal_progress_log: terminal_progress_log,
+  }
 }
 
 impl TestApp {
@@ -147,6 +213,28 @@ impl TestApp {
     for url in opened.values {
       output.push(url)
     }
+    output.@
+  }
+
+  fn sent_notifications() [notification::Notification] {
+    let log = unsafe::cast<mut SentNotifications>(self.notification_log).expect("TestApp notifications must be created by Cooper")
+    log.mutex.Lock()
+    let output = mut List::new<notification::Notification>()
+    for sent in log.values {
+      output.push(sent)
+    }
+    log.mutex.Unlock()
+    output.@
+  }
+
+  fn terminal_progress_reports() [terminal_progress::Report] {
+    let log = unsafe::cast<mut TerminalProgressReports>(self.terminal_progress_log).expect("TestApp terminal progress must be created by Cooper")
+    log.mutex.Lock()
+    let output = mut List::new<terminal_progress::Report>()
+    for report in log.values {
+      output.push(report)
+    }
+    log.mutex.Unlock()
     output.@
   }
 
@@ -192,6 +280,14 @@ impl TestApp {
 
   fn flush(limit: Int?) Int {
     self.root.state_ref.flush_test(self.context, self.root, limit.or(1024))
+  }
+
+  fn suspend() Bool {
+    self.root.state_ref.suspend_test()
+  }
+
+  fn resume() Bool {
+    self.root.state_ref.resume_test()
   }
 
   fn resize(width: Int, height: Int) {

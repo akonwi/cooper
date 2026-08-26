@@ -1,0 +1,12 @@
+enum State {
+  remove,
+  normal,
+  error,
+  indeterminate,
+  paused,
+}
+
+struct Report {
+  state: State,
+  percent: Int?,
+}

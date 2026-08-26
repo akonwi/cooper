@@ -12,8 +12,10 @@ use cooper/core/runtime
 use cooper/core/selection_state
 use cooper/event
 use cooper/selection as public_selection
+use cooper/terminal_progress
 use go:github.com/akonwi/cooper/ffi/core/backend/clipboardbridge
 use go:github.com/akonwi/cooper/ffi/core/backend/clock
+use go:github.com/akonwi/cooper/ffi/core/backend/notificationbridge
 use go:github.com/akonwi/cooper/ffi/core/backend/signalwatch
 use go:github.com/akonwi/cooper/ffi/core/backend/urlopen
 use go:github.com/akonwi/cooper/ffi/core/backend/vaxisbridge as bridge
@@ -35,6 +37,16 @@ private fn vaxis_mouse_shape(cursor: event::MouseCursor) vaxis::MouseShape {
   match cursor {
     event::MouseCursor::pointer => vaxis::MouseShapeClickable,
     _ => vaxis::MouseShapeDefault,
+  }
+}
+
+private fn terminal_progress_code(state: terminal_progress::State) Int {
+  match state {
+    terminal_progress::State::remove => 0,
+    terminal_progress::State::normal => 1,
+    terminal_progress::State::error => 2,
+    terminal_progress::State::indeterminate => 3,
+    terminal_progress::State::paused => 4,
   }
 }
 
@@ -178,6 +190,10 @@ struct PendingSelection {
 struct State {
   terminal: (mut vaxis::Vaxis)?,
   clipboard_service: mut clipboard::Clipboard,
+  notification_action: fn(Str, Str?) Bool,
+  terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
+  terminal_progress_state: terminal_progress::State,
+  terminal_progress_percent: Int?,
   terminal_io: mut sync::Mutex,
   terminal_suspended: Bool,
   terminal_closed: Bool,
@@ -188,7 +204,8 @@ struct State {
   lifecycle: mut sync::Mutex,
   // 0 ready, 1 running, 2 test, 3 destroyed, 4 destroying,
   // 5/6 suspended ready/running, 7/8 starting active/suspended,
-  // 9/10 resuming ready/running, 11/12/13 suspending ready/running/starting.
+  // 9/10 resuming ready/running, 11/12/13 suspending ready/running/starting,
+  // 14/15 test suspended/resuming.
   phase: Int,
   resources_stopped: Bool,
   construction_committed: Bool,
@@ -236,6 +253,8 @@ struct State {
 private fn state(
   terminal: (mut vaxis::Vaxis)?,
   clipboard_service: mut clipboard::Clipboard,
+  notification_action: fn(Str, Str?) Bool,
+  terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
   signal_watcher: (mut signalwatch::Watcher)?,
   exit_on_ctrl_c: Bool,
   auto_focus: Bool,
@@ -250,6 +269,10 @@ private fn state(
   (mut State{
     terminal: terminal,
     clipboard_service: clipboard_service,
+    notification_action: notification_action,
+    terminal_progress_action: terminal_progress_action,
+    terminal_progress_state: terminal_progress::State::remove,
+    terminal_progress_percent: Maybe::new<Int>(),
     terminal_io: terminal_io,
     terminal_suspended: false,
     terminal_closed: not terminal.is_some(),
@@ -315,9 +338,20 @@ fn new_live(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Bool) (mut State)
         fn() { backend.Resume() },
         fn() { backend.Cancel() },
       )
+      let notification_backend = notificationbridge::New(terminal)
       let created = state(
         Maybe::new<mut vaxis::Vaxis>(terminal),
         clipboard_service,
+        fn(message: Str, title: Str?) Bool {
+          notification_backend.Notify(message, title.or(""))
+        },
+        fn(progress_state: terminal_progress::State, percent: Int?) Bool {
+          notification_backend.SetProgress(
+            terminal_progress_code(progress_state),
+            percent.or(0),
+            percent.is_some(),
+          )
+        },
         Maybe::new<mut signalwatch::Watcher>(watcher),
         exit_on_ctrl_c,
         auto_focus,
@@ -335,13 +369,20 @@ fn new_live(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Bool) (mut State)
   }
 }
 
-fn new_headless(width: Int, height: Int) mut State {
+fn new_headless(
+  width: Int,
+  height: Int,
+  notification_action: fn(Str, Str?) Bool,
+  terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
+) mut State {
   if width < 0 or height < 0 {
     panic("headless application dimensions must be non-negative")
   }
   let created = state(
     Maybe::new<mut vaxis::Vaxis>(),
     clipboard::internal_memory(),
+    notification_action,
+    terminal_progress_action,
     Maybe::new<mut signalwatch::Watcher>(),
     true,
     true,
@@ -696,7 +737,7 @@ impl State {
     self.lifecycle.Lock()
     mut finish_now = false
     mut stop_dispatch = false
-    if self.phase == 2 {
+    if self.phase == 2 or self.phase == 14 or self.phase == 15 {
       stop_dispatch = true
       if self.test_flushing {
         self.phase = 4
@@ -807,6 +848,9 @@ impl State {
     self.terminal_io.Lock()
     self.pointer_cursor = event::MouseCursor::default_cursor
     self.pointer_cursor_initialized = false
+    if self.headless {
+      self.clear_terminal_progress_locked()
+    }
     if not self.terminal_closed {
       mut close_terminal = true
       match self.terminal {
@@ -823,6 +867,7 @@ impl State {
             }
           }
           if close_terminal {
+            self.clear_terminal_progress_locked()
             terminal.Close()
             self.terminal_closed = true
           }
@@ -1147,6 +1192,62 @@ impl State {
     self.clipboard_service
   }
 
+  fn mut notify(message: Str, title: Str?) Bool {
+    self.lifecycle.Lock()
+    defer self.lifecycle.Unlock()
+    let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 7
+    mut accepted = false
+    if active and (not self.resources_stopped) {
+      accepted = (self.notification_action)(message, title)
+    }
+    accepted
+  }
+
+  fn mut progress(progress_state: terminal_progress::State, percent: Int?) Bool {
+    self.lifecycle.Lock()
+    defer self.lifecycle.Unlock()
+    let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 7
+    mut accepted = false
+    if active and (not self.resources_stopped) {
+      accepted = (self.terminal_progress_action)(progress_state, percent)
+      if accepted {
+        self.terminal_progress_state = progress_state
+        self.terminal_progress_percent = percent
+      }
+    }
+    accepted
+  }
+
+  private fn mut clear_terminal_progress_locked() {
+    if self.terminal_progress_state != terminal_progress::State::remove {
+      self.terminal_progress_action(terminal_progress::State::remove)
+    }
+  }
+
+  private fn mut restore_terminal_progress_locked() {
+    if self.terminal_progress_state != terminal_progress::State::remove {
+      self.terminal_progress_action(self.terminal_progress_state, self.terminal_progress_percent)
+    }
+  }
+
+  private fn mut restore_terminal_progress_and_commit_phase(
+    transition: Int,
+    target: Int,
+    reset_pointer: Bool,
+  ) Bool {
+    self.lifecycle.Lock()
+    defer self.lifecycle.Unlock()
+    let committed = self.phase == transition
+    if committed {
+      self.restore_terminal_progress_locked()
+      self.phase = target
+      if reset_pointer {
+        self.pointer_cursor_initialized = false
+      }
+    }
+    committed
+  }
+
   fn open_url() fn(Str) Void!Error {
     fn(target: Str) Void!Error {
       urlopen::Open(target)
@@ -1340,6 +1441,7 @@ impl State {
         )
       } else {
         let terminal = self.terminal.expect("live application terminal")
+        self.clear_terminal_progress_locked()
         terminal.SetMouseShape(vaxis::MouseShapeDefault)
         terminal.Render()
         outcome = terminal.Suspend()
@@ -1365,12 +1467,12 @@ impl State {
             }
           },
           err(error) => {
-            self.lifecycle.Lock()
-            if self.phase == transition {
-              self.phase = previous
-            }
-            self.lifecycle.Unlock()
             self.clipboard_service.internal_resume()
+            let _ = self.restore_terminal_progress_and_commit_phase(
+              transition,
+              previous,
+              false,
+            )
             outcome = Result::err(error)
           },
         }
@@ -1418,13 +1520,11 @@ impl State {
         ok(_) => {
           self.terminal_suspended = false
           let _ = self.apply_pending_resize_locked(terminal)
-          self.lifecycle.Lock()
-          let committed = self.phase == transition
-          if committed {
-            self.phase = resumed
-            self.pointer_cursor_initialized = false
-          }
-          self.lifecycle.Unlock()
+          let committed = self.restore_terminal_progress_and_commit_phase(
+            transition,
+            resumed,
+            true,
+          )
           if committed {
             self.clipboard_service.internal_resume()
             (self.request_render())()
@@ -1853,6 +1953,39 @@ impl State {
       self.finish_test(ctx, root)
     }
     drained
+  }
+
+  fn mut suspend_test() Bool {
+    self.terminal_io.Lock()
+    defer self.terminal_io.Unlock()
+    self.lifecycle.Lock()
+    let available = self.phase == 2
+    if available {
+      self.phase = 14
+    }
+    self.lifecycle.Unlock()
+    if available {
+      self.clear_terminal_progress_locked()
+      self.terminal_suspended = true
+    }
+    available
+  }
+
+  fn mut resume_test() Bool {
+    self.terminal_io.Lock()
+    defer self.terminal_io.Unlock()
+    self.lifecycle.Lock()
+    let available = self.phase == 14
+    if available {
+      self.phase = 15
+    }
+    self.lifecycle.Unlock()
+    if not available {
+      false
+    } else {
+      self.terminal_suspended = false
+      self.restore_terminal_progress_and_commit_phase(15, 2, false)
+    }
   }
 
   fn mut resize_test(width: Int, height: Int) {

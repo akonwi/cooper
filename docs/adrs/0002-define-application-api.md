@@ -100,7 +100,11 @@ Because Ard application code and Cooper's event pump can run concurrently after
 must run in a Cooper callback or through `Context.dispatch`. Build the initial
 tree before `start`; background fibers must not directly read or mutate controls.
 This restriction does not apply while constructing the App before startup or to
-TestApp's synchronous driver methods.
+TestApp's synchronous driver methods. Context notification requests are
+thread-safe terminal side effects and may be made directly from background
+fibers; their lifecycle and backend behavior are defined by [ADR 0009](./0009-define-terminal-mediated-notifications.md).
+Terminal progress reporting is similarly thread-safe and is defined by
+[ADR 0010](./0010-define-terminal-progress-reporting.md).
 
 After destruction, listener registration, Root mutation, and construction
 through the closed Context panic; dispatch is the exception and returns
@@ -128,6 +132,9 @@ let _ = application.context.dispatch(fn() {
 })
 
 application.context.cancellation.recv()
+
+let _ = application.context.notify("Background task finished", title: "Cooper")
+let _ = application.context.progress(terminal_progress::State::indeterminate)
 ```
 
 Dispatch queues an action on the UI thread. It may queue before `start` and is
@@ -486,9 +493,9 @@ testing::assert_contains(test_app.frame().text(), "Hello")
 test_app.destroy()
 ```
 
-TestApp is an App-style value facade with Context, Root, and deterministic
-in-memory Clipboard. Its non-mutating methods operate on shared test-runtime
-state. It provides explicit render, bounded flush, resize,
+TestApp is an App-style value facade with Context, Root, deterministic
+in-memory Clipboard, and a configurable notification recorder. Its non-mutating
+methods operate on shared test-runtime state. It provides explicit render, bounded flush, resize,
 key/paste/mouse/scroll input, read-only frame and cell
 snapshots, and idempotent destruction. It never initializes the host terminal.
 PTY tests retain responsibility for Vaxis parsing and terminal restoration.
@@ -508,7 +515,8 @@ Documented application modules are:
 
 ```text
 app  box  clipboard  color  context  event  geometry
-input  root  scroll_box  scrollbar  select  style  testing  text  ui
+input  notification  root  scroll_box  scrollbar  select  style
+terminal_progress  testing  text  ui
 ```
 
 `ui` provides direct constructor and type aliases for built-in controls, such

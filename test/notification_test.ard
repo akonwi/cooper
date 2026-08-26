@@ -1,0 +1,85 @@
+use ard/async
+use ard/testing
+
+use cooper/testing as cooper_testing
+
+test fn context_notifications_are_recorded_in_order() Void!Str {
+  let application = cooper_testing::new(8, 2)
+
+  try testing::assert(
+    application.context.notify("Build finished", title: "Cooper"),
+    "Expected supported notification request",
+  )
+  try testing::assert(application.context.notify("Untitled"), "Expected titleless notification request")
+  try testing::assert(
+    application.context.notify("Empty title", title: ""),
+    "Expected empty title notification request",
+  )
+
+  let sent = application.sent_notifications()
+  try testing::assert(sent.size() == 3, "Expected three recorded notification requests")
+  let first = sent.at(0).expect("first notification")
+  try testing::assert(first.message == "Build finished", "Expected first notification message")
+  try testing::assert(first.title.or("") == "Cooper", "Expected first notification title")
+  let second = sent.at(1).expect("second notification")
+  try testing::assert(second.message == "Untitled", "Expected titleless notification message")
+  try testing::assert(not second.title.is_some(), "Expected omitted title to remain absent")
+  let third = sent.at(2).expect("third notification")
+  try testing::assert(not third.title.is_some(), "Expected empty title normalization")
+
+  application.destroy()
+  testing::assert(
+    application.sent_notifications().size() == 3,
+    "Expected notification snapshots to remain readable after destruction",
+  )
+}
+
+test fn context_notifications_are_safe_from_background_fibers() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let first_context = application.context
+  let second_context = application.context
+  let done = Chan::new<Bool>(2)
+
+  async::start(fn() {
+    let _ = first_context.notify("First")
+    done.send(true)
+  })
+  async::start(fn() {
+    let _ = second_context.notify("Second")
+    done.send(true)
+  })
+  done.receiver().recv()
+  done.receiver().recv()
+
+  try testing::assert(
+    application.sent_notifications().size() == 2,
+    "Expected both background notification requests",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn context_notification_returns_false_when_unsupported_or_destroyed() Void!Str {
+  let unsupported = cooper_testing::new(8, 2, notifications_supported: false)
+  try testing::assert(
+    not unsupported.context.notify("Ignored", title: "Cooper"),
+    "Expected unsupported notification rejection",
+  )
+  try testing::assert(
+    unsupported.sent_notifications().size() == 0,
+    "Expected rejected notification not to be recorded",
+  )
+  unsupported.destroy()
+
+  let stopped = cooper_testing::new(8, 2)
+  let context = stopped.context
+  stopped.destroy()
+  try testing::assert(
+    not context.notify("Too late"),
+    "Expected notification rejection after App destruction",
+  )
+  testing::assert(
+    stopped.sent_notifications().size() == 0,
+    "Expected stopped notification not to be recorded",
+  )
+}

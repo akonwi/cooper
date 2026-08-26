@@ -19,6 +19,10 @@ Design decisions for Cooper's Ard-native retained-mode framework.
   standalone Scrollbars, built-in ScrollBox gutters, and sequenced two-axis scrolling.
 - [ADR 0008](./adrs/0008-define-select-controls-and-appearance-overrides.md) — accepted
   compact Select menus, TabSelect, committed choice state, and local Appearance patches.
+- [ADR 0009](./adrs/0009-define-terminal-mediated-notifications.md) — accepted
+  Context notification requests, conservative protocol selection, and lifecycle semantics.
+- [ADR 0010](./adrs/0010-define-terminal-progress-reporting.md) — accepted
+  Context terminal progress states, Ghostty OSC 9;4 output, and lifecycle cleanup.
 
 ## Architecture Decision Records
 
@@ -34,6 +38,8 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0006](./adrs/0006-define-terminal-clipboard-access.md) | Accepted | Define terminal clipboard access |
 | [0007](./adrs/0007-define-scrollbars-and-two-axis-scrolling.md) | Accepted | Define Scrollbars and two-axis scrolling |
 | [0008](./adrs/0008-define-select-controls-and-appearance-overrides.md) | Accepted | Define Select, TabSelect, and Appearance overrides |
+| [0009](./adrs/0009-define-terminal-mediated-notifications.md) | Accepted | Define terminal-mediated notifications |
+| [0010](./adrs/0010-define-terminal-progress-reporting.md) | Accepted | Define terminal progress reporting |
 
 ### Add an ADR
 

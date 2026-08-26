@@ -3,6 +3,7 @@ use ard/unsafe
 use cooper/core/node
 use cooper/event
 use cooper/style
+use cooper/terminal_progress
 use go:go.rockorager.dev/vaxis
 
 struct Context {
@@ -23,6 +24,14 @@ private fn no_op() {}
 
 private fn ignore_url(url: Str) Void!Error {
   Result::ok(())
+}
+
+private fn reject_notification(message: Str, title: Str?) Bool {
+  false
+}
+
+private fn reject_terminal_progress(state: terminal_progress::State, percent: Int?) Bool {
+  false
 }
 
 private fn reject_focus(target_id: Int) Bool {
@@ -66,6 +75,8 @@ struct InternalState {
   selection_owns: fn(Int) Bool,
   selection_clear: fn(),
   open_url: fn(Str) Void!Error,
+  notify: fn(Str, Str?) Bool,
+  terminal_progress: fn(terminal_progress::State, Int?) Bool,
 }
 
 private fn new_state(
@@ -78,6 +89,8 @@ private fn new_state(
   selection_owns: (fn(Int) Bool)?,
   selection_clear: (fn())?,
   open_url: (fn(Str) Void!Error)?,
+  notify: (fn(Str, Str?) Bool)?,
+  terminal_progress: (fn(terminal_progress::State, Int?) Bool)?,
 ) mut InternalState {
   (mut InternalState{
     next_id: 1,
@@ -94,6 +107,8 @@ private fn new_state(
     selection_owns: selection_owns.or(reject_selection_owns),
     selection_clear: selection_clear.or(no_op),
     open_url: open_url.or(ignore_url),
+    notify: notify.or(reject_notification),
+    terminal_progress: terminal_progress.or(reject_terminal_progress),
   })
 }
 
@@ -109,6 +124,8 @@ fn internal_new(
   selection_owns: (fn(Int) Bool)?,
   selection_clear: (fn())?,
   open_url: (fn(Str) Void!Error)?,
+  notify: (fn(Str, Str?) Bool)?,
+  terminal_progress: (fn(terminal_progress::State, Int?) Bool)?,
 ) mut Context {
   let retained = new_state(
     request_render,
@@ -120,6 +137,8 @@ fn internal_new(
     selection_owns,
     selection_clear,
     open_url,
+    notify,
+    terminal_progress,
   )
   (mut Context{
     dispatch: dispatch.or(stopped_dispatch),
@@ -140,6 +159,51 @@ impl Context {
     } else {
       state.open_url(target)
     }
+  }
+
+  fn mut notify(message: Str, title: Str?) Bool {
+    let state = internal_state(self)
+    mut normalized = title
+    match title {
+      value => {
+        if value == "" {
+          normalized = Maybe::new<Str>()
+        }
+      },
+      _ => (),
+    }
+    state.notify(message, normalized)
+  }
+
+  fn mut progress(state: terminal_progress::State, percent: Int?) Bool {
+    match percent {
+      value => {
+        if value < 0 or value > 100 {
+          panic("terminal progress percent must be between 0 and 100")
+        }
+      },
+      _ => (),
+    }
+    match state {
+      terminal_progress::State::remove => {
+        if percent.is_some() {
+          panic("removed terminal progress cannot include a percent")
+        }
+      },
+      terminal_progress::State::normal => {
+        if not percent.is_some() {
+          panic("normal terminal progress requires a percent")
+        }
+      },
+      terminal_progress::State::indeterminate => {
+        if percent.is_some() {
+          panic("indeterminate terminal progress cannot include a percent")
+        }
+      },
+      terminal_progress::State::error => (),
+      terminal_progress::State::paused => (),
+    }
+    internal_state(self).terminal_progress(state, percent)
   }
 }
 

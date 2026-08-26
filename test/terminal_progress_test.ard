@@ -1,0 +1,270 @@
+use ard/async
+use ard/testing
+
+use cooper/terminal_progress
+use go:time
+use cooper/testing as cooper_testing
+
+private fn assert_panics(action: fn(), expected: Str) Void!Str {
+  let outcome = unsafe {
+    action()
+  }
+  match outcome {
+    ok(_) => testing::fail("expected panic containing {expected}"),
+    err(message) => testing::assert(
+      message.contains(expected),
+      "expected panic containing {expected}, got {message}",
+    ),
+  }
+}
+
+test fn context_emits_all_terminal_progress_states() Void!Str {
+  let application = cooper_testing::new(8, 2)
+
+  try testing::assert(
+    application.context.progress(terminal_progress::State::indeterminate),
+    "Expected indeterminate progress",
+  )
+  try testing::assert(
+    application.context.progress(terminal_progress::State::normal, percent: 42),
+    "Expected determinate progress",
+  )
+  try testing::assert(
+    application.context.progress(terminal_progress::State::paused),
+    "Expected paused progress without percent",
+  )
+  try testing::assert(
+    application.context.progress(terminal_progress::State::error, percent: 75),
+    "Expected error progress with percent",
+  )
+  try testing::assert(
+    application.context.progress(terminal_progress::State::remove),
+    "Expected progress removal",
+  )
+
+  let reports = application.terminal_progress_reports()
+  try testing::assert(reports.size() == 5, "Expected five terminal progress reports")
+  try testing::assert(
+    reports.at(0).expect("indeterminate report").state == terminal_progress::State::indeterminate,
+    "Expected indeterminate state",
+  )
+  let normal = reports.at(1).expect("normal report")
+  try testing::assert(
+    normal.state == terminal_progress::State::normal and normal.percent.or(-1) == 42,
+    "Expected normal progress percentage",
+  )
+  try testing::assert(
+    reports.at(2).expect("paused report").state == terminal_progress::State::paused,
+    "Expected paused state",
+  )
+  let failed = reports.at(3).expect("error report")
+  try testing::assert(
+    failed.state == terminal_progress::State::error and failed.percent.or(-1) == 75,
+    "Expected error progress percentage",
+  )
+  try testing::assert(
+    reports.at(4).expect("remove report").state == terminal_progress::State::remove,
+    "Expected removed state",
+  )
+
+  application.destroy()
+  testing::assert(
+    application.terminal_progress_reports().size() == 5,
+    "Expected explicit removal not to be duplicated during teardown",
+  )
+}
+
+test fn active_terminal_progress_is_removed_during_teardown() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let _ = context.progress(terminal_progress::State::indeterminate)
+  application.destroy()
+
+  let reports = application.terminal_progress_reports()
+  try testing::assert(reports.size() == 2, "Expected teardown progress removal")
+  try testing::assert(
+    reports.at(1).expect("teardown report").state == terminal_progress::State::remove,
+    "Expected teardown to remove terminal progress",
+  )
+  testing::assert(
+    not context.progress(terminal_progress::State::remove),
+    "Expected progress rejection after destruction",
+  )
+}
+
+test fn resume_restores_progress_before_accepting_a_new_update() Void!Str {
+  mut indeterminate_reports = 0
+  let restoring = Chan::new<Bool>(1)
+  let release_restore = Chan::new<Bool>(1)
+  let application = cooper_testing::new(
+    8,
+    2,
+    on_terminal_progress: fn(report: terminal_progress::Report) {
+      if report.state == terminal_progress::State::indeterminate {
+        indeterminate_reports =+ 1
+        if indeterminate_reports == 2 {
+          restoring.send(true)
+          release_restore.receiver().recv()
+        }
+        ()
+      }
+      ()
+    },
+  )
+  let context = application.context
+  let _ = context.progress(terminal_progress::State::indeterminate)
+  try testing::assert(application.suspend(), "Expected headless suspension")
+
+  let resumed = Chan::new<Bool>(1)
+  async::start(fn() {
+    resumed.send(application.resume())
+  })
+  restoring.receiver().recv()
+
+  let update_started = Chan::new<Bool>(1)
+  let updated = Chan::new<Bool>(1)
+  async::start(fn() {
+    update_started.send(true)
+    updated.send(context.progress(terminal_progress::State::normal, percent: 42))
+  })
+  update_started.receiver().recv()
+  time::Sleep(100 * time::Millisecond)
+  let update_finished_early = select {
+    updated.receiver().recv() => true,
+    _ => false,
+  }
+  try testing::assert(
+    not update_finished_early,
+    "Expected progress updates to wait for restoration",
+  )
+
+  release_restore.send(true)
+  try testing::assert(resumed.receiver().recv().or(false), "Expected headless resume")
+  try testing::assert(updated.receiver().recv().or(false), "Expected update after resume")
+  let reports = application.terminal_progress_reports()
+  try testing::assert(reports.size() == 4, "Expected suspend and resume reports")
+  try testing::assert(
+    reports.at(0).expect("initial report").state == terminal_progress::State::indeterminate,
+    "Expected initial progress",
+  )
+  try testing::assert(
+    reports.at(1).expect("suspend report").state == terminal_progress::State::remove,
+    "Expected suspend removal",
+  )
+  try testing::assert(
+    reports.at(2).expect("resume report").state == terminal_progress::State::indeterminate,
+    "Expected restored progress before update",
+  )
+  try testing::assert(
+    reports.at(3).expect("updated report").state == terminal_progress::State::normal,
+    "Expected new progress after restoration",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn suspended_test_app_can_be_destroyed_without_resuming() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let _ = context.progress(terminal_progress::State::indeterminate)
+  try testing::assert(application.suspend(), "Expected headless suspension")
+
+  application.destroy()
+
+  try testing::assert(not application.resume(), "Expected destroyed TestApp not to resume")
+  testing::assert(
+    not context.progress(terminal_progress::State::normal, percent: 42),
+    "Expected destroyed Context not to accept progress",
+  )
+}
+
+test fn observer_panic_does_not_strand_the_lifecycle_lock() Void!Str {
+  mut indeterminate_reports = 0
+  let application = cooper_testing::new(
+    8,
+    2,
+    on_terminal_progress: fn(report: terminal_progress::Report) {
+      if report.state == terminal_progress::State::indeterminate {
+        indeterminate_reports =+ 1
+        if indeterminate_reports == 2 {
+          panic("observer failed")
+        }
+        ()
+      }
+      ()
+    },
+  )
+  let context = application.context
+  let _ = context.progress(terminal_progress::State::indeterminate)
+  try testing::assert(application.suspend(), "Expected headless suspension")
+  try assert_panics(
+    fn() {
+      let _ = application.resume()
+    },
+    "observer failed",
+  )
+
+  application.destroy()
+  testing::assert(
+    not context.progress(terminal_progress::State::normal, percent: 42),
+    "Expected cleanup after observer panic",
+  )
+}
+
+test fn invalid_terminal_progress_contracts_panic() Void!Str {
+  let application = cooper_testing::new(8, 2)
+
+  try assert_panics(
+    fn() {
+      let _ = application.context.progress(terminal_progress::State::normal)
+    },
+    "normal terminal progress requires a percent",
+  )
+  try assert_panics(
+    fn() {
+      let _ = application.context.progress(terminal_progress::State::normal, percent: -1)
+    },
+    "terminal progress percent must be between 0 and 100",
+  )
+  try assert_panics(
+    fn() {
+      let _ = application.context.progress(terminal_progress::State::error, percent: 101)
+    },
+    "terminal progress percent must be between 0 and 100",
+  )
+  try assert_panics(
+    fn() {
+      let _ = application.context.progress(terminal_progress::State::remove, percent: 0)
+    },
+    "removed terminal progress cannot include a percent",
+  )
+  try assert_panics(
+    fn() {
+      let _ = application.context.progress(
+        terminal_progress::State::indeterminate,
+        percent: 0,
+      )
+    },
+    "indeterminate terminal progress cannot include a percent",
+  )
+
+  try testing::assert(
+    application.terminal_progress_reports().size() == 0,
+    "Expected invalid progress not to reach the backend",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn unsupported_terminal_progress_returns_false_without_recording() Void!Str {
+  let application = cooper_testing::new(8, 2, terminal_progress_supported: false)
+  try testing::assert(
+    not application.context.progress(terminal_progress::State::indeterminate),
+    "Expected unsupported progress rejection",
+  )
+  application.destroy()
+  testing::assert(
+    application.terminal_progress_reports().size() == 0,
+    "Expected unsupported progress not to be recorded",
+  )
+}

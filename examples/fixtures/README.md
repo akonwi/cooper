@@ -6,6 +6,9 @@ public example gallery:
 - `clipboard.ard` covers OSC 52 write, clear, asynchronous read, concurrent-read
   rejection, suspend rejection/resume, response delivery, and App-lifetime
   cancellation.
+- `notification.ard` covers titled and titleless notification output, complete
+  Ghostty terminal progress states, disabled support, suspend remove/restore,
+  and clean teardown.
 - `scroll_form.ard` covers direct multi-child ScrollBox reveal, its built-in
   proportional scrollbar and terminal mouse drag, translated mouse targeting,
   wheel fallback, and resize.

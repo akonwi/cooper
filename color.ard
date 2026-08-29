@@ -4,6 +4,10 @@ struct Color {
   red: Uint8,
   green: Uint8,
   blue: Uint8,
+  // When present, the terminal's indexed palette slot is authoritative.
+  // This lets applications use colors supplied by the host theme instead of
+  // baking in RGB values.
+  index: Uint8?,
 }
 
 private fn channel(value: Int) Uint8 {
@@ -18,6 +22,17 @@ fn rgb(red: Int, green: Int, blue: Int) Color {
     red: channel(red),
     green: channel(green),
     blue: channel(blue),
+  }
+}
+
+// Uses a color from the terminal's 0-255 indexed palette. Slots 0-15 are the
+// host theme's ANSI colors; unlike RGB colors, they adapt to that theme.
+fn indexed(index: Int) Color {
+  Color{
+    red: Uint8::from(0),
+    green: Uint8::from(0),
+    blue: Uint8::from(0),
+    index: channel(index),
   }
 }
 
@@ -66,5 +81,14 @@ test fn color_hex_accepts_prefixed_plain_and_mixed_case_values() Void!Str {
   let plain = hex("2947F0")
   try testing::assert(plain.red == Uint8::from(41), "Expected plain red channel")
   try testing::assert(plain.green == Uint8::from(71), "Expected plain green channel")
-  testing::assert(plain.blue == Uint8::from(240), "Expected plain blue channel")
+  try testing::assert(plain.blue == Uint8::from(240), "Expected plain blue channel")
+  testing::assert(not plain.index.is_some(), "Expected RGB color not to use an indexed palette slot")
+}
+
+test fn color_indexed_preserves_host_palette_slot() Void!Str {
+  let value = indexed(4)
+  try testing::assert(value.index.expect("indexed palette slot") == Uint8::from(4), "Expected indexed slot")
+  try testing::assert(value.red == Uint8::from(0), "Expected indexed color not to encode RGB red")
+  try testing::assert(value.green == Uint8::from(0), "Expected indexed color not to encode RGB green")
+  testing::assert(value.blue == Uint8::from(0), "Expected indexed color not to encode RGB blue")
 }

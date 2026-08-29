@@ -334,7 +334,7 @@ private fn same_optional_color(first: color::Color?, second: color::Color?) Bool
   match first {
     left => {
       match second {
-        right => left.red == right.red and left.green == right.green and left.blue == right.blue,
+        right => left.red == right.red and left.green == right.green and left.blue == right.blue and left.index == right.index,
         _ => false,
       }
     },

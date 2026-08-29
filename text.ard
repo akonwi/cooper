@@ -309,7 +309,7 @@ private fn same_color(left: color::Color?, right: color::Color?) Bool {
       let left_color = try left -> _ { false }
       let right_color = try right -> _ { false }
 
-      left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue
+      left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue and left_color.index == right_color.index
     },
   }
 }

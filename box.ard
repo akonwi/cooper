@@ -68,7 +68,7 @@ private fn same_color(left: color::Color?, right: color::Color?) Bool {
     left_color => {
       match right {
         right_color => {
-          left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue and left_color.index == right_color.index
+          left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue and left_color.index == right_color.index and left_color.terminal_default == right_color.terminal_default
         },
         _ => false,
       }

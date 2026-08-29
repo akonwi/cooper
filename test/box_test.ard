@@ -145,3 +145,23 @@ test fn box_without_background_preserves_ancestor_fill() Void!Str {
   application.destroy()
   testing::assert(child.node_ref.is_destroyed(), "Expected transparent Box cleanup")
 }
+
+test fn box_explicit_terminal_default_background_fills_instead_of_remaining_transparent() Void!Str {
+  let application = cooper_testing::new(4, 2)
+  defer application.destroy()
+  let panel = box::new(
+    application.context,
+    styles: style::new(
+      background: color::terminal_default(),
+      width: style::cells(4),
+      height: style::cells(2),
+    ),
+  )
+  application.root.add(panel)
+  application.render()
+  let painted = application.frame().cell(3, 1).expect("terminal-default background cell")
+  testing::assert(
+    painted.style.background.expect("explicit background fill").terminal_default,
+    "Expected explicit terminal-default background to paint every Box cell",
+  )
+}

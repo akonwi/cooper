@@ -26,12 +26,16 @@ use go:sync
 private fn vaxis_color(value: color::Color?) vaxis::Color {
   match value {
     color => {
-      match color.index {
-        index => vaxis::IndexColor(Byte::from(index)),
-        _ => {
-          let packed = Uint32::from(color.red) * 65536 + Uint32::from(color.green) * 256 + Uint32::from(color.blue)
-          vaxis::HexColor(packed)
-        },
+      if color.terminal_default {
+        vaxis::ColorDefault
+      } else {
+        match color.index {
+          index => vaxis::IndexColor(Byte::from(index)),
+          _ => {
+            let packed = Uint32::from(color.red) * 65536 + Uint32::from(color.green) * 256 + Uint32::from(color.blue)
+            vaxis::HexColor(packed)
+          },
+        }
       }
     },
     _ => vaxis::ColorDefault,

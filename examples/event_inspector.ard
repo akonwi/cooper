@@ -1,7 +1,7 @@
 use cooper/app
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/event
 use cooper/geometry
 use cooper/style
@@ -79,7 +79,7 @@ private fn marker_style(x: Int, y: Int, z: Int, visible: Bool) style::Style {
   )
 }
 
-private fn make_marker(ctx: mut context::Context, z: Int) mut Marker {
+private fn make_marker(ctx: mut runtime::Runtime, z: Int) mut Marker {
   let view = text::new(
     ctx,
     content: "",
@@ -141,7 +141,7 @@ private fn apply_card(card: mut Card, dragging: Bool) {
 }
 
 private fn make_card(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   name: Str,
   x: Int,
   y: Int,

@@ -3,7 +3,7 @@ use ard/async
 use cooper/app
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/event
 use cooper/input
 use cooper/scroll_box
@@ -18,7 +18,7 @@ private fn row_style() style::Style {
 }
 
 private fn entry_row(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   label: Str,
   activate: fn(Str),
 ) mut box::Box {
@@ -67,7 +67,7 @@ private fn read_names(path: Str) [Str]!Error {
 }
 
 private fn start_directory_load(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   path: Str,
   listing: mut scroll_box::ScrollBox,
   loading: mut text::Text,

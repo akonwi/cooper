@@ -726,7 +726,7 @@ core/selection_state.ard  global selection orchestration
 core/focus.ard            single-control focus and reveal
 core/hit.ard              clipped, stacking-aware hit traversal
 core/router.ard           mutation-safe bubbling
-core/app_runtime.ard      Vaxis conversion, scheduling, and delegation
+runtime.ard      Vaxis conversion, scheduling, and delegation
 ```
 
 The dependency direction is:
@@ -741,12 +741,12 @@ core/router -> core/node, event, core/focus
 core/selection_state -> core/node, event, selection
 core/pointer -> core/node, event, core/hit, core/router,
                 core/focus, core/selection_state
-core/app_runtime -> core/pointer, core/selection_state, core/focus
+runtime -> core/pointer, core/selection_state, core/focus
 ```
 
 Public `selection.ard` never imports Node. `core/pointer` and
 `core/selection_state` never import App or Root. Selection state owns its
-root-scoped anchor shape rather than importing pointer. `core/app_runtime`
+root-scoped anchor shape rather than importing pointer. `runtime`
 remains independent of `root.ard`.
 
 Ard public structs expose their field types recursively. Therefore

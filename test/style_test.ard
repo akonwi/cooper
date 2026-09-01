@@ -2,7 +2,7 @@ use ard/testing
 
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/style
 
 private fn all_edges(value: style::Length) style::Edges {
@@ -81,7 +81,7 @@ test fn style_new_configures_the_complete_public_vocabulary() Void!Str {
 }
 
 test fn style_replacement_clears_dimensions_constraints_and_offsets() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let parent = box::new(
     ctx,
     styles: style::new(
@@ -102,29 +102,29 @@ test fn style_replacement_clears_dimensions_constraints_and_offsets() Void!Str {
     ),
   )
   parent.add(child)
-  context::internal_state(ctx).compute_layout(parent, 10, 5)
+  ctx.compute_layout(parent, 10, 5)
   try testing::assert(
     child.layout().local.x == 2 and child.layout().local.y == 1 and child.layout().local.width == 4,
     "Expected initial dimensions, constraint, and offsets",
   )
 
   child.set_style(style::new(width: style::cells(8), height: style::cells(1)))
-  context::internal_state(ctx).compute_layout(parent, 10, 5)
+  ctx.compute_layout(parent, 10, 5)
   let reset = child.layout().local
 
   try testing::assert(reset.x == 0 and reset.y == 0, "Expected undefined offsets to clear backend state")
   try testing::assert(reset.width == 8, "Expected undefined max width to clear backend state")
 
   child.set_style(style::new())
-  context::internal_state(ctx).compute_layout(parent, 10, 5)
+  ctx.compute_layout(parent, 10, 5)
   try testing::assert(child.layout().local.width == 0, "Expected undefined width to clear backend state")
 
-  context::internal_state(ctx).destroy()
+  ctx.destroy_detached()
   testing::assert(child.node_ref.is_destroyed(), "Expected style reset cleanup")
 }
 
 test fn absolute_edge_offsets_reach_the_layout_backend() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let parent = box::new(ctx, styles: style::new(width: style::cells(10), height: style::cells(5)))
   let child = box::new(
     ctx,
@@ -138,11 +138,11 @@ test fn absolute_edge_offsets_reach_the_layout_backend() Void!Str {
   )
   parent.add(child)
 
-  context::internal_state(ctx).compute_layout(parent, 10, 5)
+  ctx.compute_layout(parent, 10, 5)
   let layout = child.layout().local
 
   try testing::assert(layout.x == 6, "Expected right offset in backend layout")
   try testing::assert(layout.y == 3, "Expected bottom offset in backend layout")
-  context::internal_state(ctx).destroy()
+  ctx.destroy_detached()
   testing::assert(child.node_ref.is_destroyed(), "Expected offset test cleanup")
 }

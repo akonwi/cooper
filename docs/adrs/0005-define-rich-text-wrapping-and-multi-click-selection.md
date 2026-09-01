@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. References to the former application Context map to Runtime exposed as
+`application.context`; see [ADR 0013](./0013-consolidate-context-into-runtime.md).
 
 ## Context
 
@@ -113,7 +114,7 @@ ergonomics:
 type TextContent = Str | StyledText
 
 fn new(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   content: TextContent,
   wrap: TextWrap?,
   styles: layout_style::Style?,
@@ -285,7 +286,7 @@ URLs instead of producing operating-system side effects. Live opening uses a
 small platform backend that passes the link as one process argument without a
 shell and starts the default handler asynchronously. Automatic activation is
 best effort; applications that need launch-error handling prevent the default
-and call `Context.open_url`, which returns `Result`.
+and call `Runtime.open_url`, which returns `Result`.
 
 The first completed click of a double-click activates once. If the second press
 expands a word selection, its release does not activate the same link again.

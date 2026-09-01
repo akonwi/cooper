@@ -1,7 +1,7 @@
 use cooper/app
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/event
 use cooper/style
 use cooper/text
@@ -67,7 +67,7 @@ private fn card_style(card: mut DraggableCard) style::Style {
 }
 
 private fn make_card(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   content: text::StyledText,
   x: Int,
   y: Int,

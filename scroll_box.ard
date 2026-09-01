@@ -1,6 +1,6 @@
 use ard/unsafe
 
-use cooper/context
+use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
@@ -92,21 +92,21 @@ private fn hidden_scrollbar_options() scrollbar::Options {
   scrollbar::options(visibility: scrollbar::Visibility::hidden)
 }
 
-private fn part(ctx: mut context::Context, styles: layout_style::Style) mut Part {
-  let retained = context::internal_state(ctx).create_node(styles)
+private fn part(ctx: mut runtime::Runtime, styles: layout_style::Style) mut Part {
+  let retained = ctx.create_node(styles)
   let created = mut Part{node_ref: retained}
   retained.bind(created)
   created
 }
 
 fn new(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   styles: layout_style::Style?,
   scrollbar_options: scrollbar::Options?,
   horizontal_scrollbar_options: scrollbar::Options?,
 ) mut ScrollBox {
   let public_style = styles.or(layout_style::new())
-  let retained = context::internal_state(ctx).create_node(configured(public_style))
+  let retained = ctx.create_node(configured(public_style))
   let wrapper = part(
     ctx,
     layout_style::new(

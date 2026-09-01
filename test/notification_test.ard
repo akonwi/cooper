@@ -3,7 +3,7 @@ use ard/testing
 
 use cooper/testing as cooper_testing
 
-test fn context_notifications_are_recorded_in_order() Void!Str {
+test fn runtime_notifications_are_recorded_in_order() Void!Str {
   let application = cooper_testing::new(8, 2)
 
   try testing::assert(
@@ -34,7 +34,7 @@ test fn context_notifications_are_recorded_in_order() Void!Str {
   )
 }
 
-test fn context_notifications_are_safe_from_background_fibers() Void!Str {
+test fn runtime_notifications_are_safe_from_background_fibers() Void!Str {
   let application = cooper_testing::new(8, 2)
   let first_context = application.context
   let second_context = application.context
@@ -59,7 +59,7 @@ test fn context_notifications_are_safe_from_background_fibers() Void!Str {
   Result::ok(())
 }
 
-test fn context_notification_returns_false_when_unsupported_or_destroyed() Void!Str {
+test fn runtime_notification_returns_false_when_unsupported_or_destroyed() Void!Str {
   let unsupported = cooper_testing::new(8, 2, notifications_supported: false)
   try testing::assert(
     not unsupported.context.notify("Ignored", title: "Cooper"),

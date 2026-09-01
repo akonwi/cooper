@@ -1,7 +1,7 @@
 use ard/unsafe
 
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
@@ -1044,7 +1044,7 @@ private fn validate_appearance(value: Appearance, measure_width: fn(Str) Int) {
 }
 
 private fn internal_new(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   options: [Option],
   presentation: Presentation?,
   highlighted_index: Int?,
@@ -1055,7 +1055,7 @@ private fn internal_new(
   let selected_presentation = presentation.or(Presentation::menu())
   validate_presentation(selected_presentation)
   let selected_appearance = appearance.or(select_appearance())
-  let context_state = context::internal_state(ctx)
+  let context_state = ctx
   let measure_width = fn(value: Str) Int {
     context_state.measure_text(value)
   }
@@ -1219,7 +1219,7 @@ private fn select_appearance() Appearance {
 }
 
 fn new(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   options: [Option],
   config: SelectConfig?,
   highlighted_index: Int?,
@@ -1239,7 +1239,7 @@ fn new(
 }
 
 fn tabs(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   options: [Option],
   config: TabConfig?,
   highlighted_index: Int?,

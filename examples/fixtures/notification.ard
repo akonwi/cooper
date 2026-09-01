@@ -12,7 +12,7 @@ fn main() {
   defer application.destroy()
   let status = text::new(
     application.context,
-    content: "Notification fixture ready · N/U notify · I/D/E/P/R progress · S suspend",
+    content: "Notification fixture ready · T title · N/U notify · I/D/E/P/R progress · S suspend",
     styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
   )
   application.root.add(status)
@@ -20,7 +20,11 @@ fn main() {
   let context = application.context
   let dispatch = application.context.dispatch
   let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type == event::KeyEventType::press and received.matches("n") {
+    if received.event_type == event::KeyEventType::press and received.matches("t") {
+      let accepted = context.set_title("Cooper\nTitle")
+      status.set_content("TITLE ACCEPTED: {accepted}")
+      received.prevent_default()
+    } else if received.event_type == event::KeyEventType::press and received.matches("n") {
       if context.notify("Build finished", title: "Cooper") {
         status.set_content("TITLED ACCEPTED")
       } else {
@@ -67,11 +71,12 @@ fn main() {
       match application.suspend() {
         ok(_) => {
           let rejected = not context.notify("Suspended notification")
+          let title_accepted = context.set_title("Cooper\nSuspended")
           async::start(fn() {
             time::Sleep(200 * time::Millisecond)
             let resumed = application.resume()
             let _ = dispatch(fn() {
-              if rejected and resumed.is_ok() {
+              if rejected and title_accepted and resumed.is_ok() {
                 status.set_content("SUSPENDED REJECTED · RESUMED")
               } else {
                 status.set_content("SUSPEND CONTRACT FAILED")

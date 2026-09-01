@@ -59,6 +59,10 @@ def run_supported():
     try:
         wait_for(fd, screen, "Notification fixture ready")
 
+        send(fd, "t")
+        wait_for_bytes(fd, screen, b"\x1b]2;Cooper Title\x1b\\")
+        wait_for(fd, screen, "TITLE ACCEPTED: true")
+
         send(fd, "n")
         wait_for_bytes(fd, screen, b"\x1b]777;notify;Cooper;Build finished\x1b\\")
         wait_for(fd, screen, "TITLED ACCEPTED")
@@ -90,12 +94,18 @@ def run_supported():
         send(fd, "i")
         wait_for_bytes(fd, screen, b"\x1b]9;4;3\x1b\\")
         send(fd, "s")
-        wait_for_text_and_bytes(
+        suspend_output = wait_for_text_and_bytes(
             fd,
             screen,
             "SUSPENDED REJECTED · RESUMED",
-            [b"\x1b]9;4;0\x1b\\", b"\x1b]9;4;3\x1b\\"],
+            [
+                b"\x1b]9;4;0\x1b\\",
+                b"\x1b]2;Cooper Suspended\x1b\\",
+                b"\x1b]9;4;3\x1b\\",
+            ],
         )
+        if suspend_output.count(b"\x1b]2;Cooper Suspended\x1b\\") != 1:
+            raise AssertionError("suspended title was duplicated during resume")
         send(fd, "r")
         wait_for_bytes(fd, screen, b"\x1b]9;4;0\x1b\\")
 
@@ -106,6 +116,8 @@ def run_supported():
         assert status == 0, f"exit status {status}"
         if b"\x1b]9;4;0\x1b\\" not in shutdown_output:
             raise AssertionError("active terminal progress was not removed during teardown")
+        if b"\x1b]2;" in shutdown_output:
+            raise AssertionError("terminal title was unexpectedly changed during teardown")
     finally:
         cleanup(fd, pid)
 

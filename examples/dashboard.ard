@@ -4,7 +4,7 @@ use ard/list
 use cooper/app
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/event
 use cooper/scroll_box
 use cooper/style
@@ -78,7 +78,7 @@ private fn status_color(value: Int, warning: Int, critical: Int) color::Color {
   }
 }
 
-private fn content_clip(ctx: mut context::Context) mut box::Box {
+private fn content_clip(ctx: mut runtime::Runtime) mut box::Box {
   box::new(
     ctx,
     styles: style::new(
@@ -90,7 +90,7 @@ private fn content_clip(ctx: mut context::Context) mut box::Box {
   )
 }
 
-private fn metric_tile(ctx: mut context::Context, title: Str, border_color: color::Color) MetricTile {
+private fn metric_tile(ctx: mut runtime::Runtime, title: Str, border_color: color::Color) MetricTile {
   let panel = box::new(
     ctx,
     title: title,
@@ -313,7 +313,7 @@ private fn log_row_style() style::Style {
 }
 
 private fn append_log(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   viewport: mut scroll_box::ScrollBox,
   state: mut DashboardState,
   manual: Bool,

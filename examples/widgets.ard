@@ -3,7 +3,7 @@ use ard/async
 use cooper/app
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/event
 use cooper/select as select_control
 use cooper/style
@@ -375,7 +375,7 @@ private fn apply_tab_config(demo: mut TabDemo) {
   render_tabs(demo)
 }
 
-private fn make_tab_demo(ctx: mut context::Context) mut TabDemo {
+private fn make_tab_demo(ctx: mut runtime::Runtime) mut TabDemo {
   let root = box::new(ctx, styles: tab_page_style(true))
   let panel = box::new(
     ctx,
@@ -537,7 +537,7 @@ private fn apply_select_config(demo: mut SelectDemo) {
   render_select(demo)
 }
 
-private fn make_select_demo(ctx: mut context::Context) mut SelectDemo {
+private fn make_select_demo(ctx: mut runtime::Runtime) mut SelectDemo {
   let root = box::new(ctx, styles: select_page_style(false))
   let list_panel = box::new(
     ctx,
@@ -688,7 +688,7 @@ private fn render_slider(slider: mut LocalSlider) {
 }
 
 private fn make_horizontal_slider(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   name: Str,
   detail: Str,
   value: Int,
@@ -766,7 +766,7 @@ private fn make_horizontal_slider(
 }
 
 private fn make_vertical_slider(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   name: Str,
   width: Int,
   value: Int,
@@ -869,7 +869,7 @@ private fn reset_sliders(sliders: [mut LocalSlider], action: mut text::Text) {
   action.set_text_style(text::style(foreground: color::hex("#FF00FF"), bold: true))
 }
 
-private fn make_slider_page(ctx: mut context::Context) SliderDemo {
+private fn make_slider_page(ctx: mut runtime::Runtime) SliderDemo {
   let root = box::new(ctx, styles: slider_page_style(false))
   let horizontal = box::new(
     ctx,

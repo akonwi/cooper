@@ -24,9 +24,11 @@ The canonical design is defined by the accepted
 [terminal clipboard ADR](./docs/adrs/0006-define-terminal-clipboard-access.md),
 [scrollbar ADR](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md),
 [Select ADR](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md),
-[notification ADR](./docs/adrs/0009-define-terminal-mediated-notifications.md), and
-[terminal progress ADR](./docs/adrs/0010-define-terminal-progress-reporting.md), and
-[multiline TextArea ADR](./docs/adrs/0011-define-multiline-text-area.md).
+[notification ADR](./docs/adrs/0009-define-terminal-mediated-notifications.md),
+[terminal progress ADR](./docs/adrs/0010-define-terminal-progress-reporting.md),
+[multiline TextArea ADR](./docs/adrs/0011-define-multiline-text-area.md), and
+[terminal title ADR](./docs/adrs/0012-define-terminal-title-updates.md), and
+[Runtime ownership ADR](./docs/adrs/0013-consolidate-context-into-runtime.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
@@ -54,7 +56,7 @@ fn main() {
 }
 ```
 
-App exposes its constructor Context and permanent terminal-sized Root. Controls
+App exposes its Runtime as `application.context` and its permanent terminal-sized Root. Controls
 are persistent references: construct them once, add them to the tree, and
 mutate them through setters. `start()` launches the event pump and returns,
 `wait()` is its completion barrier, and `run()` is the blocking convenience for
@@ -73,14 +75,14 @@ relationships change through indexed `add`, `remove`, reparenting, and
 - Cross-parent reparent receives a fresh attachment scope.
 - `destroy()` destroys one control and preserves detached children.
 - `destroy(recursive: true)` destroys the complete subtree.
-- App teardown destroys all remaining Context-owned controls.
+- App teardown destroys all remaining Runtime-owned controls.
 
 The internal Renderable protocol is language-visible beneath `core/` but is not
 yet a supported custom-control API.
 
 ## Runtime behavior
 
-- Context dispatch queues application work on the UI thread and exposes
+- Runtime dispatch queues application work on the UI thread and exposes
   App-lifetime cancellation. After nonblocking `start()`, use dispatch or a
   Cooper callback for retained-tree mutation.
 - Frame requests are demand-driven and coalesced.
@@ -98,10 +100,11 @@ yet a supported custom-control API.
   Text supports double-click word selection.
 - Input delegates logical editing to an Ard-native action model with familiar
   readline-style Ctrl, Alt, and Super keybindings.
-- Context exposes App-bound OSC 52 clipboard read, write, and clear operations
+- Runtime exposes App-bound OSC 52 clipboard read, write, and clear operations
   while terminal access policy remains under terminal-host control.
-- Context can request sanitized terminal-mediated desktop notifications and
-  lifecycle-safe terminal-surface progress from callbacks or background fibers.
+- Runtime can request sanitized terminal-mediated desktop notifications,
+  lifecycle-safe terminal-surface progress, and sanitized terminal title updates
+  from callbacks or background fibers.
 
 ## Initial controls
 
@@ -158,21 +161,21 @@ tests.
 ```text
 app.ard          public App facade
 box.ard          configurable retained flex container
-clipboard.ard    Context-exposed OSC 52 clipboard service
+clipboard.ard    Runtime-exposed OSC 52 clipboard service
 color.ard        backend-independent RGB color
-context.ard      Context capability, ownership, and backing state
 event.ard        Cooper-owned events, controls, and propagation state
 geometry.ard     Rect, Geometry, and geometry helpers
 input.ard        retained single-line Input
 notification.ard accepted notification request snapshots
-root.ard         permanent Root and runtime bridge
+root.ard         permanent Runtime-bound Root
+runtime.ard      application capabilities, retained ownership, lifecycle, and backend state
 scroll_box.ard   retained two-axis ScrollBox with built-in bars
 scrollbar.ard    standalone vertical/horizontal Scrollbar
 select.ard       compact Select and horizontal TabSelect
 selection.ard    global selection snapshots and local ranges
 style.ard        colors, layout values, stacking, and validation
 terminal_progress.ard terminal progress state and report values
-testing.ard      headless TestApp and frame snapshots
+testing.ard      headless TestApp, frame snapshots, and terminal title history
 text.ard         Text, StyledText spans, and TextStyle
 text_area.ard    retained multiline TextArea
 text_area_layout.ard source-preserving editable text layout

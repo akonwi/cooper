@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. References to the former application Context map to Runtime exposed as
+`application.context`; see [ADR 0013](./0013-consolidate-context-into-runtime.md).
 
 ## Context
 

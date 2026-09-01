@@ -2,7 +2,7 @@ use ard/testing
 
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/paint
 use cooper/event
@@ -91,7 +91,7 @@ private fn send_mouse(field: mut input::Input, local_x: Int) event_delivery::Dis
 }
 
 test fn input_inserts_moves_and_deletes_graphemes() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "ac", styles: fixed(10))
 
   let _ = send_key(field, key("left"))
@@ -104,7 +104,7 @@ test fn input_inserts_moves_and_deletes_graphemes() Void!Str {
 }
 
 test fn input_normalizes_combining_and_merged_grapheme_boundaries() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, styles: fixed(10))
 
   let _ = send_key(field, key("e", text: "e"))
@@ -122,9 +122,9 @@ test fn input_normalizes_combining_and_merged_grapheme_boundaries() Void!Str {
 }
 
 test fn input_paints_and_scrolls_cursor_into_narrow_viewport() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "hello", styles: fixed(5))
-  context::internal_state(ctx).compute_layout(field, 5, 1)
+  ctx.compute_layout(field, 5, 1)
   field.node().set_focused(true)
   let buffer = paint::new_buffer(5, 1)
   field.node().paint(buffer)
@@ -141,10 +141,10 @@ test fn input_paints_and_scrolls_cursor_into_narrow_viewport() Void!Str {
 }
 
 test fn input_does_not_paint_partial_wide_grapheme() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "🙂a", styles: fixed(1))
   let _ = send_key(field, key("home"))
-  context::internal_state(ctx).compute_layout(field, 1, 1)
+  ctx.compute_layout(field, 1, 1)
   let buffer = paint::new_buffer(1, 1)
   field.node().paint(buffer)
 
@@ -154,8 +154,8 @@ test fn input_does_not_paint_partial_wide_grapheme() Void!Str {
   )
 }
 
-test fn input_uses_context_terminal_width_measurement() Void!Str {
-  let ctx = context::internal_new(width_measurer: fn(text: Str) Int {
+test fn input_uses_runtime_terminal_width_measurement() Void!Str {
+  let ctx = runtime::new_detached(width_measurer: fn(text: Str) Int {
     if text == "🙂" {
       4
     } else {
@@ -164,7 +164,7 @@ test fn input_uses_context_terminal_width_measurement() Void!Str {
   })
   let field = input::new(ctx, value: "🙂", styles: fixed(3))
   let _ = send_key(field, key("home"))
-  context::internal_state(ctx).compute_layout(field, 3, 1)
+  ctx.compute_layout(field, 3, 1)
   let buffer = paint::new_buffer(3, 1)
   field.node().paint(buffer)
 
@@ -175,7 +175,7 @@ test fn input_uses_context_terminal_width_measurement() Void!Str {
 }
 
 test fn input_inserts_pasted_ctrl_c_as_text() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, styles: fixed(5))
 
   let result = send_paste(field, event::paste("c"))
@@ -185,7 +185,7 @@ test fn input_inserts_pasted_ctrl_c_as_text() Void!Str {
 }
 
 test fn input_normalizes_every_pasted_line_ending() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, styles: fixed(20))
 
   let _ = send_paste(field, event::paste("a\r\nb\r\nc\rd\ne"))
@@ -194,18 +194,18 @@ test fn input_normalizes_every_pasted_line_ending() Void!Str {
 }
 
 test fn input_mouse_uses_target_local_coordinates_and_visible_start() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "hello", styles: fixed(5))
-  context::internal_state(ctx).compute_layout(field, 5, 1)
+  ctx.compute_layout(field, 5, 1)
   let _ = send_mouse(field, 0)
   let _ = send_key(field, key("x", text: "X"))
   testing::assert(field.value() == "hXello", "Expected typing at clicked cursor")
 }
 
 test fn input_mouse_preserves_wide_grapheme_boundaries() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "🙂a", styles: fixed(4))
-  context::internal_state(ctx).compute_layout(field, 4, 1)
+  ctx.compute_layout(field, 4, 1)
   let _ = send_mouse(field, 1)
   let _ = send_key(field, key("x", text: "X"))
 
@@ -860,9 +860,9 @@ test fn selection_overlay_stops_at_non_fitting_wide_glyph() Void!Str {
 }
 
 test fn unfocused_input_is_focusable_without_hardware_cursor() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "hello", styles: fixed(10))
-  context::internal_state(ctx).compute_layout(field, 10, 1)
+  ctx.compute_layout(field, 10, 1)
   let buffer = paint::new_buffer(10, 1)
   field.node().paint(buffer)
 
@@ -1220,7 +1220,7 @@ test fn input_cli_home_end_and_character_aliases_follow_readline() Void!Str {
 }
 
 test fn input_cli_bindings_handle_repeat_release_and_modified_text() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "one two three", styles: fixed(16))
 
   let repeated = send_key(
@@ -1249,7 +1249,7 @@ test fn input_cli_bindings_handle_repeat_release_and_modified_text() Void!Str {
 }
 
 test fn deferred_input_history_chords_are_consumed_without_editing() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "value", styles: fixed(8))
 
   let undone = send_key(field, modified_key("z", super: true))

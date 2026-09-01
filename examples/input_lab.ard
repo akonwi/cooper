@@ -1,7 +1,7 @@
 use cooper/app
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/event
 use cooper/input
 use cooper/scroll_box
@@ -23,7 +23,7 @@ struct LabState {
   name_rejected: Bool,
 }
 
-private fn field_frame(ctx: mut context::Context, title: Str, border: color::Color) mut box::Box {
+private fn field_frame(ctx: mut runtime::Runtime, title: Str, border: color::Color) mut box::Box {
   box::new(
     ctx,
     title: title,

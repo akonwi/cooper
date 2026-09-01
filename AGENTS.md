@@ -21,9 +21,11 @@ and fallible setters must remain hidden behind Cooper's validated API and remain
 replaceable by an Ard-native implementation.
 
 Public application modules stay at the package root and own their complete Ard
-domain model and supporting logic. Keep only unsupported runtime mechanisms
-with no public counterpart beneath `core/`: Node, paint, focus, hit testing,
-routing, scheduling, and application runtime. Backend bindings stay beneath
+domain model and supporting logic. App owns one Runtime lifetime, exposes that
+Runtime as `application.context`, and binds its Root to the same identity.
+Cooper has no separate application Context type. Keep only unsupported runtime
+mechanisms with no public counterpart beneath `core/`: Node, paint, focus, hit
+testing, routing, and scheduling. Backend bindings stay beneath
 `ffi/core/backend/`.
 
 Import Vaxis as `vaxis`; do not alias it as `raw`.
@@ -51,7 +53,7 @@ Run formatting and compiler validation on every changed Ard file.
 Prefer deterministic headless tests for:
 
 - App/Root startup, waiting, suspend/resume, destruction, dispatch,
-  cancellation, Context ownership, clipboard lifetime, notification requests,
+  cancellation, Runtime ownership, clipboard lifetime, notification requests,
   and terminal progress cleanup;
 - persistent identity, indexed reorder/reparent, detach, and destruction;
 - layout, clipping, two-axis scrolling, scrollbar interaction, wrapping, and
@@ -102,5 +104,6 @@ python3 benchmarks/run.py
 - Select controls and Appearance overrides: [`ADR 0008`](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md)
 - Terminal-mediated notifications: [`ADR 0009`](./docs/adrs/0009-define-terminal-mediated-notifications.md)
 - Terminal progress reporting: [`ADR 0010`](./docs/adrs/0010-define-terminal-progress-reporting.md)
+- Terminal title updates: [`ADR 0012`](./docs/adrs/0012-define-terminal-title-updates.md)
 - Vaxis source: `go.rockorager.dev/vaxis`
 - Ard docs: https://ard.run

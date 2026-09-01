@@ -1,13 +1,11 @@
-use cooper/context
-use cooper/core/app_runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
+use cooper/runtime
 use cooper/style
 
 struct Root {
   node_ref: mut node::Node,
-  state_ref: mut app_runtime::State,
 }
 
 impl node::Renderable for Root {
@@ -24,12 +22,12 @@ impl node::Renderable for Root {
   }
 }
 
-fn new(ctx: mut context::Context, runtime: mut app_runtime::State) mut Root {
-  let retained_node = context::internal_state(ctx).create_node(style::new())
-  let created = mut Root{node_ref: retained_node, state_ref: runtime}
+fn new(app_runtime: mut runtime::Runtime) mut Root {
+  let retained_node = app_runtime.create_node(style::new())
+  let created = mut Root{node_ref: retained_node}
   retained_node.bind(created)
   retained_node.mark_application_root()
-  runtime.bind_root(retained_node)
+  app_runtime.bind_root(retained_node)
   created
 }
 

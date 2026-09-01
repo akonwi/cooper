@@ -1,6 +1,7 @@
+use ard/async
 use ard/testing
 
-use cooper/context
+use cooper/runtime
 use cooper/event
 use cooper/input
 use cooper/testing as cooper_testing
@@ -25,7 +26,7 @@ test fn test_app_renders_the_permanent_root_tree() Void!Str {
   try testing::assert(frame.width() == 12 and frame.height() == 2, "Expected configured frame size")
   try cooper_testing::assert_contains(frame.text(), "Hello")
   application.destroy()
-  testing::assert(context::internal_state(application.context).is_destroyed(), "Expected TestApp Context cleanup")
+  testing::assert(application.context.is_destroyed(), "Expected TestApp Runtime cleanup")
 }
 
 test fn test_app_flushes_app_lifetime_dispatch_and_scheduled_frames() Void!Str {
@@ -39,7 +40,7 @@ test fn test_app_flushes_app_lifetime_dispatch_and_scheduled_frames() Void!Str {
   })
   let drained = application.flush()
 
-  try testing::assert(accepted.is_ok(), "Expected live Context dispatch")
+  try testing::assert(accepted.is_ok(), "Expected live Runtime dispatch")
   try testing::assert(drained == 1, "Expected one flushed action")
   try cooper_testing::assert_contains(application.frame().text(), "After")
   application.destroy()
@@ -68,7 +69,7 @@ test fn test_app_destroy_from_dispatch_stops_at_the_action_boundary() Void!Str {
   try testing::assert(drained == 1, "Expected only the destroying action to run")
   try testing::assert(not later_action_ran, "Expected queued work after destruction to be suppressed")
   try cooper_testing::assert_contains(application.frame().text(), "After")
-  testing::assert(context::internal_state(application.context).is_destroyed(), "Expected deferred TestApp cleanup")
+  testing::assert(application.context.is_destroyed(), "Expected deferred TestApp cleanup")
 }
 
 test fn terminal_focus_is_deduplicated_and_independent_of_control_focus() Void!Str {
@@ -119,15 +120,31 @@ test fn terminal_focus_listener_can_destroy_test_app_safely() Void!Str {
 
   application.set_terminal_focus(event::TerminalFocus::lost)
 
-  testing::assert(context::internal_state(application.context).is_destroyed(), "Expected terminal-focus destruction at callback boundary")
+  testing::assert(application.context.is_destroyed(), "Expected terminal-focus destruction at callback boundary")
 }
 
-test fn destroyed_context_rejects_platform_link_opening() Void!Str {
+test fn destroyed_runtime_rejects_platform_link_opening() Void!Str {
   let application = cooper_testing::new(4, 1)
   application.destroy()
 
-  try testing::assert(application.context.open_url("https://example.com").is_err(), "Expected destroyed Context to reject URL opening")
+  try testing::assert(application.context.open_url("https://example.com").is_err(), "Expected destroyed Runtime to reject URL opening")
   testing::assert(application.opened_urls().size() == 0, "Expected no platform side effect after teardown")
+}
+
+test fn platform_link_opening_serializes_with_destruction() Void!Str {
+  let application = cooper_testing::new(4, 1)
+  let context = application.context
+  let completed = Chan::new<Bool>(1)
+  async::start(fn() {
+    completed.send(context.open_url("https://example.com").is_ok())
+  })
+  application.destroy()
+  let _ = completed.receiver().recv()
+
+  testing::assert(
+    application.context.open_url("https://example.com/late").is_err(),
+    "Expected URL rejection after concurrent teardown",
+  )
 }
 
 test fn test_app_resize_and_destruction_are_deterministic() Void!Str {

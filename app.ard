@@ -1,101 +1,72 @@
-use cooper/context
-use cooper/core/app_runtime
 use cooper/event
 use cooper/root
+use cooper/runtime
 use cooper/selection
-use cooper/terminal_progress
 
 struct App {
-  context: mut context::Context,
+  context: mut runtime::Runtime,
   root: mut root::Root,
 }
 
 fn new(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?) App!Error {
-  let runtime = try app_runtime::new_live(exit_on_ctrl_c.or(true), auto_focus.or(true), use_mouse.or(true))
+  let runtime = try runtime::new_live(exit_on_ctrl_c.or(true), auto_focus.or(true), use_mouse.or(true))
   defer runtime.rollback_construction()
-  let clipboard_service = runtime.clipboard()
-  let ctx = context::internal_new(
-    request_render: runtime.request_render(),
-    width_measurer: runtime.width_measurer(),
-    dispatch: runtime.dispatch(),
-    cancellation: runtime.cancellation(),
-    focus_request: runtime.focus_request(),
-    blur_request: runtime.blur_request(),
-    selection_start: runtime.selection_start_request(),
-    selection_update: runtime.selection_update_request(),
-    selection_owns: runtime.selection_owns_request(),
-    selection_clear: runtime.selection_clear_request(),
-    open_url: runtime.open_url(),
-    notify: fn(message: Str, title: Str?) Bool {
-      runtime.notify(message, title)
-    },
-    terminal_progress: fn(progress_state: terminal_progress::State, percent: Int?) Bool {
-      runtime.progress(progress_state, percent)
-    },
-    clipboard_service: clipboard_service,
-  )
-  let root = root::new(ctx, runtime)
+  let root = root::new(runtime)
   runtime.commit_construction()
-  runtime.start_signal_monitor(ctx)
-  Result::ok(
-    App{
-      context: ctx,
-      root: root,
-    },
-  )
+  runtime.start_signal_monitor()
+  Result::ok(App{context: runtime, root: root})
 }
 
 impl App {
   fn on_key(handler: fn(mut event::KeyEvent)) fn() {
-    self.root.state_ref.on_key(handler)
+    self.context.on_key(handler)
   }
 
   fn on_paste(handler: fn(mut event::PasteEvent)) fn() {
-    self.root.state_ref.on_paste(handler)
+    self.context.on_paste(handler)
   }
 
   fn terminal_focus() event::TerminalFocus? {
-    self.root.state_ref.terminal_focus()
+    self.context.terminal_focus()
   }
 
   fn on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
-    self.root.state_ref.on_terminal_focus(handler)
+    self.context.on_terminal_focus(handler)
   }
 
   fn selection() selection::Selection? {
-    self.root.state_ref.current_selection()
+    self.context.current_selection()
   }
 
   fn clear_selection() {
-    self.root.state_ref.clear_selection()
+    self.context.clear_selection()
   }
 
   fn on_selection_change(handler: fn(selection::Selection?)) fn() {
-    self.root.state_ref.on_selection_change(handler)
+    self.context.on_selection_change(handler)
   }
 
   fn start() Void!Error {
-    self.root.state_ref.start_live(self.context, self.root)
+    self.context.start_live(self.root)
   }
 
   fn wait() Void!Error {
-    self.root.state_ref.wait_live()
+    self.context.wait_live()
   }
 
   fn run() Void!Error {
-    let runtime = self.root.state_ref
-    runtime.run(self.context, self.root)
+    self.context.run(self.root)
   }
 
   fn suspend() Void!Error {
-    self.root.state_ref.suspend_live()
+    self.context.suspend_live()
   }
 
   fn resume() Void!Error {
-    self.root.state_ref.resume_live()
+    self.context.resume_live()
   }
 
   fn destroy() {
-    self.root.state_ref.destroy_live(self.context)
+    self.context.destroy_live()
   }
 }

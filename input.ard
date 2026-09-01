@@ -1,5 +1,5 @@
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
@@ -455,7 +455,7 @@ private fn default_input_style() layout_style::Style {
 }
 
 fn new(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   value: Str?,
   placeholder: Str?,
   min_length: Int?,
@@ -483,7 +483,7 @@ fn new(
   let base_style = text_style.or(text::style())
   let patch = selection_style.or(default_selection_style)
   let input = mut Input{
-    node_ref: context::internal_state(ctx).create_node(configured_style),
+    node_ref: ctx.create_node(configured_style),
     editor_state: mut editor::new(initial_value),
     placeholder_text: single_line(placeholder.or("")),
     minimum_length: minimum,
@@ -504,7 +504,7 @@ fn new(
     selected_range: Maybe::new<selection::Range>(),
     selected_text_value: "",
     commit_baseline: initial_value,
-    width_measurer: context::internal_state(ctx).width_measurer,
+    width_measurer: fn(value: Str) Int { ctx.measure_text(value) },
   }
   let retained = input.node_ref
   retained.bind(input)

@@ -1,7 +1,7 @@
 use cooper/app
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/event
 use cooper/selection
 use cooper/style
@@ -119,7 +119,7 @@ private fn horizontal_padding() style::Edges {
   padding.@
 }
 
-private fn content_clip(ctx: mut context::Context, inset: Bool) mut box::Box {
+private fn content_clip(ctx: mut runtime::Runtime, inset: Bool) mut box::Box {
   let applied = mut style::new(
     width: style::percent(100.0),
     height: style::percent(100.0),
@@ -131,7 +131,7 @@ private fn content_clip(ctx: mut context::Context, inset: Bool) mut box::Box {
   box::new(ctx, styles: applied.@)
 }
 
-private fn make_wrap_card(ctx: mut context::Context, title: Str, border_color: color::Color) mut box::Box {
+private fn make_wrap_card(ctx: mut runtime::Runtime, title: Str, border_color: color::Color) mut box::Box {
   box::new(
     ctx,
     title: title,

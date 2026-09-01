@@ -20,11 +20,15 @@ Design decisions for Cooper's Ard-native retained-mode framework.
 - [ADR 0008](./adrs/0008-define-select-controls-and-appearance-overrides.md) — accepted
   compact Select menus, TabSelect, committed choice state, and local Appearance patches.
 - [ADR 0009](./adrs/0009-define-terminal-mediated-notifications.md) — accepted
-  Context notification requests, conservative protocol selection, and lifecycle semantics.
+  Runtime notification requests, conservative protocol selection, and lifecycle semantics.
 - [ADR 0010](./adrs/0010-define-terminal-progress-reporting.md) — accepted
-  Context terminal progress states, Ghostty OSC 9;4 output, and lifecycle cleanup.
+  Runtime terminal progress states, Ghostty OSC 9;4 output, and lifecycle cleanup.
 - [ADR 0011](./adrs/0011-define-multiline-text-area.md) — accepted
   multiline editing, wrapping, viewport movement, cursor reveal, and editable selection.
+- [ADR 0012](./adrs/0012-define-terminal-title-updates.md) — accepted
+  sanitized, coalesced, lifecycle-safe terminal title updates through Runtime.
+- [ADR 0013](./adrs/0013-consolidate-context-into-runtime.md) — accepted
+  the App-to-Runtime ownership model and removal of the redundant Context type.
 
 ## Architecture Decision Records
 
@@ -43,6 +47,8 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0009](./adrs/0009-define-terminal-mediated-notifications.md) | Accepted | Define terminal-mediated notifications |
 | [0010](./adrs/0010-define-terminal-progress-reporting.md) | Accepted | Define terminal progress reporting |
 | [0011](./adrs/0011-define-multiline-text-area.md) | Accepted | Define the multiline TextArea |
+| [0012](./adrs/0012-define-terminal-title-updates.md) | Accepted | Define terminal title updates |
+| [0013](./adrs/0013-consolidate-context-into-runtime.md) | Accepted | Consolidate Context into Runtime |
 
 ### Add an ADR
 

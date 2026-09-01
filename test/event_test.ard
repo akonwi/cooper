@@ -1,6 +1,6 @@
 use ard/testing
 
-use cooper/context
+use cooper/runtime
 use cooper/box
 use cooper/event
 use cooper/input
@@ -67,7 +67,7 @@ test fn app_and_control_key_listeners_run_in_order_and_dispose() Void!Str {
   application.key(key("z", "z"))
   try testing::assert(calls.size() == 6 and calls.at(5).or("") == "app-second", "Expected App stop to suppress focused delivery")
   application.destroy()
-  testing::assert(context::internal_state(application.context).is_destroyed(), "Expected listener test cleanup")
+  testing::assert(application.context.is_destroyed(), "Expected listener test cleanup")
 }
 
 test fn paste_uses_separate_app_and_control_delivery() Void!Str {
@@ -276,7 +276,7 @@ test fn mouse_default_reloads_geometry_after_listener_layout_mutation() Void!Str
         left: style::cells(1),
       ),
     )
-    context::internal_state(application.context).compute_layout(application.root, 5, 1)
+    application.context.compute_layout(application.root, 5, 1)
   })
   application.render()
 

@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. The separate Context type and App/Context/Root ownership model are
+superseded by [ADR 0013](./0013-consolidate-context-into-runtime.md).
 
 ## Context
 
@@ -16,7 +17,7 @@ using Vaxis only as the terminal backend.
 ### Model
 
 Cooper follows OpenTUI core's imperative retained model: create one terminal
-runtime, pass its Context to control constructors, build one persistent tree,
+runtime, pass its Runtime to control constructors, build one persistent tree,
 and mutate existing controls directly. Cooper owns layout, drawing, input, and
 terminal output.
 
@@ -24,7 +25,7 @@ The application-facing core is defined here. `Renderable` remains a
 language-visible implementation protocol under `core/`, not a supported custom
 extension API yet.
 
-### App, Context, and Root
+### App, Runtime, and Root
 
 ```ard
 let application = app::new().expect("create Cooper app")
@@ -37,14 +38,15 @@ application.run().expect("run Cooper app")
 
 ```ard
 struct App {
-  context: mut context::Context,
+  context: mut runtime::Runtime,
   root: mut root::Root,
 }
 
-struct Context {
+struct Runtime {
   clipboard: mut clipboard::Clipboard,
   dispatch: fn(fn()) Void!event::DispatchError,
   cancellation: Receiver<Void>,
+  internal: Any,
 }
 
 fn new(
@@ -67,8 +69,8 @@ impl App {
 ```
 
 All three options default to `true`; `auto_focus` means focus on mouse-down.
-App is a copyable facade over shared runtime state held through Context and
-Root. Copies observe the same lifecycle. Context exposes the App-bound Clipboard;
+App is a copyable facade over one shared Runtime and Root. Copies observe the
+same lifecycle. Runtime exposes the App-bound Clipboard;
 its behavior is defined by [ADR 0006](./0006-define-terminal-clipboard-access.md).
 
 `start` mounts the permanent Root, commits the initial frame when the terminal
@@ -89,7 +91,7 @@ destruction returns an Error rather than panicking. If terminal release fails,
 terminal cleanup without recreating application resources.
 
 `suspend` synchronously restores terminal input and screen state while retaining
-the Context, Root, controls, focus, selection, listeners, and queued model
+the Runtime, Root, controls, focus, selection, listeners, and queued model
 updates. Rendering pauses and terminal input is not delivered while suspended.
 `resume` reacquires the terminal, drains no stale pre-suspension input, forces a
 resize-aware complete frame, and continues the same event pump. Both operations
@@ -102,17 +104,18 @@ does not forcibly terminate a host process or its application fibers.
 
 Because Ard application code and Cooper's event pump can run concurrently after
 `start` returns, retained-tree mutation and listener registration after startup
-must run in a Cooper callback or through `Context.dispatch`. Build the initial
+must run in a Cooper callback or through `Runtime.dispatch`. Build the initial
 tree before `start`; background fibers must not directly read or mutate controls.
 This restriction does not apply while constructing the App before startup or to
-TestApp's synchronous driver methods. Context notification requests are
+TestApp's synchronous driver methods. Runtime notification requests are
 thread-safe terminal side effects and may be made directly from background
 fibers; their lifecycle and backend behavior are defined by [ADR 0009](./0009-define-terminal-mediated-notifications.md).
 Terminal progress reporting is similarly thread-safe and is defined by
-[ADR 0010](./0010-define-terminal-progress-reporting.md).
+[ADR 0010](./0010-define-terminal-progress-reporting.md). Terminal title
+updates are defined by [ADR 0012](./0012-define-terminal-title-updates.md).
 
 After destruction, listener registration, Root mutation, and construction
-through the closed Context panic; dispatch is the exception and returns
+through the closed Runtime panic; dispatch is the exception and returns
 `DispatchError`.
 
 Root is permanently terminal-sized, uses column layout, and stretches children.
@@ -128,7 +131,7 @@ impl Root {
 }
 ```
 
-Context is passed to constructors and exposes App-lifetime background-work
+Runtime is passed to constructors and exposes App-lifetime background-work
 capabilities:
 
 ```ard
@@ -139,6 +142,8 @@ let _ = application.context.dispatch(fn() {
 application.context.cancellation.recv()
 
 application.context.clipboard.write("copied text")
+
+let _ = application.context.set_title("Cooper · 3")
 
 let _ = application.context.notify("Background task finished", title: "Cooper")
 let _ = application.context.progress(terminal_progress::State::indeterminate)
@@ -164,7 +169,7 @@ Tree placement and destruction ownership are separate:
 - `remove` detaches a direct child without destroying it;
 - `destroy()` destroys one control and detaches its children;
 - `destroy(recursive: true)` destroys descendants first, then the control;
-- App teardown destroys all remaining Context-owned controls.
+- App teardown destroys all remaining Runtime-owned controls.
 
 Child order controls layout, drawing, and hit testing. Applications retain
 direct control references; public IDs and string tree lookup are omitted.
@@ -500,7 +505,7 @@ testing::assert_contains(test_app.frame().text(), "Hello")
 test_app.destroy()
 ```
 
-TestApp is an App-style value facade with Context, Root, deterministic
+TestApp is an App-style value facade with Runtime, Root, deterministic
 in-memory Clipboard, and a configurable notification recorder. Its non-mutating
 methods operate on shared test-runtime state. It provides explicit render, bounded flush, resize,
 key/paste/mouse/scroll input, read-only frame and cell
@@ -543,7 +548,7 @@ than enforcing them.
 | --- | --- |
 | `createCliRenderer()` | `app::new()` |
 | renderer root | `App.root` |
-| renderer as RenderContext | narrow `App.context` capability |
+| renderer as RenderRuntime | narrow `App.context` capability |
 | imperative renderable constructors | retained control constructors |
 | indexed `add` and direct mutation | indexed `add` and setters |
 | `renderSelf()` | internal `draw()` |
@@ -552,7 +557,7 @@ than enforcing them.
 | renderer destruction | `App.destroy()` |
 | test renderer | `TestApp` |
 
-Cooper intentionally differs by separating App from Context, retaining a
+Cooper intentionally differs by separating App from Runtime, retaining a
 blocking `run` convenience for Ard's process model, and deferring supported
 custom-renderable authoring. Unlike OpenTUI's JavaScript host, an Ard main
 function exits even while background fibers exist, so standalone applications
@@ -570,4 +575,5 @@ must call `run`, `wait`, or otherwise keep their process alive.
 
 ## Related
 
-None.
+- [ADR 0012: Define Terminal Title Updates](./0012-define-terminal-title-updates.md)
+- [ADR 0013: Consolidate Context into Runtime](./0013-consolidate-context-into-runtime.md)

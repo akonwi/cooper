@@ -1,11 +1,11 @@
 use ard/testing
 
-use cooper/context
+use cooper/runtime
 use cooper/style
 use cooper/ui
 
 test fn ui_reexports_control_types_and_constructors() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let emphasized: ui::TextStyle = ui::text_style(bold: true)
   let inline: ui::Span = ui::span("Name", style: ui::span_style(underline: true))
   let rich: ui::StyledText = ui::styled_text([inline])
@@ -100,6 +100,6 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
   }
   try testing::assert(tabbed, "Expected tab Select aliases")
 
-  context::internal_state(ctx).destroy()
-  testing::assert(context::internal_state(ctx).is_destroyed(), "Expected ui alias test cleanup")
+  ctx.destroy_detached()
+  testing::assert(ctx.is_destroyed(), "Expected ui alias test cleanup")
 }

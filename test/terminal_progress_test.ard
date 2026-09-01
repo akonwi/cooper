@@ -18,7 +18,7 @@ private fn assert_panics(action: fn(), expected: Str) Void!Str {
   }
 }
 
-test fn context_emits_all_terminal_progress_states() Void!Str {
+test fn runtime_emits_all_terminal_progress_states() Void!Str {
   let application = cooper_testing::new(8, 2)
 
   try testing::assert(
@@ -174,7 +174,7 @@ test fn suspended_test_app_can_be_destroyed_without_resuming() Void!Str {
   try testing::assert(not application.resume(), "Expected destroyed TestApp not to resume")
   testing::assert(
     not context.progress(terminal_progress::State::normal, percent: 42),
-    "Expected destroyed Context not to accept progress",
+    "Expected destroyed Runtime not to accept progress",
   )
 }
 

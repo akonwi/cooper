@@ -1,0 +1,141 @@
+use ard/async
+use ard/testing
+
+use cooper/runtime
+use cooper/testing as cooper_testing
+
+test fn runtime_terminal_titles_are_sanitized_coalesced_and_lifecycle_safe() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+
+  try testing::assert(context.set_title("Tinear\x1b\a\u009c3"), "expected first title acceptance")
+  try testing::assert(context.set_title("Tinear   3"), "expected normalized duplicate acceptance")
+  try testing::assert(
+    application.context.set_title("Unsafe\x1b"),
+    "expected unsupported runtime path acceptance",
+  )
+  try testing::assert(context.set_title(""), "expected empty title acceptance")
+
+  let titles = application.terminal_titles()
+  try testing::assert(titles.size() == 3, "expected normalized duplicate title coalescing")
+  try testing::assert(
+    titles.at(0).expect("sanitized title") == "Tinear   3",
+    "expected C0/C1 replacement",
+  )
+  try testing::assert(titles.at(1).expect("runtime title") == "Unsafe ", "expected boundary sanitization")
+  try testing::assert(titles.at(2).expect("empty title").is_empty(), "expected explicit empty title")
+
+  application.destroy()
+  try testing::assert(not context.set_title("Too late"), "expected title rejection after destruction")
+  testing::assert(
+    application.terminal_titles().size() == 3,
+    "expected title history after destruction",
+  )
+}
+
+test fn detached_runtime_rejects_platform_capabilities_and_stops_cleanly() Void!Str {
+  let detached = runtime::new_detached()
+  let cancellation = detached.cancellation
+  try testing::assert(not detached.set_title("Unsupported"), "expected unsupported title rejection")
+  try testing::assert(detached.dispatch(fn() {}).is_err(), "expected stopped standalone dispatch")
+  try testing::assert(
+    detached.open_url("https://example.com").is_err(),
+    "expected unavailable URL opening",
+  )
+  detached.destroy_detached()
+  detached.destroy_detached()
+  try testing::assert(not detached.set_title("Destroyed"), "expected destroyed title rejection")
+  mut cancelled = false
+  select {
+    cancellation.recv() => { cancelled = true },
+    _ => (),
+  }
+  testing::assert(cancelled, "expected detached Runtime cancellation")
+}
+
+test fn an_empty_first_terminal_title_is_emitted() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  try testing::assert(application.context.set_title(""), "expected empty first title acceptance")
+  let titles = application.terminal_titles()
+  try testing::assert(titles.size() == 1, "expected empty first title emission")
+  try testing::assert(titles.at(0).expect("empty title").is_empty(), "expected empty title value")
+  application.destroy()
+  Result::ok(())
+}
+
+test fn terminal_title_updates_emit_while_suspended() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  try testing::assert(application.suspend(), "expected headless suspension")
+  try testing::assert(application.context.set_title("Suspended"), "expected suspended title acceptance")
+  try testing::assert(application.terminal_titles().size() == 1, "expected immediate suspended emission")
+  try testing::assert(application.resume(), "expected headless resume")
+  try testing::assert(
+    application.terminal_titles().size() == 1,
+    "expected resume not to duplicate an already emitted title",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn terminal_title_updates_serialize_with_suspend_resume_and_destroy() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let suspended = Chan::new<Bool>(1)
+  let titled_while_suspending = Chan::new<Bool>(1)
+  async::start(fn() {
+    suspended.send(application.suspend())
+  })
+  async::start(fn() {
+    titled_while_suspending.send(context.set_title("Suspending"))
+  })
+  try testing::assert(suspended.receiver().recv().or(false), "expected concurrent suspension")
+  try testing::assert(
+    titled_while_suspending.receiver().recv().or(false),
+    "expected title acceptance around suspension",
+  )
+
+  let resumed = Chan::new<Bool>(1)
+  let titled_while_resuming = Chan::new<Bool>(1)
+  async::start(fn() {
+    resumed.send(application.resume())
+  })
+  async::start(fn() {
+    titled_while_resuming.send(context.set_title("Resuming"))
+  })
+  try testing::assert(resumed.receiver().recv().or(false), "expected concurrent resume")
+  try testing::assert(
+    titled_while_resuming.receiver().recv().or(false),
+    "expected title acceptance around resume",
+  )
+
+  let title_during_destroy = Chan::new<Bool>(1)
+  async::start(fn() {
+    title_during_destroy.send(context.set_title("Destroying"))
+  })
+  application.destroy()
+  let _ = title_during_destroy.receiver().recv()
+  testing::assert(not context.set_title("Destroyed"), "expected final rejection")
+}
+
+test fn terminal_title_updates_are_safe_from_background_fibers() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let first = application.context
+  let second = application.context
+  let done = Chan::new<Bool>(2)
+
+  async::start(fn() {
+    done.send(first.set_title("First"))
+  })
+  async::start(fn() {
+    done.send(second.set_title("Second"))
+  })
+  let _ = application.frame()
+  try testing::assert(done.receiver().recv().or(false), "expected first background acceptance")
+  try testing::assert(done.receiver().recv().or(false), "expected second background acceptance")
+  try testing::assert(
+    application.terminal_titles().size() == 2,
+    "expected serialized background title updates",
+  )
+  application.destroy()
+  Result::ok(())
+}

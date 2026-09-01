@@ -3,7 +3,7 @@ use ard/async
 use cooper/app
 use cooper/box
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/event
 use cooper/style
 use cooper/text
@@ -97,7 +97,7 @@ private fn badge_style(fill: color::Color) style::Style {
 }
 
 private fn make_layer(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   name: Str,
   x: Int,
   y: Int,

@@ -1,5 +1,5 @@
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
@@ -82,8 +82,8 @@ struct Box {
   title_text: Str,
 }
 
-fn new(ctx: mut context::Context, styles: layout_style::Style?, title: Str?) mut Box {
-  let retained = context::internal_state(ctx).create_node(styles.or(layout_style::new()))
+fn new(ctx: mut runtime::Runtime, styles: layout_style::Style?, title: Str?) mut Box {
+  let retained = ctx.create_node(styles.or(layout_style::new()))
   let box = mut Box{node_ref: retained, title_text: title.or("")}
   retained.bind(box)
   if retained.style().border != layout_style::Border::none {

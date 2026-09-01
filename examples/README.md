@@ -53,7 +53,7 @@ inspect the logical selection; link activation is intercepted by the gallery.
 `dashboard.ard` is a live synthetic operations console built entirely from
 persistent Box, Text, and ScrollBox controls. A cancellation-aware background
 fiber posts periodic metric, sparkline, status, and bounded event-stream updates
-through `Context.dispatch`. The log follows new rows until the operator scrolls
+through `Runtime.dispatch`. The log follows new rows until the operator scrolls
 or disables follow mode.
 
 ```sh

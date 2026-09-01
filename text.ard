@@ -2,7 +2,7 @@ use ard/testing
 use ard/unsafe
 
 use cooper/color
-use cooper/context
+use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
@@ -1108,7 +1108,7 @@ struct Text {
 }
 
 fn new(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   content: TextContent,
   wrap: TextWrap?,
   styles: layout_style::Style?,
@@ -1118,7 +1118,7 @@ fn new(
   overflow: TextOverflow?,
 ) mut Text {
   let snapshot = snapshot_content(content)
-  let retained = context::internal_state(ctx).create_node(styles.or(layout_style::new()))
+  let retained = ctx.create_node(styles.or(layout_style::new()))
   let base_style = text_style.or(default_style)
   let patch = selection_style.or(default_selection_style)
   let text = mut Text{
@@ -1134,8 +1134,8 @@ fn new(
     selected_text_value: "",
     selected_glyphs: [],
     source_revision: 1,
-    width_measurer: context::internal_state(ctx).width_measurer,
-    link_state: new_link_state(context::internal_state(ctx).open_url),
+    width_measurer: fn(value: Str) Int { ctx.measure_text(value) },
+    link_state: new_link_state(fn(url: Str) Void!Error { ctx.open_url(url) }),
   }
   retained.bind(text)
   let link_storage = text.link_state
@@ -1984,7 +1984,7 @@ private fn wide_ellipsis_width(value: Str) Int {
 }
 
 test fn text_destruction_releases_link_listeners() Void!Str {
-  let ctx = context::internal_new()
+  let ctx = runtime::new_detached()
   let label = new(ctx, content: styled_text([span("docs", link: "https://example.com")]))
   let dispose = label.on_link(fn(received: mut LinkEvent) {
     received.prevent_default()
@@ -1994,8 +1994,8 @@ test fn text_destruction_releases_link_listeners() Void!Str {
   label.destroy()
   try testing::assert(state.listeners.size() == 0 and state.armed_link.is_none(), "Expected Text destruction to release link state")
   dispose()
-  context::internal_state(ctx).destroy()
-  testing::assert(context::internal_state(ctx).is_destroyed(), "Expected link listener lifecycle cleanup")
+  ctx.destroy_detached()
+  testing::assert(ctx.is_destroyed(), "Expected link listener lifecycle cleanup")
 }
 
 test fn ellipsis_that_cannot_fit_paints_no_partial_marker() Void!Str {

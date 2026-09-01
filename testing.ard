@@ -2,8 +2,7 @@ use ard/testing as assertions
 use ard/unsafe
 
 use cooper/clipboard
-use cooper/context
-use cooper/core/app_runtime
+use cooper/runtime
 use cooper/core/paint
 use cooper/event
 use cooper/notification
@@ -117,12 +116,22 @@ private struct TerminalProgressReports {
   values: [terminal_progress::Report],
 }
 
+private struct TerminalTitles {
+  mutex: mut sync::Mutex,
+  values: [Str],
+}
+
 struct TestApp {
-  context: mut context::Context,
+  context: mut runtime::Runtime,
   root: mut root::Root,
   opened: Any,
   notification_log: Any,
   terminal_progress_log: Any,
+  terminal_title_log: Any,
+}
+
+private fn test_runtime(application: TestApp) mut runtime::Runtime {
+  application.context
 }
 
 private fn modifiers(value: event::Modifiers?) event::Modifiers {
@@ -140,9 +149,15 @@ fn new(
   let progress_supported = terminal_progress_supported.or(true)
   let notification_log = mut SentNotifications{mutex: mut sync::Mutex{}, values: []}
   let terminal_progress_log = mut TerminalProgressReports{mutex: mut sync::Mutex{}, values: []}
-  let runtime = app_runtime::new_headless(
+  let terminal_title_log = mut TerminalTitles{mutex: mut sync::Mutex{}, values: []}
+  let opened = mut OpenedURLs{values: []}
+  let runtime = runtime::new_headless(
     width,
     height,
+    fn(url: Str) Void!Error {
+      opened.values.push(url)
+      Result::ok(())
+    },
     fn(message: Str, title: Str?) Bool {
       if not supported {
         false
@@ -168,40 +183,21 @@ fn new(
         true
       }
     },
+    fn(value: Str) {
+      terminal_title_log.mutex.Lock()
+      terminal_title_log.values.push(value)
+      terminal_title_log.mutex.Unlock()
+    },
   )
-  let opened = mut OpenedURLs{values: []}
-  let clipboard_service = runtime.clipboard()
-  let ctx = context::internal_new(
-    request_render: runtime.request_render(),
-    width_measurer: runtime.width_measurer(),
-    dispatch: runtime.dispatch(),
-    cancellation: runtime.cancellation(),
-    focus_request: runtime.focus_request(),
-    blur_request: runtime.blur_request(),
-    selection_start: runtime.selection_start_request(),
-    selection_update: runtime.selection_update_request(),
-    selection_owns: runtime.selection_owns_request(),
-    selection_clear: runtime.selection_clear_request(),
-    open_url: fn(url: Str) Void!Error {
-      opened.values.push(url)
-      Result::ok(())
-    },
-    notify: fn(message: Str, title: Str?) Bool {
-      runtime.notify(message, title)
-    },
-    terminal_progress: fn(progress_state: terminal_progress::State, percent: Int?) Bool {
-      runtime.progress(progress_state, percent)
-    },
-    clipboard_service: clipboard_service,
-  )
-  let root = root::new(ctx, runtime)
-  runtime.start_test(ctx, root)
+  let root = root::new(runtime)
+  runtime.start_test(root)
   TestApp{
-    context: ctx,
+    context: runtime,
     root: root,
     opened: opened,
     notification_log: notification_log,
     terminal_progress_log: terminal_progress_log,
+    terminal_title_log: terminal_title_log,
   }
 }
 
@@ -226,6 +222,17 @@ impl TestApp {
     output.@
   }
 
+  fn terminal_titles() [Str] {
+    let log = unsafe::cast<mut TerminalTitles>(self.terminal_title_log).expect("TestApp terminal titles must be created by Cooper")
+    log.mutex.Lock()
+    let output = mut List::new<Str>()
+    for value in log.values {
+      output.push(value)
+    }
+    log.mutex.Unlock()
+    output.@
+  }
+
   fn terminal_progress_reports() [terminal_progress::Report] {
     let log = unsafe::cast<mut TerminalProgressReports>(self.terminal_progress_log).expect("TestApp terminal progress must be created by Cooper")
     log.mutex.Lock()
@@ -238,76 +245,76 @@ impl TestApp {
   }
 
   fn mouse_cursor() event::MouseCursor {
-    self.root.state_ref.mouse_cursor()
+    test_runtime(self).mouse_cursor()
   }
 
   fn on_key(handler: fn(mut event::KeyEvent)) fn() {
-    self.root.state_ref.on_key(handler)
+    test_runtime(self).on_key(handler)
   }
 
   fn on_paste(handler: fn(mut event::PasteEvent)) fn() {
-    self.root.state_ref.on_paste(handler)
+    test_runtime(self).on_paste(handler)
   }
 
   fn terminal_focus() event::TerminalFocus? {
-    self.root.state_ref.terminal_focus()
+    test_runtime(self).terminal_focus()
   }
 
   fn on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
-    self.root.state_ref.on_terminal_focus(handler)
+    test_runtime(self).on_terminal_focus(handler)
   }
 
   fn set_terminal_focus(value: event::TerminalFocus) {
-    self.root.state_ref.terminal_focus_test(self.context, self.root, value)
+    test_runtime(self).terminal_focus_test(self.root, value)
   }
 
   fn selection() selection::Selection? {
-    self.root.state_ref.current_selection()
+    test_runtime(self).current_selection()
   }
 
   fn clear_selection() {
-    self.root.state_ref.clear_selection()
+    test_runtime(self).clear_selection()
   }
 
   fn on_selection_change(handler: fn(selection::Selection?)) fn() {
-    self.root.state_ref.on_selection_change(handler)
+    test_runtime(self).on_selection_change(handler)
   }
 
   fn render() {
-    self.root.state_ref.render_test(self.context, self.root)
+    test_runtime(self).render_test(self.root)
   }
 
   fn flush(limit: Int?) Int {
-    self.root.state_ref.flush_test(self.context, self.root, limit.or(1024))
+    test_runtime(self).flush_test(self.root, limit.or(1024))
   }
 
   fn suspend() Bool {
-    self.root.state_ref.suspend_test()
+    test_runtime(self).suspend_test()
   }
 
   fn resume() Bool {
-    self.root.state_ref.resume_test()
+    test_runtime(self).resume_test()
   }
 
   fn resize(width: Int, height: Int) {
-    self.root.state_ref.resize_test(width, height)
+    test_runtime(self).resize_test(width, height)
     self.render()
   }
 
   fn key(received: mut event::KeyEvent) {
-    self.root.state_ref.key_test(self.context, self.root, received)
+    test_runtime(self).key_test(self.root, received)
   }
 
   fn paste(received: mut event::PasteEvent) {
-    self.root.state_ref.paste_test(self.context, self.root, received)
+    test_runtime(self).paste_test(self.root, received)
   }
 
   fn mouse(received: mut event::MouseEvent) {
-    self.root.state_ref.mouse_test(self.context, self.root, received)
+    test_runtime(self).mouse_test(self.root, received)
   }
 
   fn advance_time(milliseconds: Int) {
-    self.root.state_ref.advance_time_test(milliseconds)
+    test_runtime(self).advance_time_test(milliseconds)
   }
 
   fn mouse_move(x: Int, y: Int, received_modifiers: event::Modifiers?) {
@@ -363,11 +370,11 @@ impl TestApp {
   }
 
   fn frame() Frame {
-    Frame{buffer: self.root.state_ref.frame()}
+    Frame{buffer: test_runtime(self).frame()}
   }
 
   fn destroy() {
-    self.root.state_ref.destroy_test(self.context, self.root)
+    test_runtime(self).destroy_test(self.root)
   }
 }
 

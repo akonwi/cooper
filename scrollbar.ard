@@ -1,6 +1,6 @@
 use ard/unsafe
 
-use cooper/context
+use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
@@ -284,7 +284,7 @@ private fn configured(value: layout_style::Style, orientation: Orientation, visi
 }
 
 fn new(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   orientation: Orientation,
   state: State?,
   options: Options?,
@@ -309,7 +309,7 @@ private fn scrollbar_options() Options {
 }
 
 fn internal_new(
-  ctx: mut context::Context,
+  ctx: mut runtime::Runtime,
   orientation: Orientation,
   initial_state: State,
   initial_options: Options,
@@ -319,7 +319,7 @@ fn internal_new(
   if initial_options.scroll_step < 1 {
     panic("Scrollbar scroll_step must be positive")
   }
-  let context_state = context::internal_state(ctx)
+  let context_state = ctx
   let measure_width = fn(glyph: Str) Int {
     context_state.measure_text(glyph)
   }

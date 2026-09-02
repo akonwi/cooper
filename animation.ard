@@ -1,0 +1,570 @@
+use ard/unsafe
+
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge
+use go:math
+
+type Easing = fn(Float64) Float64
+
+enum Status {
+  paused,
+  playing,
+  completed,
+  destroyed,
+}
+
+struct Frame {
+  progress: Float64,
+  linear_progress: Float64,
+  elapsed: Int,
+  delta: Int,
+  iteration: Int,
+}
+
+private struct Track {
+  start: Int,
+  duration: Int,
+  ease: Easing,
+  update: fn(Frame),
+  on_start: fn()?,
+  on_complete: fn()?,
+  started: Bool,
+  completion_pending: Bool,
+  completed: Bool,
+}
+
+private struct ScheduledCall {
+  start: Int,
+  action: fn(),
+  executed: Bool,
+}
+
+private struct State {
+  duration: Int,
+  loop: Bool,
+  alternate: Bool,
+  on_complete: fn()?,
+  status: Status,
+  current_time: Int,
+  iteration: Int,
+  tracks: [mut Track],
+  calls: [mut ScheduledCall],
+  wake: fn(),
+  configuration_closed: Bool,
+  dirty: Bool,
+  revision: Int,
+}
+
+struct Timeline {
+  internal: Any,
+}
+
+private fn state(value: Any) mut State {
+  unsafe::cast<mut State>(value).expect("Timeline must be created by Cooper")
+}
+
+private fn clamp_unit(value: Float64) Float64 {
+  if value != value or value < 0.0 {
+    0.0
+  } else if value > 1.0 {
+    1.0
+  } else {
+    value
+  }
+}
+
+private fn require_finite(value: Float64, name: Str) Float64 {
+  if math::IsNaN(value) or math::IsInf(value, 0) {
+    panic("{name} must be finite")
+  }
+  value
+}
+
+fn linear(value: Float64) Float64 {
+  clamp_unit(value)
+}
+
+fn in_quad(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  t * t
+}
+
+fn out_quad(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  t * (2.0 - t)
+}
+
+fn in_out_quad(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  if t < 0.5 {
+    2.0 * t * t
+  } else {
+    -1.0 + (4.0 - 2.0 * t) * t
+  }
+}
+
+fn in_expo(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  if t == 0.0 {
+    0.0
+  } else {
+    math::Pow(2.0, 10.0 * (t - 1.0))
+  }
+}
+
+fn out_expo(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  if t == 1.0 {
+    1.0
+  } else {
+    1.0 - math::Pow(2.0, -10.0 * t)
+  }
+}
+
+fn in_out_sine(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  -(math::Cos(math::Pi * t) - 1.0) / 2.0
+}
+
+fn out_bounce(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  let n1 = 7.5625
+  let d1 = 2.75
+  if t < 1.0 / d1 {
+    n1 * t * t
+  } else if t < 2.0 / d1 {
+    let shifted = t - 1.5 / d1
+    n1 * shifted * shifted + 0.75
+  } else if t < 2.5 / d1 {
+    let shifted = t - 2.25 / d1
+    n1 * shifted * shifted + 0.9375
+  } else {
+    let shifted = t - 2.625 / d1
+    n1 * shifted * shifted + 0.984375
+  }
+}
+
+fn in_bounce(value: Float64) Float64 {
+  1.0 - out_bounce(1.0 - clamp_unit(value))
+}
+
+fn out_elastic(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  if t == 0.0 or t == 1.0 {
+    t
+  } else {
+    let c4 = 2.0 * math::Pi / 3.0
+    math::Pow(2.0, -10.0 * t) * math::Sin((t * 10.0 - 0.75) * c4) + 1.0
+  }
+}
+
+fn in_circ(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  1.0 - math::Sqrt(1.0 - t * t)
+}
+
+fn out_circ(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  math::Sqrt(1.0 - (t - 1.0) * (t - 1.0))
+}
+
+fn in_out_circ(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  if t < 0.5 {
+    (1.0 - math::Sqrt(1.0 - 4.0 * t * t)) / 2.0
+  } else {
+    (math::Sqrt(1.0 - (-2.0 * t + 2.0) * (-2.0 * t + 2.0)) + 1.0) / 2.0
+  }
+}
+
+fn in_back(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  let c1 = 1.70158
+  let c3 = c1 + 1.0
+  c3 * t * t * t - c1 * t * t
+}
+
+fn out_back(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  let c1 = 1.70158
+  let c3 = c1 + 1.0
+  1.0 + c3 * math::Pow(t - 1.0, 3.0) + c1 * math::Pow(t - 1.0, 2.0)
+}
+
+fn in_out_back(value: Float64) Float64 {
+  let t = clamp_unit(value)
+  let c1 = 1.70158
+  let c2 = c1 * 1.525
+  if t < 0.5 {
+    math::Pow(2.0 * t, 2.0) * ((c2 + 1.0) * 2.0 * t - c2) / 2.0
+  } else {
+    (math::Pow(2.0 * t - 2.0, 2.0) * ((c2 + 1.0) * (t * 2.0 - 2.0) + c2) + 2.0) / 2.0
+  }
+}
+
+fn lerp(from: Float64, to: Float64, progress: Float64) Float64 {
+  require_finite(from + (to - from) * progress, "interpolated value")
+}
+
+fn lerp_int(from: Int, to: Int, progress: Float64) Int {
+  if progress == 0.0 {
+    from
+  } else if progress == 1.0 {
+    to
+  } else {
+    let exact_limit = 9007199254740991.0
+    if from.to_f64() < 0.0 - exact_limit or from.to_f64() > exact_limit or to.to_f64() < 0.0 - exact_limit or to.to_f64() > exact_limit {
+      panic("integer interpolation endpoints must fit the exact Float64 integer range")
+    }
+    let interpolated = lerp(from.to_f64(), to.to_f64(), progress)
+    if interpolated < 0.0 - exact_limit or interpolated > exact_limit {
+      panic("interpolated integer must fit the exact Float64 integer range")
+    }
+    numberbridge::RoundedInt(interpolated).expect("interpolated integer exceeds Int range")
+  }
+}
+
+private fn reset_items(shared: mut State) {
+  for track in shared.tracks {
+    track.started = false
+    track.completion_pending = false
+    track.completed = false
+  }
+  for scheduled in shared.calls {
+    scheduled.executed = false
+  }
+}
+
+private fn require_available(shared: mut State) {
+  if shared.status == Status::destroyed {
+    panic("Timeline is unavailable after destruction")
+  }
+}
+
+fn internal_new(duration: Int, wake: fn(), loop: Bool?, alternate: Bool?, on_complete: fn()?) mut Timeline {
+  if duration <= 0 {
+    panic("Timeline duration must be positive")
+  }
+  let shared = mut State{
+    duration: duration,
+    loop: loop.or(false),
+    alternate: alternate.or(false),
+    on_complete: on_complete,
+    status: Status::paused,
+    current_time: 0,
+    iteration: 0,
+    tracks: [],
+    calls: [],
+    wake: wake,
+    configuration_closed: false,
+    dirty: false,
+    revision: 0,
+  }
+  (mut Timeline{internal: shared})
+}
+
+private fn valid_revision(shared: mut State, revision: Int) Bool {
+  shared.revision == revision and shared.status == Status::playing
+}
+
+private fn evaluation_valid(shared: mut State, revision: Int, allow: fn() Bool) Bool {
+  allow() and valid_revision(shared, revision)
+}
+
+private fn evaluate_at(
+  shared: mut State,
+  timeline_time: Int,
+  delta: Int,
+  revision: Int,
+  allow: fn() Bool,
+) Bool {
+  mut valid = allow()
+  let tracks = shared.tracks
+  for track in tracks {
+    if valid and timeline_time >= track.start and (not track.completed) {
+      if track.completion_pending {
+        track.completion_pending = false
+        track.completed = true
+        match track.on_complete {
+          complete => complete(),
+          _ => (),
+        }
+        valid = evaluation_valid(shared, revision, allow)
+      } else {
+        if not track.started {
+          track.started = true
+          match track.on_start {
+            start => start(),
+            _ => (),
+          }
+          valid = evaluation_valid(shared, revision, allow)
+        }
+
+        if valid {
+          let available = timeline_time - track.start
+          let elapsed = match available > track.duration {
+            true => track.duration,
+            false => available,
+          }
+          let raw_progress = match track.duration == 0 {
+            true => 1.0,
+            false => elapsed.to_f64() / track.duration.to_f64(),
+          }
+          let forward_linear = clamp_unit(raw_progress)
+          let eased = require_finite((track.ease)(forward_linear), "easing output")
+          valid = evaluation_valid(shared, revision, allow)
+          if valid {
+            let reversed = shared.alternate and shared.iteration % 2 == 1
+            let progress = match reversed {
+              true => 1.0 - eased,
+              false => eased,
+            }
+            let linear_progress = match reversed {
+              true => 1.0 - forward_linear,
+              false => forward_linear,
+            }
+            let frame = Frame{
+              progress: progress,
+              linear_progress: linear_progress,
+              elapsed: elapsed,
+              delta: delta,
+              iteration: shared.iteration,
+            }
+            let completed = elapsed >= track.duration
+            if completed {
+              track.completion_pending = true
+            }
+            (track.update)(frame)
+            valid = evaluation_valid(shared, revision, allow)
+            if valid and track.completion_pending {
+              track.completion_pending = false
+              track.completed = true
+              match track.on_complete {
+                complete => complete(),
+                _ => (),
+              }
+              valid = evaluation_valid(shared, revision, allow)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  let calls = shared.calls
+  for scheduled in calls {
+    if valid and timeline_time >= scheduled.start and (not scheduled.executed) {
+      scheduled.executed = true
+      (scheduled.action)()
+      valid = evaluation_valid(shared, revision, allow)
+    }
+  }
+  valid
+}
+
+impl Timeline {
+  fn duration() Int {
+    state(self.internal).duration
+  }
+
+  fn current_time() Int {
+    state(self.internal).current_time
+  }
+
+  fn iteration() Int {
+    state(self.internal).iteration
+  }
+
+  fn status() Status {
+    state(self.internal).status
+  }
+
+  fn is_playing() Bool {
+    self.status() == Status::playing
+  }
+
+  fn is_complete() Bool {
+    self.status() == Status::completed
+  }
+
+  fn mut add(
+    duration: Int,
+    update: fn(Frame),
+    at: Int?,
+    ease: Easing?,
+    on_start: fn()?,
+    on_complete: fn()?,
+  ) {
+    let shared = state(self.internal)
+    require_available(shared)
+    if shared.configuration_closed {
+      panic("animation tracks can only be configured before Timeline playback")
+    }
+    let start = at.or(0)
+    if duration < 0 {
+      panic("animation track duration must be non-negative")
+    }
+    if start < 0 {
+      panic("animation track start time must be non-negative")
+    }
+    if start > shared.duration or duration > shared.duration - start {
+      panic("animation track must fit within its Timeline duration")
+    }
+    shared.tracks.push(
+      mut Track{
+        start: start,
+        duration: duration,
+        ease: ease.or(linear),
+        update: update,
+        on_start: on_start,
+        on_complete: on_complete,
+        started: false,
+        completion_pending: false,
+        completed: false,
+      },
+    )
+    shared.dirty = true
+    shared.revision =+ 1
+    if shared.status == Status::playing {
+      (shared.wake)()
+    }
+  }
+
+  fn mut call(action: fn(), at: Int?) {
+    let shared = state(self.internal)
+    require_available(shared)
+    if shared.configuration_closed {
+      panic("scheduled callbacks can only be configured before Timeline playback")
+    }
+    let start = at.or(0)
+    if start < 0 or start > shared.duration {
+      panic("scheduled callback time must fit within its Timeline duration")
+    }
+    shared.calls.push(
+      mut ScheduledCall{
+        start: start,
+        action: action,
+        executed: false,
+      },
+    )
+    shared.dirty = true
+    shared.revision =+ 1
+    if shared.status == Status::playing {
+      (shared.wake)()
+    }
+  }
+
+  fn mut play() Bool {
+    let shared = state(self.internal)
+    require_available(shared)
+    if shared.status == Status::playing {
+      false
+    } else {
+      if shared.status == Status::completed {
+        shared.current_time = 0
+        shared.iteration = 0
+        reset_items(shared)
+      }
+      shared.status = Status::playing
+      shared.configuration_closed = true
+      shared.dirty = true
+      shared.revision =+ 1
+      (shared.wake)()
+      true
+    }
+  }
+
+  fn mut pause() Bool {
+    let shared = state(self.internal)
+    require_available(shared)
+    if shared.status != Status::playing {
+      false
+    } else {
+      shared.status = Status::paused
+      shared.revision =+ 1
+      (shared.wake)()
+      true
+    }
+  }
+
+  fn mut restart() Bool {
+    let shared = state(self.internal)
+    require_available(shared)
+    shared.current_time = 0
+    shared.iteration = 0
+    shared.status = Status::playing
+    shared.configuration_closed = true
+    shared.dirty = true
+    reset_items(shared)
+    shared.revision =+ 1
+    (shared.wake)()
+    true
+  }
+
+  fn mut destroy() {
+    let shared = state(self.internal)
+    if shared.status != Status::destroyed {
+      shared.status = Status::destroyed
+      shared.tracks = []
+      shared.calls = []
+      shared.on_complete = Maybe::new<fn()>()
+      shared.dirty = false
+      shared.revision =+ 1
+      (shared.wake)()
+    }
+  }
+
+  fn mut internal_active() Bool {
+    state(self.internal).status == Status::playing
+  }
+
+  fn mut internal_destroyed() Bool {
+    state(self.internal).status == Status::destroyed
+  }
+
+  fn mut internal_tick(delta: Int, allow: fn() Bool) Bool {
+    if delta < 0 {
+      panic("animation frame delta must be non-negative")
+    }
+    let shared = state(self.internal)
+    if (not allow()) or shared.status != Status::playing or delta == 0 and (not shared.dirty) {
+      false
+    } else {
+      shared.dirty = false
+      let revision = shared.revision
+      if not shared.loop {
+        let remaining = shared.duration - shared.current_time
+        let step = match delta > remaining {
+          true => remaining,
+          false => delta,
+        }
+        shared.current_time = shared.current_time + step
+        let _ = evaluate_at(shared, shared.current_time, step, revision, allow)
+        if evaluation_valid(shared, revision, allow) and shared.current_time >= shared.duration {
+          shared.status = Status::completed
+          shared.revision =+ 1
+          match shared.on_complete {
+            complete => complete(),
+            _ => (),
+          }
+        }
+      } else {
+        let remaining = shared.duration - shared.current_time
+        if delta < remaining {
+          shared.current_time = shared.current_time + delta
+          let _ = evaluate_at(shared, shared.current_time, delta, revision, allow)
+        } else {
+          shared.current_time = shared.duration
+          let _ = evaluate_at(shared, shared.current_time, remaining, revision, allow)
+          if evaluation_valid(shared, revision, allow) {
+            let overflow = delta - remaining
+            shared.iteration = shared.iteration + 1 + overflow / shared.duration
+            shared.current_time = overflow % shared.duration
+            reset_items(shared)
+            let _ = evaluate_at(shared, shared.current_time, shared.current_time, revision, allow)
+          }
+        }
+      }
+      true
+    }
+  }
+}

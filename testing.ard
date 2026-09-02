@@ -317,6 +317,14 @@ impl TestApp {
     test_runtime(self).advance_time_test(milliseconds)
   }
 
+  fn animations_active() Bool {
+    test_runtime(self).animations_active_test()
+  }
+
+  fn failed_suspend_wakes_animation() Bool {
+    test_runtime(self).failed_suspend_animation_wake_test()
+  }
+
   fn mouse_move(x: Int, y: Int, received_modifiers: event::Modifiers?) {
     self.mouse(event::mouse(event::MouseEventType::move, event::MouseButton::none, x, y, modifiers(received_modifiers)))
   }

@@ -1,0 +1,434 @@
+use ard/testing
+
+use cooper/animation
+use cooper/style
+use cooper/testing as cooper_testing
+use cooper/text
+use go:math
+
+private struct Values {
+  latest: Int,
+  starts: Int,
+  track_completions: Int,
+  calls: Int,
+  timeline_completions: Int,
+}
+
+private fn assert_close(actual: Float64, expected: Float64, message: Str) Void!Str {
+  testing::assert(math::Abs(actual - expected) < 0.000001, message)
+}
+
+private fn assert_panics(action: fn(), expected: Str) Void!Str {
+  let outcome = unsafe {
+    action()
+  }
+  match outcome {
+    ok(_) => testing::fail("expected panic containing {expected}"),
+    err(message) => {
+      testing::assert(
+        message.contains(expected),
+        "expected panic containing {expected}, got {message}",
+      )
+    },
+  }
+}
+
+test fn animation_easing_and_interpolation_are_deterministic() Void!Str {
+  try assert_close(animation::linear(0.25), 0.25, "linear easing should preserve progress")
+  try assert_close(animation::in_quad(0.5), 0.25, "in_quad should accelerate")
+  try assert_close(animation::out_quad(0.5), 0.75, "out_quad should decelerate")
+  try assert_close(animation::in_out_quad(0.5), 0.5, "in_out_quad midpoint should be stable")
+  try assert_close(animation::in_out_sine(0.5), 0.5, "sine midpoint should be stable")
+  try assert_close(animation::in_bounce(0.0), 0.0, "bounce should begin at zero")
+  try assert_close(animation::out_bounce(1.0), 1.0, "bounce should end at one")
+  try assert_close(animation::out_elastic(1.0), 1.0, "elastic should end at one")
+  try assert_close(animation::in_circ(0.0), 0.0, "circular easing should begin at zero")
+  try assert_close(animation::out_circ(1.0), 1.0, "circular easing should end at one")
+  try assert_close(animation::in_back(0.0), 0.0, "back easing should begin at zero")
+  try assert_close(animation::out_back(1.0), 1.0, "back easing should end at one")
+  try assert_close(animation::lerp(10.0, 20.0, 0.25), 12.5, "lerp should interpolate floats")
+  try testing::assert(animation::lerp_int(0, 9, 0.5) == 5, "lerp_int should round halves away from zero")
+  try testing::assert(
+    animation::lerp_int(0, -9, 0.5) == -5,
+    "negative halves should round away from zero",
+  )
+  try testing::assert(
+    animation::lerp_int(math::MaxInt, 0, 0.0) == math::MaxInt,
+    "exact integer endpoints should not pass through Float64",
+  )
+  if math::MaxInt.to_f64() > 9007199254740991.0 {
+    try assert_panics(
+      fn() {
+        animation::lerp_int(math::MaxInt, 0, 0.5)
+      },
+      "exact Float64 integer range",
+    )
+  } else {
+    try testing::assert(
+      animation::lerp_int(math::MaxInt, 0, 0.5) > 0,
+      "32-bit platform integers should remain exactly representable",
+    )
+  }
+  testing::assert(
+    animation::lerp_int(0, 10, 1.1) == 11,
+    "lerp_int should preserve easing overshoot",
+  )
+}
+
+test fn timeline_sequences_tracks_callbacks_pause_restart_and_completion() Void!Str {
+  let application = cooper_testing::new(20, 2)
+  defer application.destroy()
+  let values = mut Values{
+    latest: -1,
+    starts: 0,
+    track_completions: 0,
+    calls: 0,
+    timeline_completions: 0,
+  }
+  let timeline = application.context.timeline(1000, on_complete: fn() {
+    values.timeline_completions =+ 1
+  })
+  timeline.add(
+    600,
+    fn(frame: animation::Frame) {
+      values.latest = animation::lerp_int(0, 60, frame.progress)
+    },
+    at: 100,
+    ease: animation::linear,
+    on_start: fn() {
+      values.starts =+ 1
+    },
+    on_complete: fn() {
+      values.track_completions =+ 1
+    },
+  )
+  timeline.call(
+    fn() {
+      values.calls =+ 1
+    },
+    at: 700,
+  )
+
+  try testing::assert(timeline.play(), "play should start a paused timeline")
+  try testing::assert(application.animations_active(), "playing timeline should activate the engine")
+  try testing::assert(not timeline.play(), "play should be idempotent while running")
+  application.advance_time(0)
+  try testing::assert(values.starts == 0 and values.latest == -1, "delayed track should remain idle")
+
+  application.advance_time(100)
+  try testing::assert(values.starts == 1 and values.latest == 0, "track should start at its offset")
+  application.advance_time(300)
+  try testing::assert(
+    values.latest == 30 and timeline.current_time() == 400,
+    "track should reach its midpoint",
+  )
+
+  try testing::assert(timeline.pause(), "pause should stop a running timeline")
+  try testing::assert(not timeline.pause(), "pause should be idempotent")
+  application.advance_time(200)
+  try testing::assert(
+    timeline.current_time() == 400 and values.latest == 30,
+    "paused time should not advance",
+  )
+
+  try testing::assert(timeline.play(), "play should resume a paused timeline")
+  application.advance_time(0)
+  application.advance_time(300)
+  try testing::assert(
+    values.latest == 60 and values.track_completions == 1 and values.calls == 1,
+    "resumed track and callback should complete once",
+  )
+  application.advance_time(300)
+  try testing::assert(timeline.is_complete(), "timeline should complete at its cutoff")
+  try testing::assert(values.timeline_completions == 1, "timeline completion should run once")
+  let settled_value = values.latest
+  try testing::assert(
+    not application.animations_active(),
+    "completed timeline should release engine activity",
+  )
+  application.advance_time(1000)
+  try testing::assert(
+    values.latest == settled_value and values.timeline_completions == 1 and (not application.animations_active()),
+    "completed timelines should return the engine to idle",
+  )
+
+  try testing::assert(timeline.play(), "playing a completed timeline should restart it")
+  application.advance_time(0)
+  application.advance_time(100)
+  try testing::assert(timeline.iteration() == 0 and values.starts == 2, "replay should reset track state")
+
+  try testing::assert(timeline.restart(), "restart should reset and play")
+  testing::assert(timeline.current_time() == 0, "restart should reset timeline time")
+}
+
+test fn timeline_looping_alternates_direction_and_skips_large_intermediate_cycles() Void!Str {
+  let application = cooper_testing::new(10, 1)
+  defer application.destroy()
+  mut latest = -1
+  mut latest_delta = -1
+  mut callback_calls = 0
+  let timeline = application.context.timeline(100, loop: true, alternate: true)
+  timeline.add(100, fn(frame: animation::Frame) {
+    latest = animation::lerp_int(0, 10, frame.progress)
+    latest_delta = frame.delta
+  })
+  timeline.call(
+    fn() {
+      callback_calls =+ 1
+    },
+    at: 50,
+  )
+  let _ = timeline.play()
+  application.advance_time(0)
+  try testing::assert(latest == 0 and timeline.iteration() == 0, "loop should begin forward")
+
+  application.advance_time(100)
+  try testing::assert(latest == 10 and timeline.iteration() == 1, "odd iteration should begin in reverse")
+  application.advance_time(50)
+  try testing::assert(latest == 5, "alternate iteration should move backward")
+  application.advance_time(50)
+  try testing::assert(latest == 0 and timeline.iteration() == 2, "even iteration should restart forward")
+
+  timeline.restart()
+  application.advance_time(0)
+  application.advance_time(250)
+  testing::assert(
+    timeline.iteration() == 2 and timeline.current_time() == 50 and latest == 5 and latest_delta == 50 and callback_calls == 4,
+    "large deltas should evaluate only the outgoing and final relevant iterations with segmented deltas",
+  )
+}
+
+test fn timeline_updates_retained_controls_and_freezes_while_suspended() Void!Str {
+  let application = cooper_testing::new(12, 1)
+  defer application.destroy()
+  let label = text::new(
+    application.context,
+    content: "X",
+    styles: style::new(position: style::Position::absolute, left: style::cells(0)),
+  )
+  application.root.add(label)
+  let timeline = application.context.timeline(100)
+  timeline.add(100, fn(frame: animation::Frame) {
+    let applied = mut label.style()
+    applied.left = style::cells(animation::lerp_int(0, 10, frame.progress))
+    label.set_style(applied.@)
+  })
+  let _ = timeline.play()
+  application.advance_time(0)
+  application.advance_time(25)
+  application.render()
+  try testing::assert(
+    application.frame().cell(3, 0).expect("animated cell").grapheme == "X",
+    "retained setter should paint the animated position",
+  )
+
+  try testing::assert(application.suspend(), "TestApp should suspend")
+  application.advance_time(1000)
+  try testing::assert(application.resume(), "TestApp should resume")
+  application.advance_time(0)
+  try testing::assert(timeline.current_time() == 25, "suspension should freeze timeline time")
+  application.advance_time(25)
+  application.render()
+  testing::assert(
+    application.frame().cell(5, 0).expect("resumed cell").grapheme == "X",
+    "resumed animation should continue from its frozen value",
+  )
+}
+
+test fn final_update_reentrancy_preserves_or_cancels_completion_by_control_action() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  defer application.destroy()
+
+  mut pause_at_end = true
+  mut paused_track_completions = 0
+  mut paused_timeline_completions = 0
+  let paused = application.context.timeline(100, on_complete: fn() {
+    paused_timeline_completions =+ 1
+  })
+  paused.add(
+    100,
+    fn(frame: animation::Frame) {
+      if frame.elapsed == 100 and pause_at_end {
+        pause_at_end = false
+        let _ = paused.pause()
+      }
+    },
+    on_complete: fn() {
+      paused_track_completions =+ 1
+    },
+  )
+  let _ = paused.play()
+  application.advance_time(0)
+  application.advance_time(100)
+  try testing::assert(
+    paused.status() == animation::Status::paused and paused_track_completions == 0,
+    "pause from a final update should preserve pending track completion",
+  )
+  let _ = paused.play()
+  application.advance_time(0)
+  try testing::assert(
+    paused_track_completions == 1 and paused_timeline_completions == 1 and paused.is_complete(),
+    "resume should deliver pending track and timeline completion exactly once",
+  )
+
+  mut restart_at_end = true
+  mut restarted_track_completions = 0
+  let restarted = application.context.timeline(100)
+  restarted.add(
+    100,
+    fn(frame: animation::Frame) {
+      if frame.elapsed == 100 and restart_at_end {
+        restart_at_end = false
+        let _ = restarted.restart()
+      }
+    },
+    on_complete: fn() {
+      restarted_track_completions =+ 1
+    },
+  )
+  let _ = restarted.play()
+  application.advance_time(0)
+  application.advance_time(100)
+  try testing::assert(
+    restarted.current_time() == 0 and restarted_track_completions == 0,
+    "restart should abandon completion from the interrupted iteration",
+  )
+  application.advance_time(100)
+  try testing::assert(
+    restarted.is_complete() and restarted_track_completions == 1,
+    "the restarted iteration should complete normally",
+  )
+
+  mut eased_updates = 0
+  let eased = application.context.timeline(100)
+  eased.add(
+    100,
+    fn(frame: animation::Frame) {
+      eased_updates =+ 1
+    },
+    ease: fn(value: Float64) Float64 {
+      eased.destroy()
+      value
+    },
+  )
+  let _ = eased.play()
+  application.advance_time(0)
+  try testing::assert(
+    eased.status() == animation::Status::destroyed and eased_updates == 0,
+    "destruction from custom easing should suppress its stale update",
+  )
+
+  mut restart_in_easing = true
+  mut restarted_easing_updates = 0
+  let restarted_easing = application.context.timeline(100)
+  restarted_easing.add(
+    100,
+    fn(frame: animation::Frame) {
+      restarted_easing_updates =+ 1
+    },
+    ease: fn(value: Float64) Float64 {
+      if restart_in_easing {
+        restart_in_easing = false
+        let _ = restarted_easing.restart()
+      }
+      value
+    },
+  )
+  let _ = restarted_easing.play()
+  application.advance_time(0)
+  try testing::assert(
+    restarted_easing.current_time() == 0 and restarted_easing_updates == 0,
+    "restart from custom easing should suppress its stale update",
+  )
+  application.advance_time(100)
+  try testing::assert(
+    restarted_easing.is_complete() and restarted_easing_updates == 1,
+    "restarted easing iteration should update normally",
+  )
+
+  mut destroyed_track_completions = 0
+  let destroyed = application.context.timeline(100)
+  destroyed.add(
+    100,
+    fn(frame: animation::Frame) {
+      if frame.elapsed == 100 {
+        destroyed.destroy()
+      }
+    },
+    on_complete: fn() {
+      destroyed_track_completions =+ 1
+    },
+  )
+  let _ = destroyed.play()
+  application.advance_time(0)
+  application.advance_time(100)
+  testing::assert(
+    destroyed.status() == animation::Status::destroyed and destroyed_track_completions == 0,
+    "destruction should abandon completion from the interrupted iteration",
+  )
+}
+
+test fn timeline_lifecycle_and_timing_contracts_are_enforced() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  try assert_panics(
+    fn() {
+      application.context.timeline(0)
+    },
+    "duration must be positive",
+  )
+  let timeline = application.context.timeline(100)
+  try assert_panics(
+    fn() {
+      timeline.add(101, fn(frame: animation::Frame) {})
+    },
+    "must fit",
+  )
+  try assert_panics(
+    fn() {
+      timeline.call(fn() {}, at: 101)
+    },
+    "must fit",
+  )
+  let started = application.context.timeline(100)
+  let _ = started.play()
+  try testing::assert(
+    application.failed_suspend_wakes_animation(),
+    "failed suspension rollback should wake redraw and animation scheduling",
+  )
+  let _ = started.pause()
+  try assert_panics(
+    fn() {
+      started.add(100, fn(frame: animation::Frame) {})
+    },
+    "before Timeline playback",
+  )
+  try assert_panics(
+    fn() {
+      started.call(fn() {})
+    },
+    "before Timeline playback",
+  )
+  started.destroy()
+  timeline.destroy()
+  timeline.destroy()
+  try testing::assert(timeline.status() == animation::Status::destroyed, "destroy should be idempotent")
+  try assert_panics(
+    fn() {
+      timeline.play()
+    },
+    "unavailable",
+  )
+
+  let owned = application.context.timeline(100)
+  application.destroy()
+  try testing::assert(
+    owned.status() == animation::Status::destroyed,
+    "Runtime cleanup should destroy owned timelines",
+  )
+  assert_panics(
+    fn() {
+      application.context.timeline(100)
+    },
+    "active App Runtime",
+  )
+}

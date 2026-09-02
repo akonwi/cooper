@@ -1,6 +1,7 @@
 use ard/async
 use ard/unsafe
 
+use cooper/animation
 use cooper/clipboard
 use cooper/color
 use cooper/core/focus
@@ -265,6 +266,15 @@ private struct State {
   terminal_closed: Bool,
   signal_watcher: (mut signalwatch::Watcher)?,
   system_wake: Chan<Bool>,
+  animation_control_wake: Chan<Bool>,
+  animation_frame_wake: Chan<Bool>,
+  animation_frame_pending: Bool,
+  animation_clock_initialized: Bool,
+  animation_last_ms: Int64,
+  animation_clock_generation: Int,
+  animation_applied_clock_generation: Int,
+  animation_execution_generation: Int,
+  timelines: [mut animation::Timeline],
   pending_resize_cols: Int,
   pending_resize_rows: Int,
   lifecycle: mut sync::Mutex,
@@ -397,6 +407,15 @@ private fn state(
     terminal_closed: not terminal.is_some(),
     signal_watcher: signal_watcher,
     system_wake: Chan::new<Bool>(1),
+    animation_control_wake: Chan::new<Bool>(1),
+    animation_frame_wake: Chan::new<Bool>(1),
+    animation_frame_pending: false,
+    animation_clock_initialized: false,
+    animation_last_ms: 0,
+    animation_clock_generation: 0,
+    animation_applied_clock_generation: 0,
+    animation_execution_generation: 0,
+    timelines: [],
     pending_resize_cols: 0,
     pending_resize_rows: 0,
     lifecycle: lifecycle,
@@ -704,6 +723,183 @@ impl State {
     }
   }
 
+  private fn mut animation_wake() fn() {
+    let wake = self.animation_control_wake
+    fn() {
+      select {
+        wake.send(true) => (),
+        _ => (),
+      }
+    }
+  }
+
+  fn mut timeline(duration: Int, loop: Bool?, alternate: Bool?, on_complete: fn()?) mut animation::Timeline {
+    if duration <= 0 {
+      panic("Timeline duration must be positive")
+    }
+    self.lifecycle.Lock()
+    defer self.lifecycle.Unlock()
+    let available = (not self.retained_destroyed) and (not self.resources_stopped) and (not self.detached) and self.phase != 3 and self.phase != 4
+    if not available {
+      panic("cannot create a Timeline without an active App Runtime")
+    }
+    self.prune_animations()
+    let created = animation::internal_new(
+      duration,
+      self.animation_wake(),
+      loop: loop,
+      alternate: alternate,
+      on_complete: on_complete,
+    )
+    self.timelines.push(created)
+    created
+  }
+
+  private fn mut prune_animations() {
+    let retained = mut List::new<mut animation::Timeline>()
+    for timeline in self.timelines {
+      if not timeline.internal_destroyed() {
+        retained.push(timeline)
+      }
+    }
+    self.timelines = retained.@
+  }
+
+  private fn mut animations_active() Bool {
+    mut active = false
+    for timeline in self.timelines {
+      if timeline.internal_active() {
+        active = true
+      }
+    }
+    active
+  }
+
+  private fn mut reset_animation_clock() {
+    self.animation_clock_initialized = false
+    self.animation_last_ms = 0
+  }
+
+  private fn mut wake_animations_after_failed_suspend(previous_phase: Int) {
+    if previous_phase == 1 {
+      (self.animation_wake())()
+      (self.request_render())()
+    }
+  }
+
+  private fn mut request_animation_clock_reset() {
+    self.lifecycle.Lock()
+    self.animation_clock_generation =+ 1
+    self.lifecycle.Unlock()
+    (self.animation_wake())()
+  }
+
+  private fn mut apply_animation_clock_reset() {
+    self.lifecycle.Lock()
+    let generation = self.animation_clock_generation
+    self.lifecycle.Unlock()
+    if generation != self.animation_applied_clock_generation {
+      self.animation_applied_clock_generation = generation
+      self.reset_animation_clock()
+    }
+  }
+
+  private fn mut schedule_animation_frame() {
+    if (not self.animation_frame_pending) and self.animations_active() {
+      self.animation_frame_pending = true
+      let now = self.now_ms()
+      mut delay = Int64::from(0)
+      if self.animation_clock_initialized {
+        let elapsed = now - self.animation_last_ms
+        if elapsed < 16 {
+          delay = 16 - elapsed
+        }
+      }
+      let wake = self.animation_frame_wake
+      async::start(fn() {
+        clock::SleepMilliseconds(delay)
+        select {
+          wake.send(true) => (),
+          _ => (),
+        }
+      })
+    }
+  }
+
+  private fn mut claim_animation_frame() Int? {
+    self.lifecycle.Lock()
+    let generation = match self.phase == 1 {
+      true => Maybe::new<Int>(self.animation_execution_generation),
+      false => Maybe::new<Int>(),
+    }
+    self.lifecycle.Unlock()
+    generation
+  }
+
+  private fn mut animation_frame_valid(generation: Int) Bool {
+    self.lifecycle.Lock()
+    let valid = self.phase == 1 and self.animation_execution_generation == generation
+    self.lifecycle.Unlock()
+    valid
+  }
+
+  private fn mut advance_animations(now: Int64, allow: fn() Bool) Bool {
+    mut changed = false
+    if allow() {
+      self.apply_animation_clock_reset()
+      mut delta = 0
+      if self.animation_clock_initialized {
+        let elapsed = now - self.animation_last_ms
+        if elapsed > 0 {
+          delta = clock::IntFromInt64(elapsed).expect("animation frame delta exceeds Int range")
+        }
+      }
+      self.animation_clock_initialized = true
+      self.animation_last_ms = now
+
+      let initial_size = self.timelines.size()
+      let candidates = self.timelines
+      let retained = mut List::new<mut animation::Timeline>()
+      for timeline in candidates {
+        if allow() and not timeline.internal_destroyed() {
+          if timeline.internal_tick(delta, allow) {
+            changed = true
+          }
+        }
+        if not timeline.internal_destroyed() {
+          retained.push(timeline)
+        }
+      }
+      mut index = initial_size
+      while index < self.timelines.size() {
+        match self.timelines.at(index) {
+          timeline => {
+            if not timeline.internal_destroyed() {
+              retained.push(timeline)
+            }
+          },
+          _ => (),
+        }
+        index =+ 1
+      }
+      self.timelines = retained.@
+      if not self.animations_active() {
+        self.reset_animation_clock()
+      }
+    }
+    changed
+  }
+
+  private fn mut destroy_animations() {
+    let retained = self.timelines
+    self.timelines = []
+    for timeline in retained {
+      timeline.destroy()
+    }
+    self.animation_frame_pending = false
+    self.reset_animation_clock()
+  }
+
   fn mut mouse_cursor() event::MouseCursor {
     self.terminal_io.Lock()
     let cursor = self.pointer_cursor
@@ -730,12 +926,47 @@ impl State {
     changed
   }
 
-  fn mut advance_time_test(delta_ms: Int) {
+  fn mut failed_suspend_animation_wake_test() Bool {
     self.require_phase(2)
+    let controls = self.animation_control_wake.receiver()
+    mut draining = true
+    while draining {
+      select {
+        controls.recv() => (),
+        _ => { draining = false },
+      }
+    }
+    self.drain_redraw_requests()
+    self.wake_animations_after_failed_suspend(1)
+    let animation_woken = select {
+      controls.recv() => true,
+      _ => false,
+    }
+    let redraws = self.wake.receiver()
+    let redraw_woken = select {
+      redraws.recv() => true,
+      _ => false,
+    }
+    animation_woken and redraw_woken
+  }
+
+  fn mut advance_time_test(delta_ms: Int) {
+    self.lifecycle.Lock()
+    let phase = self.phase
+    self.lifecycle.Unlock()
+    let active = phase == 2
+    if phase != 2 and phase != 14 {
+      panic("headless time advance requires an active or suspended TestApp (phase {phase})")
+    }
     if delta_ms < 0 {
       panic("headless time advance must be non-negative")
     }
     self.test_now_ms = self.test_now_ms + Int64::from(delta_ms)
+    if active {
+      let _ = self.advance_animations(self.test_now_ms, fn() Bool {
+        true
+      })
+    }
   }
 
   fn mut bind_root(root: mut node::Node) {
@@ -1151,6 +1382,7 @@ impl State {
       self.selection.destroy()
       self.clipboard.internal_stop()
       self.close_cancellation()
+      self.destroy_animations()
     }
 
     let final_error = self.release_terminal(error)
@@ -1777,6 +2009,7 @@ impl State {
       previous = 1
       transition = 12
       suspended = 6
+      self.animation_execution_generation =+ 1
       self.phase = transition
     } else if self.phase == 7 {
       previous = 7
@@ -1794,10 +2027,14 @@ impl State {
     if available and not already_suspended {
       if not self.clipboard.internal_suspend() {
         self.lifecycle.Lock()
-        if self.phase == transition {
+        let restored = self.phase == transition
+        if restored {
           self.phase = previous
         }
         self.lifecycle.Unlock()
+        if restored {
+          self.wake_animations_after_failed_suspend(previous)
+        }
         outcome = Result::err(
           Error::new("application cannot suspend while a clipboard read is active"),
         )
@@ -1833,7 +2070,14 @@ impl State {
           },
           err(error) => {
             self.clipboard.internal_resume()
-            let _ = self.restore_terminal_progress_and_commit_phase(transition, previous, false)
+            let restored = self.restore_terminal_progress_and_commit_phase(
+              transition,
+              previous,
+              false,
+            )
+            if restored {
+              self.wake_animations_after_failed_suspend(previous)
+            }
             outcome = Result::err(error)
           },
         }
@@ -1881,6 +2125,7 @@ impl State {
         ok(_) => {
           self.terminal_suspended = false
           let _ = self.apply_pending_resize_locked(terminal)
+          self.request_animation_clock_reset()
           let committed = self.restore_terminal_progress_and_commit_phase(transition, resumed, true)
           if committed {
             self.clipboard.internal_resume()
@@ -2022,6 +2267,8 @@ impl State {
     let update_events = self.updates.events()
     let shutdowns = self.shutdown.receiver()
     let system_events = self.system_wake.receiver()
+    let animation_controls = self.animation_control_wake.receiver()
+    let animation_frames = self.animation_frame_wake.receiver()
     mut running = true
     while running and (not self.live_stopping()) and (not self.post_frame_quit) {
       if self.live_rendering() {
@@ -2036,6 +2283,27 @@ impl State {
             self.terminal_io.Unlock()
             if resized {
               self.paint_live(root)
+            }
+          },
+          animation_controls.recv() => {
+            self.prune_animations()
+            self.schedule_animation_frame()
+          },
+          animation_frames.recv() => {
+            let now = self.now_ms()
+            self.animation_frame_pending = false
+            match self.claim_animation_frame() {
+              generation => {
+                let allow = fn() Bool {
+                  self.animation_frame_valid(generation)
+                }
+                let _ = self.advance_animations(now, allow)
+                if self.take_redraw_request() and self.live_rendering() {
+                  self.paint_live(root)
+                }
+                self.schedule_animation_frame()
+              },
+              _ => (),
             }
           },
           redraws.recv() => {
@@ -2369,6 +2637,7 @@ impl State {
       false
     } else {
       self.terminal_suspended = false
+      self.request_animation_clock_reset()
       self.restore_terminal_progress_and_commit_phase(15, 2, false)
     }
   }
@@ -2444,6 +2713,12 @@ impl Runtime {
 
   fn mut measure_text(text: Str) Int {
     internal_state(self).measure_text(text)
+  }
+
+  fn mut timeline(duration: Int, loop: Bool?, alternate: Bool?, on_complete: fn()?) mut animation::Timeline {
+    internal_state(
+      self,
+    ).timeline(duration, loop: loop, alternate: alternate, on_complete: on_complete)
   }
 
   fn mut compute_layout(root: mut node::Renderable, width: Int, height: Int) {
@@ -2540,6 +2815,14 @@ impl Runtime {
 
   fn mut advance_time_test(delta_ms: Int) {
     internal_state(self).advance_time_test(delta_ms)
+  }
+
+  fn mut failed_suspend_animation_wake_test() Bool {
+    internal_state(self).failed_suspend_animation_wake_test()
+  }
+
+  fn mut animations_active_test() Bool {
+    internal_state(self).animations_active()
   }
 
   fn mut start_test(root: mut node::Renderable) {

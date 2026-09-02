@@ -1,0 +1,66 @@
+use cooper/animation
+use cooper/app
+use cooper/box
+use cooper/style
+use cooper/text
+
+private struct FrameCount {
+  value: Int,
+}
+
+fn main() {
+  let application = app::new().expect("create animation example")
+  defer application.destroy()
+  let root = box::new(
+    application.context,
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+  )
+  let marker = text::new(
+    application.context,
+    content: "●",
+    selectable: false,
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(0),
+      top: style::cells(0),
+    ),
+  )
+  let status = text::new(
+    application.context,
+    content: "START",
+    selectable: false,
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(0),
+      top: style::cells(2),
+    ),
+  )
+  root.add(marker)
+  root.add(status)
+  application.root.add(root)
+
+  let rendered_frames = mut FrameCount{value: 0}
+  let timeline = application.context.timeline(800, on_complete: fn() {
+    status.set_content("DONE frames={rendered_frames.value}")
+  })
+  defer timeline.destroy()
+  timeline.add(
+    800,
+    fn(frame: animation::Frame) {
+      rendered_frames.value =+ 1
+      let applied = mut marker.style()
+      applied.left = style::cells(animation::lerp_int(0, 20, frame.progress))
+      marker.set_style(applied.@)
+    },
+    ease: animation::in_out_quad,
+  )
+  timeline.call(
+    fn() {
+      status.set_content("MIDPOINT")
+    },
+    at: 400,
+  )
+  let _ = timeline.play()
+
+  application.run().expect("run animation example")
+}

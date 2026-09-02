@@ -65,6 +65,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           python3 -m py_compile \
+            examples/test_animation.py \
             examples/test_layout_playground.py \
             examples/test_text_gallery.py \
             examples/test_dashboard.py \
@@ -91,6 +92,7 @@ jobs:
         env:
           ARD: ard
         run: |
+          python3 test_animation.py
           python3 test_layout_playground.py
           python3 test_text_gallery.py
           python3 test_dashboard.py

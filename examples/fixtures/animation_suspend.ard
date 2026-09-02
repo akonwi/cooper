@@ -1,0 +1,43 @@
+use ard/async
+
+use cooper/animation
+use cooper/app
+use cooper/style
+use cooper/text
+use go:time
+
+fn main() {
+  let application = app::new().expect("create animation suspension fixture")
+  defer application.destroy()
+  let status = text::new(
+    application.context,
+    content: "RUNNING",
+    selectable: false,
+    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+  )
+  application.root.add(status)
+
+  let timeline = application.context.timeline(1000, on_complete: fn() {
+    status.set_content("DONE")
+  })
+  defer timeline.destroy()
+  timeline.add(1000, fn(frame: animation::Frame) {})
+  let _ = timeline.play()
+
+  application.start().expect("start animation suspension fixture")
+  async::start(fn() {
+    time::Sleep(100 * time::Millisecond)
+    let suspended = application.suspend()
+    time::Sleep(400 * time::Millisecond)
+    let resumed = application.resume()
+    time::Sleep(100 * time::Millisecond)
+    let _ = application.context.dispatch(fn() {
+      if suspended.is_ok() and resumed.is_ok() and timeline.current_time() < 350 {
+        status.set_content("FROZEN")
+      } else {
+        status.set_content("JUMPED")
+      }
+    })
+  })
+  application.wait().expect("wait for animation suspension fixture")
+}

@@ -29,6 +29,8 @@ Design decisions for Cooper's Ard-native retained-mode framework.
   sanitized, coalesced, lifecycle-safe terminal title updates through Runtime.
 - [ADR 0013](./adrs/0013-consolidate-context-into-runtime.md) — accepted
   the App-to-Runtime ownership model and removal of the redundant Context type.
+- [ADR 0014](./adrs/0014-define-animation-timelines.md) — accepted
+  Runtime-scoped, demand-driven, typed animation timelines.
 
 ## Architecture Decision Records
 
@@ -49,6 +51,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0011](./adrs/0011-define-multiline-text-area.md) | Accepted | Define the multiline TextArea |
 | [0012](./adrs/0012-define-terminal-title-updates.md) | Accepted | Define terminal title updates |
 | [0013](./adrs/0013-consolidate-context-into-runtime.md) | Accepted | Consolidate Context into Runtime |
+| [0014](./adrs/0014-define-animation-timelines.md) | Accepted | Define animation timelines |
 
 ### Add an ADR
 

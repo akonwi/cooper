@@ -19,6 +19,18 @@ ard run quickstart.ard
 
 Use Left and Right to change the counter, or press Q to quit.
 
+## Animation
+
+`animation.ard` moves one retained Text control through a Runtime-owned typed
+Timeline. It demonstrates easing, integer interpolation, a scheduled midpoint
+callback, completion, and automatic return to demand-driven rendering.
+
+```sh
+ard run animation.ard
+```
+
+The animation starts automatically. Press Ctrl+C to quit after it completes.
+
 ## Layout playground
 
 `layout_playground.ard` keeps four colored cards mounted while seven keyboard-
@@ -193,6 +205,7 @@ The harness builds generated executables in the repository-level `ard-out/`
 directory.
 
 ```sh
+python3 test_animation.py
 python3 test_layout_playground.py
 python3 test_text_gallery.py
 python3 test_dashboard.py
@@ -214,7 +227,8 @@ python3 test_explorer.py
 python3 test_interaction.py
 ```
 
-The tests cover terminal startup/restoration, retained layout reconfiguration,
+The tests cover terminal startup/restoration, demand-driven animation frames,
+retained layout reconfiguration,
 rich text, wrapping, overflow, links, selection, live dispatched metrics,
 bounded follow-mode logs, nested stacking and hit order, Input validation and
 commit callbacks, multiline TextArea editing and paste, draggable z-index objects, pointer trails,

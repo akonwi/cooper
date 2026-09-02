@@ -3,7 +3,9 @@
 ## Status
 
 Accepted. The separate Context type and App/Context/Root ownership model are
-superseded by [ADR 0013](./0013-consolidate-context-into-runtime.md).
+superseded by [ADR 0013](./0013-consolidate-context-into-runtime.md). The
+animation deferral is superseded by
+[ADR 0014](./0014-define-animation-timelines.md).
 
 ## Context
 
@@ -492,7 +494,8 @@ suspension remain coalesced until resume forces a complete frame.
 
 Dispatch itself does not force a frame; setters called by a dispatched action
 do. Manual redraw, continuous rendering, frame-rate controls, and animation are
-deferred.
+deferred. ADR 0014 later adds Runtime-owned, demand-driven animation timelines
+without exposing general continuous rendering or frame callbacks.
 
 ### Testing
 

@@ -72,6 +72,7 @@ Current validation entry points:
 ard test
 
 cd examples
+python3 test_animation.py
 python3 test_layout_playground.py
 python3 test_text_gallery.py
 python3 test_dashboard.py

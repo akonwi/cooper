@@ -27,8 +27,9 @@ The canonical design is defined by the accepted
 [notification ADR](./docs/adrs/0009-define-terminal-mediated-notifications.md),
 [terminal progress ADR](./docs/adrs/0010-define-terminal-progress-reporting.md),
 [multiline TextArea ADR](./docs/adrs/0011-define-multiline-text-area.md), and
-[terminal title ADR](./docs/adrs/0012-define-terminal-title-updates.md), and
-[Runtime ownership ADR](./docs/adrs/0013-consolidate-context-into-runtime.md).
+[terminal title ADR](./docs/adrs/0012-define-terminal-title-updates.md),
+[Runtime ownership ADR](./docs/adrs/0013-consolidate-context-into-runtime.md), and
+[animation ADR](./docs/adrs/0014-define-animation-timelines.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
@@ -64,6 +65,31 @@ standalone programs. Only `destroy()` is final; call `wait()` after requesting
 destruction before a standalone process exits. `suspend()` and `resume()`
 temporarily release and reacquire the terminal while retaining the tree.
 
+## Animation
+
+Runtime-owned timelines apply typed update closures on Cooper's UI thread and
+return the renderer to demand-driven operation after completion:
+
+```ard
+use cooper/animation
+
+let timeline = application.context.timeline(300)
+timeline.add(
+  300,
+  fn(frame: animation::Frame) {
+    let applied = mut panel.style()
+    applied.left = style::cells(animation::lerp_int(0, 20, frame.progress))
+    panel.set_style(applied.@)
+  },
+  ease: animation::out_quad,
+)
+let _ = timeline.play()
+defer timeline.destroy()
+```
+
+Timelines support scheduled tracks and callbacks, pause/restart, looping,
+alternate direction, custom easing functions, and deterministic headless time.
+
 ## Retained model
 
 Every built-in control owns one persistent internal Node. Parent/child
@@ -85,7 +111,8 @@ yet a supported custom-control API.
 - Runtime dispatch queues application work on the UI thread and exposes
   App-lifetime cancellation. After nonblocking `start()`, use dispatch or a
   Cooper callback for retained-tree mutation.
-- Frame requests are demand-driven and coalesced.
+- Frame requests are demand-driven and coalesced; Runtime-owned animation
+  timelines schedule paced frames only while playing.
 - Layout and drawing use one frame-consistent grapheme/terminal-width measurer.
 - Drawing writes directly into one backend-independent cell buffer.
 - Vaxis input is converted to Cooper-owned event values.
@@ -141,6 +168,7 @@ The runnable examples exercise the public application and control APIs:
 ```sh
 cd examples
 ard run quickstart.ard
+ard run animation.ard
 ard run layout_playground.ard
 ard run text_gallery.ard
 ard run dashboard.ard
@@ -159,6 +187,7 @@ tests.
 ## Module structure
 
 ```text
+animation.ard    typed Runtime-owned timelines, easing, and interpolation
 app.ard          public App facade
 box.ard          configurable retained flex container
 clipboard.ard    Runtime-exposed OSC 52 clipboard service

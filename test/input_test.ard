@@ -1,15 +1,15 @@
 use ard/testing
 
-use cooper/box
-use cooper/color
+use cooper/ui/box
+use cooper/ui/color
 use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/paint
 use cooper/event
-use cooper/input
-use cooper/style
+use cooper/ui/input
+use cooper/ui/style
 use cooper/testing as cooper_testing
-use cooper/text
+use cooper/ui/text
 
 private fn fixed(width: Int) style::Style {
   style::new(width: style::cells(width), height: style::cells(1), flex_shrink: 0.0)

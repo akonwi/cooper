@@ -1,0 +1,86 @@
+use cooper/event
+use cooper/root as application_root
+use cooper/runtime as application_runtime
+use cooper/ui/selection as selection_value
+
+type Runtime = application_runtime::Runtime
+type Root = application_root::Root
+type Selection = selection_value::Selection
+type DispatchError = event::DispatchError
+type TerminalFocus = event::TerminalFocus
+type KeyEventType = event::KeyEventType
+type Modifiers = event::Modifiers
+type KeyEvent = event::KeyEvent
+type PasteEvent = event::PasteEvent
+type MouseEventType = event::MouseEventType
+type MouseButton = event::MouseButton
+type MouseCursor = event::MouseCursor
+type MouseEvent = event::MouseEvent
+
+struct App {
+  context: mut Runtime,
+  root: mut Root,
+}
+
+fn app(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?) App!Error {
+  let runtime = try application_runtime::new_live(exit_on_ctrl_c.or(true), auto_focus.or(true), use_mouse.or(true))
+  defer runtime.rollback_construction()
+  let root = application_root::new(runtime)
+  runtime.commit_construction()
+  runtime.start_signal_monitor()
+  Result::ok(App{context: runtime, root: root})
+}
+
+impl App {
+  fn on_key(handler: fn(mut KeyEvent)) fn() {
+    self.context.on_key(handler)
+  }
+
+  fn on_paste(handler: fn(mut PasteEvent)) fn() {
+    self.context.on_paste(handler)
+  }
+
+  fn terminal_focus() TerminalFocus? {
+    self.context.terminal_focus()
+  }
+
+  fn on_terminal_focus(handler: fn(TerminalFocus)) fn() {
+    self.context.on_terminal_focus(handler)
+  }
+
+  fn selection() Selection? {
+    self.context.current_selection()
+  }
+
+  fn clear_selection() {
+    self.context.clear_selection()
+  }
+
+  fn on_selection_change(handler: fn(Selection?)) fn() {
+    self.context.on_selection_change(handler)
+  }
+
+  fn start() Void!Error {
+    self.context.start_live(self.root)
+  }
+
+  fn wait() Void!Error {
+    self.context.wait_live()
+  }
+
+  fn run() Void!Error {
+    self.context.run(self.root)
+  }
+
+  fn suspend() Void!Error {
+    self.context.suspend_live()
+  }
+
+  fn resume() Void!Error {
+    self.context.resume_live()
+  }
+
+  fn destroy() {
+    self.context.destroy_live()
+  }
+}

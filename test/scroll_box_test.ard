@@ -1,12 +1,12 @@
 use ard/testing
 
 use cooper/event
-use cooper/geometry
-use cooper/scroll_box
-use cooper/scrollbar
-use cooper/style
+use cooper/ui/geometry
+use cooper/ui/scroll_box
+use cooper/ui/scrollbar
+use cooper/ui/style
 use cooper/testing as cooper_testing
-use cooper/text
+use cooper/ui/text
 
 private fn key(name: Str) mut event::KeyEvent {
   event::key(

@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. Package paths and module placement are superseded by
+[ADR 0015](./0015-define-package-entry-points-and-ui-namespace.md).
 
 ## Context
 

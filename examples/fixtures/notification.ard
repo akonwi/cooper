@@ -1,73 +1,71 @@
 use ard/async
 
-use cooper/app
-use cooper/event
-use cooper/style
+use cooper
 use cooper/terminal_progress
-use cooper/text
+use cooper/ui
 use go:time
 
 fn main() {
-  let application = app::new().expect("create Cooper notification fixture")
+  let application = cooper::app().expect("create Cooper notification fixture")
   defer application.destroy()
-  let status = text::new(
+  let status = ui::text(
     application.context,
     content: "Notification fixture ready · T title · N/U notify · I/D/E/P/R progress · S suspend",
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
   )
   application.root.add(status)
 
   let context = application.context
   let dispatch = application.context.dispatch
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type == event::KeyEventType::press and received.matches("t") {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type == cooper::KeyEventType::press and received.matches("t") {
       let accepted = context.set_title("Cooper\nTitle")
       status.set_content("TITLE ACCEPTED: {accepted}")
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("n") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("n") {
       if context.notify("Build finished", title: "Cooper") {
         status.set_content("TITLED ACCEPTED")
       } else {
         status.set_content("TITLED REJECTED")
       }
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("u") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("u") {
       if context.notify("Untitled notification") {
         status.set_content("UNTITLED ACCEPTED")
       } else {
         status.set_content("UNTITLED REJECTED")
       }
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("i") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("i") {
       let accepted = context.progress(terminal_progress::State::indeterminate)
       status.set_content("PROGRESS INDETERMINATE: {accepted}")
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("d") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("d") {
       let accepted = context.progress(
         terminal_progress::State::normal,
         percent: 42,
       )
       status.set_content("PROGRESS NORMAL: {accepted}")
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("e") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("e") {
       let accepted = context.progress(
         terminal_progress::State::error,
         percent: 75,
       )
       status.set_content("PROGRESS ERROR: {accepted}")
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("p") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("p") {
       let accepted = context.progress(
         terminal_progress::State::paused,
         percent: 25,
       )
       status.set_content("PROGRESS PAUSED: {accepted}")
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("r") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("r") {
       let accepted = context.progress(terminal_progress::State::remove)
       status.set_content("PROGRESS REMOVED: {accepted}")
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("s") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("s") {
       match application.suspend() {
         ok(_) => {
           let rejected = not context.notify("Suspended notification")

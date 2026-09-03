@@ -1,25 +1,20 @@
 use ard/async
 
-use cooper/app
-use cooper/box
-use cooper/color
-use cooper/runtime
-use cooper/event
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 use go:time
 
 struct Layer {
   name: Str,
-  group: mut box::Box,
-  panel: mut box::Box,
+  group: mut ui::Box,
+  panel: mut ui::Box,
   x: Int,
   y: Int,
   z: Int,
   home_x: Int,
   home_y: Int,
-  fill: color::Color,
-  border: color::Color,
+  fill: ui::Color,
+  border: ui::Color,
 }
 
 struct StackingState {
@@ -39,91 +34,91 @@ private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
   }
 }
 
-private fn group_style(x: Int, y: Int, z: Int) style::Style {
-  style::new(
-    position: style::Position::absolute,
-    left: style::cells(x),
-    top: style::cells(y),
-    width: style::cells(31),
-    height: style::cells(8),
-    overflow: style::Overflow::visible,
+private fn group_style(x: Int, y: Int, z: Int) ui::Style {
+  ui::style(
+    position: ui::Position::absolute,
+    left: ui::cells(x),
+    top: ui::cells(y),
+    width: ui::cells(31),
+    height: ui::cells(8),
+    overflow: ui::Overflow::visible,
     z_index: z,
   )
 }
 
-private fn shadow_style() style::Style {
-  style::new(
-    background: color::hex("#030712"),
-    position: style::Position::absolute,
-    left: style::cells(1),
-    top: style::cells(1),
-    width: style::cells(30),
-    height: style::cells(7),
+private fn shadow_style() ui::Style {
+  ui::style(
+    background: ui::hex("#030712"),
+    position: ui::Position::absolute,
+    left: ui::cells(1),
+    top: ui::cells(1),
+    width: ui::cells(30),
+    height: ui::cells(7),
     z_index: 0,
   )
 }
 
-private fn panel_style(fill: color::Color, border: color::Color) style::Style {
-  style::new(
+private fn panel_style(fill: ui::Color, border: ui::Color) ui::Style {
+  ui::style(
     background: fill,
-    border: style::Border::rounded,
+    border: ui::Border::rounded,
     border_color: border,
-    position: style::Position::absolute,
-    left: style::cells(0),
-    top: style::cells(0),
-    width: style::cells(30),
-    height: style::cells(7),
-    overflow: style::Overflow::visible,
+    position: ui::Position::absolute,
+    left: ui::cells(0),
+    top: ui::cells(0),
+    width: ui::cells(30),
+    height: ui::cells(7),
+    overflow: ui::Overflow::visible,
     z_index: 1,
-    align_items: style::Align::center,
-    justify_content: style::Justify::center,
+    align_items: ui::Align::center,
+    justify_content: ui::Justify::center,
   )
 }
 
-private fn badge_style(fill: color::Color) style::Style {
-  style::new(
+private fn badge_style(fill: ui::Color) ui::Style {
+  ui::style(
     background: fill,
-    border: style::Border::heavy,
-    border_color: color::hex("#F8FAFC"),
-    position: style::Position::absolute,
-    left: style::cells(17),
-    top: style::cells(4),
-    width: style::cells(13),
-    height: style::cells(3),
+    border: ui::Border::heavy,
+    border_color: ui::hex("#F8FAFC"),
+    position: ui::Position::absolute,
+    left: ui::cells(17),
+    top: ui::cells(4),
+    width: ui::cells(13),
+    height: ui::cells(3),
     z_index: 99,
-    align_items: style::Align::center,
-    justify_content: style::Justify::center,
+    align_items: ui::Align::center,
+    justify_content: ui::Justify::center,
   )
 }
 
 private fn make_layer(
-  ctx: mut runtime::Runtime,
+  ctx: mut cooper::Runtime,
   name: Str,
   x: Int,
   y: Int,
   z: Int,
-  fill: color::Color,
-  border: color::Color,
-  badge_fill: color::Color,
+  fill: ui::Color,
+  border: ui::Color,
+  badge_fill: ui::Color,
 ) mut Layer {
-  let group = box::new(ctx, styles: group_style(x, y, z))
-  let shadow = box::new(ctx, styles: shadow_style())
-  let panel = box::new(ctx, title: name, styles: panel_style(fill, border))
+  let group = ui::box(ctx, styles: group_style(x, y, z))
+  let shadow = ui::box(ctx, styles: shadow_style())
+  let panel = ui::box(ctx, title: name, styles: panel_style(fill, border))
   panel.add(
-    text::new(
+    ui::text(
       ctx,
       content: "{name}\nparent context",
       selectable: false,
-      text_style: text::style(foreground: color::hex("#FFFFFF"), bold: true),
+      text_style: ui::text_style(foreground: ui::hex("#FFFFFF"), bold: true),
     ),
   )
-  let badge = box::new(ctx, title: "CHILD", styles: badge_style(badge_fill))
+  let badge = ui::box(ctx, title: "CHILD", styles: badge_style(badge_fill))
   badge.add(
-    text::new(
+    ui::text(
       ctx,
       content: "z = 99",
       selectable: false,
-      text_style: text::style(foreground: color::hex("#FFFFFF"), bold: true),
+      text_style: ui::text_style(foreground: ui::hex("#FFFFFF"), bold: true),
     ),
   )
   panel.add(badge)
@@ -149,7 +144,7 @@ private fn make_layer(
 private fn apply_layer(layer: mut Layer, active: Bool) {
   mut applied_border = layer.border
   if active {
-    applied_border = color::hex("#F8FAFC")
+    applied_border = ui::hex("#F8FAFC")
   }
   layer.group.set_style(group_style(layer.x, layer.y, layer.z))
   layer.panel.set_style(panel_style(layer.fill, applied_border))
@@ -200,33 +195,33 @@ private fn name_at_z(layers: [mut Layer], z: Int) Str {
   found
 }
 
-private fn inspector_content(layers: [mut Layer], active: Int, autoplay: Bool) text::StyledText {
+private fn inspector_content(layers: [mut Layer], active: Int, autoplay: Bool) ui::StyledText {
   let selected = layers.at(active).expect("active stacking layer")
-  let label = color::hex("#94A3B8")
-  let accent = color::hex("#67E8F9")
-  let value = color::hex("#F8FAFC")
-  mut auto_color = color::hex("#FBBF24")
+  let label = ui::hex("#94A3B8")
+  let accent = ui::hex("#67E8F9")
+  let value = ui::hex("#F8FAFC")
+  mut auto_color = ui::hex("#FBBF24")
   mut auto_label = "OFF"
   if autoplay {
-    auto_color = color::hex("#4ADE80")
+    auto_color = ui::hex("#4ADE80")
     auto_label = "ON"
   }
-  text::styled_text(
+  ui::styled_text(
     [
-      text::span("ACTIVE\n", style: text::span_style(foreground: label, bold: true)),
-      text::span("{selected.name}\n\n", style: text::span_style(foreground: accent, bold: true)),
-      text::span("BACK → FRONT\n", style: text::span_style(foreground: label, bold: true)),
-      text::span(
+      ui::span("ACTIVE\n", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("{selected.name}\n\n", style: ui::span_style(foreground: accent, bold: true)),
+      ui::span("BACK → FRONT\n", style: ui::span_style(foreground: label, bold: true)),
+      ui::span(
         "{name_at_z(layers, 0)} · {name_at_z(layers, 1)} · {name_at_z(layers, 2)}\n\n",
-        style: text::span_style(foreground: value),
+        style: ui::span_style(foreground: value),
       ),
-      text::span("CHILD Z\n", style: text::span_style(foreground: label, bold: true)),
-      text::span(
+      ui::span("CHILD Z\n", style: ui::span_style(foreground: label, bold: true)),
+      ui::span(
         "99 (inside each parent)\n\n",
-        style: text::span_style(foreground: color::hex("#F472B6")),
+        style: ui::span_style(foreground: ui::hex("#F472B6")),
       ),
-      text::span("AUTOPLAY  ", style: text::span_style(foreground: label, bold: true)),
-      text::span(auto_label, style: text::span_style(foreground: auto_color, bold: true)),
+      ui::span("AUTOPLAY  ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span(auto_label, style: ui::span_style(foreground: auto_color, bold: true)),
     ],
   )
 }
@@ -237,8 +232,8 @@ private fn update_status(
   autoplay: Bool,
   last_hit: Str,
   hits: Int,
-  inspector: mut text::Text,
-  status: mut text::Text,
+  inspector: mut ui::Text,
+  status: mut ui::Text,
 ) {
   let selected = layers.at(active).expect("active stacking layer")
   inspector.set_content(inspector_content(layers, active, autoplay))
@@ -252,117 +247,117 @@ private fn update_status(
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper stacking demo")
+  let application = cooper::app().expect("create Cooper stacking demo")
   defer application.destroy()
   let ctx = application.context
 
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#020617"),
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      gap: style::cells(1),
+    styles: ui::style(
+      background: ui::hex("#020617"),
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      gap: ui::cells(1),
     ),
   )
 
-  let header = box::new(
+  let header = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::heavy,
-      border_color: color::hex("#F472B6"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::heavy,
+      border_color: ui::hex("#F472B6"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "COOPER STACKING CONTEXTS",
       selectable: false,
-      text_style: text::style(foreground: color::hex("#F9A8D4"), bold: true),
+      text_style: ui::text_style(foreground: ui::hex("#F9A8D4"), bold: true),
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "A high-z child cannot escape its lower-z parent subtree",
-      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
       selectable: false,
-      wrap: text::TextWrap::none,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#94A3B8")),
+      wrap: ui::TextWrap::none,
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#94A3B8")),
     ),
   )
 
-  let body = box::new(
+  let body = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      flex_direction: style::FlexDirection::row,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let stage = box::new(
+  let stage = ui::box(
     ctx,
     title: "NESTED LAYERS — CLICK EXPOSED EDGES",
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
-      border_color: color::hex("#475569"),
-      position: style::Position::relative,
-      width: style::percent(68.0),
-      height: style::percent(100.0),
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#475569"),
+      position: ui::Position::relative,
+      width: ui::percent(68.0),
+      height: ui::percent(100.0),
       flex_shrink: 0.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let stage_clip = box::new(
+  let stage_clip = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      overflow: style::Overflow::hidden,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let inspector_panel = box::new(
+  let inspector_panel = ui::box(
     ctx,
     title: "STACK INSPECTOR",
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
-      border_color: color::hex("#22D3EE"),
-      width: style::cells(1),
-      height: style::percent(100.0),
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#22D3EE"),
+      width: ui::cells(1),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let inspector_clip = box::new(
+  let inspector_clip = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      overflow: style::Overflow::hidden,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let inspector = text::new(
+  let inspector = ui::text(
     ctx,
     content: "",
-    wrap: text::TextWrap::none,
-    styles: style::new(width: style::percent(95.0), height: style::percent(100.0)),
+    wrap: ui::TextWrap::none,
+    styles: ui::style(width: ui::percent(95.0), height: ui::percent(100.0)),
     selectable: false,
-    overflow: text::TextOverflow::clip,
-    text_style: text::style(foreground: color::hex("#E2E8F0")),
+    overflow: ui::TextOverflow::clip,
+    text_style: ui::text_style(foreground: ui::hex("#E2E8F0")),
   )
   inspector_clip.add(inspector)
   inspector_panel.add(inspector_clip)
@@ -374,9 +369,9 @@ fn main() {
       2,
       1,
       0,
-      color::hex("#1D4ED8"),
-      color::hex("#60A5FA"),
-      color::hex("#1E40AF"),
+      ui::hex("#1D4ED8"),
+      ui::hex("#60A5FA"),
+      ui::hex("#1E40AF"),
     ),
     make_layer(
       ctx,
@@ -384,9 +379,9 @@ fn main() {
       11,
       3,
       1,
-      color::hex("#6D28D9"),
-      color::hex("#C4B5FD"),
-      color::hex("#5B21B6"),
+      ui::hex("#6D28D9"),
+      ui::hex("#C4B5FD"),
+      ui::hex("#5B21B6"),
     ),
     make_layer(
       ctx,
@@ -394,9 +389,9 @@ fn main() {
       20,
       4,
       2,
-      color::hex("#047857"),
-      color::hex("#6EE7B7"),
-      color::hex("#065F46"),
+      ui::hex("#047857"),
+      ui::hex("#6EE7B7"),
+      ui::hex("#065F46"),
     ),
   ]
   for layer in layers {
@@ -407,51 +402,51 @@ fn main() {
   body.add(stage)
   body.add(inspector_panel)
 
-  let footer = box::new(
+  let footer = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::single,
-      border_color: color::hex("#334155"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::single,
+      border_color: ui::hex("#334155"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
-  let status = text::new(
+  let status = ui::text(
     ctx,
     content: "",
-    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#93C5FD"), bold: true),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::hex("#93C5FD"), bold: true),
   )
   footer.add(status)
   footer.add(
-    text::new(
+    ui::text(
       ctx,
-      content: text::styled_text(
+      content: ui::styled_text(
         [
-          text::span("1–3/Space", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" raise  ·  "),
-          text::span("Arrows", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" move  ·  "),
-          text::span("A", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" auto  ·  "),
-          text::span("R", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" reset  ·  "),
-          text::span("Q", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" quit"),
+          ui::span("1–3/Space", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" raise  ·  "),
+          ui::span("Arrows", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" move  ·  "),
+          ui::span("A", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" auto  ·  "),
+          ui::span("R", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" reset  ·  "),
+          ui::span("Q", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" quit"),
         ],
       ),
-      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
       selectable: false,
-      wrap: text::TextWrap::none,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#CBD5E1")),
+      wrap: ui::TextWrap::none,
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#CBD5E1")),
     ),
   )
 
@@ -489,8 +484,8 @@ fn main() {
   for layer, index in layers {
     let target_index = index
     let hit_name = layer.name
-    let _ = layer.group.on_mouse(fn(received: mut event::MouseEvent) {
-      if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+    let _ = layer.group.on_mouse(fn(received: mut cooper::MouseEvent) {
+      if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
         state.last_hit = hit_name
         state.hits =+ 1
         activate(target_index)
@@ -498,8 +493,8 @@ fn main() {
     })
   }
 
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type == event::KeyEventType::press {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type == cooper::KeyEventType::press {
       if received.matches("q") {
         received.prevent_default()
         application.destroy()

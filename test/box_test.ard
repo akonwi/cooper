@@ -1,10 +1,10 @@
 use ard/testing
 
-use cooper/box
-use cooper/color
-use cooper/style
+use cooper/ui/box
+use cooper/ui/color
+use cooper/ui/style
 use cooper/testing as cooper_testing
-use cooper/text
+use cooper/ui/text
 
 test fn box_paints_background_border_title_and_insets_children() Void!Str {
   let application = cooper_testing::new(8, 4)

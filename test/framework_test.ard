@@ -1,21 +1,21 @@
 use ard/testing
 
-use cooper/box
-use cooper/color
+use cooper/ui/box
+use cooper/ui/color
 use cooper/runtime
 use cooper/event as framework_event
 use cooper/core/event_delivery
 use cooper/core/focus
-use cooper/geometry
+use cooper/ui/geometry
 use cooper/core/hit
-use cooper/input
+use cooper/ui/input
 use cooper/core/node
 use cooper/core/paint
 use cooper/core/router
 use cooper/core/runtime as dispatch_runtime
-use cooper/scroll_box
-use cooper/style
-use cooper/text
+use cooper/ui/scroll_box
+use cooper/ui/style
+use cooper/ui/text
 
 private fn immediate_dispatch(action: fn()) Void!framework_event::DispatchError {
   action()

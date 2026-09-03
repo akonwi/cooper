@@ -1,19 +1,18 @@
 use ard/async
 
+use cooper
 use cooper/animation
-use cooper/app
-use cooper/style
-use cooper/text
+use cooper/ui
 use go:time
 
 fn main() {
-  let application = app::new().expect("create animation suspension fixture")
+  let application = cooper::app().expect("create animation suspension fixture")
   defer application.destroy()
-  let status = text::new(
+  let status = ui::text(
     application.context,
     content: "RUNNING",
     selectable: false,
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
   )
   application.root.add(status)
 

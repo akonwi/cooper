@@ -2,7 +2,7 @@ use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/runtime
-use cooper/style
+use cooper/ui/style
 
 struct Root {
   node_ref: mut node::Node,

@@ -1,11 +1,11 @@
 use ard/testing
 
-use cooper/box
-use cooper/color
+use cooper/ui/box
+use cooper/ui/color
 use cooper/event
-use cooper/style
+use cooper/ui/style
 use cooper/testing as cooper_testing
-use cooper/text
+use cooper/ui/text
 
 test fn text_defaults_to_word_wrap_and_preserves_explicit_lines() Void!Str {
   let application = cooper_testing::new(6, 4)

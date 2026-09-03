@@ -31,6 +31,8 @@ Design decisions for Cooper's Ard-native retained-mode framework.
   the App-to-Runtime ownership model and removal of the redundant Context type.
 - [ADR 0014](./adrs/0014-define-animation-timelines.md) — accepted
   Runtime-scoped, demand-driven, typed animation timelines.
+- [ADR 0015](./adrs/0015-define-package-entry-points-and-ui-namespace.md) — accepted
+  canonical `cooper` and `cooper/ui` entry points backed by the physical UI namespace.
 
 ## Architecture Decision Records
 
@@ -52,6 +54,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0012](./adrs/0012-define-terminal-title-updates.md) | Accepted | Define terminal title updates |
 | [0013](./adrs/0013-consolidate-context-into-runtime.md) | Accepted | Consolidate Context into Runtime |
 | [0014](./adrs/0014-define-animation-timelines.md) | Accepted | Define animation timelines |
+| [0015](./adrs/0015-define-package-entry-points-and-ui-namespace.md) | Accepted | Define package entry points and the UI namespace |
 
 ### Add an ADR
 

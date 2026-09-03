@@ -1,15 +1,15 @@
 use ard/testing
 use ard/unsafe
 
-use cooper/color
+use cooper/ui/color
 use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/event
-use cooper/geometry
-use cooper/selection
-use cooper/style as layout_style
+use cooper/ui/geometry
+use cooper/ui/selection
+use cooper/ui/style as layout_style
 use go:github.com/akonwi/cooper/ffi/core/backend/vaxisbridge as bridge
 use go:github.com/rockorager/go-uucode as unicode
 use go:go.rockorager.dev/vaxis

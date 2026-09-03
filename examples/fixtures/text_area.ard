@@ -1,48 +1,44 @@
-use cooper/app
-use cooper/box
-use cooper/event
-use cooper/style
-use cooper/text
-use cooper/text_area
+use cooper
+use cooper/ui
 use go:strings
 
 fn main() {
-  let application = app::new().expect("create TextArea fixture")
+  let application = cooper::app().expect("create TextArea fixture")
   let ctx = application.context
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      align_items: style::Align::start,
-      gap: style::cells(1),
-      padding: style::edges(style::cells(1)),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      align_items: ui::Align::start,
+      gap: ui::cells(1),
+      padding: ui::edges(ui::cells(1)),
     ),
   )
-  let title = text::new(
+  let title = ui::text(
     ctx,
     content: "TEXTAREA — Tab focus · Ctrl+Enter submit · Ctrl+C quit",
     selectable: false,
   )
-  let frame = box::new(
+  let frame = ui::box(
     ctx,
     title: "EDITOR",
-    styles: style::new(
-      border: style::Border::single,
-      width: style::cells(42),
-      height: style::cells(7),
+    styles: ui::style(
+      border: ui::Border::single,
+      width: ui::cells(42),
+      height: ui::cells(7),
       flex_shrink: 0.0,
     ),
   )
-  let area = text_area::new(
+  let area = ui::text_area(
     ctx,
     placeholder: "Write multiple lines…",
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
     ),
   )
-  let status = text::new(ctx, content: "status: ready", selectable: false)
+  let status = ui::text(ctx, content: "status: ready", selectable: false)
   frame.add(area)
   root.add(title)
   root.add(frame)
@@ -52,13 +48,13 @@ fn main() {
   let _ = area.on_input(fn(value: Str) {
     status.set_content("value: {strings::ReplaceAll(value, "\n", "↵")}")
   })
-  let _ = area.on_key(fn(received: mut event::KeyEvent) {
+  let _ = area.on_key(fn(received: mut cooper::KeyEvent) {
     if received.matches("return", ctrl: true) {
       received.prevent_default()
       status.set_content("submit: {strings::ReplaceAll(area.value(), "\n", "↵")}")
     }
   })
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
     if received.matches("tab") {
       received.prevent_default()
       let _ = area.focus()

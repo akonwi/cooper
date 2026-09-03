@@ -1,8 +1,8 @@
 use ard/testing
 
 use cooper/event
-use cooper/scrollbar
-use cooper/style
+use cooper/ui/scrollbar
+use cooper/ui/style
 use cooper/testing as cooper_testing
 use go:math
 

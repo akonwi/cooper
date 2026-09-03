@@ -1,6 +1,6 @@
 use ard/testing
 
-use cooper/text
+use cooper/ui/text
 use go:github.com/rockorager/go-uucode as unicode
 
 struct Glyph {

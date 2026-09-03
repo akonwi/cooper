@@ -1,9 +1,9 @@
 use ard/testing
 
 use cooper/animation
-use cooper/style
+use cooper/ui/style
 use cooper/testing as cooper_testing
-use cooper/text
+use cooper/ui/text
 use go:math
 
 private struct Values {

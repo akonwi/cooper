@@ -1,13 +1,5 @@
-use cooper/app
-use cooper/box
-use cooper/color
-use cooper/runtime
-use cooper/event
-use cooper/input
-use cooper/scroll_box
-use cooper/selection
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 
 struct LabState {
   focus: Int,
@@ -23,42 +15,42 @@ struct LabState {
   name_rejected: Bool,
 }
 
-private fn field_frame(ctx: mut runtime::Runtime, title: Str, border: color::Color) mut box::Box {
-  box::new(
+private fn field_frame(ctx: mut cooper::Runtime, title: Str, border: ui::Color) mut ui::Box {
+  ui::box(
     ctx,
     title: title,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::rounded,
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::rounded,
       border_color: border,
-      width: style::percent(100.0),
-      height: style::cells(3),
+      width: ui::percent(100.0),
+      height: ui::cells(3),
       flex_shrink: 0.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
 }
 
-private fn input_style() style::Style {
-  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
+private fn input_style() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
-private fn value_style(foreground: color::Color) text::TextStyle {
-  text::style(foreground: foreground, background: color::hex("#0F172A"))
+private fn value_style(foreground: ui::Color) ui::TextStyle {
+  ui::text_style(foreground: foreground, background: ui::hex("#0F172A"))
 }
 
-private fn placeholder_style() text::TextStyle {
-  text::style(
-    foreground: color::hex("#64748B"),
-    background: color::hex("#0F172A"),
+private fn placeholder_style() ui::TextStyle {
+  ui::text_style(
+    foreground: ui::hex("#64748B"),
+    background: ui::hex("#0F172A"),
     dim: true,
     italic: true,
   )
 }
 
-private fn selected_style(selected: mut text::TextStyle) {
-  selected.foreground = Maybe::new(color::hex("#FFFFFF"))
-  selected.background = Maybe::new(color::hex("#1D4ED8"))
+private fn selected_style(selected: mut ui::TextStyle) {
+  selected.foreground = Maybe::new(ui::hex("#FFFFFF"))
+  selected.background = Maybe::new(ui::hex("#1D4ED8"))
   selected.bold = true
 }
 
@@ -66,31 +58,31 @@ private fn email_shape(value: Str) Bool {
   (not value.is_empty()) and value.contains("@") and value.contains(".")
 }
 
-private fn refresh_fields(fields: [mut input::Input], frames: [mut box::Box], state: mut LabState) {
-  let muted = color::hex("#475569")
-  mut name_border = color::hex("#38BDF8")
+private fn refresh_fields(fields: [mut ui::Input], frames: [mut ui::Box], state: mut LabState) {
+  let muted = ui::hex("#475569")
+  mut name_border = ui::hex("#38BDF8")
   mut email_border = muted
-  let unicode_border = color::hex("#C084FC")
-  let local_border = color::hex("#F59E0B")
+  let unicode_border = ui::hex("#C084FC")
+  let local_border = ui::hex("#F59E0B")
 
   let name_minimum = fields.at(0).expect("name input").min_length()
   let name_maximum = fields.at(0).expect("name input").max_length().or(-1)
   mut name_title = "NAME · {name_minimum}–{name_maximum} GRAPHEMES"
   if state.name_rejected {
-    name_border = color::hex("#FB7185")
+    name_border = ui::hex("#FB7185")
     name_title = "NAME · REJECTED (<2)"
   }
 
   mut email_title = "EMAIL · @ + DOT SHAPE CHECK"
-  mut email_text = color::hex("#E2E8F0")
+  mut email_text = ui::hex("#E2E8F0")
   if state.email_touched {
     if state.email_valid {
-      email_border = color::hex("#4ADE80")
-      email_text = color::hex("#BBF7D0")
+      email_border = ui::hex("#4ADE80")
+      email_text = ui::hex("#BBF7D0")
       email_title = "EMAIL · SHAPE VALID"
     } else {
-      email_border = color::hex("#FB7185")
-      email_text = color::hex("#FECDD3")
+      email_border = ui::hex("#FB7185")
+      email_text = ui::hex("#FECDD3")
       email_title = "EMAIL · SHAPE INVALID"
     }
   }
@@ -99,78 +91,78 @@ private fn refresh_fields(fields: [mut input::Input], frames: [mut box::Box], st
   for frame, index in frames {
     mut border = borders.at(index).expect("input lab border")
     if index == state.focus {
-      border = color::hex("#F8FAFC")
+      border = ui::hex("#F8FAFC")
     }
     frame.set_border_color(border)
   }
 
   frames.at(0).expect("name frame").set_title(name_title)
   frames.at(1).expect("email frame").set_title(email_title)
-  mut name_text = color::hex("#E2E8F0")
+  mut name_text = ui::hex("#E2E8F0")
   if state.name_rejected {
-    name_text = color::hex("#FECDD3")
+    name_text = ui::hex("#FECDD3")
   }
   fields.at(0).expect("name input").set_text_style(value_style(name_text))
   fields.at(1).expect("email input").set_text_style(value_style(email_text))
 }
 
-private fn diagnostics_content(state: mut LabState, names: [Str]) text::StyledText {
-  let label = color::hex("#94A3B8")
-  let value = color::hex("#F8FAFC")
-  let accent = color::hex("#67E8F9")
+private fn diagnostics_content(state: mut LabState, names: [Str]) ui::StyledText {
+  let label = ui::hex("#94A3B8")
+  let value = ui::hex("#F8FAFC")
+  let accent = ui::hex("#67E8F9")
   mut selected = state.selected_text
   if selected.is_empty() {
     selected = "none"
   }
   let focus_name = names.at(state.focus).or("none")
   mut email = "untouched"
-  mut email_color = color::hex("#FBBF24")
+  mut email_color = ui::hex("#FBBF24")
   if state.email_touched {
     if state.email_valid {
       email = "valid"
-      email_color = color::hex("#4ADE80")
+      email_color = ui::hex("#4ADE80")
     } else {
       email = "invalid"
-      email_color = color::hex("#FB7185")
+      email_color = ui::hex("#FB7185")
     }
   }
 
-  text::styled_text(
+  ui::styled_text(
     [
-      text::span("FOCUS  ", style: text::span_style(foreground: label, bold: true)),
-      text::span("{focus_name}\n", style: text::span_style(foreground: accent, bold: true)),
-      text::span("LAST   ", style: text::span_style(foreground: label, bold: true)),
-      text::span("{state.last_event}\n\n", style: text::span_style(foreground: value)),
-      text::span("CALLBACKS\n", style: text::span_style(foreground: label, bold: true)),
-      text::span(
+      ui::span("FOCUS  ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("{focus_name}\n", style: ui::span_style(foreground: accent, bold: true)),
+      ui::span("LAST   ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("{state.last_event}\n\n", style: ui::span_style(foreground: value)),
+      ui::span("CALLBACKS\n", style: ui::span_style(foreground: label, bold: true)),
+      ui::span(
         "input {state.input_count} · change {state.change_count}\n",
-        style: text::span_style(foreground: value),
+        style: ui::span_style(foreground: value),
       ),
-      text::span(
+      ui::span(
         "submit {state.submit_count} · reject {state.reject_count}\n",
-        style: text::span_style(foreground: value),
+        style: ui::span_style(foreground: value),
       ),
-      text::span("paste bytes {state.paste_count}\n\n", style: text::span_style(foreground: value)),
-      text::span("SELECTION\n", style: text::span_style(foreground: label, bold: true)),
-      text::span("{selected}\n\n", style: text::span_style(foreground: color::hex("#A5B4FC"))),
-      text::span("EMAIL  ", style: text::span_style(foreground: label, bold: true)),
-      text::span(email, style: text::span_style(foreground: email_color, bold: true)),
+      ui::span("paste bytes {state.paste_count}\n\n", style: ui::span_style(foreground: value)),
+      ui::span("SELECTION\n", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("{selected}\n\n", style: ui::span_style(foreground: ui::hex("#A5B4FC"))),
+      ui::span("EMAIL  ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span(email, style: ui::span_style(foreground: email_color, bold: true)),
     ],
   )
 }
 
 private fn refresh(
-  fields: [mut input::Input],
-  frames: [mut box::Box],
+  fields: [mut ui::Input],
+  frames: [mut ui::Box],
   names: [Str],
   state: mut LabState,
-  diagnostics: mut text::Text,
+  diagnostics: mut ui::Text,
 ) {
   refresh_fields(fields, frames, state)
   diagnostics.set_content(diagnostics_content(state, names))
 }
 
-private fn focused_index(fields: [mut input::Input]) Int {
+private fn focused_index(fields: [mut ui::Input]) Int {
   mut focused = -1
   for field, index in fields {
     if field.is_focused() {
@@ -180,7 +172,7 @@ private fn focused_index(fields: [mut input::Input]) Int {
   focused
 }
 
-private fn focus_next(fields: [mut input::Input], reverse: Bool) {
+private fn focus_next(fields: [mut ui::Input], reverse: Bool) {
   let current = focused_index(fields)
   mut next = current + 1
   if reverse {
@@ -195,172 +187,172 @@ private fn focus_next(fields: [mut input::Input], reverse: Bool) {
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper input lab")
+  let application = cooper::app().expect("create Cooper input lab")
   defer application.destroy()
   let ctx = application.context
 
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#020617"),
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      gap: style::cells(1),
+    styles: ui::style(
+      background: ui::hex("#020617"),
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      gap: ui::cells(1),
     ),
   )
 
-  let header = box::new(
+  let header = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::heavy,
-      border_color: color::hex("#38BDF8"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::heavy,
+      border_color: ui::hex("#38BDF8"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "COOPER INPUT LAB",
       selectable: false,
-      text_style: text::style(foreground: color::hex("#7DD3FC"), bold: true),
+      text_style: ui::text_style(foreground: ui::hex("#7DD3FC"), bold: true),
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "Single-line editing · selection · paste · validation · commit callbacks",
-      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
       selectable: false,
-      wrap: text::TextWrap::none,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#94A3B8")),
+      wrap: ui::TextWrap::none,
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#94A3B8")),
     ),
   )
 
-  let body = box::new(
+  let body = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      flex_direction: style::FlexDirection::row,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
 
-  let form_panel = box::new(
+  let form_panel = ui::box(
     ctx,
     title: "FIELDS — TAB / SHIFT+TAB",
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
-      border_color: color::hex("#475569"),
-      width: style::percent(60.0),
-      height: style::percent(100.0),
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#475569"),
+      width: ui::percent(60.0),
+      height: ui::percent(100.0),
       flex_shrink: 0.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let form = scroll_box::new(
+  let form = ui::scroll_box(
     ctx,
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
   )
 
-  let name_frame = field_frame(ctx, "NAME · 2–20 GRAPHEMES", color::hex("#38BDF8"))
-  let name = input::new(
+  let name_frame = field_frame(ctx, "NAME · 2–20 GRAPHEMES", ui::hex("#38BDF8"))
+  let name = ui::input(
     ctx,
     placeholder: "Ada Lovelace",
     min_length: 2,
     max_length: 20,
     styles: input_style(),
-    text_style: value_style(color::hex("#E2E8F0")),
+    text_style: value_style(ui::hex("#E2E8F0")),
     placeholder_style: placeholder_style(),
     selection_style: selected_style,
   )
   name_frame.add(name)
 
-  let email_frame = field_frame(ctx, "EMAIL · @ + DOT SHAPE CHECK", color::hex("#475569"))
-  let email = input::new(
+  let email_frame = field_frame(ctx, "EMAIL · @ + DOT SHAPE CHECK", ui::hex("#475569"))
+  let email = ui::input(
     ctx,
     placeholder: "name@example.com",
     max_length: 36,
     styles: input_style(),
-    text_style: value_style(color::hex("#E2E8F0")),
+    text_style: value_style(ui::hex("#E2E8F0")),
     placeholder_style: placeholder_style(),
     selection_style: selected_style,
   )
   email_frame.add(email)
 
-  let unicode_frame = field_frame(ctx, "UNICODE · MAX 8 GRAPHEMES", color::hex("#C084FC"))
-  let unicode = input::new(
+  let unicode_frame = field_frame(ctx, "UNICODE · MAX 8 GRAPHEMES", ui::hex("#C084FC"))
+  let unicode = ui::input(
     ctx,
     value: "élan🙂",
     placeholder: "Grapheme-safe editing",
     max_length: 8,
     styles: input_style(),
-    text_style: value_style(color::hex("#E9D5FF")),
+    text_style: value_style(ui::hex("#E9D5FF")),
     placeholder_style: placeholder_style(),
     selection_style: selected_style,
   )
   unicode_frame.add(unicode)
 
-  let local_frame = field_frame(ctx, "LOCAL EDIT · GLOBAL SELECT OFF", color::hex("#F59E0B"))
-  let local = input::new(
+  let local_frame = field_frame(ctx, "LOCAL EDIT · GLOBAL SELECT OFF", ui::hex("#F59E0B"))
+  let local = ui::input(
     ctx,
     value: "still editable",
     placeholder: "Selection disabled, editing enabled",
     styles: input_style(),
-    text_style: value_style(color::hex("#FDE68A")),
+    text_style: value_style(ui::hex("#FDE68A")),
     placeholder_style: placeholder_style(),
     selectable: false,
   )
   local_frame.add(local)
 
-  let fields: [mut input::Input] = [name, email, unicode, local]
-  let frames: [mut box::Box] = [name_frame, email_frame, unicode_frame, local_frame]
+  let fields: [mut ui::Input] = [name, email, unicode, local]
+  let frames: [mut ui::Box] = [name_frame, email_frame, unicode_frame, local_frame]
   let names: [Str] = ["NAME", "EMAIL", "UNICODE", "LOCAL EDIT"]
   for frame in frames {
     form.add(frame)
   }
   form_panel.add(form)
 
-  let diagnostics_panel = box::new(
+  let diagnostics_panel = ui::box(
     ctx,
     title: "LIVE DIAGNOSTICS",
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
-      border_color: color::hex("#A78BFA"),
-      width: style::cells(1),
-      height: style::percent(100.0),
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#A78BFA"),
+      width: ui::cells(1),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let diagnostics_clip = box::new(
+  let diagnostics_clip = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      overflow: style::Overflow::hidden,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let diagnostics = text::new(
+  let diagnostics = ui::text(
     ctx,
     content: "",
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::clip,
-    text_style: text::style(foreground: color::hex("#E2E8F0")),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::clip,
+    text_style: ui::text_style(foreground: ui::hex("#E2E8F0")),
   )
   diagnostics_clip.add(diagnostics)
   diagnostics_panel.add(diagnostics_clip)
@@ -368,52 +360,52 @@ fn main() {
   body.add(form_panel)
   body.add(diagnostics_panel)
 
-  let footer = box::new(
+  let footer = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::single,
-      border_color: color::hex("#334155"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::single,
+      border_color: ui::hex("#334155"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
   footer.add(
-    text::new(
+    ui::text(
       ctx,
       content: "Single-line only · paste normalizes CR/LF + tabs · clipboard is an App service · no password API",
-      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
       selectable: false,
-      wrap: text::TextWrap::none,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#94A3B8")),
+      wrap: ui::TextWrap::none,
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#94A3B8")),
     ),
   )
   footer.add(
-    text::new(
+    ui::text(
       ctx,
-      content: text::styled_text(
+      content: ui::styled_text(
         [
-          text::span("Tab/Shift+Tab", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" focus  ·  "),
-          text::span("Return", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" submit  ·  "),
-          text::span("Esc", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" clear selection  ·  "),
-          text::span("Mouse", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" place/drag  ·  "),
-          text::span("Ctrl+C", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" quit"),
+          ui::span("Tab/Shift+Tab", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" focus  ·  "),
+          ui::span("Return", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" submit  ·  "),
+          ui::span("Esc", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" clear selection  ·  "),
+          ui::span("Mouse", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" place/drag  ·  "),
+          ui::span("Ctrl+C", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" quit"),
         ],
       ),
-      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
       selectable: false,
-      wrap: text::TextWrap::none,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#CBD5E1")),
+      wrap: ui::TextWrap::none,
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#CBD5E1")),
     ),
   )
 
@@ -475,7 +467,7 @@ fn main() {
     })
   }
 
-  let _ = application.on_selection_change(fn(value: selection::Selection?) {
+  let _ = application.on_selection_change(fn(value: ui::Selection?) {
     match value {
       selected => { state.selected_text = selected.selected_text },
       _ => { state.selected_text = "" },
@@ -483,14 +475,14 @@ fn main() {
     refresh(fields, frames, names, state, diagnostics)
   })
 
-  let _ = application.on_paste(fn(received: mut event::PasteEvent) {
+  let _ = application.on_paste(fn(received: mut cooper::PasteEvent) {
     state.paste_count =+ received.text.size()
     state.last_event = "paste · {received.text.size()} bytes"
     refresh(fields, frames, names, state, diagnostics)
   })
 
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type != event::KeyEventType::release {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type != cooper::KeyEventType::release {
       if received.matches("tab", shift: true) {
         focus_next(fields, true)
         received.prevent_default()

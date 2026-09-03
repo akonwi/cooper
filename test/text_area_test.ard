@@ -1,13 +1,13 @@
 use ard/testing
 
-use cooper/box
+use cooper/ui/box
 use cooper/event
-use cooper/scroll_box
-use cooper/scrollbar
-use cooper/style
+use cooper/ui/scroll_box
+use cooper/ui/scrollbar
+use cooper/ui/style
 use cooper/testing as cooper_testing
-use cooper/text
-use cooper/text_area
+use cooper/ui/text
+use cooper/ui/text_area
 
 private fn fixed(width: Int, height: Int) style::Style {
   style::new(width: style::cells(width), height: style::cells(height), flex_shrink: 0.0)

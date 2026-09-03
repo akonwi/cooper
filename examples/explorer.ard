@@ -1,47 +1,40 @@
 use ard/async
 
-use cooper/app
-use cooper/box
-use cooper/color
-use cooper/runtime
-use cooper/event
-use cooper/input
-use cooper/scroll_box
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 use go:os
 use go:path/filepath
 use go:strings
 
-private fn row_style() style::Style {
-  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
+private fn row_style() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
 private fn entry_row(
-  ctx: mut runtime::Runtime,
+  ctx: mut cooper::Runtime,
   label: Str,
   activate: fn(Str),
-) mut box::Box {
-  let row = box::new(ctx, styles: row_style())
-  let label_text = text::new(ctx, content: "  {label}", styles: row_style())
+) mut ui::Box {
+  let row = ui::box(ctx, styles: row_style())
+  let label_text = ui::text(ctx, content: "  {label}", styles: row_style())
   row.add(label_text)
   row.set_focusable(true)
   let _ = row.on_focus(fn() {
     label_text.set_content("> {label}")
-    label_text.set_text_style(text::style(bold: true, reverse: true))
+    label_text.set_text_style(ui::text_style(bold: true, reverse: true))
   })
   let _ = row.on_blur(fn() {
     label_text.set_content("  {label}")
-    label_text.set_text_style(text::style())
+    label_text.set_text_style(ui::text_style())
   })
-  let _ = row.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type != event::KeyEventType::release and received.matches("return") {
+  let _ = row.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type != cooper::KeyEventType::release and received.matches("return") {
       activate(label)
       received.prevent_default()
     }
   })
-  let _ = row.on_mouse(fn(received: mut event::MouseEvent) {
-    if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+  let _ = row.on_mouse(fn(received: mut cooper::MouseEvent) {
+    if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
       activate(label)
     }
   })
@@ -67,12 +60,12 @@ private fn read_names(path: Str) [Str]!Error {
 }
 
 private fn start_directory_load(
-  ctx: mut runtime::Runtime,
+  ctx: mut cooper::Runtime,
   path: Str,
-  listing: mut scroll_box::ScrollBox,
-  loading: mut text::Text,
-  selection: mut text::Text,
-  rows: mut [mut box::Box],
+  listing: mut ui::ScrollBox,
+  loading: mut ui::Text,
+  selection: mut ui::Text,
+  rows: mut [mut ui::Box],
 ) {
   let cancellation = ctx.cancellation
   let dispatch = ctx.dispatch
@@ -102,7 +95,7 @@ private fn start_directory_load(
                 listing.add(row)
               }
             },
-            err(_) => listing.add(text::new(ctx, content: "Unable to read directory")),
+            err(_) => listing.add(ui::text(ctx, content: "Unable to read directory")),
           }
         })
       }
@@ -111,71 +104,71 @@ private fn start_directory_load(
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper explorer app")
+  let application = cooper::app().expect("create Cooper explorer app")
   let ctx = application.context
   let cwd = filepath::Abs(
     os::Getwd().expect("read current directory"),
   ).expect("resolve current directory")
 
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      align_items: style::Align::stretch,
-      gap: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      align_items: ui::Align::stretch,
+      gap: ui::cells(1),
     ),
   )
-  let title = text::new(
+  let title = ui::text(
     ctx,
     content: "Cooper Explorer — {cwd}",
-    styles: style::new(height: style::cells(1), flex_shrink: 0.0),
-    text_style: text::style(foreground: color::rgb(90, 170, 255), bold: true),
+    styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+    text_style: ui::text_style(foreground: ui::rgb(90, 170, 255), bold: true),
   )
-  let search = input::new(
+  let search = ui::input(
     ctx,
     placeholder: "Filter",
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
   )
-  let panes = box::new(
+  let panes = ui::box(
     ctx,
-    styles: style::new(
-      flex_direction: style::FlexDirection::row,
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      flex_direction: ui::FlexDirection::row,
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
-      align_items: style::Align::stretch,
-      gap: style::cells(2),
+      align_items: ui::Align::stretch,
+      gap: ui::cells(2),
     ),
   )
-  let details_style = mut style::new(
-    width: style::percent(50.0),
-    height: style::percent(100.0),
+  let details_style = mut ui::style(
+    width: ui::percent(50.0),
+    height: ui::percent(100.0),
     flex_grow: 1.0,
-    align_items: style::Align::start,
+    align_items: ui::Align::start,
   )
-  details_style.overflow = style::Overflow::hidden
-  let details = box::new(ctx, styles: details_style.@)
-  let details_title = text::new(
+  details_style.overflow = ui::Overflow::hidden
+  let details = ui::box(ctx, styles: details_style.@)
+  let details_title = ui::text(
     ctx,
     content: "Details",
-    text_style: text::style(bold: true, underline: true),
+    text_style: ui::text_style(bold: true, underline: true),
   )
-  let selection = text::new(ctx, content: "Select an entry with Enter or the mouse.")
+  let selection = ui::text(ctx, content: "Select an entry with Enter or the mouse.")
   details.add(details_title)
   details.add(selection)
 
-  let listing = scroll_box::new(
+  let listing = ui::scroll_box(
     ctx,
-    styles: style::new(
-      width: style::percent(50.0),
-      height: style::percent(100.0),
+    styles: ui::style(
+      width: ui::percent(50.0),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
     ),
   )
-  let loading = text::new(ctx, content: "Loading directory…", styles: row_style())
+  let loading = ui::text(ctx, content: "Loading directory…", styles: row_style())
   listing.add(loading)
-  let rows = mut List::new<mut box::Box>()
+  let rows = mut List::new<mut ui::Box>()
   start_directory_load(ctx, cwd, listing, loading, selection, rows)
 
   panes.add(listing)
@@ -186,8 +179,8 @@ fn main() {
   application.root.add(root)
 
   search.focus()
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type != event::KeyEventType::release and received.matches("tab") and search.is_focused() {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type != cooper::KeyEventType::release and received.matches("tab") and search.is_focused() {
       match rows.at(0) {
         row => { let _ = row.focus() },
         _ => (),

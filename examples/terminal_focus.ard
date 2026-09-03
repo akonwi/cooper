@@ -1,13 +1,7 @@
 use ard/list
 
-use cooper/app
-use cooper/box
-use cooper/color
-use cooper/runtime
-use cooper/event
-use cooper/scroll_box
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 use go:math
 use go:time
 
@@ -24,38 +18,38 @@ struct FocusState {
   last_focus_time: Str,
   last_blur_time: Str,
   last_mouse_time: Str,
-  rows: [mut text::Text],
+  rows: [mut ui::Text],
 }
 
 private fn timestamp() Str {
   time::Now().Format("15:04:05")
 }
 
-private fn top_margin() style::Edges {
-  let margin = mut style::edges()
-  margin.top = style::cells(1)
+private fn top_margin() ui::Edges {
+  let margin = mut ui::edges()
+  margin.top = ui::cells(1)
   margin.@
 }
 
-private fn row_style() style::Style {
-  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
+private fn row_style() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
 private fn append_log(
-  ctx: mut runtime::Runtime,
-  viewport: mut scroll_box::ScrollBox,
+  ctx: mut cooper::Runtime,
+  viewport: mut ui::ScrollBox,
   state: mut FocusState,
   message: Str,
-  tint: color::Color,
+  tint: ui::Color,
 ) {
-  let row = text::new(
+  let row = ui::text(
     ctx,
     content: "[{timestamp()}] {message}",
     styles: row_style(),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: tint),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: tint),
   )
   viewport.add(row)
   state.rows.push(row)
@@ -80,16 +74,16 @@ private fn display_time(value: Str) Str {
   }
 }
 
-private fn physical_pointer_event(received: mut event::MouseEvent) Bool {
-  received.event_type == event::MouseEventType::move or received.event_type == event::MouseEventType::drag
+private fn physical_pointer_event(received: mut cooper::MouseEvent) Bool {
+  received.event_type == cooper::MouseEventType::move or received.event_type == cooper::MouseEventType::drag
 }
 
 private fn update_display(
   state: mut FocusState,
-  focus_status: mut text::Text,
-  mouse_status: mut text::Text,
-  counters_status: mut text::Text,
-  timestamp_status: mut text::Text,
+  focus_status: mut ui::Text,
+  mouse_status: mut ui::Text,
+  counters_status: mut ui::Text,
+  timestamp_status: mut ui::Text,
 ) {
   if not state.focus_known {
     if state.mouse_events >= 3 {
@@ -97,17 +91,17 @@ private fn update_display(
     } else {
       focus_status.set_content("Focus: UNKNOWN  (waiting for terminal report)")
     }
-    focus_status.set_text_style(text::style(foreground: color::rgb(255, 200, 90), bold: true))
+    focus_status.set_text_style(ui::text_style(foreground: ui::rgb(255, 200, 90), bold: true))
   } else if state.focused {
     if state.awaiting_resume {
       focus_status.set_content("Focus: YES  (awaiting physical mouse input)")
     } else {
       focus_status.set_content("Focus: YES  (mouse tracking active)")
     }
-    focus_status.set_text_style(text::style(foreground: color::rgb(126, 231, 135), bold: true))
+    focus_status.set_text_style(ui::text_style(foreground: ui::rgb(126, 231, 135), bold: true))
   } else {
     focus_status.set_content("Focus: NO   (modes may be stripped by terminal)")
-    focus_status.set_text_style(text::style(foreground: color::rgb(255, 100, 100), bold: true))
+    focus_status.set_text_style(ui::text_style(foreground: ui::rgb(255, 100, 100), bold: true))
   }
   mouse_status.set_content(
     "Mouse: ({state.mouse_x}, {state.mouse_y}) | Move events: {state.mouse_events}",
@@ -121,78 +115,78 @@ private fn update_display(
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper focus restore demo")
+  let application = cooper::app().expect("create Cooper focus restore demo")
   defer application.destroy()
   let ctx = application.context
 
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0D1117"),
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      padding: style::edges(style::cells(1)),
-      flex_direction: style::FlexDirection::column,
-      overflow: style::Overflow::hidden,
+    styles: ui::style(
+      background: ui::hex("#0D1117"),
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      padding: ui::edges(ui::cells(1)),
+      flex_direction: ui::FlexDirection::column,
+      overflow: ui::Overflow::hidden,
     ),
   )
 
-  let title = text::new(
+  let title = ui::text(
     ctx,
     content: "Focus Restore Demo - Mouse Tracking + Terminal Mode Restore",
-    styles: style::new(width: style::percent(100.0), height: style::cells(2), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(2), flex_shrink: 0.0),
     selectable: false,
-    text_style: text::style(foreground: color::rgb(72, 209, 204), bold: true),
+    text_style: ui::text_style(foreground: ui::rgb(72, 209, 204), bold: true),
   )
   root.add(title)
 
-  let instructions = text::new(
+  let instructions = ui::text(
     ctx,
     content: "Move mouse to see tracking. Alt-tab away and back. Mouse should resume.\nMinimize and restore. Move again after returning. Ctrl+C to exit.",
-    styles: style::new(width: style::percent(100.0), height: style::cells(3), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(3), flex_shrink: 0.0),
     selectable: false,
-    text_style: text::style(foreground: color::rgb(160, 160, 180)),
+    text_style: ui::text_style(foreground: ui::rgb(160, 160, 180)),
   )
   root.add(instructions)
 
-  let status_box = box::new(
+  let status_box = ui::box(
     ctx,
     title: "Terminal State",
-    styles: style::new(
-      border: style::Border::rounded,
-      border_color: color::hex("#4ECDC4"),
-      width: style::percent(100.0),
-      height: style::cells(8),
+    styles: ui::style(
+      border: ui::Border::rounded,
+      border_color: ui::hex("#4ECDC4"),
+      width: ui::percent(100.0),
+      height: ui::cells(8),
       flex_shrink: 0.0,
-      padding: style::edges(style::cells(1)),
+      padding: ui::edges(ui::cells(1)),
       margin: top_margin(),
-      flex_direction: style::FlexDirection::column,
-      overflow: style::Overflow::hidden,
+      flex_direction: ui::FlexDirection::column,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let focus_status = text::new(ctx, content: "", styles: row_style(), selectable: false)
-  let mouse_status = text::new(
+  let focus_status = ui::text(ctx, content: "", styles: row_style(), selectable: false)
+  let mouse_status = ui::text(
     ctx,
     content: "",
     styles: row_style(),
     selectable: false,
-    text_style: text::style(foreground: color::rgb(165, 214, 255)),
+    text_style: ui::text_style(foreground: ui::rgb(165, 214, 255)),
   )
-  let counters_status = text::new(
+  let counters_status = ui::text(
     ctx,
     content: "",
     styles: row_style(),
     selectable: false,
-    text_style: text::style(foreground: color::rgb(210, 168, 255)),
+    text_style: ui::text_style(foreground: ui::rgb(210, 168, 255)),
   )
-  let timestamp_status = text::new(
+  let timestamp_status = ui::text(
     ctx,
     content: "",
     styles: row_style(),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::rgb(139, 148, 158)),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::rgb(139, 148, 158)),
   )
   status_box.add(focus_status)
   status_box.add(mouse_status)
@@ -200,26 +194,26 @@ fn main() {
   status_box.add(timestamp_status)
   root.add(status_box)
 
-  let log_box = box::new(
+  let log_box = ui::box(
     ctx,
     title: "Event Log (latest 20)",
-    styles: style::new(
-      border: style::Border::rounded,
-      border_color: color::hex("#6BCF7F"),
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      border: ui::Border::rounded,
+      border_color: ui::hex("#6BCF7F"),
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      padding: style::edges(style::cells(1)),
+      padding: ui::edges(ui::cells(1)),
       margin: top_margin(),
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let log_viewport = scroll_box::new(
+  let log_viewport = ui::scroll_box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
     ),
@@ -244,7 +238,7 @@ fn main() {
     rows: [],
   }
 
-  let _ = root.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = root.on_mouse(fn(received: mut cooper::MouseEvent) {
     if physical_pointer_event(received) {
       state.mouse_x = received.x
       state.mouse_y = received.y
@@ -258,15 +252,15 @@ fn main() {
           log_viewport,
           state,
           "MOUSE RESUMED - tracking active after focus #{state.focus_count}",
-          color::rgb(165, 214, 255),
+          ui::rgb(165, 214, 255),
         )
       }
       update_display(state, focus_status, mouse_status, counters_status, timestamp_status)
     }
   })
 
-  let _ = application.on_terminal_focus(fn(value: event::TerminalFocus) {
-    if value == event::TerminalFocus::gained {
+  let _ = application.on_terminal_focus(fn(value: cooper::TerminalFocus) {
+    if value == cooper::TerminalFocus::gained {
       state.focus_known = true
       state.focused = true
       state.focus_count =+ 1
@@ -277,7 +271,7 @@ fn main() {
         log_viewport,
         state,
         "FOCUS IN #{state.focus_count} - waiting for physical mouse input",
-        color::rgb(126, 231, 135),
+        ui::rgb(126, 231, 135),
       )
     } else {
       state.focus_known = true
@@ -290,7 +284,7 @@ fn main() {
         log_viewport,
         state,
         "FOCUS OUT #{state.blur_count} - terminal may strip input modes",
-        color::rgb(255, 165, 0),
+        ui::rgb(255, 165, 0),
       )
     }
     update_display(state, focus_status, mouse_status, counters_status, timestamp_status)
@@ -301,7 +295,7 @@ fn main() {
     log_viewport,
     state,
     "Demo started. Move mouse, then alt-tab away and back.",
-    color::rgb(165, 214, 255),
+    ui::rgb(165, 214, 255),
   )
   update_display(state, focus_status, mouse_status, counters_status, timestamp_status)
   application.run().expect("run Cooper focus restore demo")

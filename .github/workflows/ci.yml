@@ -59,7 +59,7 @@ jobs:
         run: go test ./...
 
       - name: Test Ard framework
-        run: ard test test
+        run: ard test
 
       - name: Check Python scripts
         if: runner.os == 'Linux'
@@ -71,6 +71,7 @@ jobs:
             examples/test_dashboard.py \
             examples/test_stacking.py \
             examples/test_input_lab.py \
+            examples/test_text_area.py \
             examples/test_event_inspector.py \
             examples/test_links.py \
             examples/test_terminal_focus.py \
@@ -98,6 +99,7 @@ jobs:
           python3 test_dashboard.py
           python3 test_stacking.py
           python3 test_input_lab.py
+          python3 test_text_area.py
           python3 test_event_inspector.py
           python3 test_links.py
           python3 test_terminal_focus.py

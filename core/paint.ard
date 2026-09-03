@@ -1,5 +1,5 @@
-use cooper/color
-use cooper/geometry
+use cooper/ui/color
+use cooper/ui/geometry
 use go:go.rockorager.dev/vaxis
 
 struct CellStyle {

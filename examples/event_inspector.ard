@@ -1,14 +1,8 @@
-use cooper/app
-use cooper/box
-use cooper/color
-use cooper/runtime
-use cooper/event
-use cooper/geometry
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 
 struct Marker {
-  view: mut text::Text,
+  view: mut ui::Text,
   x: Int,
   y: Int,
   visible: Bool,
@@ -16,9 +10,9 @@ struct Marker {
 
 struct Card {
   name: Str,
-  panel: mut box::Box,
-  specimen: mut text::Text,
-  label: mut text::Text,
+  panel: mut ui::Box,
+  specimen: mut ui::Text,
+  label: mut ui::Text,
   default_label: Str,
   latched: Bool,
   x: Int,
@@ -28,9 +22,9 @@ struct Card {
   width: Int,
   height: Int,
   z: Int,
-  fill: color::Color,
-  drag_fill: color::Color,
-  border: color::Color,
+  fill: ui::Color,
+  drag_fill: ui::Color,
+  border: ui::Color,
 }
 
 struct DemoState {
@@ -63,30 +57,30 @@ private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
   }
 }
 
-private fn marker_style(x: Int, y: Int, z: Int, visible: Bool) style::Style {
-  mut display = style::Display::none
+private fn marker_style(x: Int, y: Int, z: Int, visible: Bool) ui::Style {
+  mut display = ui::Display::none
   if visible {
-    display = style::Display::flex
+    display = ui::Display::flex
   }
-  style::new(
+  ui::style(
     display: display,
-    position: style::Position::absolute,
-    left: style::cells(x),
-    top: style::cells(y),
-    width: style::cells(1),
-    height: style::cells(1),
+    position: ui::Position::absolute,
+    left: ui::cells(x),
+    top: ui::cells(y),
+    width: ui::cells(1),
+    height: ui::cells(1),
     z_index: z,
   )
 }
 
-private fn make_marker(ctx: mut runtime::Runtime, z: Int) mut Marker {
-  let view = text::new(
+private fn make_marker(ctx: mut cooper::Runtime, z: Int) mut Marker {
+  let view = ui::text(
     ctx,
     content: "",
     styles: marker_style(0, 0, z, false),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::clip,
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::clip,
   )
   let marker = mut Marker{
     view: view,
@@ -97,12 +91,12 @@ private fn make_marker(ctx: mut runtime::Runtime, z: Int) mut Marker {
   marker
 }
 
-private fn show_marker(marker: mut Marker, x: Int, y: Int, z: Int, glyph: Str, tint: color::Color) {
+private fn show_marker(marker: mut Marker, x: Int, y: Int, z: Int, glyph: Str, tint: ui::Color) {
   marker.x = x
   marker.y = y
   marker.visible = true
   marker.view.set_content(glyph)
-  marker.view.set_text_style(text::style(foreground: tint, bold: true))
+  marker.view.set_text_style(ui::text_style(foreground: tint, bold: true))
   marker.view.set_style(marker_style(x, y, z, true))
 }
 
@@ -112,26 +106,26 @@ private fn hide_marker(marker: mut Marker, z: Int) {
   marker.view.set_style(marker_style(marker.x, marker.y, z, false))
 }
 
-private fn card_style(card: mut Card, dragging: Bool) style::Style {
+private fn card_style(card: mut Card, dragging: Bool) ui::Style {
   mut fill = card.fill
   mut border = card.border
   if dragging {
     fill = card.drag_fill
-    border = color::hex("#F8FAFC")
+    border = ui::hex("#F8FAFC")
   }
-  style::new(
+  ui::style(
     background: fill,
-    border: style::Border::rounded,
+    border: ui::Border::rounded,
     border_color: border,
-    position: style::Position::absolute,
-    left: style::cells(card.x),
-    top: style::cells(card.y),
-    width: style::cells(card.width),
-    height: style::cells(card.height),
+    position: ui::Position::absolute,
+    left: ui::cells(card.x),
+    top: ui::cells(card.y),
+    width: ui::cells(card.width),
+    height: ui::cells(card.height),
     z_index: card.z,
-    align_items: style::Align::center,
-    justify_content: style::Justify::center,
-    overflow: style::Overflow::hidden,
+    align_items: ui::Align::center,
+    justify_content: ui::Justify::center,
+    overflow: ui::Overflow::hidden,
   )
 }
 
@@ -141,39 +135,39 @@ private fn apply_card(card: mut Card, dragging: Bool) {
 }
 
 private fn make_card(
-  ctx: mut runtime::Runtime,
+  ctx: mut cooper::Runtime,
   name: Str,
   x: Int,
   y: Int,
   width: Int,
   height: Int,
-  fill: color::Color,
-  drag_fill: color::Color,
-  border: color::Color,
+  fill: ui::Color,
+  drag_fill: ui::Color,
+  border: ui::Color,
   specimen_text: Str,
   default_label: Str,
 ) mut Card {
-  let specimen = text::new(
+  let specimen = ui::text(
     ctx,
     content: specimen_text,
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::clip,
-    text_style: text::style(foreground: color::hex("#FFFFFF"), bold: true),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::clip,
+    text_style: ui::text_style(foreground: ui::hex("#FFFFFF"), bold: true),
   )
-  let label = text::new(
+  let label = ui::text(
     ctx,
     content: default_label,
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#E2E8F0")),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::hex("#E2E8F0")),
   )
   let placeholder = mut Card{
     name: name,
-    panel: box::new(ctx),
+    panel: ui::box(ctx),
     specimen: specimen,
     label: label,
     default_label: default_label,
@@ -211,18 +205,18 @@ private fn reset_cards(cards: [mut Card]) {
   }
 }
 
-private fn update_status(state: mut DemoState, status: mut text::Text) {
+private fn update_status(state: mut DemoState, status: mut ui::Text) {
   status.set_content(
     "{state.last_event} · trails {state.trail_count}/{state.trails.size()} · cells {state.activation_count} · C clear · R reset · Ctrl+C quit",
   )
 }
 
-private fn stage_point(stage: mut box::Box, received: mut event::MouseEvent) geometry::Point {
+private fn stage_point(stage: mut ui::Box, received: mut cooper::MouseEvent) ui::Point {
   let screen = stage.layout().screen
-  geometry::Point{x: received.x - screen.x - 1, y: received.y - screen.y - 1}
+  ui::Point{x: received.x - screen.x - 1, y: received.y - screen.y - 1}
 }
 
-private fn drop_target(cards: [mut Card], source: Int, stage: mut box::Box, x: Int, y: Int) Int {
+private fn drop_target(cards: [mut Card], source: Int, stage: mut ui::Box, x: Int, y: Int) Int {
   let stage_screen = stage.layout().screen
   let inside_stage = x > stage_screen.x and x < stage_screen.x + stage_screen.width - 1 and y > stage_screen.y and y < stage_screen.y + stage_screen.height - 1
   mut found = -1
@@ -242,8 +236,8 @@ private fn drop_target(cards: [mut Card], source: Int, stage: mut box::Box, x: I
 
 private fn add_trail(
   state: mut DemoState,
-  stage: mut box::Box,
-  received: mut event::MouseEvent,
+  stage: mut ui::Box,
+  received: mut cooper::MouseEvent,
   dragging: Bool,
 ) {
   if state.trails.size() > 0 {
@@ -253,13 +247,13 @@ private fn add_trail(
     let y = clamp(point.y, 0, screen.height - 3)
     let marker = state.trails.at(state.trail_cursor).expect("trail marker")
     mut glyph = "·"
-    mut tint = color::hex("#2DD4BF")
+    mut tint = ui::hex("#2DD4BF")
     if dragging {
       glyph = "•"
-      tint = color::hex("#FB923C")
+      tint = ui::hex("#FB923C")
     }
     show_marker(marker, x, y, 1, glyph, tint)
-    show_marker(state.cursor, x, y, 3, "+", color::hex("#FFFFFF"))
+    show_marker(state.cursor, x, y, 3, "+", ui::hex("#FFFFFF"))
     state.trail_cursor = (state.trail_cursor + 1) % state.trails.size()
     if state.trail_count < state.trails.size() {
       state.trail_count =+ 1
@@ -269,8 +263,8 @@ private fn add_trail(
 
 private fn toggle_activation(
   state: mut DemoState,
-  stage: mut box::Box,
-  received: mut event::MouseEvent,
+  stage: mut ui::Box,
+  received: mut cooper::MouseEvent,
 ) {
   let point = stage_point(stage, received)
   let screen = stage.layout().screen
@@ -305,7 +299,7 @@ private fn toggle_activation(
       y,
       2,
       "█",
-      color::hex("#F43F8C"),
+      ui::hex("#F43F8C"),
     )
     state.activation_cursor = (slot + 1) % state.activations.size()
     state.last_event = "cell on at {x},{y}"
@@ -327,66 +321,66 @@ private fn clear_marks(state: mut DemoState) {
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper mouse interaction demo")
+  let application = cooper::app().expect("create Cooper mouse interaction demo")
   defer application.destroy()
   let ctx = application.context
 
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F0F23"),
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      gap: style::cells(1),
+    styles: ui::style(
+      background: ui::hex("#0F0F23"),
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      gap: ui::cells(1),
     ),
   )
 
-  let header = box::new(
+  let header = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::heavy,
-      border_color: color::hex("#48D1CC"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::heavy,
+      border_color: ui::hex("#48D1CC"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "MOUSE INTERACTION DEMO",
       selectable: false,
-      text_style: text::style(foreground: color::hex("#48D1CC"), bold: true),
+      text_style: ui::text_style(foreground: ui::hex("#48D1CC"), bold: true),
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "Scroll boxes · Move: cyan trail + cursor · Drag: orange trail · Click empty cells: pink",
-      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
       selectable: false,
-      wrap: text::TextWrap::none,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#B0C4DE")),
+      wrap: ui::TextWrap::none,
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#B0C4DE")),
     ),
   )
 
-  let stage = box::new(
+  let stage = ui::box(
     ctx,
     title: "DRAGGABLE OBJECTS",
-    styles: style::new(
-      background: color::hex("#0F0F23"),
-      border: style::Border::rounded,
-      border_color: color::hex("#334155"),
-      position: style::Position::relative,
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      background: ui::hex("#0F0F23"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#334155"),
+      position: ui::Position::relative,
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
 
@@ -417,9 +411,9 @@ fn main() {
       1,
       18,
       6,
-      color::hex("#7C2D5A"),
-      color::hex("#3F1D35"),
-      color::hex("#F9A8D4"),
+      ui::hex("#7C2D5A"),
+      ui::hex("#3F1D35"),
+      ui::hex("#F9A8D4"),
       "BOX 1",
       "drag me",
     ),
@@ -430,9 +424,9 @@ fn main() {
       3,
       18,
       6,
-      color::hex("#166534"),
-      color::hex("#123524"),
-      color::hex("#86EFAC"),
+      ui::hex("#166534"),
+      ui::hex("#123524"),
+      ui::hex("#86EFAC"),
       "BOX 2",
       "drag me",
     ),
@@ -443,9 +437,9 @@ fn main() {
       5,
       18,
       6,
-      color::hex("#4338CA"),
-      color::hex("#29245F"),
-      color::hex("#C4B5FD"),
+      ui::hex("#4338CA"),
+      ui::hex("#29245F"),
+      ui::hex("#C4B5FD"),
       "BOX 3",
       "drag me",
     ),
@@ -456,49 +450,49 @@ fn main() {
       7,
       18,
       6,
-      color::hex("#854D0E"),
-      color::hex("#422006"),
-      color::hex("#FDE68A"),
+      ui::hex("#854D0E"),
+      ui::hex("#422006"),
+      ui::hex("#FDE68A"),
       "This should be cut off to the right",
       "overflow hidden",
     ),
   ]
   let overflow_label = cards.at(3).expect("overflow card").specimen
   overflow_label.set_style(
-    style::new(
-      width: style::cells(27),
-      height: style::cells(1),
+    ui::style(
+      width: ui::cells(27),
+      height: ui::cells(1),
       flex_shrink: 0.0,
-      align_self: style::Align::start,
+      align_self: ui::Align::start,
     ),
   )
-  overflow_label.set_wrap(text::TextWrap::none)
-  overflow_label.set_overflow(text::TextOverflow::clip)
+  overflow_label.set_wrap(ui::TextWrap::none)
+  overflow_label.set_overflow(ui::TextOverflow::clip)
   for card in cards {
     stage.add(card.panel)
   }
 
-  let footer = box::new(
+  let footer = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::single,
-      border_color: color::hex("#334155"),
-      width: style::percent(100.0),
-      height: style::cells(3),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::single,
+      border_color: ui::hex("#334155"),
+      width: ui::percent(100.0),
+      height: ui::cells(3),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
-  let status = text::new(
+  let status = ui::text(
     ctx,
     content: "",
-    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#E2E8F0"), bold: true),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::hex("#E2E8F0"), bold: true),
   )
   footer.add(status)
 
@@ -527,8 +521,8 @@ fn main() {
     let target = card
     let target_index = index
     let target_name = card.name
-    let _ = card.panel.on_mouse(fn(received: mut event::MouseEvent) {
-      if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+    let _ = card.panel.on_mouse(fn(received: mut cooper::MouseEvent) {
+      if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
         for candidate in cards {
           apply_card(candidate, false)
         }
@@ -544,7 +538,7 @@ fn main() {
         state.last_event = "{target_name} picked up"
         update_status(state, status)
         received.stop_propagation()
-      } else if received.event_type == event::MouseEventType::drag and received.button == event::MouseButton::left and state.dragging == target_index {
+      } else if received.event_type == cooper::MouseEventType::drag and received.button == cooper::MouseButton::left and state.dragging == target_index {
         let screen = stage.layout().screen
         target.x = clamp(
           received.x - screen.x - 1 - state.drag_offset_x,
@@ -563,13 +557,13 @@ fn main() {
         add_trail(state, stage, received, true)
         update_status(state, status)
         received.stop_propagation()
-      } else if received.event_type == event::MouseEventType::drag_end and received.button == event::MouseButton::left and state.dragging == target_index {
+      } else if received.event_type == cooper::MouseEventType::drag_end and received.button == cooper::MouseButton::left and state.dragging == target_index {
         let destination = drop_target(cards, target_index, stage, received.x, received.y)
         target.z = 100
         apply_card(target, false)
         match cards.at(destination) {
           dropped_on => {
-            dropped_on.panel.set_border_color(color::hex("#F8FAFC"))
+            dropped_on.panel.set_border_color(ui::hex("#F8FAFC"))
             dropped_on.label.set_content("got {target_name}")
             dropped_on.latched = true
             target.label.set_content("dropped on {dropped_on.name}")
@@ -585,7 +579,7 @@ fn main() {
         state.dragging = -1
         update_status(state, status)
         received.stop_propagation()
-      } else if received.event_type == event::MouseEventType::up and received.button == event::MouseButton::left and state.dragging == target_index {
+      } else if received.event_type == cooper::MouseEventType::up and received.button == cooper::MouseButton::left and state.dragging == target_index {
         if not state.moved {
           target.label.set_content("clicked")
           target.latched = true
@@ -594,13 +588,13 @@ fn main() {
           apply_card(target, false)
           update_status(state, status)
         }
-      } else if received.event_type == event::MouseEventType::move {
+      } else if received.event_type == cooper::MouseEventType::move {
         received.stop_propagation()
-      } else if received.event_type == event::MouseEventType::over and not target.latched {
+      } else if received.event_type == cooper::MouseEventType::over and not target.latched {
         target.label.set_content("pointer over")
-      } else if received.event_type == event::MouseEventType::out and state.dragging != target_index and (not target.latched) {
+      } else if received.event_type == cooper::MouseEventType::out and state.dragging != target_index and (not target.latched) {
         target.label.set_content("pointer out")
-      } else if received.event_type == event::MouseEventType::scroll {
+      } else if received.event_type == cooper::MouseEventType::scroll {
         mut direction = "down"
         if received.scroll_y < 0 {
           direction = "up"
@@ -618,22 +612,22 @@ fn main() {
     })
   }
 
-  let _ = stage.on_mouse(fn(received: mut event::MouseEvent) {
-    if received.event_type == event::MouseEventType::move {
+  let _ = stage.on_mouse(fn(received: mut cooper::MouseEvent) {
+    if received.event_type == cooper::MouseEventType::move {
       add_trail(state, stage, received, false)
       update_status(state, status)
-    } else if received.event_type == event::MouseEventType::drag {
+    } else if received.event_type == cooper::MouseEventType::drag {
       add_trail(state, stage, received, true)
       state.last_event = "drag at {received.x},{received.y}"
       update_status(state, status)
-    } else if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+    } else if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
       toggle_activation(state, stage, received)
       update_status(state, status)
     }
   })
 
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type != event::KeyEventType::release {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type != cooper::KeyEventType::release {
       if received.matches("c") {
         clear_marks(state)
         state.last_event = "trails and cells cleared"

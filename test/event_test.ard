@@ -1,10 +1,10 @@
 use ard/testing
 
 use cooper/runtime
-use cooper/box
+use cooper/ui/box
 use cooper/event
-use cooper/input
-use cooper/style
+use cooper/ui/input
+use cooper/ui/style
 use cooper/testing as cooper_testing
 
 private fn modifiers() event::Modifiers {

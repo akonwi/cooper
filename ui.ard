@@ -1,14 +1,38 @@
-use cooper/box as box_control
-use cooper/input as input_control
-use cooper/scroll_box as scroll_box_control
-use cooper/scrollbar as scrollbar_control
-use cooper/select as select_control
-use cooper/selection as selection_value
-use cooper/text as text_control
-use cooper/text_area as text_area_control
+use cooper/ui/box as box_control
+use cooper/ui/color as color_value
+use cooper/ui/geometry as geometry_value
+use cooper/ui/input as input_control
+use cooper/ui/scroll_box as scroll_box_control
+use cooper/ui/scrollbar as scrollbar_control
+use cooper/ui/select as select_control
+use cooper/ui/selection as selection_value
+use cooper/ui/style as layout_style
+use cooper/ui/text as text_control
+use cooper/ui/text_area as text_area_control
+
+type Color = color_value::Color
+
+type Point = geometry_value::Point
+type Rect = geometry_value::Rect
+type Geometry = geometry_value::Geometry
+
+type Align = layout_style::Align
+type Border = layout_style::Border
+type Display = layout_style::Display
+type Edges = layout_style::Edges
+type FlexDirection = layout_style::FlexDirection
+type FlexWrap = layout_style::FlexWrap
+type Justify = layout_style::Justify
+type Length = layout_style::Length
+type LengthKind = layout_style::LengthKind
+type Overflow = layout_style::Overflow
+type Position = layout_style::Position
+type Style = layout_style::Style
+
+type Selection = selection_value::Selection
+type SelectionRange = selection_value::Range
 
 type Box = box_control::Box
-type Border = box_control::Border
 type Input = input_control::Input
 type ScrollBox = scroll_box_control::ScrollBox
 type Scrollbar = scrollbar_control::Scrollbar
@@ -21,11 +45,10 @@ type Select = select_control::Select
 type SelectAppearance = select_control::Appearance
 type SelectConfig = select_control::SelectConfig
 type SelectOption = select_control::Option
+type SelectPresentation = select_control::Presentation
 type SelectSelection = select_control::Selection
 type SelectTabConfig = select_control::TabConfig
 type TabSelect = select_control::TabSelect
-type Selection = selection_value::Selection
-type SelectionRange = selection_value::Range
 type Text = text_control::Text
 type TextArea = text_area_control::TextArea
 type TextContent = text_control::TextContent
@@ -36,6 +59,24 @@ type LinkEvent = text_control::LinkEvent
 type TextStyle = text_control::TextStyle
 type TextWrap = text_control::TextWrap
 type TextOverflow = text_control::TextOverflow
+
+let rgb = color_value::rgb
+let indexed = color_value::indexed
+let terminal_default = color_value::terminal_default
+let hex = color_value::hex
+
+let intersect = geometry_value::intersect
+let contains = geometry_value::contains
+
+let undefined = layout_style::undefined
+let auto = layout_style::auto
+let cells = layout_style::cells
+let percent = layout_style::percent
+let max_content = layout_style::max_content
+let fit_content = layout_style::fit_content
+let stretch = layout_style::stretch
+let edges = layout_style::edges
+let style = layout_style::new
 
 let box = box_control::new
 let input = input_control::new

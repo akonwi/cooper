@@ -1,4 +1,4 @@
-use cooper/geometry
+use cooper/ui/geometry
 
 struct Range {
   start: Int,

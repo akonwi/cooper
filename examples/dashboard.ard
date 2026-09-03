@@ -1,23 +1,17 @@
 use ard/async
 use ard/list
 
-use cooper/app
-use cooper/box
-use cooper/color
-use cooper/runtime
-use cooper/event
-use cooper/scroll_box
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 use go:math
 use go:strings
 use go:time
 
 struct MetricTile {
-  panel: mut box::Box,
-  value: mut text::Text,
-  gauge: mut text::Text,
-  detail: mut text::Text,
+  panel: mut ui::Box,
+  value: mut ui::Text,
+  gauge: mut ui::Text,
+  detail: mut ui::Text,
 }
 
 struct DashboardState {
@@ -26,7 +20,7 @@ struct DashboardState {
   follow: Bool,
   sequence: Int,
   samples: [Int],
-  rows: [mut text::Text],
+  rows: [mut ui::Text],
 }
 
 private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
@@ -68,70 +62,70 @@ private fn seed_samples() [Int] {
   samples.@
 }
 
-private fn status_color(value: Int, warning: Int, critical: Int) color::Color {
+private fn status_color(value: Int, warning: Int, critical: Int) ui::Color {
   if value >= critical {
-    color::hex("#F87171")
+    ui::hex("#F87171")
   } else if value >= warning {
-    color::hex("#FBBF24")
+    ui::hex("#FBBF24")
   } else {
-    color::hex("#4ADE80")
+    ui::hex("#4ADE80")
   }
 }
 
-private fn content_clip(ctx: mut runtime::Runtime) mut box::Box {
-  box::new(
+private fn content_clip(ctx: mut cooper::Runtime) mut ui::Box {
+  ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      overflow: style::Overflow::hidden,
-      align_items: style::Align::center,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      overflow: ui::Overflow::hidden,
+      align_items: ui::Align::center,
     ),
   )
 }
 
-private fn metric_tile(ctx: mut runtime::Runtime, title: Str, border_color: color::Color) MetricTile {
-  let panel = box::new(
+private fn metric_tile(ctx: mut cooper::Runtime, title: Str, border_color: ui::Color) MetricTile {
+  let panel = ui::box(
     ctx,
     title: title,
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
       border_color: border_color,
-      width: style::cells(12),
-      height: style::percent(100.0),
+      width: ui::cells(12),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
   let content = content_clip(ctx)
-  let value = text::new(
+  let value = ui::text(
     ctx,
     content: "--",
-    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#E2E8F0"), bold: true),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::hex("#E2E8F0"), bold: true),
   )
-  let gauge = text::new(
+  let gauge = ui::text(
     ctx,
     content: "░░░░░░░░░░",
-    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: border_color),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: border_color),
   )
-  let detail = text::new(
+  let detail = ui::text(
     ctx,
     content: "waiting",
-    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#64748B")),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::hex("#64748B")),
   )
   content.add(value)
   content.add(gauge)
@@ -150,12 +144,12 @@ private fn update_metric(
   display: Str,
   percentage: Int,
   detail: Str,
-  tint: color::Color,
+  tint: ui::Color,
 ) {
   tile.value.set_content(display)
-  tile.value.set_text_style(text::style(foreground: tint, bold: true))
+  tile.value.set_text_style(ui::text_style(foreground: tint, bold: true))
   tile.gauge.set_content(bar(percentage, 10))
-  tile.gauge.set_text_style(text::style(foreground: tint))
+  tile.gauge.set_text_style(ui::text_style(foreground: tint))
   tile.detail.set_content(detail)
 }
 
@@ -177,8 +171,8 @@ private fn follow_mode(state: mut DashboardState) Str {
 
 private fn update_runtime_status(
   state: mut DashboardState,
-  subtitle: mut text::Text,
-  status: mut text::Text,
+  subtitle: mut ui::Text,
+  status: mut ui::Text,
 ) {
   subtitle.set_content("Synthetic telemetry · tick {state.tick} · {runtime_mode(state)}")
   status.set_content(
@@ -186,29 +180,29 @@ private fn update_runtime_status(
   )
 }
 
-private fn chart_content(state: mut DashboardState, requests: Int, rate: Int) text::StyledText {
-  let label = color::hex("#A78BFA")
-  let value = color::hex("#E2E8F0")
-  let muted = color::hex("#64748B")
-  text::styled_text(
+private fn chart_content(state: mut DashboardState, requests: Int, rate: Int) ui::StyledText {
+  let label = ui::hex("#A78BFA")
+  let value = ui::hex("#E2E8F0")
+  let muted = ui::hex("#64748B")
+  ui::styled_text(
     [
-      text::span("CPU HISTORY  ", style: text::span_style(foreground: label, bold: true)),
-      text::span(
+      ui::span("CPU HISTORY  ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span(
         "{sparkline(state.samples)}\n",
-        style: text::span_style(foreground: color::hex("#60A5FA")),
+        style: ui::span_style(foreground: ui::hex("#60A5FA")),
       ),
-      text::span("REQUESTS     ", style: text::span_style(foreground: label, bold: true)),
-      text::span("{requests} total", style: text::span_style(foreground: value, bold: true)),
-      text::span(" · {rate}/s\n", style: text::span_style(foreground: muted)),
-      text::span("WORKERS      ", style: text::span_style(foreground: label, bold: true)),
-      text::span("12 active", style: text::span_style(foreground: color::hex("#4ADE80"))),
-      text::span(" · 3 queued\n", style: text::span_style(foreground: muted)),
-      text::span("CACHE        ", style: text::span_style(foreground: label, bold: true)),
-      text::span("94.7% hit", style: text::span_style(foreground: color::hex("#FBBF24"))),
-      text::span(" · 2.1 GB\n", style: text::span_style(foreground: muted)),
-      text::span("REGION       ", style: text::span_style(foreground: label, bold: true)),
-      text::span("iad-1", style: text::span_style(foreground: value, bold: true)),
-      text::span(" · all systems nominal", style: text::span_style(foreground: muted)),
+      ui::span("REQUESTS     ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("{requests} total", style: ui::span_style(foreground: value, bold: true)),
+      ui::span(" · {rate}/s\n", style: ui::span_style(foreground: muted)),
+      ui::span("WORKERS      ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("12 active", style: ui::span_style(foreground: ui::hex("#4ADE80"))),
+      ui::span(" · 3 queued\n", style: ui::span_style(foreground: muted)),
+      ui::span("CACHE        ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("94.7% hit", style: ui::span_style(foreground: ui::hex("#FBBF24"))),
+      ui::span(" · 2.1 GB\n", style: ui::span_style(foreground: muted)),
+      ui::span("REGION       ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("iad-1", style: ui::span_style(foreground: value, bold: true)),
+      ui::span(" · all systems nominal", style: ui::span_style(foreground: muted)),
     ],
   )
 }
@@ -219,9 +213,9 @@ private fn update_dashboard(
   memory_tile: MetricTile,
   network_tile: MetricTile,
   latency_tile: MetricTile,
-  subtitle: mut text::Text,
-  chart: mut text::Text,
-  status: mut text::Text,
+  subtitle: mut ui::Text,
+  chart: mut ui::Text,
+  status: mut ui::Text,
 ) {
   let cpu = (state.tick * 13 + 17) % 101
   let memory_delta = state.tick * 7 % 43
@@ -259,73 +253,73 @@ private fn update_dashboard(
   update_runtime_status(state, subtitle, status)
 }
 
-private fn log_content(sequence: Int, manual: Bool) text::StyledText {
-  let muted = color::hex("#64748B")
+private fn log_content(sequence: Int, manual: Bool) ui::StyledText {
+  let muted = ui::hex("#64748B")
   mut level = "INFO "
-  mut tint = color::hex("#60A5FA")
+  mut tint = ui::hex("#60A5FA")
   mut message = "telemetry snapshot committed"
 
   if manual {
     level = "MANUAL"
-    tint = color::hex("#F472B6")
+    tint = ui::hex("#F472B6")
     message = "operator checkpoint inserted"
   } else {
     match sequence % 5 {
       0 => {
         level = "WARN "
-        tint = color::hex("#FBBF24")
+        tint = ui::hex("#FBBF24")
         message = "queue pressure above baseline"
       },
       1 => {
         level = "INFO "
-        tint = color::hex("#60A5FA")
+        tint = ui::hex("#60A5FA")
         message = "telemetry snapshot committed"
       },
       2 => {
         level = "OK   "
-        tint = color::hex("#4ADE80")
+        tint = ui::hex("#4ADE80")
         message = "worker heartbeat acknowledged"
       },
       3 => {
         level = "TRACE"
-        tint = color::hex("#A78BFA")
+        tint = ui::hex("#A78BFA")
         message = "cache observation window rotated"
       },
       _ => {
         level = "RETRY"
-        tint = color::hex("#F87171")
+        tint = ui::hex("#F87171")
         message = "synthetic retry recovered"
       },
     }
   }
 
-  text::styled_text(
+  ui::styled_text(
     [
-      text::span("[{sequence}] ", style: text::span_style(foreground: muted)),
-      text::span(level, style: text::span_style(foreground: tint, bold: true)),
-      text::span("  {message}", style: text::span_style(foreground: color::hex("#CBD5E1"))),
+      ui::span("[{sequence}] ", style: ui::span_style(foreground: muted)),
+      ui::span(level, style: ui::span_style(foreground: tint, bold: true)),
+      ui::span("  {message}", style: ui::span_style(foreground: ui::hex("#CBD5E1"))),
     ],
   )
 }
 
-private fn log_row_style() style::Style {
-  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
+private fn log_row_style() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
 private fn append_log(
-  ctx: mut runtime::Runtime,
-  viewport: mut scroll_box::ScrollBox,
+  ctx: mut cooper::Runtime,
+  viewport: mut ui::ScrollBox,
   state: mut DashboardState,
   manual: Bool,
 ) {
   state.sequence =+ 1
-  let row = text::new(
+  let row = ui::text(
     ctx,
     content: log_content(state.sequence, manual),
-    wrap: text::TextWrap::none,
+    wrap: ui::TextWrap::none,
     styles: log_row_style(),
     selectable: false,
-    overflow: text::TextOverflow::ellipsis,
+    overflow: ui::TextOverflow::ellipsis,
   )
   viewport.add(row)
   state.rows.push(row)
@@ -353,7 +347,7 @@ private fn append_log(
   }
 }
 
-private fn clear_logs(viewport: mut scroll_box::ScrollBox, state: mut DashboardState) {
+private fn clear_logs(viewport: mut ui::ScrollBox, state: mut DashboardState) {
   for row in state.rows {
     let _ = viewport.remove(row)
     row.destroy()
@@ -363,177 +357,177 @@ private fn clear_logs(viewport: mut scroll_box::ScrollBox, state: mut DashboardS
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper dashboard")
+  let application = cooper::app().expect("create Cooper dashboard")
   defer application.destroy()
   let ctx = application.context
 
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#020617"),
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      gap: style::cells(1),
+    styles: ui::style(
+      background: ui::hex("#020617"),
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      gap: ui::cells(1),
     ),
   )
 
-  let header = box::new(
+  let header = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::heavy,
-      border_color: color::hex("#22D3EE"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::heavy,
+      border_color: ui::hex("#22D3EE"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "COOPER OPERATIONS",
       selectable: false,
-      text_style: text::style(foreground: color::hex("#67E8F9"), bold: true),
+      text_style: ui::text_style(foreground: ui::hex("#67E8F9"), bold: true),
     ),
   )
-  let subtitle = text::new(
+  let subtitle = ui::text(
     ctx,
     content: "Synthetic telemetry · tick 0 · RUNNING",
-    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#94A3B8")),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::hex("#94A3B8")),
   )
   header.add(subtitle)
 
-  let metrics = box::new(
+  let metrics = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::cells(6),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(6),
       flex_shrink: 0.0,
-      flex_direction: style::FlexDirection::row,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let cpu_tile = metric_tile(ctx, "CPU", color::hex("#60A5FA"))
-  let memory_tile = metric_tile(ctx, "MEMORY", color::hex("#A78BFA"))
-  let network_tile = metric_tile(ctx, "NETWORK", color::hex("#34D399"))
-  let latency_tile = metric_tile(ctx, "LATENCY", color::hex("#FBBF24"))
+  let cpu_tile = metric_tile(ctx, "CPU", ui::hex("#60A5FA"))
+  let memory_tile = metric_tile(ctx, "MEMORY", ui::hex("#A78BFA"))
+  let network_tile = metric_tile(ctx, "NETWORK", ui::hex("#34D399"))
+  let latency_tile = metric_tile(ctx, "LATENCY", ui::hex("#FBBF24"))
   metrics.add(cpu_tile.panel)
   metrics.add(memory_tile.panel)
   metrics.add(network_tile.panel)
   metrics.add(latency_tile.panel)
 
-  let body = box::new(
+  let body = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      flex_direction: style::FlexDirection::row,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let chart_panel = box::new(
+  let chart_panel = ui::box(
     ctx,
     title: "SYSTEM PULSE",
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
-      border_color: color::hex("#A78BFA"),
-      width: style::percent(52.0),
-      height: style::percent(100.0),
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#A78BFA"),
+      width: ui::percent(52.0),
+      height: ui::percent(100.0),
       flex_shrink: 0.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
   let chart_clip = content_clip(ctx)
-  let chart = text::new(
+  let chart = ui::text(
     ctx,
     content: "",
-    wrap: text::TextWrap::none,
-    styles: style::new(width: style::percent(95.0), height: style::percent(100.0)),
+    wrap: ui::TextWrap::none,
+    styles: ui::style(width: ui::percent(95.0), height: ui::percent(100.0)),
     selectable: false,
-    overflow: text::TextOverflow::clip,
-    text_style: text::style(foreground: color::hex("#E2E8F0")),
+    overflow: ui::TextOverflow::clip,
+    text_style: ui::text_style(foreground: ui::hex("#E2E8F0")),
   )
   chart_clip.add(chart)
   chart_panel.add(chart_clip)
 
-  let log_panel = box::new(
+  let log_panel = ui::box(
     ctx,
     title: "EVENT STREAM",
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
-      border_color: color::hex("#F472B6"),
-      width: style::cells(1),
-      height: style::percent(100.0),
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#F472B6"),
+      width: ui::cells(1),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let log = scroll_box::new(
+  let log = ui::scroll_box(
     ctx,
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
   )
   log_panel.add(log)
   body.add(chart_panel)
   body.add(log_panel)
 
-  let footer = box::new(
+  let footer = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::single,
-      border_color: color::hex("#334155"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::single,
+      border_color: ui::hex("#334155"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
-  let status = text::new(
+  let status = ui::text(
     ctx,
     content: "",
-    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#93C5FD"), bold: true),
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::hex("#93C5FD"), bold: true),
   )
   footer.add(status)
   footer.add(
-    text::new(
+    ui::text(
       ctx,
-      content: text::styled_text(
+      content: ui::styled_text(
         [
-          text::span("Space", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" pause  ·  "),
-          text::span("F", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" follow  ·  "),
-          text::span("A", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" alert  ·  "),
-          text::span("C", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" clear  ·  "),
-          text::span("Q", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" quit  ·  arrows scroll"),
+          ui::span("Space", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" pause  ·  "),
+          ui::span("F", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" follow  ·  "),
+          ui::span("A", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" alert  ·  "),
+          ui::span("C", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" clear  ·  "),
+          ui::span("Q", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" quit  ·  arrows scroll"),
         ],
       ),
-      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
       selectable: false,
-      wrap: text::TextWrap::none,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#CBD5E1")),
+      wrap: ui::TextWrap::none,
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#CBD5E1")),
     ),
   )
 
@@ -587,20 +581,20 @@ fn main() {
     }
   }
 
-  let _ = log.on_mouse(fn(received: mut event::MouseEvent) {
-    if received.event_type == event::MouseEventType::scroll and received.scroll_y != 0 and state.follow {
+  let _ = log.on_mouse(fn(received: mut cooper::MouseEvent) {
+    if received.event_type == cooper::MouseEventType::scroll and received.scroll_y != 0 and state.follow {
       state.follow = false
       let _ = log.scroll_to(log.scroll_top())
       update_runtime_status(state, subtitle, status)
     }
   })
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type != event::KeyEventType::release and received.matches("end") {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type != cooper::KeyEventType::release and received.matches("end") {
       state.follow = true
       let _ = log.scroll_to(math::MaxInt)
       update_runtime_status(state, subtitle, status)
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press {
+    } else if received.event_type == cooper::KeyEventType::press {
       if received.matches("q") {
         received.prevent_default()
         application.destroy()

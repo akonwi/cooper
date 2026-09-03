@@ -3,9 +3,9 @@ use ard/testing
 
 use cooper/runtime
 use cooper/event
-use cooper/input
+use cooper/ui/input
 use cooper/testing as cooper_testing
-use cooper/text
+use cooper/ui/text
 
 private fn cancelled(signal: Receiver<Void>) Bool {
   select {

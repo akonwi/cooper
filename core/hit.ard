@@ -1,6 +1,6 @@
-use cooper/geometry
+use cooper/ui/geometry
 use cooper/core/node
-use cooper/style
+use cooper/ui/style
 
 struct Hit {
   target: mut node::Node,

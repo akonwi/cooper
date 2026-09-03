@@ -1,11 +1,5 @@
-use cooper/app
-use cooper/box
-use cooper/color
-use cooper/runtime
-use cooper/event
-use cooper/selection
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 use go:strings
 
 private fn sample(number: Int) Str {
@@ -16,7 +10,7 @@ private fn sample(number: Int) Str {
   }
 }
 
-private fn sample_for_key(key: mut event::KeyEvent, current: Int) Int? {
+private fn sample_for_key(key: mut cooper::KeyEvent, current: Int) Int? {
   if key.matches("1") {
     Maybe::new(0)
   } else if key.matches("2") {
@@ -30,38 +24,38 @@ private fn sample_for_key(key: mut event::KeyEvent, current: Int) Int? {
   }
 }
 
-private fn selection_patch(value: mut text::TextStyle) {
-  value.background = Maybe::new(color::hex("#1D4ED8"))
-  value.foreground = Maybe::new(color::hex("#FFFFFF"))
+private fn selection_patch(value: mut ui::TextStyle) {
+  value.background = Maybe::new(ui::hex("#1D4ED8"))
+  value.foreground = Maybe::new(ui::hex("#FFFFFF"))
   value.bold = true
 }
 
-private fn specimen_content() text::StyledText {
-  let label = color::hex("#67E8F9")
-  text::styled_text(
+private fn specimen_content() ui::StyledText {
+  let label = ui::hex("#67E8F9")
+  ui::styled_text(
     [
-      text::span("BOLD      ", style: text::span_style(foreground: label, bold: true)),
-      text::span("confident\n", style: text::span_style(bold: true)),
-      text::span("DIM       ", style: text::span_style(foreground: label, bold: true)),
-      text::span("secondary\n", style: text::span_style(dim: true)),
-      text::span("ITALIC    ", style: text::span_style(foreground: label, bold: true)),
-      text::span("emphasis\n", style: text::span_style(italic: true)),
-      text::span("UNDERLINE ", style: text::span_style(foreground: label, bold: true)),
-      text::span("actionable\n", style: text::span_style(underline: true)),
-      text::span("BLINK     ", style: text::span_style(foreground: label, bold: true)),
-      text::span("attention\n", style: text::span_style(blink: true)),
-      text::span("REVERSE   ", style: text::span_style(foreground: label, bold: true)),
-      text::span("inverted\n", style: text::span_style(reverse: true)),
-      text::span("STRIKE    ", style: text::span_style(foreground: label, bold: true)),
-      text::span("retired\n", style: text::span_style(strike: true)),
-      text::span("HIDDEN    ", style: text::span_style(foreground: label, bold: true)),
-      text::span("concealed\n", style: text::span_style(hidden: true)),
-      text::span("FG + BG   ", style: text::span_style(foreground: label, bold: true)),
-      text::span(
+      ui::span("BOLD      ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("confident\n", style: ui::span_style(bold: true)),
+      ui::span("DIM       ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("secondary\n", style: ui::span_style(dim: true)),
+      ui::span("ITALIC    ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("emphasis\n", style: ui::span_style(italic: true)),
+      ui::span("UNDERLINE ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("actionable\n", style: ui::span_style(underline: true)),
+      ui::span("BLINK     ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("attention\n", style: ui::span_style(blink: true)),
+      ui::span("REVERSE   ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("inverted\n", style: ui::span_style(reverse: true)),
+      ui::span("STRIKE    ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("retired\n", style: ui::span_style(strike: true)),
+      ui::span("HIDDEN    ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span("concealed\n", style: ui::span_style(hidden: true)),
+      ui::span("FG + BG   ", style: ui::span_style(foreground: label, bold: true)),
+      ui::span(
         " BADGE ",
-        style: text::span_style(
-          foreground: color::hex("#082F49"),
-          background: color::hex("#FDE047"),
+        style: ui::span_style(
+          foreground: ui::hex("#082F49"),
+          background: ui::hex("#FDE047"),
           bold: true,
         ),
       ),
@@ -69,42 +63,42 @@ private fn specimen_content() text::StyledText {
   )
 }
 
-private fn grapheme_content() text::StyledText {
-  text::styled_text(
+private fn grapheme_content() ui::StyledText {
+  ui::styled_text(
     [
-      text::span("GRAPHEMES  ", style: text::span_style(foreground: color::hex("#67E8F9"), bold: true)),
-      text::span("élan · 你好世界 · 👩🏽\u200d💻 · 🏳️\u200d🌈 · 🇯🇵"),
+      ui::span("GRAPHEMES  ", style: ui::span_style(foreground: ui::hex("#67E8F9"), bold: true)),
+      ui::span("élan · 你好世界 · 👩🏽\u200d💻 · 🏳️\u200d🌈 · 🇯🇵"),
     ],
   )
 }
 
-private fn badge_content() text::StyledText {
-  text::styled_text(
+private fn badge_content() ui::StyledText {
+  ui::styled_text(
     [
-      text::span("SPANS      ", style: text::span_style(foreground: color::hex("#67E8F9"), bold: true)),
-      text::span(
+      ui::span("SPANS      ", style: ui::span_style(foreground: ui::hex("#67E8F9"), bold: true)),
+      ui::span(
         " READY ",
-        style: text::span_style(
-          foreground: color::hex("#052E16"),
-          background: color::hex("#4ADE80"),
+        style: ui::span_style(
+          foreground: ui::hex("#052E16"),
+          background: ui::hex("#4ADE80"),
           bold: true,
         ),
       ),
-      text::span(" "),
-      text::span(
+      ui::span(" "),
+      ui::span(
         " WARN ",
-        style: text::span_style(
-          foreground: color::hex("#422006"),
-          background: color::hex("#FACC15"),
+        style: ui::span_style(
+          foreground: ui::hex("#422006"),
+          background: ui::hex("#FACC15"),
           bold: true,
         ),
       ),
-      text::span(" "),
-      text::span(
+      ui::span(" "),
+      ui::span(
         " ERROR ",
-        style: text::span_style(
-          foreground: color::hex("#450A0A"),
-          background: color::hex("#F87171"),
+        style: ui::span_style(
+          foreground: ui::hex("#450A0A"),
+          background: ui::hex("#F87171"),
           bold: true,
         ),
       ),
@@ -112,38 +106,38 @@ private fn badge_content() text::StyledText {
   )
 }
 
-private fn horizontal_padding() style::Edges {
-  let padding = mut style::edges()
-  padding.left = style::cells(1)
-  padding.right = style::cells(1)
+private fn horizontal_padding() ui::Edges {
+  let padding = mut ui::edges()
+  padding.left = ui::cells(1)
+  padding.right = ui::cells(1)
   padding.@
 }
 
-private fn content_clip(ctx: mut runtime::Runtime, inset: Bool) mut box::Box {
-  let applied = mut style::new(
-    width: style::percent(100.0),
-    height: style::percent(100.0),
-    overflow: style::Overflow::hidden,
+private fn content_clip(ctx: mut cooper::Runtime, inset: Bool) mut ui::Box {
+  let applied = mut ui::style(
+    width: ui::percent(100.0),
+    height: ui::percent(100.0),
+    overflow: ui::Overflow::hidden,
   )
   if inset {
     applied.padding = horizontal_padding()
   }
-  box::new(ctx, styles: applied.@)
+  ui::box(ctx, styles: applied.@)
 }
 
-private fn make_wrap_card(ctx: mut runtime::Runtime, title: Str, border_color: color::Color) mut box::Box {
-  box::new(
+private fn make_wrap_card(ctx: mut cooper::Runtime, title: Str, border_color: ui::Color) mut ui::Box {
+  ui::box(
     ctx,
     title: title,
-    styles: style::new(
-      background: color::hex("#111827"),
-      border: style::Border::single,
+    styles: ui::style(
+      background: ui::hex("#111827"),
+      border: ui::Border::single,
       border_color: border_color,
-      width: style::cells(8),
-      height: style::percent(100.0),
+      width: ui::cells(8),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
 }
@@ -159,173 +153,173 @@ private fn overflow_label(ellipsis: Bool) Str {
 private fn apply_sample(
   number: Int,
   ellipsis: Bool,
-  wrap_lab: mut box::Box,
-  word_text: mut text::Text,
-  character_text: mut text::Text,
-  single_line_text: mut text::Text,
+  wrap_lab: mut ui::Box,
+  word_text: mut ui::Text,
+  character_text: mut ui::Text,
+  single_line_text: mut ui::Text,
 ) {
   let content = sample(number)
   word_text.set_content(content)
   character_text.set_content(content)
   single_line_text.set_content(content)
   if ellipsis {
-    single_line_text.set_overflow(text::TextOverflow::ellipsis)
+    single_line_text.set_overflow(ui::TextOverflow::ellipsis)
   } else {
-    single_line_text.set_overflow(text::TextOverflow::clip)
+    single_line_text.set_overflow(ui::TextOverflow::clip)
   }
   wrap_lab.set_title("WRAP LAB · SAMPLE {number + 1}/3 · {overflow_label(ellipsis)}")
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper text gallery")
+  let application = cooper::app().expect("create Cooper text gallery")
   defer application.destroy()
   let ctx = application.context
 
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#020617"),
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      gap: style::cells(1),
+    styles: ui::style(
+      background: ui::hex("#020617"),
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      gap: ui::cells(1),
     ),
   )
 
-  let header = box::new(
+  let header = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::single,
-      border_color: color::hex("#A78BFA"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::single,
+      border_color: ui::hex("#A78BFA"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "COOPER TEXT GALLERY",
       selectable: false,
-      text_style: text::style(foreground: color::hex("#C4B5FD"), bold: true),
+      text_style: ui::text_style(foreground: ui::hex("#C4B5FD"), bold: true),
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "Styled spans · Unicode graphemes · wrapping · overflow · selection",
-      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
       selectable: false,
-      wrap: text::TextWrap::none,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#94A3B8")),
+      wrap: ui::TextWrap::none,
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#94A3B8")),
     ),
   )
 
-  let body = box::new(
+  let body = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      flex_direction: style::FlexDirection::row,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
 
-  let specimens = box::new(
+  let specimens = ui::box(
     ctx,
     title: "STYLE SPECIMENS",
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
-      border_color: color::hex("#22D3EE"),
-      width: style::percent(34.0),
-      height: style::percent(100.0),
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#22D3EE"),
+      width: ui::percent(34.0),
+      height: ui::percent(100.0),
       flex_shrink: 0.0,
     ),
   )
   let specimen_clip = content_clip(ctx, true)
   specimen_clip.add(
-    text::new(
+    ui::text(
       ctx,
       content: specimen_content(),
-      wrap: text::TextWrap::none,
-      styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
-      text_style: text::style(foreground: color::hex("#E2E8F0")),
+      wrap: ui::TextWrap::none,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+      text_style: ui::text_style(foreground: ui::hex("#E2E8F0")),
       selection_style: selection_patch,
-      overflow: text::TextOverflow::ellipsis,
+      overflow: ui::TextOverflow::ellipsis,
     ),
   )
   specimens.add(specimen_clip)
 
-  let right = box::new(
+  let right = ui::box(
     ctx,
-    styles: style::new(
-      width: style::cells(1),
-      height: style::percent(100.0),
+    styles: ui::style(
+      width: ui::cells(1),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
 
-  let wrap_lab = box::new(
+  let wrap_lab = ui::box(
     ctx,
     title: "WRAP LAB",
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
-      border_color: color::hex("#8B5CF6"),
-      width: style::percent(100.0),
-      height: style::cells(8),
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#8B5CF6"),
+      width: ui::percent(100.0),
+      height: ui::cells(8),
       flex_shrink: 0.0,
-      flex_direction: style::FlexDirection::row,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
 
-  let word_card = make_wrap_card(ctx, "WORD", color::hex("#60A5FA"))
-  let word_text = text::new(
+  let word_card = make_wrap_card(ctx, "WORD", ui::hex("#60A5FA"))
+  let word_text = ui::text(
     ctx,
     content: "",
-    wrap: text::TextWrap::word,
-    styles: style::new(width: style::percent(80.0), height: style::cells(4)),
-    text_style: text::style(foreground: color::hex("#BFDBFE")),
+    wrap: ui::TextWrap::word,
+    styles: ui::style(width: ui::percent(80.0), height: ui::cells(4)),
+    text_style: ui::text_style(foreground: ui::hex("#BFDBFE")),
     selection_style: selection_patch,
   )
   let word_clip = content_clip(ctx, false)
   word_clip.add(word_text)
   word_card.add(word_clip)
 
-  let character_card = make_wrap_card(ctx, "CHAR", color::hex("#34D399"))
-  let character_text = text::new(
+  let character_card = make_wrap_card(ctx, "CHAR", ui::hex("#34D399"))
+  let character_text = ui::text(
     ctx,
     content: "",
-    wrap: text::TextWrap::character,
-    styles: style::new(width: style::percent(80.0), height: style::cells(4)),
-    text_style: text::style(foreground: color::hex("#A7F3D0")),
+    wrap: ui::TextWrap::character,
+    styles: ui::style(width: ui::percent(80.0), height: ui::cells(4)),
+    text_style: ui::text_style(foreground: ui::hex("#A7F3D0")),
     selection_style: selection_patch,
   )
   let character_clip = content_clip(ctx, false)
   character_clip.add(character_text)
   character_card.add(character_clip)
 
-  let single_line_card = make_wrap_card(ctx, "NONE", color::hex("#FBBF24"))
-  let single_line_text = text::new(
+  let single_line_card = make_wrap_card(ctx, "NONE", ui::hex("#FBBF24"))
+  let single_line_text = ui::text(
     ctx,
     content: "",
-    wrap: text::TextWrap::none,
-    styles: style::new(width: style::percent(80.0), height: style::cells(4)),
-    text_style: text::style(foreground: color::hex("#FDE68A")),
+    wrap: ui::TextWrap::none,
+    styles: ui::style(width: ui::percent(80.0), height: ui::cells(4)),
+    text_style: ui::text_style(foreground: ui::hex("#FDE68A")),
     selection_style: selection_patch,
-    overflow: text::TextOverflow::ellipsis,
+    overflow: ui::TextOverflow::ellipsis,
   )
   let single_line_clip = content_clip(ctx, false)
   single_line_clip.add(single_line_text)
@@ -335,58 +329,58 @@ fn main() {
   wrap_lab.add(character_card)
   wrap_lab.add(single_line_card)
 
-  let unicode_panel = box::new(
+  let unicode_panel = ui::box(
     ctx,
     title: "RICH TEXT & UNICODE",
-    styles: style::new(
-      background: color::hex("#0B1220"),
-      border: style::Border::rounded,
-      border_color: color::hex("#F472B6"),
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      background: ui::hex("#0B1220"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#F472B6"),
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
     ),
   )
   let unicode_clip = content_clip(ctx, false)
   unicode_clip.add(
-    text::new(
+    ui::text(
       ctx,
       content: grapheme_content(),
-      wrap: text::TextWrap::none,
-      styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#FCE7F3")),
+      wrap: ui::TextWrap::none,
+      styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#FCE7F3")),
       selection_style: selection_patch,
     ),
   )
   unicode_clip.add(
-    text::new(
+    ui::text(
       ctx,
       content: badge_content(),
-      wrap: text::TextWrap::none,
-      styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#FCE7F3")),
+      wrap: ui::TextWrap::none,
+      styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#FCE7F3")),
       selection_style: selection_patch,
     ),
   )
-  let link_line = text::new(
+  let link_line = ui::text(
     ctx,
-    content: text::styled_text(
+    content: ui::styled_text(
       [
-        text::span("LINK       ", style: text::span_style(foreground: color::hex("#67E8F9"), bold: true)),
-        text::span(
+        ui::span("LINK       ", style: ui::span_style(foreground: ui::hex("#67E8F9"), bold: true)),
+        ui::span(
           "Cooper source",
-          style: text::span_style(foreground: color::hex("#7DD3FC"), bold: true, underline: true),
+          style: ui::span_style(foreground: ui::hex("#7DD3FC"), bold: true, underline: true),
           link: "https://github.com/akonwi/cooper",
         ),
       ],
     ),
-    wrap: text::TextWrap::none,
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#FCE7F3")),
+    wrap: ui::TextWrap::none,
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::hex("#FCE7F3")),
     selection_style: selection_patch,
   )
   unicode_clip.add(link_line)
@@ -397,51 +391,51 @@ fn main() {
   body.add(specimens)
   body.add(right)
 
-  let footer = box::new(
+  let footer = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      border: style::Border::single,
-      border_color: color::hex("#334155"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      border: ui::Border::single,
+      border_color: ui::hex("#334155"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
     ),
   )
-  let status = text::new(
+  let status = ui::text(
     ctx,
     content: "Selection: drag or double-click any specimen",
-    wrap: text::TextWrap::none,
-    styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+    wrap: ui::TextWrap::none,
+    styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
     selectable: false,
-    overflow: text::TextOverflow::ellipsis,
-    text_style: text::style(foreground: color::hex("#93C5FD")),
+    overflow: ui::TextOverflow::ellipsis,
+    text_style: ui::text_style(foreground: ui::hex("#93C5FD")),
   )
   footer.add(status)
   footer.add(
-    text::new(
+    ui::text(
       ctx,
-      content: text::styled_text(
+      content: ui::styled_text(
         [
-          text::span("1–3", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" sample  ·  "),
-          text::span("Space", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" next  ·  "),
-          text::span("E", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" overflow  ·  "),
-          text::span("C", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" clear  ·  "),
-          text::span("Q", style: text::span_style(foreground: color::hex("#FBBF24"), bold: true)),
-          text::span(" quit"),
+          ui::span("1–3", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" sample  ·  "),
+          ui::span("Space", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" next  ·  "),
+          ui::span("E", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" overflow  ·  "),
+          ui::span("C", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" clear  ·  "),
+          ui::span("Q", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
+          ui::span(" quit"),
         ],
       ),
-      wrap: text::TextWrap::none,
-      styles: style::new(height: style::cells(1), max_width: style::percent(100.0)),
+      wrap: ui::TextWrap::none,
+      styles: ui::style(height: ui::cells(1), max_width: ui::percent(100.0)),
       selectable: false,
-      overflow: text::TextOverflow::ellipsis,
-      text_style: text::style(foreground: color::hex("#CBD5E1")),
+      overflow: ui::TextOverflow::ellipsis,
+      text_style: ui::text_style(foreground: ui::hex("#CBD5E1")),
     ),
   )
 
@@ -454,7 +448,7 @@ fn main() {
   mut ellipsis = true
   apply_sample(current, ellipsis, wrap_lab, word_text, character_text, single_line_text)
 
-  let _ = application.on_selection_change(fn(value: selection::Selection?) {
+  let _ = application.on_selection_change(fn(value: ui::Selection?) {
     match value {
       selected => {
         let flattened = strings::ReplaceAll(selected.selected_text, "\n", " / ")
@@ -463,12 +457,12 @@ fn main() {
       _ => status.set_content("Selection: none — drag or double-click any specimen"),
     }
   })
-  let _ = link_line.on_link(fn(received: mut text::LinkEvent) {
+  let _ = link_line.on_link(fn(received: mut ui::LinkEvent) {
     received.prevent_default()
     status.set_content("Link intercepted: {received.url}")
   })
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type == event::KeyEventType::press {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type == cooper::KeyEventType::press {
       if received.matches("q") {
         received.prevent_default()
         application.destroy()

@@ -1,5 +1,5 @@
-use cooper/box
-use cooper/style
+use cooper/ui/box
+use cooper/ui/style
 use cooper/testing as cooper_testing
 use go:fmt
 use go:time

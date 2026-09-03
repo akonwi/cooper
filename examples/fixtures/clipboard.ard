@@ -1,33 +1,31 @@
 use ard/async
 
-use cooper/app
-use cooper/event
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 use go:time
 
 fn main() {
-  let application = app::new().expect("create Cooper clipboard fixture")
+  let application = cooper::app().expect("create Cooper clipboard fixture")
   defer application.destroy()
-  let status = text::new(
+  let status = ui::text(
     application.context,
     content: "Clipboard fixture ready · W write · C clear · R read · S suspend · B blocked read",
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
   )
   application.root.add(status)
 
   let clipboard = application.context.clipboard
   let dispatch = application.context.dispatch
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type == event::KeyEventType::press and received.matches("w") {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type == cooper::KeyEventType::press and received.matches("w") {
       clipboard.write("Cooper clipboard ✓")
       status.set_content("WRITE EMITTED")
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("c") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("c") {
       clipboard.clear()
       status.set_content("CLEAR EMITTED")
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("r") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("r") {
       async::start(fn() {
         let result = clipboard.read()
         let _ = dispatch(fn() {
@@ -38,7 +36,7 @@ fn main() {
         })
       })
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("s") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("s") {
       let suspended = application.suspend()
       if suspended.is_err() {
         status.set_content("SUSPEND ERROR")
@@ -56,7 +54,7 @@ fn main() {
         })
       }
       received.prevent_default()
-    } else if received.event_type == event::KeyEventType::press and received.matches("b") {
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("b") {
       async::start(fn() {
         time::Sleep(100 * time::Millisecond)
         application.destroy()

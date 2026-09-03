@@ -1,12 +1,12 @@
 use ard/unsafe
 
-use cooper/color
+use cooper/ui/color
 use cooper/core/event_delivery
 use cooper/core/paint
 use cooper/core/runtime
 use cooper/event
-use cooper/geometry
-use cooper/style
+use cooper/ui/geometry
+use cooper/ui/style
 use go:github.com/akonwi/cooper/ffi/core/backend/retainedyoga as yoga
 use go:math
 

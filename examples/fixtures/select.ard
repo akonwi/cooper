@@ -1,13 +1,8 @@
-use cooper/app
-use cooper/box
-use cooper/color
-use cooper/event
-use cooper/select as select_control
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 
-private fn options(count: Int) [select_control::Option] {
-  let values = mut List::new<select_control::Option>()
+private fn options(count: Int) [ui::SelectOption] {
+  let values = mut List::new<ui::SelectOption>()
   let labels = [
     "Home",
     "Profile",
@@ -26,7 +21,7 @@ private fn options(count: Int) [select_control::Option] {
   while index < count {
     let label = labels.at(index).expect("fixture option")
     values.push(
-      select_control::option(label, description: "{label} description", value: "value-{index}"),
+      ui::select_option(label, description: "{label} description", value: "value-{index}"),
     )
     index =+ 1
   }
@@ -34,97 +29,97 @@ private fn options(count: Int) [select_control::Option] {
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper Select fixture")
+  let application = cooper::app().expect("create Cooper Select fixture")
   defer application.destroy()
   let ctx = application.context
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#001122"),
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+    styles: ui::style(
+      background: ui::hex("#001122"),
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
   root.add(
-    text::new(
+    ui::text(
       ctx,
       content: "BUILT-IN SELECTS · Tab switches focus · Ctrl+C quits",
-      styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+      styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
       selectable: false,
-      text_style: text::style(foreground: color::hex("#38BDF8"), bold: true),
+      text_style: ui::text_style(foreground: ui::hex("#38BDF8"), bold: true),
     ),
   )
 
-  let control_appearance = select_control::appearance(
-    normal: text::span_style(foreground: color::hex("#E2E8F0")),
-    description: text::span_style(foreground: color::hex("#94A3B8")),
-    highlighted: text::span_style(background: color::hex("#2D3748"), bold: true),
-    selected: text::span_style(
-      foreground: color::hex("#FFFFFF"),
-      background: color::hex("#3B82F6"),
+  let control_appearance = ui::select_appearance(
+    normal: ui::span_style(foreground: ui::hex("#E2E8F0")),
+    description: ui::span_style(foreground: ui::hex("#94A3B8")),
+    highlighted: ui::span_style(background: ui::hex("#2D3748"), bold: true),
+    selected: ui::span_style(
+      foreground: ui::hex("#FFFFFF"),
+      background: ui::hex("#3B82F6"),
       reverse: false,
       bold: true,
     ),
-    selected_description: text::span_style(foreground: color::hex("#DBEAFE")),
-    indicator: text::span_style(foreground: color::hex("#CBD5E1")),
+    selected_description: ui::span_style(foreground: ui::hex("#DBEAFE")),
+    indicator: ui::span_style(foreground: ui::hex("#CBD5E1")),
   )
 
-  let tabs = select_control::tabs(
+  let tabs = ui::tab_select(
     ctx,
     options(12),
-    config: select_control::tab_config(tab_width: 12),
+    config: ui::select_tab_config(tab_width: 12),
     appearance: control_appearance,
-    styles: style::new(width: style::percent(100.0), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0),
   )
   root.add(tabs)
 
-  let list = select_control::new(
+  let list = ui::select_input(
     ctx,
     options(12),
-    config: select_control::config(show_indicator: true),
+    config: ui::select_config(show_indicator: true),
     appearance: control_appearance,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
     ),
   )
   root.add(list)
 
-  let status = text::new(
+  let status = ui::text(
     ctx,
     content: "Ready",
-    styles: style::new(width: style::percent(100.0), height: style::cells(2), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(2), flex_shrink: 0.0),
     selectable: false,
-    text_style: text::style(foreground: color::hex("#FDE047")),
+    text_style: ui::text_style(foreground: ui::hex("#FDE047")),
   )
   root.add(status)
   application.root.add(root)
 
-  let _ = tabs.on_highlight(fn(value: select_control::Selection) {
+  let _ = tabs.on_highlight(fn(value: ui::SelectSelection) {
     status.set_content("Tab highlight: {value.option.label} · index {value.index}")
   })
-  let _ = tabs.on_change(fn(value: select_control::Selection) {
+  let _ = tabs.on_change(fn(value: ui::SelectSelection) {
     status.set_content("Tab selected: {value.option.label} · {value.option.value.or("")}")
   })
-  let _ = tabs.on_submit(fn(value: select_control::Selection) {
+  let _ = tabs.on_submit(fn(value: ui::SelectSelection) {
     status.set_content("Tab submitted: {value.option.label} · index {value.index}")
   })
-  let _ = list.on_highlight(fn(value: select_control::Selection) {
+  let _ = list.on_highlight(fn(value: ui::SelectSelection) {
     status.set_content("Select highlight: {value.option.label} · index {value.index}")
   })
-  let _ = list.on_change(fn(value: select_control::Selection) {
+  let _ = list.on_change(fn(value: ui::SelectSelection) {
     status.set_content("Select selected: {value.option.label} · {value.option.value.or("")}")
   })
-  let _ = list.on_submit(fn(value: select_control::Selection) {
+  let _ = list.on_submit(fn(value: ui::SelectSelection) {
     status.set_content("Select submitted: {value.option.label} · index {value.index}")
   })
 
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type != event::KeyEventType::release and received.matches("tab") {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type != cooper::KeyEventType::release and received.matches("tab") {
       if tabs.is_focused() {
         list.focus()
         status.set_content("Focus: Select")

@@ -1,5 +1,5 @@
 use cooper/core/node
-use cooper/style
+use cooper/ui/style
 use go:math
 
 private fn collect_node(current: mut node::Node, targets: mut [mut node::Node]) {

@@ -5,7 +5,9 @@
 Accepted. The separate Context type and App/Context/Root ownership model are
 superseded by [ADR 0013](./0013-consolidate-context-into-runtime.md). The
 animation deferral is superseded by
-[ADR 0014](./0014-define-animation-timelines.md).
+[ADR 0014](./0014-define-animation-timelines.md). The package layout and
+canonical import paths are superseded by
+[ADR 0015](./0015-define-package-entry-points-and-ui-namespace.md).
 
 ## Context
 

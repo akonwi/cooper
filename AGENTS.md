@@ -20,9 +20,14 @@ system handler. Tess/Yoga types
 and fallible setters must remain hidden behind Cooper's validated API and remain
 replaceable by an Ard-native implementation.
 
-Public application modules stay at the package root and own their complete Ard
-domain model and supporting logic. App owns one Runtime lifetime, exposes that
-Runtime as `application.context`, and binds its Root to the same identity.
+`cooper.ard` is the canonical application entry point and owns App plus the
+`app(...)` constructor. `ui.ard` is the canonical view-construction facade over
+focused implementation modules beneath `ui/`; it exposes controls, layout,
+colors, geometry, selection, and rich-text values. Neither facade may be
+imported by lower implementation modules. Application-scoped capability modules
+such as Runtime, animation, clipboard, events, notifications, terminal progress,
+and testing remain at the package root. App owns one Runtime lifetime, exposes
+that Runtime as `application.context`, and binds its Root to the same identity.
 Cooper has no separate application Context type. Keep only unsupported runtime
 mechanisms with no public counterpart beneath `core/`: Node, paint, focus, hit
 testing, routing, and scheduling. Backend bindings stay beneath
@@ -33,8 +38,8 @@ Import Vaxis as `vaxis`; do not alias it as `raw`.
 ## API principles
 
 - Prefer one configurable primitive over many single-purpose variants.
-- Expose each supported built-in control through `ui.ard` with direct constructor
-  and type aliases.
+- Expose each supported built-in control and common view value through `ui.ard`
+  with direct constructor, helper, and type aliases.
 - Primitive constructors are infallible; application/terminal creation may fail.
 - Use Ard-native public structs and enums and convert backend values at
   boundaries.

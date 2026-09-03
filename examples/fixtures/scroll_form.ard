@@ -1,37 +1,32 @@
-use cooper/app
-use cooper/box
-use cooper/event
-use cooper/input
-use cooper/scroll_box
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 
-private fn line() style::Style {
-  style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0)
+private fn line() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper app")
+  let application = cooper::app().expect("create Cooper app")
   let ctx = application.context
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      align_items: style::Align::stretch,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      align_items: ui::Align::stretch,
     ),
   )
-  let title = text::new(ctx, content: "Scrollable retained form", styles: line())
-  let viewport = scroll_box::new(
+  let title = ui::text(ctx, content: "Scrollable retained form", styles: line())
+  let viewport = ui::scroll_box(
     ctx,
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_grow: 1.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_grow: 1.0),
   )
-  let fields = mut List::new<mut input::Input>()
+  let fields = mut List::new<mut ui::Input>()
   mut index = 1
   while index <= 8 {
-    let field = input::new(ctx, placeholder: "value {index}", styles: line())
+    let field = ui::input(ctx, placeholder: "value {index}", styles: line())
     fields.push(field)
-    viewport.add(text::new(ctx, content: "Field {index}", styles: line()))
+    viewport.add(ui::text(ctx, content: "Field {index}", styles: line()))
     viewport.add(field)
     index =+ 1
   }
@@ -40,8 +35,8 @@ fn main() {
 
   application.root.add(root)
   fields.at(0).expect("first field").focus()
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type != event::KeyEventType::release and received.matches("tab") {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type != cooper::KeyEventType::release and received.matches("tab") {
       mut current = -1
       for field, field_index in fields {
         if field.is_focused() {

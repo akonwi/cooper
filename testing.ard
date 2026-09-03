@@ -7,9 +7,9 @@ use cooper/core/paint
 use cooper/event
 use cooper/notification
 use cooper/root
-use cooper/selection
+use cooper/ui/selection
 use cooper/terminal_progress
-use cooper/text
+use cooper/ui/text
 use go:sync
 
 struct Cell {

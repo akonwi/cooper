@@ -3,7 +3,7 @@ use ard/unsafe
 
 use cooper/animation
 use cooper/clipboard
-use cooper/color
+use cooper/ui/color
 use cooper/core/focus
 use cooper/core/node
 use cooper/core/paint
@@ -12,8 +12,8 @@ use cooper/core/router
 use cooper/core/runtime as dispatch_runtime
 use cooper/core/selection_state
 use cooper/event
-use cooper/selection as public_selection
-use cooper/style
+use cooper/ui/selection as public_selection
+use cooper/ui/style
 use cooper/terminal_progress
 use go:github.com/akonwi/cooper/ffi/core/backend/clipboardbridge
 use go:github.com/akonwi/cooper/ffi/core/backend/clock

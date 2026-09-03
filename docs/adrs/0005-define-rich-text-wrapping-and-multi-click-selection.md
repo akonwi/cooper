@@ -4,6 +4,8 @@
 
 Accepted. References to the former application Context map to Runtime exposed as
 `application.context`; see [ADR 0013](./0013-consolidate-context-into-runtime.md).
+Package paths and module placement are superseded by
+[ADR 0015](./0015-define-package-entry-points-and-ui-namespace.md).
 
 ## Context
 

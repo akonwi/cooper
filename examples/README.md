@@ -3,15 +3,18 @@
 These applications exercise Cooper's accepted application API and require Ard
 v0.39.0 or newer.
 
-Every example uses `App.context`, the permanent `App.root`, persistent public
-controls, and explicit focus policy. Most use blocking `run()`; the lifecycle
-example demonstrates nonblocking startup.
+Every UI example imports the canonical `cooper` and `cooper/ui` entry points and
+uses `App.context`, the permanent `App.root`, persistent public controls, and
+explicit focus policy. Application-only fixtures import just `cooper`. Focused
+imports are added only for specialized APIs such as animation and terminal
+progress. Most examples use blocking `run()`; the lifecycle example demonstrates
+nonblocking startup.
 
 ## Quickstart
 
 `quickstart.ard` recreates OpenTUI's imperative quickstart with nested styled
 Boxes, inherited colors, mutable Text, application key listeners, and the
-single-import `cooper/ui` control aliases.
+two-import application and UI surface.
 
 ```sh
 ard run quickstart.ard

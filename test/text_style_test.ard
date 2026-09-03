@@ -1,9 +1,9 @@
 use ard/testing
 
-use cooper/color
+use cooper/ui/color
 use cooper/core/paint
-use cooper/geometry
-use cooper/text
+use cooper/ui/geometry
+use cooper/ui/text
 
 private fn styled_cell() paint::CellStyle {
   paint::style(

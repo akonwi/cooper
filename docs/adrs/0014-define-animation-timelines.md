@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. UI package paths in examples are superseded by
+[ADR 0015](./0015-define-package-entry-points-and-ui-namespace.md).
 
 ## Context
 

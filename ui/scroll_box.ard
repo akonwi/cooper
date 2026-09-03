@@ -5,9 +5,9 @@ use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/event
-use cooper/geometry
-use cooper/scrollbar
-use cooper/style as layout_style
+use cooper/ui/geometry
+use cooper/ui/scrollbar
+use cooper/ui/style as layout_style
 
 private struct Part {
   node_ref: mut node::Node,

@@ -1,9 +1,9 @@
 use ard/testing
 
-use cooper/box
-use cooper/color
+use cooper/ui/box
+use cooper/ui/color
 use cooper/runtime
-use cooper/style
+use cooper/ui/style
 
 private fn all_edges(value: style::Length) style::Edges {
   style::Edges{

@@ -1,7 +1,6 @@
 use ard/testing
 
 use cooper/runtime
-use cooper/style
 use cooper/ui
 
 test fn ui_reexports_control_types_and_constructors() Void!Str {
@@ -12,7 +11,12 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
   let content: ui::TextContent = rich
   let panel: mut ui::Box = ui::box(
     ctx,
-    styles: style::new(border: ui::Border::single),
+    styles: ui::style(
+      foreground: ui::indexed(7),
+      background: ui::terminal_default(),
+      border: ui::Border::single,
+      width: ui::percent(100.0),
+    ),
     title: "Profile",
   )
   let label: mut ui::Text = ui::text(
@@ -30,9 +34,9 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
     ctx,
     placeholder: "Notes",
     wrap: ui::TextWrap::word,
-    styles: style::new(min_height: style::cells(2)),
+    styles: ui::style(min_height: ui::cells(2)),
   )
-  let viewport: mut ui::ScrollBox = ui::scroll_box(ctx, styles: style::new(height: style::cells(1)))
+  let viewport: mut ui::ScrollBox = ui::scroll_box(ctx, styles: ui::style(height: ui::cells(1)))
   let bar: mut ui::Scrollbar = ui::scrollbar(
     ctx,
     ui::ScrollbarOrientation::vertical,
@@ -64,6 +68,15 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
 
   try testing::assert(panel.child_count() == 6, "Expected ui::box to retain aliased controls")
   try testing::assert(panel.border() == ui::Border::single, "Expected ui::Border alias")
+  try testing::assert(panel.style().width.kind == ui::LengthKind::percent, "Expected layout aliases")
+  try testing::assert(
+    panel.style().foreground.expect("indexed foreground").index.is_some(),
+    "Expected color aliases",
+  )
+  try testing::assert(
+    ui::contains(ui::Rect{x: 0, y: 0, width: 2, height: 2}, 1, 1),
+    "Expected geometry aliases",
+  )
   try testing::assert(label.wrap() == ui::TextWrap::word, "Expected ui::TextWrap alias")
   try testing::assert(label.overflow() == ui::TextOverflow::ellipsis, "Expected ui::TextOverflow alias")
   try testing::assert(
@@ -93,8 +106,9 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
     menu.highlighted().expect("Select alias highlight").option.value.or("") == "open",
     "Expected Select input aliases",
   )
+  let presentation: ui::SelectPresentation = tabs.presentation()
   mut tabbed = false
-  match tabs.presentation() {
+  match presentation {
     ui::SelectTabConfig => { tabbed = true },
     _ => (),
   }

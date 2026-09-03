@@ -1,22 +1,20 @@
-use cooper/app
-use cooper/event
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 
 // PTY fixture preserving the contract that terminal focus reporting remains
 // available when application mouse handling is disabled.
 fn main() {
-  let application = app::new(use_mouse: false).expect("create mouse-disabled focus probe")
+  let application = cooper::app(use_mouse: false).expect("create mouse-disabled focus probe")
   defer application.destroy()
-  let status = text::new(
+  let status = ui::text(
     application.context,
     content: "terminal: unknown",
-    styles: style::new(width: style::percent(100.0), height: style::cells(1)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1)),
     selectable: false,
   )
   application.root.add(status)
-  let _ = application.on_terminal_focus(fn(value: event::TerminalFocus) {
-    if value == event::TerminalFocus::gained {
+  let _ = application.on_terminal_focus(fn(value: cooper::TerminalFocus) {
+    if value == cooper::TerminalFocus::gained {
       status.set_content("terminal: focused")
     } else {
       status.set_content("terminal: blurred")

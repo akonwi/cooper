@@ -1,38 +1,36 @@
+use cooper
 use cooper/animation
-use cooper/app
-use cooper/box
-use cooper/style
-use cooper/text
+use cooper/ui
 
 private struct FrameCount {
   value: Int,
 }
 
 fn main() {
-  let application = app::new().expect("create animation example")
+  let application = cooper::app().expect("create animation example")
   defer application.destroy()
-  let root = box::new(
+  let root = ui::box(
     application.context,
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
   )
-  let marker = text::new(
+  let marker = ui::text(
     application.context,
     content: "●",
     selectable: false,
-    styles: style::new(
-      position: style::Position::absolute,
-      left: style::cells(0),
-      top: style::cells(0),
+    styles: ui::style(
+      position: ui::Position::absolute,
+      left: ui::cells(0),
+      top: ui::cells(0),
     ),
   )
-  let status = text::new(
+  let status = ui::text(
     application.context,
     content: "START",
     selectable: false,
-    styles: style::new(
-      position: style::Position::absolute,
-      left: style::cells(0),
-      top: style::cells(2),
+    styles: ui::style(
+      position: ui::Position::absolute,
+      left: ui::cells(0),
+      top: ui::cells(2),
     ),
   )
   root.add(marker)
@@ -49,7 +47,7 @@ fn main() {
     fn(frame: animation::Frame) {
       rendered_frames.value =+ 1
       let applied = mut marker.style()
-      applied.left = style::cells(animation::lerp_int(0, 20, frame.progress))
+      applied.left = ui::cells(animation::lerp_int(0, 20, frame.progress))
       marker.set_style(applied.@)
     },
     ease: animation::in_out_quad,

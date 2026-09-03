@@ -1,7 +1,7 @@
 use cooper/core/node
-use cooper/geometry
-use cooper/selection
-use cooper/style
+use cooper/ui/geometry
+use cooper/ui/selection
+use cooper/ui/style
 use go:math
 
 struct Anchor {

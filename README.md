@@ -26,27 +26,27 @@ The canonical design is defined by the accepted
 [Select ADR](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md),
 [notification ADR](./docs/adrs/0009-define-terminal-mediated-notifications.md),
 [terminal progress ADR](./docs/adrs/0010-define-terminal-progress-reporting.md),
-[multiline TextArea ADR](./docs/adrs/0011-define-multiline-text-area.md), and
+[multiline TextArea ADR](./docs/adrs/0011-define-multiline-text-area.md),
 [terminal title ADR](./docs/adrs/0012-define-terminal-title-updates.md),
-[Runtime ownership ADR](./docs/adrs/0013-consolidate-context-into-runtime.md), and
-[animation ADR](./docs/adrs/0014-define-animation-timelines.md).
+[Runtime ownership ADR](./docs/adrs/0013-consolidate-context-into-runtime.md),
+[animation ADR](./docs/adrs/0014-define-animation-timelines.md), and
+[package entry-point ADR](./docs/adrs/0015-define-package-entry-points-and-ui-namespace.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
 
 ```ard
-use cooper/app
-use cooper/style
+use cooper
 use cooper/ui
 
 fn main() {
-  let application = app::new().expect("create Cooper app")
+  let application = cooper::app().expect("create Cooper app")
   let field = ui::input(
     application.context,
     placeholder: "Type here, then press Ctrl+C to quit",
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
     ),
   )
 
@@ -56,6 +56,10 @@ fn main() {
   application.run().expect("run Cooper")
 }
 ```
+
+`cooper` is the application namespace for App, Runtime, and events. `cooper/ui`
+is the view-construction namespace for controls, layout, colors, geometry,
+selection, and rich text. Focused modules remain available for specialized APIs.
 
 App exposes its Runtime as `application.context` and its permanent terminal-sized Root. Controls
 are persistent references: construct them once, add them to the tree, and
@@ -78,7 +82,7 @@ timeline.add(
   300,
   fn(frame: animation::Frame) {
     let applied = mut panel.style()
-    applied.left = style::cells(animation::lerp_int(0, 20, frame.progress))
+    applied.left = ui::cells(animation::lerp_int(0, 20, frame.progress))
     panel.set_style(applied.@)
   },
   ease: animation::out_quad,
@@ -187,30 +191,31 @@ tests.
 ## Module structure
 
 ```text
+cooper.ard       canonical App, Runtime, Root, and event entry point
+ui.ard           canonical controls, layout, color, geometry, and text facade
+ui/              focused UI implementation modules
+  box.ard
+  color.ard
+  editor.ard     shared editable-text engine
+  geometry.ard
+  input.ard
+  scroll_box.ard
+  scrollbar.ard
+  select.ard
+  selection.ard
+  style.ard
+  text.ard
+  text_area.ard
+  text_area_layout.ard
 animation.ard    typed Runtime-owned timelines, easing, and interpolation
-app.ard          public App facade
-box.ard          configurable retained flex container
 clipboard.ard    Runtime-exposed OSC 52 clipboard service
-color.ard        backend-independent RGB color
 event.ard        Cooper-owned events, controls, and propagation state
-geometry.ard     Rect, Geometry, and geometry helpers
-input.ard        retained single-line Input
 notification.ard accepted notification request snapshots
 root.ard         permanent Runtime-bound Root
 runtime.ard      application capabilities, retained ownership, lifecycle, and backend state
-scroll_box.ard   retained two-axis ScrollBox with built-in bars
-scrollbar.ard    standalone vertical/horizontal Scrollbar
-select.ard       compact Select and horizontal TabSelect
-selection.ard    global selection snapshots and local ranges
-style.ard        colors, layout values, stacking, and validation
 terminal_progress.ard terminal progress state and report values
 testing.ard      headless TestApp, frame snapshots, and terminal title history
-text.ard         Text, StyledText spans, and TextStyle
-text_area.ard    retained multiline TextArea
-text_area_layout.ard source-preserving editable text layout
-ui.ard           convenience aliases for built-in controls
 core/            unsupported runtime mechanisms
-  app_runtime.ard
   event_delivery.ard
   focus.ard
   hit.ard
@@ -237,11 +242,13 @@ git diff --check
 go test ./...
 
 cd examples
+python3 test_animation.py
 python3 test_layout_playground.py
 python3 test_text_gallery.py
 python3 test_dashboard.py
 python3 test_stacking.py
 python3 test_input_lab.py
+python3 test_text_area.py
 python3 test_event_inspector.py
 python3 test_links.py
 python3 test_terminal_focus.py

@@ -1,13 +1,7 @@
 use ard/async
 
-use cooper/app
-use cooper/box
-use cooper/color
-use cooper/runtime
-use cooper/event
-use cooper/select as select_control
-use cooper/style
-use cooper/text
+use cooper
+use cooper/ui
 use go:strings
 use go:time
 
@@ -22,9 +16,9 @@ struct ShellState {
 }
 
 struct TabDemo {
-  root: mut box::Box,
-  control: mut select_control::Select,
-  status: mut text::Text,
+  root: mut ui::Box,
+  control: mut ui::Select,
+  status: mut ui::Text,
   show_underline: Bool,
   show_description: Bool,
   show_arrows: Bool,
@@ -32,9 +26,9 @@ struct TabDemo {
 }
 
 struct SelectDemo {
-  root: mut box::Box,
-  control: mut select_control::Select,
-  status: mut text::Text,
+  root: mut ui::Box,
+  control: mut ui::Select,
+  status: mut ui::Text,
   show_description: Bool,
   show_indicator: Bool,
   wrap: Bool,
@@ -46,15 +40,15 @@ enum SliderOrientation {
 }
 
 struct SliderDemo {
-  root: mut box::Box,
+  root: mut ui::Box,
   sliders: [mut LocalSlider],
 }
 
 struct LocalSlider {
   name: Str,
-  panel: mut box::Box,
-  track: mut text::Text,
-  value_label: mut text::Text,
+  panel: mut ui::Box,
+  track: mut ui::Text,
+  value_label: mut ui::Text,
   orientation: SliderOrientation,
   minimum: Int,
   maximum: Int,
@@ -62,7 +56,7 @@ struct LocalSlider {
   step: Int,
   thickness: Int,
   track_width: Int,
-  tint: color::Color,
+  tint: ui::Color,
   direction: Int,
 }
 
@@ -76,11 +70,11 @@ private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
   }
 }
 
-private fn visible(show: Bool) style::Display {
+private fn visible(show: Bool) ui::Display {
   if show {
-    style::Display::flex
+    ui::Display::flex
   } else {
-    style::Display::none
+    ui::Display::none
   }
 }
 
@@ -254,10 +248,10 @@ private fn select_options() [Choice] {
   ]
 }
 
-private fn horizontal_padding() style::Edges {
-  let padding = mut style::edges()
-  padding.left = style::cells(1)
-  padding.right = style::cells(1)
+private fn horizontal_padding() ui::Edges {
+  let padding = mut ui::edges()
+  padding.left = ui::cells(1)
+  padding.right = ui::cells(1)
   padding.@
 }
 
@@ -269,46 +263,46 @@ private fn padded(value: Str, width: Int) Str {
   }
 }
 
-private fn tab_page_style(show: Bool) style::Style {
-  style::new(
+private fn tab_page_style(show: Bool) ui::Style {
+  ui::style(
     display: visible(show),
-    background: color::hex("#001122"),
-    width: style::percent(100.0),
-    height: style::percent(100.0),
-    flex_direction: style::FlexDirection::column,
-    align_items: style::Align::center,
-    gap: style::cells(1),
-    overflow: style::Overflow::hidden,
+    background: ui::hex("#001122"),
+    width: ui::percent(100.0),
+    height: ui::percent(100.0),
+    flex_direction: ui::FlexDirection::column,
+    align_items: ui::Align::center,
+    gap: ui::cells(1),
+    overflow: ui::Overflow::hidden,
   )
 }
 
-private fn control_options(values: [Choice]) [select_control::Option] {
-  let options = mut List::new<select_control::Option>()
+private fn control_options(values: [Choice]) [ui::SelectOption] {
+  let options = mut List::new<ui::SelectOption>()
   for value in values {
     options.push(
-      select_control::option(value.name, description: value.description, value: value.value),
+      ui::select_option(value.name, description: value.description, value: value.value),
     )
   }
   options.@
 }
 
-private fn widget_appearance() select_control::Appearance {
-  select_control::appearance(
-    normal: text::span_style(foreground: color::hex("#E2E8F0")),
-    description: text::span_style(foreground: color::hex("#94A3B8")),
-    highlighted: text::span_style(
-      foreground: color::hex("#FFFFFF"),
-      background: color::hex("#2D3748"),
+private fn widget_appearance() ui::SelectAppearance {
+  ui::select_appearance(
+    normal: ui::span_style(foreground: ui::hex("#E2E8F0")),
+    description: ui::span_style(foreground: ui::hex("#94A3B8")),
+    highlighted: ui::span_style(
+      foreground: ui::hex("#FFFFFF"),
+      background: ui::hex("#2D3748"),
       bold: true,
     ),
-    selected: text::span_style(
-      foreground: color::hex("#FFFFFF"),
-      background: color::hex("#3B82F6"),
+    selected: ui::span_style(
+      foreground: ui::hex("#FFFFFF"),
+      background: ui::hex("#3B82F6"),
       reverse: false,
       bold: true,
     ),
-    selected_description: text::span_style(foreground: color::hex("#DBEAFE")),
-    indicator: text::span_style(foreground: color::hex("#94A3B8"), bold: true),
+    selected_description: ui::span_style(foreground: ui::hex("#DBEAFE")),
+    indicator: ui::span_style(foreground: ui::hex("#94A3B8"), bold: true),
   )
 }
 
@@ -320,10 +314,10 @@ private fn render_tabs(demo: mut TabDemo) {
     _ => (),
   }
   mut focus_text = "Tab selector is BLURRED"
-  mut focus_color = color::hex("#FF0000")
+  mut focus_color = ui::hex("#FF0000")
   if demo.control.is_focused() {
     focus_text = "Tab selector is FOCUSED"
-    focus_color = color::hex("#00FF00")
+    focus_color = ui::hex("#00FF00")
   }
   mut underline_text = "off"
   if demo.show_underline {
@@ -344,18 +338,18 @@ private fn render_tabs(demo: mut TabDemo) {
     wrap_text = "on"
   }
   demo.status.set_content(
-    text::styled_text(
+    ui::styled_text(
       [
-        text::span(
+        ui::span(
           "Highlighted: {highlighted.option.label} ({highlighted.option.value.or("")}) - Index: {highlighted.index}\n",
-          style: text::span_style(foreground: color::hex("#00FF00")),
+          style: ui::span_style(foreground: ui::hex("#00FF00")),
         ),
-        text::span("{selected}\n", style: text::span_style(foreground: color::hex("#FFFF00"))),
-        text::span("{description_notice}", style: text::span_style(foreground: color::hex("#CBD5E1"))),
-        text::span("{focus_text}\n", style: text::span_style(foreground: focus_color)),
-        text::span(
+        ui::span("{selected}\n", style: ui::span_style(foreground: ui::hex("#FFFF00"))),
+        ui::span("{description_notice}", style: ui::span_style(foreground: ui::hex("#CBD5E1"))),
+        ui::span("{focus_text}\n", style: ui::span_style(foreground: focus_color)),
+        ui::span(
           "Underline: {underline_text} | Description: {description_text} | Scroll arrows: {arrows_text} | Wrap: {wrap_text}",
-          style: text::span_style(foreground: color::hex("#CCCCCC")),
+          style: ui::span_style(foreground: ui::hex("#CCCCCC")),
         ),
       ],
     ),
@@ -364,7 +358,7 @@ private fn render_tabs(demo: mut TabDemo) {
 
 private fn apply_tab_config(demo: mut TabDemo) {
   demo.control.set_tab_config(
-    select_control::tab_config(
+    ui::select_tab_config(
       tab_width: 12,
       show_description: demo.show_description,
       show_underline: demo.show_underline,
@@ -375,83 +369,83 @@ private fn apply_tab_config(demo: mut TabDemo) {
   render_tabs(demo)
 }
 
-private fn make_tab_demo(ctx: mut runtime::Runtime) mut TabDemo {
-  let root = box::new(ctx, styles: tab_page_style(true))
-  let panel = box::new(
+private fn make_tab_demo(ctx: mut cooper::Runtime) mut TabDemo {
+  let root = ui::box(ctx, styles: tab_page_style(true))
+  let panel = ui::box(
     ctx,
     title: "TAB SELECT",
-    styles: style::new(
-      background: color::hex("#1E293B"),
-      border: style::Border::rounded,
-      border_color: color::hex("#3B82F6"),
-      width: style::percent(100.0),
-      max_width: style::cells(72),
-      height: style::cells(6),
+    styles: ui::style(
+      background: ui::hex("#1E293B"),
+      border: ui::Border::rounded,
+      border_color: ui::hex("#3B82F6"),
+      width: ui::percent(100.0),
+      max_width: ui::cells(72),
+      height: ui::cells(6),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      justify_content: style::Justify::center,
-      overflow: style::Overflow::hidden,
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let control = select_control::tabs(
+  let control = ui::tab_select(
     ctx,
     control_options(tab_options()),
-    config: select_control::tab_config(tab_width: 12),
+    config: ui::select_tab_config(tab_width: 12),
     appearance: widget_appearance(),
-    styles: style::new(width: style::cells(64), flex_shrink: 0.0),
+    styles: ui::style(width: ui::cells(64), flex_shrink: 0.0),
   )
   panel.add(control)
   root.add(panel)
 
-  let details = box::new(
+  let details = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      max_width: style::cells(90),
-      height: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      max_width: ui::cells(90),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      flex_direction: style::FlexDirection::row,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let legend_panel = box::new(
+  let legend_panel = ui::box(
     ctx,
     title: "KEY CONTROLS",
-    styles: style::new(
-      border: style::Border::single,
-      border_color: color::hex("#475569"),
-      width: style::percent(42.0),
-      height: style::percent(100.0),
-      overflow: style::Overflow::hidden,
+    styles: ui::style(
+      border: ui::Border::single,
+      border_color: ui::hex("#475569"),
+      width: ui::percent(42.0),
+      height: ui::percent(100.0),
+      overflow: ui::Overflow::hidden,
     ),
   )
   legend_panel.add(
-    text::new(
+    ui::text(
       ctx,
       content: "←/→ or [/]: Navigate tabs\nEnter: Select tab\nF: Toggle focus\nU: Toggle underline\nP: Toggle description\nS: Toggle scroll arrows\nW: Toggle wrap selection",
       selectable: false,
-      text_style: text::style(foreground: color::hex("#AAAAAA")),
+      text_style: ui::text_style(foreground: ui::hex("#AAAAAA")),
     ),
   )
-  let status_panel = box::new(
+  let status_panel = ui::box(
     ctx,
     title: "STATUS",
-    styles: style::new(
-      border: style::Border::single,
-      border_color: color::hex("#475569"),
-      width: style::cells(1),
-      height: style::percent(100.0),
+    styles: ui::style(
+      border: ui::Border::single,
+      border_color: ui::hex("#475569"),
+      width: ui::cells(1),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let status = text::new(
+  let status = ui::text(
     ctx,
     content: "",
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
     selectable: false,
   )
   status_panel.add(status)
@@ -470,15 +464,15 @@ private fn make_tab_demo(ctx: mut runtime::Runtime) mut TabDemo {
   })
 }
 
-private fn select_page_style(show: Bool) style::Style {
-  style::new(
+private fn select_page_style(show: Bool) ui::Style {
+  ui::style(
     display: visible(show),
-    background: color::hex("#001122"),
-    width: style::percent(100.0),
-    height: style::percent(100.0),
-    flex_direction: style::FlexDirection::row,
-    gap: style::cells(1),
-    overflow: style::Overflow::hidden,
+    background: ui::hex("#001122"),
+    width: ui::percent(100.0),
+    height: ui::percent(100.0),
+    flex_direction: ui::FlexDirection::row,
+    gap: ui::cells(1),
+    overflow: ui::Overflow::hidden,
   )
 }
 
@@ -490,10 +484,10 @@ private fn render_select(demo: mut SelectDemo) {
     _ => (),
   }
   mut focus_text = "Select element is BLURRED"
-  mut focus_color = color::hex("#FF0000")
+  mut focus_color = ui::hex("#FF0000")
   if demo.control.is_focused() {
     focus_text = "Select element is FOCUSED"
-    focus_color = color::hex("#00FF00")
+    focus_color = ui::hex("#00FF00")
   }
   mut description_text = "off"
   if demo.show_description {
@@ -508,18 +502,18 @@ private fn render_select(demo: mut SelectDemo) {
     wrap_text = "on"
   }
   demo.status.set_content(
-    text::styled_text(
+    ui::styled_text(
       [
-        text::span(
+        ui::span(
           "Selection: {highlighted.option.label} ({highlighted.option.value.or("")}) - Index: {highlighted.index}\n",
-          style: text::span_style(foreground: color::hex("#00FF00")),
+          style: ui::span_style(foreground: ui::hex("#00FF00")),
         ),
-        text::span("{focus_text}\n", style: text::span_style(foreground: focus_color)),
-        text::span(
+        ui::span("{focus_text}\n", style: ui::span_style(foreground: focus_color)),
+        ui::span(
           "Indicator: {indicator_text} | Description: {description_text} | Wrap: {wrap_text}\n",
-          style: text::span_style(foreground: color::hex("#CCCCCC")),
+          style: ui::span_style(foreground: ui::hex("#CCCCCC")),
         ),
-        text::span("{selected}", style: text::span_style(foreground: color::hex("#FF00FF"), bold: true)),
+        ui::span("{selected}", style: ui::span_style(foreground: ui::hex("#FF00FF"), bold: true)),
       ],
     ),
   )
@@ -527,7 +521,7 @@ private fn render_select(demo: mut SelectDemo) {
 
 private fn apply_select_config(demo: mut SelectDemo) {
   demo.control.set_config(
-    select_control::config(
+    ui::select_config(
       show_descriptions: demo.show_description,
       show_indicator: demo.show_indicator,
       fast_step: 5,
@@ -537,80 +531,80 @@ private fn apply_select_config(demo: mut SelectDemo) {
   render_select(demo)
 }
 
-private fn make_select_demo(ctx: mut runtime::Runtime) mut SelectDemo {
-  let root = box::new(ctx, styles: select_page_style(false))
-  let list_panel = box::new(
+private fn make_select_demo(ctx: mut cooper::Runtime) mut SelectDemo {
+  let root = ui::box(ctx, styles: select_page_style(false))
+  let list_panel = ui::box(
     ctx,
     title: "SELECT",
-    styles: style::new(
-      border: style::Border::rounded,
-      border_color: color::hex("#3B82F6"),
-      position: style::Position::relative,
-      width: style::percent(56.0),
-      height: style::percent(100.0),
-      padding: style::edges(style::cells(1)),
-      overflow: style::Overflow::hidden,
+    styles: ui::style(
+      border: ui::Border::rounded,
+      border_color: ui::hex("#3B82F6"),
+      position: ui::Position::relative,
+      width: ui::percent(56.0),
+      height: ui::percent(100.0),
+      padding: ui::edges(ui::cells(1)),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let control = select_control::new(
+  let control = ui::select_input(
     ctx,
     control_options(select_options()),
-    config: select_control::config(show_indicator: true),
+    config: ui::select_config(show_indicator: true),
     appearance: widget_appearance(),
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
   )
   list_panel.add(control)
   root.add(list_panel)
 
-  let side = box::new(
+  let side = ui::box(
     ctx,
-    styles: style::new(
-      width: style::cells(1),
-      height: style::percent(100.0),
+    styles: ui::style(
+      width: ui::cells(1),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let legend = box::new(
+  let legend = ui::box(
     ctx,
     title: "KEY CONTROLS",
-    styles: style::new(
-      border: style::Border::single,
-      border_color: color::hex("#475569"),
-      width: style::percent(100.0),
-      height: style::cells(10),
+    styles: ui::style(
+      border: ui::Border::single,
+      border_color: ui::hex("#475569"),
+      width: ui::percent(100.0),
+      height: ui::cells(10),
       flex_shrink: 0.0,
-      padding: style::edges(style::cells(1)),
-      overflow: style::Overflow::hidden,
+      padding: ui::edges(ui::cells(1)),
+      overflow: ui::Overflow::hidden,
     ),
   )
   legend.add(
-    text::new(
+    ui::text(
       ctx,
       content: "↑/↓ or j/k: Navigate items\nShift+↑/↓ or J/K: Fast scroll\nEnter: Select item\nF: Toggle focus\nD: Toggle descriptions\nS: Toggle scroll indicator\nW: Toggle wrap selection",
       selectable: false,
-      text_style: text::style(foreground: color::hex("#AAAAAA")),
+      text_style: ui::text_style(foreground: ui::hex("#AAAAAA")),
     ),
   )
-  let status_panel = box::new(
+  let status_panel = ui::box(
     ctx,
     title: "STATUS",
-    styles: style::new(
-      border: style::Border::single,
-      border_color: color::hex("#475569"),
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      border: ui::Border::single,
+      border_color: ui::hex("#475569"),
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let status = text::new(
+  let status = ui::text(
     ctx,
     content: "",
-    styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
     selectable: false,
   )
   status_panel.add(status)
@@ -628,15 +622,15 @@ private fn make_select_demo(ctx: mut runtime::Runtime) mut SelectDemo {
   })
 }
 
-private fn slider_page_style(show: Bool) style::Style {
-  style::new(
+private fn slider_page_style(show: Bool) ui::Style {
+  ui::style(
     display: visible(show),
-    background: color::hex("#1A1B26"),
-    width: style::percent(100.0),
-    height: style::percent(100.0),
-    flex_direction: style::FlexDirection::row,
-    gap: style::cells(1),
-    overflow: style::Overflow::hidden,
+    background: ui::hex("#1A1B26"),
+    width: ui::percent(100.0),
+    height: ui::percent(100.0),
+    flex_direction: ui::FlexDirection::row,
+    gap: ui::cells(1),
+    overflow: ui::Overflow::hidden,
   )
 }
 
@@ -681,14 +675,14 @@ private fn render_slider(slider: mut LocalSlider) {
     slider.track.set_content(vertical_bar(slider))
   }
   if slider.panel.is_focused() {
-    slider.panel.set_border_color(color::hex("#FFFFFF"))
+    slider.panel.set_border_color(ui::hex("#FFFFFF"))
   } else {
     slider.panel.set_border_color(slider.tint)
   }
 }
 
 private fn make_horizontal_slider(
-  ctx: mut runtime::Runtime,
+  ctx: mut cooper::Runtime,
   name: Str,
   detail: Str,
   value: Int,
@@ -696,52 +690,52 @@ private fn make_horizontal_slider(
   maximum: Int,
   step: Int,
   thickness: Int,
-  tint: color::Color,
+  tint: ui::Color,
 ) mut LocalSlider {
-  let panel = box::new(
+  let panel = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#24283B"),
-      border: style::Border::single,
+    styles: ui::style(
+      background: ui::hex("#24283B"),
+      border: ui::Border::single,
       border_color: tint,
-      width: style::percent(100.0),
-      height: style::cells(thickness + 4),
+      width: ui::percent(100.0),
+      height: ui::cells(thickness + 4),
       flex_shrink: 0.0,
       padding: horizontal_padding(),
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
   panel.set_focusable(true)
-  let label = text::new(
+  let label = ui::text(
     ctx,
-    content: text::styled_text(
+    content: ui::styled_text(
       [
-        text::span(name, style: text::span_style(foreground: tint, bold: true)),
-        text::span(" - {detail}", style: text::span_style(foreground: color::hex("#565F89"))),
+        ui::span(name, style: ui::span_style(foreground: tint, bold: true)),
+        ui::span(" - {detail}", style: ui::span_style(foreground: ui::hex("#565F89"))),
       ],
     ),
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
     selectable: false,
   )
-  let value_label = text::new(
+  let value_label = ui::text(
     ctx,
     content: "",
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
     selectable: false,
-    text_style: text::style(foreground: tint, bold: true),
+    text_style: ui::text_style(foreground: tint, bold: true),
   )
-  let track = text::new(
+  let track = ui::text(
     ctx,
     content: "",
-    styles: style::new(
-      width: style::cells(48),
-      height: style::cells(thickness),
+    styles: ui::style(
+      width: ui::cells(48),
+      height: ui::cells(thickness),
       flex_shrink: 0.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
     selectable: false,
-    overflow: text::TextOverflow::clip,
-    text_style: text::style(foreground: tint),
+    overflow: ui::TextOverflow::clip,
+    text_style: ui::text_style(foreground: tint),
   )
   panel.add(label)
   panel.add(value_label)
@@ -766,7 +760,7 @@ private fn make_horizontal_slider(
 }
 
 private fn make_vertical_slider(
-  ctx: mut runtime::Runtime,
+  ctx: mut cooper::Runtime,
   name: Str,
   width: Int,
   value: Int,
@@ -774,48 +768,48 @@ private fn make_vertical_slider(
   maximum: Int,
   step: Int,
   track_width: Int,
-  tint: color::Color,
+  tint: ui::Color,
 ) mut LocalSlider {
-  let panel = box::new(
+  let panel = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#24283B"),
-      border: style::Border::single,
+    styles: ui::style(
+      background: ui::hex("#24283B"),
+      border: ui::Border::single,
       border_color: tint,
-      width: style::cells(width),
-      height: style::percent(100.0),
+      width: ui::cells(width),
+      height: ui::percent(100.0),
       flex_shrink: 0.0,
-      align_items: style::Align::center,
-      overflow: style::Overflow::hidden,
+      align_items: ui::Align::center,
+      overflow: ui::Overflow::hidden,
     ),
   )
   panel.set_focusable(true)
-  let label = text::new(
+  let label = ui::text(
     ctx,
     content: name,
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
     selectable: false,
-    text_style: text::style(foreground: tint, bold: true),
+    text_style: ui::text_style(foreground: tint, bold: true),
   )
-  let track = text::new(
+  let track = ui::text(
     ctx,
     content: "",
-    styles: style::new(
-      width: style::cells(track_width),
-      height: style::cells(12),
+    styles: ui::style(
+      width: ui::cells(track_width),
+      height: ui::cells(12),
       flex_shrink: 0.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
     selectable: false,
-    overflow: text::TextOverflow::clip,
-    text_style: text::style(foreground: tint),
+    overflow: ui::TextOverflow::clip,
+    text_style: ui::text_style(foreground: tint),
   )
-  let value_label = text::new(
+  let value_label = ui::text(
     ctx,
     content: "",
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
     selectable: false,
-    text_style: text::style(foreground: tint, bold: true),
+    text_style: ui::text_style(foreground: tint, bold: true),
   )
   panel.add(label)
   panel.add(track)
@@ -839,14 +833,14 @@ private fn make_vertical_slider(
   slider
 }
 
-private fn slider_action(action: mut text::Text, slider: mut LocalSlider) {
+private fn slider_action(action: mut ui::Text, slider: mut LocalSlider) {
   action.set_content(
     "Focused {slider.name} · Value {slider.value} · arrows adjust · R reset · 1-7 focus",
   )
-  action.set_text_style(text::style(foreground: slider.tint, bold: true))
+  action.set_text_style(ui::text_style(foreground: slider.tint, bold: true))
 }
 
-private fn update_slider_from_mouse(slider: mut LocalSlider, received: mut event::MouseEvent) {
+private fn update_slider_from_mouse(slider: mut LocalSlider, received: mut cooper::MouseEvent) {
   let screen = slider.track.layout().screen
   if slider.orientation == SliderOrientation::horizontal {
     let position = clamp(received.x - screen.x, 0, screen.width - 1)
@@ -858,7 +852,7 @@ private fn update_slider_from_mouse(slider: mut LocalSlider, received: mut event
   render_slider(slider)
 }
 
-private fn reset_sliders(sliders: [mut LocalSlider], action: mut text::Text) {
+private fn reset_sliders(sliders: [mut LocalSlider], action: mut ui::Text) {
   let defaults = [25, 100, 25, 0, 0, 50, 50]
   for slider, index in sliders {
     slider.value = defaults.at(index).expect("slider default")
@@ -866,18 +860,18 @@ private fn reset_sliders(sliders: [mut LocalSlider], action: mut text::Text) {
     render_slider(slider)
   }
   action.set_content("*** All sliders reset to default values ***")
-  action.set_text_style(text::style(foreground: color::hex("#FF00FF"), bold: true))
+  action.set_text_style(ui::text_style(foreground: ui::hex("#FF00FF"), bold: true))
 }
 
-private fn make_slider_page(ctx: mut runtime::Runtime) SliderDemo {
-  let root = box::new(ctx, styles: slider_page_style(false))
-  let horizontal = box::new(
+private fn make_slider_page(ctx: mut cooper::Runtime) SliderDemo {
+  let root = ui::box(ctx, styles: slider_page_style(false))
+  let horizontal = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(64.0),
-      height: style::percent(100.0),
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+    styles: ui::style(
+      width: ui::percent(64.0),
+      height: ui::percent(100.0),
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
   let h1 = make_horizontal_slider(
@@ -889,7 +883,7 @@ private fn make_slider_page(ctx: mut runtime::Runtime) SliderDemo {
     50,
     1,
     1,
-    color::hex("#E0AF68"),
+    ui::hex("#E0AF68"),
   )
   let h2 = make_horizontal_slider(
     ctx,
@@ -900,7 +894,7 @@ private fn make_slider_page(ctx: mut runtime::Runtime) SliderDemo {
     200,
     5,
     3,
-    color::hex("#BB9AF7"),
+    ui::hex("#BB9AF7"),
   )
   let h3 = make_horizontal_slider(
     ctx,
@@ -911,28 +905,28 @@ private fn make_slider_page(ctx: mut runtime::Runtime) SliderDemo {
     50,
     1,
     1,
-    color::hex("#FF6B6B"),
+    ui::hex("#FF6B6B"),
   )
   horizontal.add(h1.panel)
   horizontal.add(h2.panel)
   horizontal.add(h3.panel)
 
-  let vertical = box::new(
+  let vertical = ui::box(
     ctx,
-    styles: style::new(
-      width: style::cells(1),
-      height: style::percent(100.0),
+    styles: ui::style(
+      width: ui::cells(1),
+      height: ui::percent(100.0),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      flex_direction: style::FlexDirection::row,
-      gap: style::cells(1),
-      overflow: style::Overflow::hidden,
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(1),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let v1 = make_vertical_slider(ctx, "V1", 7, 0, -10, 10, 1, 1, color::hex("#F7768E"))
-  let v2 = make_vertical_slider(ctx, "V2", 8, 0, -50, 50, 5, 3, color::hex("#FF9E64"))
-  let v3 = make_vertical_slider(ctx, "V3", 9, 50, 0, 100, 10, 5, color::hex("#73DACA"))
-  let va = make_vertical_slider(ctx, "VA", 7, 50, 0, 100, 2, 2, color::hex("#FF6B6B"))
+  let v1 = make_vertical_slider(ctx, "V1", 7, 0, -10, 10, 1, 1, ui::hex("#F7768E"))
+  let v2 = make_vertical_slider(ctx, "V2", 8, 0, -50, 50, 5, 3, ui::hex("#FF9E64"))
+  let v3 = make_vertical_slider(ctx, "V3", 9, 50, 0, 100, 10, 5, ui::hex("#73DACA"))
+  let va = make_vertical_slider(ctx, "VA", 7, 50, 0, 100, 2, 2, ui::hex("#FF6B6B"))
   vertical.add(v1.panel)
   vertical.add(v2.panel)
   vertical.add(v3.panel)
@@ -942,18 +936,18 @@ private fn make_slider_page(ctx: mut runtime::Runtime) SliderDemo {
   SliderDemo{root: root, sliders: [h1, h2, h3, v1, v2, v3, va]}
 }
 
-private fn nav_style(active: Bool) style::Style {
-  mut background = color::hex("#1E293B")
+private fn nav_style(active: Bool) ui::Style {
+  mut background = ui::hex("#1E293B")
   if active {
-    background = color::hex("#3B82F6")
+    background = ui::hex("#3B82F6")
   }
-  style::new(
+  ui::style(
     background: background,
-    width: style::cells(18),
-    height: style::cells(1),
+    width: ui::cells(18),
+    height: ui::cells(1),
     flex_shrink: 0.0,
-    align_items: style::Align::center,
-    justify_content: style::Justify::center,
+    align_items: ui::Align::center,
+    justify_content: ui::Justify::center,
   )
 }
 
@@ -962,10 +956,10 @@ private fn show_page(
   state: mut ShellState,
   tab_demo: mut TabDemo,
   select_demo: mut SelectDemo,
-  slider_page: mut box::Box,
+  slider_page: mut ui::Box,
   sliders: [mut LocalSlider],
-  nav: [mut box::Box],
-  action: mut text::Text,
+  nav: [mut ui::Box],
+  action: mut ui::Text,
 ) {
   state.page = index
   tab_demo.root.set_style(tab_page_style(index == 0))
@@ -983,12 +977,12 @@ private fn show_page(
     0 => {
       tab_demo.control.focus()
       action.set_content("TAB SELECT · Navigate, configure, and activate retained tabs")
-      action.set_text_style(text::style(foreground: color::hex("#38BDF8"), bold: true))
+      action.set_text_style(ui::text_style(foreground: ui::hex("#38BDF8"), bold: true))
     },
     1 => {
       select_demo.control.focus()
       action.set_content("SELECT · Compact input with anchored option menu")
-      action.set_text_style(text::style(foreground: color::hex("#A78BFA"), bold: true))
+      action.set_text_style(ui::text_style(foreground: ui::hex("#A78BFA"), bold: true))
     },
     _ => {
       sliders.at(0).expect("first slider").panel.focus()
@@ -998,85 +992,85 @@ private fn show_page(
 }
 
 fn main() {
-  let application = app::new().expect("create Cooper widget lab")
+  let application = cooper::app().expect("create Cooper widget lab")
   defer application.destroy()
   let ctx = application.context
 
-  let root = box::new(
+  let root = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#001122"),
-      width: style::percent(100.0),
-      height: style::percent(100.0),
-      overflow: style::Overflow::hidden,
+    styles: ui::style(
+      background: ui::hex("#001122"),
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      overflow: ui::Overflow::hidden,
     ),
   )
-  let header = box::new(
+  let header = ui::box(
     ctx,
-    styles: style::new(
-      background: color::hex("#0F172A"),
-      width: style::percent(100.0),
-      height: style::cells(4),
+    styles: ui::style(
+      background: ui::hex("#0F172A"),
+      width: ui::percent(100.0),
+      height: ui::cells(4),
       flex_shrink: 0.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
   header.add(
-    text::new(
+    ui::text(
       ctx,
       content: "WIDGET LAB — built-in Selects + app-local sliders",
-      styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+      styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
       selectable: false,
-      text_style: text::style(foreground: color::hex("#38BDF8"), bold: true),
+      text_style: ui::text_style(foreground: ui::hex("#38BDF8"), bold: true),
     ),
   )
-  let nav_row = box::new(
+  let nav_row = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_shrink: 0.0,
-      flex_direction: style::FlexDirection::row,
-      gap: style::cells(1),
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(1),
     ),
   )
-  let nav: [mut box::Box] = [
-    box::new(ctx, styles: nav_style(true)),
-    box::new(ctx, styles: nav_style(false)),
-    box::new(ctx, styles: nav_style(false)),
+  let nav: [mut ui::Box] = [
+    ui::box(ctx, styles: nav_style(true)),
+    ui::box(ctx, styles: nav_style(false)),
+    ui::box(ctx, styles: nav_style(false)),
   ]
   let nav_labels = ["F1 TAB SELECT", "F2 SELECT", "F3 SLIDERS"]
   for button, index in nav {
     button.add(
-      text::new(
+      ui::text(
         ctx,
         content: nav_labels.at(index).expect("nav label"),
         selectable: false,
-        text_style: text::style(foreground: color::hex("#FFFFFF"), bold: true),
+        text_style: ui::text_style(foreground: ui::hex("#FFFFFF"), bold: true),
       ),
     )
     nav_row.add(button)
   }
   header.add(nav_row)
-  let action = text::new(
+  let action = ui::text(
     ctx,
     content: "",
-    styles: style::new(width: style::percent(100.0), height: style::cells(1), flex_shrink: 0.0),
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
     selectable: false,
-    wrap: text::TextWrap::none,
-    overflow: text::TextOverflow::ellipsis,
+    wrap: ui::TextWrap::none,
+    overflow: ui::TextOverflow::ellipsis,
   )
   header.add(action)
   root.add(header)
 
-  let body = box::new(
+  let body = ui::box(
     ctx,
-    styles: style::new(
-      width: style::percent(100.0),
-      height: style::cells(1),
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
       flex_grow: 1.0,
       flex_shrink: 1.0,
-      overflow: style::Overflow::hidden,
+      overflow: ui::Overflow::hidden,
     ),
   )
   let tab_demo = make_tab_demo(ctx)
@@ -1098,14 +1092,14 @@ fn main() {
   let _ = tab_demo.control.on_blur(fn() {
     render_tabs(tab_demo)
   })
-  let _ = tab_demo.control.on_highlight(fn(value: select_control::Selection) {
+  let _ = tab_demo.control.on_highlight(fn(value: ui::SelectSelection) {
     render_tabs(tab_demo)
     action.set_content("TAB SELECT navigation moved to {value.option.label}")
   })
-  let _ = tab_demo.control.on_change(fn(value: select_control::Selection) {
+  let _ = tab_demo.control.on_change(fn(value: ui::SelectSelection) {
     render_tabs(tab_demo)
   })
-  let _ = tab_demo.control.on_submit(fn(value: select_control::Selection) {
+  let _ = tab_demo.control.on_submit(fn(value: ui::SelectSelection) {
     render_tabs(tab_demo)
     action.set_content("TAB SELECT activated {value.option.label}")
   })
@@ -1116,14 +1110,14 @@ fn main() {
   let _ = select_demo.control.on_blur(fn() {
     render_select(select_demo)
   })
-  let _ = select_demo.control.on_highlight(fn(value: select_control::Selection) {
+  let _ = select_demo.control.on_highlight(fn(value: ui::SelectSelection) {
     render_select(select_demo)
     action.set_content("SELECT navigation moved to {value.option.label}")
   })
-  let _ = select_demo.control.on_change(fn(value: select_control::Selection) {
+  let _ = select_demo.control.on_change(fn(value: ui::SelectSelection) {
     render_select(select_demo)
   })
-  let _ = select_demo.control.on_submit(fn(value: select_control::Selection) {
+  let _ = select_demo.control.on_submit(fn(value: ui::SelectSelection) {
     render_select(select_demo)
     action.set_content("SELECT activated {value.option.label}")
   })
@@ -1137,8 +1131,8 @@ fn main() {
       }
       slider_action(action, target)
     })
-    let _ = slider.track.on_mouse(fn(received: mut event::MouseEvent) {
-      if (received.event_type == event::MouseEventType::down or received.event_type == event::MouseEventType::drag) and received.button == event::MouseButton::left {
+    let _ = slider.track.on_mouse(fn(received: mut cooper::MouseEvent) {
+      if (received.event_type == cooper::MouseEventType::down or received.event_type == cooper::MouseEventType::drag) and received.button == cooper::MouseButton::left {
         target.panel.focus()
         update_slider_from_mouse(target, received)
         slider_action(action, target)
@@ -1149,15 +1143,15 @@ fn main() {
 
   for button, index in nav {
     let page_index = index
-    let _ = button.on_mouse(fn(received: mut event::MouseEvent) {
-      if received.event_type == event::MouseEventType::down and received.button == event::MouseButton::left {
+    let _ = button.on_mouse(fn(received: mut cooper::MouseEvent) {
+      if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
         show_page(page_index, state, tab_demo, select_demo, slider_page, sliders, nav, action)
       }
     })
   }
 
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
-    if received.event_type == event::KeyEventType::press {
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type == cooper::KeyEventType::press {
       mut handled = true
       if received.matches("f1") {
         show_page(0, state, tab_demo, select_demo, slider_page, sliders, nav, action)

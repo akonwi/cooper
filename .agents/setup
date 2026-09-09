@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+repo_root="$PWD"
+SECONDS=0
+
+echo 'Installing missing system prerequisites'
+packages=()
+for package in build-essential ca-certificates curl git python3; do
+  if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -qx 'install ok installed'; then
+    packages+=("$package")
+  fi
+done
+if ((${#packages[@]})); then
+  sudo apt-get update -qq
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+fi
+
+# Match go.mod and the compiler revision used by CI.
+go_version="$(awk '$1 == "go" { print $2; exit }' go.mod)"
+ard_ref="$(awk '$1 == "ARD_REF:" { print $2; exit }' .github/workflows/ci.yml)"
+[[ "$go_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+[[ "$ard_ref" =~ ^[0-9a-f]{40}$ ]]
+case "$(uname -m)" in
+  x86_64) arch=amd64 ;;
+  aarch64) arch=arm64 ;;
+  *) echo 'Unsupported Go architecture' >&2; exit 1 ;;
+esac
+
+cache="$HOME/.cache/cooper-setup"
+mkdir -p "$cache"
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+go_root="$cache/go-$go_version"
+echo "Preparing Go $go_version (${SECONDS}s elapsed)"
+if [[ ! -x "$go_root/bin/go" ]]; then
+  archive="go${go_version}.linux-${arch}.tar.gz"
+  curl -fsSL --retry 3 "https://go.dev/dl/$archive" -o "$scratch/$archive"
+  curl -fsSL --retry 3 'https://go.dev/dl/?mode=json&include=all' -o "$scratch/releases.json"
+  checksum="$(python3 -c '
+import json, sys
+with open(sys.argv[1]) as source:
+    releases = json.load(source)
+print(next(f["sha256"] for r in releases for f in r["files"] if f["filename"] == sys.argv[2]))
+' "$scratch/releases.json" "$archive")"
+  (cd "$scratch" && printf '%s  %s\n' "$checksum" "$archive" | sha256sum -c -)
+  tar -xzf "$scratch/$archive" -C "$scratch"
+  mv "$scratch/go" "$go_root"
+fi
+sudo ln -sfn "$go_root/bin/go" /usr/local/bin/go
+sudo ln -sfn "$go_root/bin/gofmt" /usr/local/bin/gofmt
+export PATH="/usr/local/bin:$PATH"
+go version
+
+echo "Preparing CI-pinned Ard compiler (${SECONDS}s elapsed)"
+ard_root="$cache/ard-$ard_ref"
+if [[ ! -x "$ard_root/bin/ard" ]]; then
+  git clone --quiet --no-checkout https://github.com/akonwi/ard.git "$scratch/ard"
+  git -C "$scratch/ard" checkout --quiet "$ard_ref"
+  mkdir -p "$scratch/ard/bin"
+  (cd "$scratch/ard/compiler" && go build -o ../bin/ard .)
+  mkdir -p "$ard_root/bin"
+  mv "$scratch/ard/bin/ard" "$ard_root/bin/ard"
+fi
+sudo ln -sfn "$ard_root/bin/ard" /usr/local/bin/ard
+ard version
+
+echo "Downloading Go dependencies (${SECONDS}s elapsed)"
+go mod download
+(cd "$repo_root/examples" && go mod download)
+echo "Cooper orb setup finished in ${SECONDS}s"

@@ -1,11 +1,11 @@
 use ard/unsafe
 
-use cooper/ui/color
-use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/event
+use cooper/runtime
+use cooper/ui/color
 use cooper/ui/geometry
 use cooper/ui/scrollbar as scrollbar_control
 use cooper/ui/style as layout_style
@@ -334,7 +334,9 @@ private fn same_optional_color(first: color::Color?, second: color::Color?) Bool
   match first {
     left => {
       match second {
-        right => left.red == right.red and left.green == right.green and left.blue == right.blue and left.index == right.index and left.terminal_default == right.terminal_default,
+        right => {
+          left.red == right.red and left.green == right.green and left.blue == right.blue and left.index == right.index and left.terminal_default == right.terminal_default
+        },
         _ => false,
       }
     },
@@ -903,7 +905,7 @@ private fn application_root(owner: mut node::Node) (mut node::Node)? {
   found
 }
 
-private fn sync_popup_anchor(popup: mut Popup) {
+private fn sync_popup_anchor(popup: mut Popup) Bool {
   let anchor = popup_anchor(popup)
   match popup.model.presentation {
     SelectConfig => { popup.model.menu_visible = visible_list_items(anchor.height, it) },
@@ -915,6 +917,9 @@ private fn sync_popup_anchor(popup: mut Popup) {
     popup.anchor_width = anchor.width
     popup.anchor_height = anchor.height
     popup.node_ref.apply_style(popup_open_style(popup))
+    true
+  } else {
+    false
   }
 }
 
@@ -1148,6 +1153,13 @@ private fn internal_new(
   retained.set_focusable(true)
   popup_node.bind(popup)
   popup_node.set_focusable(false)
+  popup_node.set_overlay_layout_resolver(fn() Bool {
+    if model.open {
+      sync_popup_anchor(popup)
+    } else {
+      false
+    }
+  })
   popup_node.add(bar.node_ref)
   retained.add(popup_node)
   let pointer_bar = bar

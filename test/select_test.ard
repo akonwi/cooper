@@ -1,11 +1,11 @@
 use ard/testing
 
+use cooper/event
+use cooper/testing as cooper_testing
 use cooper/ui/box
 use cooper/ui/color
-use cooper/event
 use cooper/ui/select as select_control
 use cooper/ui/style
-use cooper/testing as cooper_testing
 use cooper/ui/text
 
 private fn choice(index: Int) select_control::Option {
@@ -490,4 +490,101 @@ test fn select_appearance_patches_trigger_menu_and_arrows() Void!Str {
   
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected appearance Select cleanup")
+}
+
+test fn open_select_popup_tracks_moved_anchor_and_terminal_edge_resize() Void!Str {
+  let application = cooper_testing::new(20, 8)
+  defer application.destroy()
+  let control = select_control::new(
+    application.context,
+    [choice(0), choice(1)],
+    config: select_control::config(show_descriptions: false, max_visible: 2),
+    appearance: select_control::appearance(marker: "* "),
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(2),
+      top: style::cells(1),
+      width: style::cells(10),
+    ),
+  )
+  application.root.add(control)
+  application.render()
+  let _ = control.open()
+  application.render()
+  try testing::assert(
+    application.frame().cell(2, 2).expect("initial menu").grapheme == "*",
+    "Menu starts below anchor",
+  )
+  control.set_style(
+    style::new(
+      position: style::Position::absolute,
+      left: style::cells(7),
+      top: style::cells(7),
+      width: style::cells(10),
+    ),
+  )
+  application.render()
+  try testing::assert(control.layout().screen.x == 7 and control.layout().screen.y == 7, "Owner moves")
+  try testing::assert(
+    application.frame().cell(7, 5).expect("moved menu").grapheme == "*",
+    "Menu moves above bottom-edge owner in the same frame",
+  )
+  try testing::assert(
+    application.frame().cell(2, 2).expect("old menu").grapheme == " ",
+    "Old menu clears",
+  )
+  application.resize(12, 8)
+  try testing::assert(control.is_open(), "Resize preserves open state")
+  try testing::assert(
+    application.frame().cell(7, 5).expect("resized menu").grapheme == "*",
+    "Menu stays aligned after narrowing",
+  )
+  application.click(8, 6)
+  testing::assert(
+    control.selected().expect("moved selection").index == 1,
+    "Hit routing uses moved menu geometry",
+  )
+}
+
+test fn open_select_popup_tracks_parent_layout_and_height_resize() Void!Str {
+  let application = cooper_testing::new(20, 10)
+  defer application.destroy()
+  let parent = box::new(
+    application.context,
+    styles: style::new(width: style::cells(15), height: style::cells(8)),
+  )
+  let spacer = box::new(
+    application.context,
+    styles: style::new(height: style::cells(1), flex_shrink: 0.0),
+  )
+  let control = select_control::new(
+    application.context,
+    [choice(0), choice(1)],
+    config: select_control::config(show_descriptions: false, max_visible: 2),
+    appearance: select_control::appearance(marker: "* "),
+    styles: style::new(width: style::cells(10)),
+  )
+  parent.add(spacer)
+  parent.add(control)
+  application.root.add(parent)
+  application.render()
+  let _ = control.open()
+  application.render()
+  spacer.set_style(style::new(height: style::cells(5), flex_shrink: 0.0))
+  application.render()
+  try testing::assert(
+    application.frame().cell(0, 6).expect("flow menu").grapheme == "*",
+    "Sibling growth moves open menu without a Select setter",
+  )
+  application.resize(20, 6)
+  try testing::assert(control.layout().screen.y == 5, "Owner remains on final terminal row")
+  try testing::assert(
+    application.frame().cell(0, 3).expect("flipped menu").grapheme == "*",
+    "Height resize flips menu above owner in the same frame",
+  )
+  application.click(1, 4)
+  testing::assert(
+    control.selected().expect("flow selection").index == 1,
+    "Flipped menu remains clickable",
+  )
 }

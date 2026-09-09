@@ -1,10 +1,10 @@
 use ard/unsafe
 
-use cooper/ui/color
 use cooper/core/event_delivery
 use cooper/core/paint
 use cooper/core/runtime
 use cooper/event
+use cooper/ui/color
 use cooper/ui/geometry
 use cooper/ui/style
 use go:github.com/akonwi/cooper/ffi/core/backend/retainedyoga as yoga
@@ -48,11 +48,11 @@ impl MountContext {
 
 trait Renderable {
   fn node() mut Node
-
+  
   fn mut mount(ctx: MountContext)
-
+  
   fn paint(ctx: mut paint::Context)
-
+  
   fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition
 }
 
@@ -223,6 +223,7 @@ struct Node {
   cleanup_listeners: [fn()],
   mouse_cursor_resolver: (fn(Int, Int) event::MouseCursor)?,
   focus_reveal_resolver: (fn() geometry::Rect)?,
+  overlay_layout_resolver: (fn() Bool)?,
   selection_hit: (fn(Int, Int) Bool)?,
   selection_update: (fn(LocalSelection?) SelectionResult)?,
   selection_lock: (fn(Int, Int, Int, Int) SelectionExpansion?)?,
@@ -441,6 +442,7 @@ fn create(
     cleanup_listeners: [],
     mouse_cursor_resolver: Maybe::new<fn(Int, Int) event::MouseCursor>(),
     focus_reveal_resolver: Maybe::new<fn() geometry::Rect>(),
+    overlay_layout_resolver: Maybe::new<fn() Bool>(),
     selection_hit: Maybe::new<fn(Int, Int) Bool>(),
     selection_update: Maybe::new<fn(LocalSelection?) SelectionResult>(),
     selection_lock: Maybe::new<fn(Int, Int, Int, Int) SelectionExpansion?>(),
@@ -464,16 +466,16 @@ impl Node {
     }
     self.owner = Maybe::new<Any>(owner)
   }
-
+  
   fn owner_as_renderable() mut Renderable {
     let opaque = self.owner.expect("retained Node owner")
     unsafe::cast<mut Renderable>(opaque).expect("retained Node owner must be mut Renderable")
   }
-
+  
   fn child_count() Int {
     self.children.size()
   }
-
+  
   fn public_child_count() Int {
     mut count = 0
     for child in self.children {
@@ -483,7 +485,7 @@ impl Node {
     }
     count
   }
-
+  
   fn public_child_index(index: Int, moving: mut Node) Int {
     if index < 0 {
       panic("child index must be non-negative")
@@ -506,7 +508,7 @@ impl Node {
     }
     actual_index
   }
-
+  
   fn mut find(target_id: Int) (mut Node)? {
     if self.id == target_id {
       Maybe::new<mut Node>(self)
@@ -520,33 +522,33 @@ impl Node {
       found
     }
   }
-
+  
   fn mut mark_internal_overlay() {
     if self.parent.is_some() or self.destroyed {
       panic("only a live detached Node can become an internal overlay")
     }
     self.internal_overlay = true
   }
-
+  
   fn mut mark_application_root() {
     if self.application_root or self.destroyed or self.parent.is_some() or self.mounted_root {
       panic("only a live detached retained Node can become the application Root")
     }
     self.application_root = true
   }
-
+  
   fn can_have_children() Bool {
     (not self.measured) and not self.destroyed
   }
-
+  
   fn is_focusable() Bool {
     self.focusable and (not self.destroyed) and (not self.destroying)
   }
-
+  
   fn is_focused() Bool {
     self.focused and not self.destroyed
   }
-
+  
   fn mut set_focused(value: Bool) {
     if self.focused != value {
       self.focused = value
@@ -560,7 +562,7 @@ impl Node {
       self.request_redraw()
     }
   }
-
+  
   fn mut focus() Bool {
     if self.destroyed or not self.focusable {
       false
@@ -568,17 +570,17 @@ impl Node {
       (self.mount_focus_base.or(reject_focus))(self.id)
     }
   }
-
+  
   fn mut blur() {
     if self.focused {
       (self.mount_blur_base.or(ignore_blur))(self.id)
     }
   }
-
+  
   fn accepts_pointer() Bool {
     (not self.application_root) and (not self.destroyed) and (not self.destroying) and self.owner.is_some()
   }
-
+  
   fn mut stacking_order() [mut Node] {
     if self.stacking_dirty {
       let ordered = mut List::new<mut Node>()
@@ -593,64 +595,64 @@ impl Node {
     }
     self.stacking_children
   }
-
+  
   private fn mut invalidate_stacking() {
     self.stacking_children = []
     self.stacking_dirty = true
   }
-
+  
   fn is_selectable() Bool {
     self.selection_hit.is_some() and self.selection_update.is_some() and (not self.destroyed) and (not self.destroying)
   }
-
+  
   fn mut start_selection(local_x: Int, local_y: Int) Bool {
     (self.selection_start_base)(self.id, local_x, local_y)
   }
-
+  
   fn mut update_selection(local_x: Int, local_y: Int, finish: Bool) Bool {
     (self.selection_update_base)(self.id, local_x, local_y, finish)
   }
-
+  
   fn owns_global_selection() Bool {
     (self.selection_owns_base)(self.id)
   }
-
+  
   fn clear_global_selection() {
     (self.selection_clear_base)()
   }
-
+  
   fn selection_accepts(local_x: Int, local_y: Int) Bool {
     match self.selection_hit {
       accepts => accepts(local_x, local_y),
       _ => false,
     }
   }
-
+  
   fn apply_selection(value: LocalSelection?) SelectionResult {
     match self.selection_update {
       update => update(value),
       _ => empty_selection_result(),
     }
   }
-
+  
   fn lock_selection(anchor_x: Int, anchor_y: Int, focus_x: Int, focus_y: Int) SelectionExpansion? {
     match self.selection_lock {
       lock => lock(anchor_x, anchor_y, focus_x, focus_y),
       _ => Maybe::new<SelectionExpansion>(),
     }
   }
-
+  
   fn can_expand_word_selection() Bool {
     self.selection_expand_word.is_some() and self.selection_resolve.is_some()
   }
-
+  
   fn expand_word_selection(local_x: Int, local_y: Int) SelectionExpansion? {
     match self.selection_expand_word {
       expand => expand(local_x, local_y),
       _ => Maybe::new<SelectionExpansion>(),
     }
   }
-
+  
   fn resolve_selection(
     logical_range: SelectionRange,
     source_range: SelectionRange,
@@ -661,7 +663,7 @@ impl Node {
       _ => Maybe::new<SelectionExpansion>(),
     }
   }
-
+  
   fn mut set_selection_callbacks(
     accepts: fn(Int, Int) Bool,
     update: fn(LocalSelection?) SelectionResult,
@@ -680,7 +682,7 @@ impl Node {
     self.selection_resolve = resolve
     self.request_render()
   }
-
+  
   fn mut clear_selection_callbacks() {
     match self.selection_update {
       update => {
@@ -695,7 +697,7 @@ impl Node {
     self.selection_resolve = Maybe::new<fn(SelectionRange, SelectionRange, Int) SelectionExpansion?>()
     self.request_render()
   }
-
+  
   private fn mut next_listener() Int {
     if self.destroyed {
       panic("cannot register a listener on a destroyed retained Node")
@@ -707,7 +709,7 @@ impl Node {
     self.next_listener_id =+ 1
     id
   }
-
+  
   fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
     let id = self.next_listener()
     self.key_listeners.push(KeyListener{id: id, handler: handler})
@@ -715,7 +717,7 @@ impl Node {
       self.remove_key_listener(id)
     }
   }
-
+  
   private fn mut remove_key_listener(id: Int) {
     let retained = mut List::new<KeyListener>()
     for listener in self.key_listeners {
@@ -725,7 +727,7 @@ impl Node {
     }
     self.key_listeners = retained.@
   }
-
+  
   fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
     let id = self.next_listener()
     self.paste_listeners.push(PasteListener{id: id, handler: handler})
@@ -733,7 +735,7 @@ impl Node {
       self.remove_paste_listener(id)
     }
   }
-
+  
   private fn mut remove_paste_listener(id: Int) {
     let retained = mut List::new<PasteListener>()
     for listener in self.paste_listeners {
@@ -743,7 +745,7 @@ impl Node {
     }
     self.paste_listeners = retained.@
   }
-
+  
   fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
     let id = self.next_listener()
     let was_empty = self.mouse_listeners.size() == 0
@@ -755,7 +757,7 @@ impl Node {
       self.remove_mouse_listener(id)
     }
   }
-
+  
   private fn mut remove_mouse_listener(id: Int) {
     let had_listeners = self.mouse_listeners.size() > 0
     let retained = mut List::new<MouseListener>()
@@ -769,7 +771,7 @@ impl Node {
       self.request_redraw()
     }
   }
-
+  
   fn mut on_focus(handler: fn()) fn() {
     let id = self.next_listener()
     self.focus_listeners.push(VoidListener{id: id, handler: handler})
@@ -777,7 +779,7 @@ impl Node {
       self.remove_focus_listener(id)
     }
   }
-
+  
   private fn mut remove_focus_listener(id: Int) {
     let retained = mut List::new<VoidListener>()
     for listener in self.focus_listeners {
@@ -787,7 +789,7 @@ impl Node {
     }
     self.focus_listeners = retained.@
   }
-
+  
   fn mut on_blur(handler: fn()) fn() {
     let id = self.next_listener()
     self.blur_listeners.push(VoidListener{id: id, handler: handler})
@@ -795,7 +797,7 @@ impl Node {
       self.remove_blur_listener(id)
     }
   }
-
+  
   private fn mut remove_blur_listener(id: Int) {
     let retained = mut List::new<VoidListener>()
     for listener in self.blur_listeners {
@@ -805,7 +807,7 @@ impl Node {
     }
     self.blur_listeners = retained.@
   }
-
+  
   fn mut on_value(kind: Int, handler: fn(Str)) fn() {
     let id = self.next_listener()
     self.value_listeners.push(
@@ -819,7 +821,7 @@ impl Node {
       self.remove_value_listener(id)
     }
   }
-
+  
   private fn mut remove_value_listener(id: Int) {
     let retained = mut List::new<ValueListener>()
     for listener in self.value_listeners {
@@ -829,7 +831,7 @@ impl Node {
     }
     self.value_listeners = retained.@
   }
-
+  
   fn emit_value(kind: Int, value: Str) {
     let listeners = self.value_listeners
     for listener in listeners {
@@ -838,36 +840,64 @@ impl Node {
       }
     }
   }
-
+  
   fn mut on_cleanup(handler: fn()) {
     self.require_live()
     self.cleanup_listeners.push(handler)
   }
-
+  
   fn mut set_mouse_cursor_resolver(resolver: fn(Int, Int) event::MouseCursor) {
     self.require_live()
     self.mouse_cursor_resolver = Maybe::new<fn(Int, Int) event::MouseCursor>(resolver)
   }
-
+  
   fn mouse_cursor(local_x: Int, local_y: Int) event::MouseCursor {
     match self.mouse_cursor_resolver {
       resolve => resolve(local_x, local_y),
       _ => event::MouseCursor::default_cursor,
     }
   }
-
+  
   fn mut set_focus_reveal_resolver(resolver: fn() geometry::Rect) {
     self.require_live()
     self.focus_reveal_resolver = Maybe::new<fn() geometry::Rect>(resolver)
   }
-
+  
   fn focus_reveal_bounds() geometry::Rect {
     match self.focus_reveal_resolver {
       resolve => resolve(),
       _ => self.geometry.screen,
     }
   }
-
+  
+  // Framework-only overlays may update their own absolute style after owner
+  // geometry and focus reveal settle. Resolvers must not mutate the tree or
+  // invoke application callbacks; overlays cannot affect their owner's layout.
+  fn mut set_overlay_layout_resolver(resolver: fn() Bool) {
+    self.require_live()
+    if not self.internal_overlay {
+      panic("only internal overlays can resolve anchored layout")
+    }
+    self.overlay_layout_resolver = Maybe::new<fn() Bool>(resolver)
+  }
+  
+  fn reconcile_overlay_layout() Bool {
+    mut changed = false
+    for child in self.children {
+      if child.internal_overlay and not child.destroyed {
+        match child.overlay_layout_resolver {
+          resolve => {
+            if resolve() {
+              changed = true
+            }
+          },
+          _ => (),
+        }
+      }
+    }
+    changed
+  }
+  
   fn emit_key(received: mut event::KeyEvent) {
     let listeners = self.key_listeners
     for listener in listeners {
@@ -876,7 +906,7 @@ impl Node {
       }
     }
   }
-
+  
   fn emit_paste(received: mut event::PasteEvent) {
     let listeners = self.paste_listeners
     for listener in listeners {
@@ -885,7 +915,7 @@ impl Node {
       }
     }
   }
-
+  
   fn emit_mouse(received: mut event::MouseEvent) {
     let listeners = self.mouse_listeners
     for listener in listeners {
@@ -896,31 +926,31 @@ impl Node {
       }
     }
   }
-
+  
   fn can_receive_events() Bool {
     (not self.destroyed) and (not self.destroying) and self.owner.is_some() and self.mount_scope.is_some()
   }
-
+  
   fn can_receive_pointer_events() Bool {
     self.can_receive_events() and self.pointer_route_visible()
   }
-
+  
   fn pointer_route_visible() Bool {
     (not self.destroyed) and (not self.destroying) and self.current_style.display != style::Display::none
   }
-
+  
   fn is_mounted() Bool {
     self.mount_scope.is_some()
   }
-
+  
   fn attachment_generation() Int {
     self.mount_generation
   }
-
+  
   fn attachment_tree_version() Int {
     self.context_token.attachment_version
   }
-
+  
   private fn mut bump_attachment_tree_version() {
     if self.context_token.attachment_version == math::MaxInt {
       panic("retained attachment tree version overflow")
@@ -933,7 +963,7 @@ impl Node {
       }
     }
   }
-
+  
   fn mut begin_event_route(stop: fn()) {
     if self.context_token.active_routes == math::MaxInt {
       panic("retained event route depth overflow")
@@ -944,11 +974,11 @@ impl Node {
     self.context_token.active_routes =+ 1
     self.context_token.route_stoppers.push(stop)
   }
-
+  
   fn event_route_invalidated() Bool {
     self.context_token.route_invalidated
   }
-
+  
   fn mut end_event_route() {
     if self.context_token.active_routes < 1 {
       panic("retained event route is not active")
@@ -965,13 +995,13 @@ impl Node {
       self.context_token.route_invalidated = false
     }
   }
-
+  
   fn attachment_dispatch() fn(fn()) Void!event::DispatchError {
     let scope = try self.mount_scope -> _ { stopped_dispatch }
     let base = try self.mount_dispatch_base -> _ { stopped_dispatch }
     runtime::scoped_dispatch(base, scope)
   }
-
+  
   fn mut set_focusable(value: Bool) {
     if self.destroyed {
       panic("cannot change focusability of a destroyed retained Node")
@@ -987,7 +1017,7 @@ impl Node {
       self.request_render()
     }
   }
-
+  
   private fn mut blur_focused_subtree() {
     if self.focused {
       (self.mount_blur_base.or(ignore_blur))(self.id)
@@ -996,27 +1026,27 @@ impl Node {
       child.blur_focused_subtree()
     }
   }
-
+  
   fn request_redraw() {
     if not self.destroyed {
       self.request_render()
     }
   }
-
+  
   private fn has_mount_scope(expected: mut runtime::MountScope) Bool {
     match self.mount_scope {
       current => current == expected,
       _ => false,
     }
   }
-
+  
   private fn is_direct_child(child: mut Node) Bool {
     match child.parent {
       current_parent => current_parent.id == self.id,
       _ => false,
     }
   }
-
+  
   private fn mut mount_subtree(base: fn(fn()) Void!event::DispatchError) {
     if self.destroyed {
       panic("cannot mount a destroyed retained Node")
@@ -1036,7 +1066,7 @@ impl Node {
       self.owner_as_renderable().mount(
         MountContext{dispatch: runtime::scoped_dispatch(base, scope), cancellation: scope.cancellation()},
       )
-
+      
       if self.has_mount_scope(scope) {
         let pending = mut List::new<mut Node>()
         for child in self.children {
@@ -1050,7 +1080,7 @@ impl Node {
       }
     }
   }
-
+  
   private fn mut unmount_subtree() {
     if self.focused {
       (self.mount_blur_base.or(ignore_blur))(self.id)
@@ -1064,7 +1094,7 @@ impl Node {
     }
     self.mount_scope = Maybe::new<mut runtime::MountScope>()
     self.mount_dispatch_base = Maybe::new<fn(fn()) Void!event::DispatchError>()
-
+    
     let pending = mut List::new<mut Node>()
     for child in self.children {
       pending.push(child)
@@ -1073,7 +1103,7 @@ impl Node {
       child.unmount_subtree()
     }
   }
-
+  
   fn mut mount_root(base: fn(fn()) Void!event::DispatchError) {
     if self.destroyed or self.parent.is_some() or self.mounted_root {
       panic("only a live detached retained Node can become the mounted root")
@@ -1084,7 +1114,7 @@ impl Node {
       panic("retained root was unmounted while mounting")
     }
   }
-
+  
   fn mut unmount_root() {
     if (not self.mounted_root) or self.parent.is_some() {
       panic("only the mounted retained root can be unmounted as root")
@@ -1092,31 +1122,31 @@ impl Node {
     self.unmount_subtree()
     self.mounted_root = false
   }
-
+  
   fn layout() geometry::Geometry {
     self.geometry
   }
-
+  
   fn layout_viewport() geometry::Rect {
     self.viewport
   }
-
+  
   fn scroll_x() Int {
     0 - self.children_offset_x
   }
-
+  
   fn scroll_y() Int {
     0 - self.children_offset_y
   }
-
+  
   fn requested_scroll_x() Int {
     self.requested_scroll_x
   }
-
+  
   fn requested_scroll_y() Int {
     self.requested_scroll_y
   }
-
+  
   fn scroll_width() Int {
     mut content_width = 0
     for child in self.children {
@@ -1128,7 +1158,7 @@ impl Node {
     }
     content_width
   }
-
+  
   fn scroll_height() Int {
     mut content_height = 0
     for child in self.children {
@@ -1140,7 +1170,7 @@ impl Node {
     }
     content_height
   }
-
+  
   fn max_scroll_x() Int {
     let content_width = self.scroll_width()
     if content_width > self.geometry.screen.width {
@@ -1149,7 +1179,7 @@ impl Node {
       0
     }
   }
-
+  
   fn max_scroll_y() Int {
     let content_height = self.scroll_height()
     if content_height > self.geometry.screen.height {
@@ -1158,7 +1188,7 @@ impl Node {
       0
     }
   }
-
+  
   fn mut scroll_node_into_view(target: mut Node) Bool {
     mut ancestor = target.parent
     mut found = false
@@ -1179,7 +1209,7 @@ impl Node {
     if not found {
       panic("scroll target must be a descendant")
     }
-
+    
     let viewport = self.geometry.screen
     let bounds = target.geometry.screen
     mut requested_x = self.scroll_x()
@@ -1208,7 +1238,7 @@ impl Node {
     let moved_x = self.set_scroll_x(requested_x)
     self.set_scroll_y(requested_y) or moved_x
   }
-
+  
   fn mut set_scroll_x(requested: Int) Bool {
     if self.destroyed {
       panic("cannot scroll a destroyed retained Node")
@@ -1231,7 +1261,7 @@ impl Node {
     }
     moved
   }
-
+  
   fn mut set_scroll_y(requested: Int) Bool {
     if self.destroyed {
       panic("cannot scroll a destroyed retained Node")
@@ -1254,7 +1284,7 @@ impl Node {
     }
     moved
   }
-
+  
   fn mut scroll_by_x(delta: Int) Bool {
     let current = self.scroll_x()
     mut requested = current
@@ -1267,7 +1297,7 @@ impl Node {
     }
     self.set_scroll_x(requested)
   }
-
+  
   fn mut scroll_by(delta: Int) Bool {
     let current = self.scroll_y()
     mut requested = current
@@ -1280,21 +1310,21 @@ impl Node {
     }
     self.set_scroll_y(requested)
   }
-
+  
   fn is_destroyed() Bool {
     self.destroyed
   }
-
+  
   fn require_live() {
     if self.destroyed or self.destroying {
       panic("cannot use a destroying or destroyed retained Node")
     }
   }
-
+  
   fn style() style::Style {
     self.current_style
   }
-
+  
   private fn mut apply_backend_style(next: style::Style) {
     let effective = mut next
     match self.parent {
@@ -1307,7 +1337,7 @@ impl Node {
     }
     self.yoga.Apply(to_backend_style(effective.@, self.border_width))
   }
-
+  
   fn mut set_border_width(value: Int) {
     if self.destroyed or self.destroying {
       panic("cannot decorate a destroying or destroyed retained Node")
@@ -1321,7 +1351,7 @@ impl Node {
       self.request_render()
     }
   }
-
+  
   fn mut apply_style(next: style::Style) {
     if self.destroyed {
       panic("cannot style a destroyed retained Node")
@@ -1355,7 +1385,7 @@ impl Node {
     }
     self.request_render()
   }
-
+  
   fn mut add(child: mut Node, index: Int?) {
     if self.destroyed or self.destroying or child.destroyed or child.destroying {
       panic("cannot attach a destroying or destroyed retained Node")
@@ -1372,7 +1402,7 @@ impl Node {
     if self == child {
       panic("a retained Node cannot contain itself")
     }
-
+    
     mut ancestor = Maybe::new<mut Node>(self)
     mut checking = true
     while checking {
@@ -1386,7 +1416,7 @@ impl Node {
         _ => { checking = false },
       }
     }
-
+    
     mut same_parent = false
     match child.parent {
       current_parent => { same_parent = current_parent == self },
@@ -1404,7 +1434,7 @@ impl Node {
     if same_parent and old_index < 0 {
       panic("retained child parent and child list disagree")
     }
-
+    
     let target_index = index.or(remaining.size())
     if target_index < 0 or target_index > remaining.size() {
       panic("retained child index is out of bounds")
@@ -1426,7 +1456,7 @@ impl Node {
         child.parent = Maybe::new<mut Node>(self)
         child.apply_backend_style(child.current_style)
       }
-
+      
       let ordered = mut List::new<mut Node>()
       for current, current_index in remaining {
         if current_index == target_index {
@@ -1449,7 +1479,7 @@ impl Node {
       self.request_render()
     }
   }
-
+  
   fn mut remove(child: mut Node) Bool {
     if self.destroyed {
       panic("cannot detach from a destroyed retained Node")
@@ -1463,7 +1493,7 @@ impl Node {
         retained.push(current)
       }
     }
-
+    
     if removed {
       self.children = retained.@
       self.invalidate_stacking()
@@ -1475,7 +1505,7 @@ impl Node {
     }
     removed
   }
-
+  
   fn mut set_measure(measure: fn(MeasureInput) MeasureSize) {
     if self.destroyed {
       panic("cannot measure a destroyed retained Node")
@@ -1501,7 +1531,7 @@ impl Node {
       },
     )
   }
-
+  
   fn mut mark_measure_dirty() {
     if self.destroyed or not self.measured {
       panic("only a live measured retained Node can be marked dirty")
@@ -1509,7 +1539,7 @@ impl Node {
     self.yoga.MarkDirty()
     self.request_render()
   }
-
+  
   fn mut compute(width: Int, height: Int) {
     if self.destroyed {
       panic("cannot lay out a destroyed retained Node")
@@ -1526,7 +1556,7 @@ impl Node {
     }
     self.sync_geometry(0, 0)
   }
-
+  
   private fn mut sync_geometry(parent_x: Int, parent_y: Int) {
     let computed = self.yoga.Layout()
     let local = geometry::Rect{
@@ -1543,7 +1573,7 @@ impl Node {
     }
     self.geometry = geometry::Geometry{local: local, screen: screen}
     self.sync_children_geometry()
-
+    
     if self.current_style.overflow == style::Overflow::scroll {
       mut effective_x = self.requested_scroll_x
       let maximum_x = self.max_scroll_x()
@@ -1570,7 +1600,7 @@ impl Node {
       self.sync_children_geometry()
     }
   }
-
+  
   private fn mut sync_children_geometry() {
     let screen = self.geometry.screen
     let translated_x = saturating_add(screen.x, self.children_offset_x)
@@ -1579,7 +1609,7 @@ impl Node {
       child.sync_geometry(translated_x, translated_y)
     }
   }
-
+  
   fn mut paint(buffer: mut paint::Buffer) {
     let root_clip = geometry::Rect{
       x: 0,
@@ -1589,7 +1619,7 @@ impl Node {
     }
     self.paint_with_clip(buffer, root_clip, Maybe::new<color::Color>(), Maybe::new<color::Color>())
   }
-
+  
   private fn mut paint_with_clip(
     buffer: mut paint::Buffer,
     inherited_clip: geometry::Rect,
@@ -1616,14 +1646,14 @@ impl Node {
         ctx.fill(paint::style(foreground: foreground, background: background))
       }
       self.owner_as_renderable().paint(ctx)
-
+      
       let child_clip = node_clip
       for child in self.stacking_order() {
         child.paint_with_clip(buffer, child_clip, foreground, background)
       }
     }
   }
-
+  
   private fn mut destroy_owned(allow_application_root: Bool, already_destroying: Bool?) {
     if self.mounted_root {
       panic("cannot destroy a mounted retained root")
@@ -1642,7 +1672,7 @@ impl Node {
         _ => self.unmount_subtree(),
       }
       self.destroyed = true
-
+      
       let preserved = self.children
       self.children = []
       self.stacking_children = []
@@ -1661,6 +1691,7 @@ impl Node {
       self.value_listeners = []
       self.mouse_cursor_resolver = Maybe::new<fn(Int, Int) event::MouseCursor>()
       self.focus_reveal_resolver = Maybe::new<fn() geometry::Rect>()
+      self.overlay_layout_resolver = Maybe::new<fn() Bool>()
       let cleanup = self.cleanup_listeners
       self.cleanup_listeners = []
       for handler in cleanup {
@@ -1673,7 +1704,7 @@ impl Node {
       self.request_render()
     }
   }
-
+  
   private fn mut destroy_recursively_owned(allow_application_root: Bool) {
     if self.mounted_root {
       panic("cannot destroy a mounted retained root")
@@ -1690,7 +1721,7 @@ impl Node {
       self.destroy_owned(allow_application_root, already_destroying: true)
     }
   }
-
+  
   fn mut destroy(recursive: Bool?) {
     if recursive.or(false) {
       self.destroy_recursively_owned(false)
@@ -1698,7 +1729,7 @@ impl Node {
       self.destroy_owned(false)
     }
   }
-
+  
   fn mut destroy_from_context() {
     self.destroy_recursively_owned(true)
   }

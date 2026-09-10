@@ -1,11 +1,11 @@
 use ard/testing
 
 use cooper/event
+use cooper/testing as cooper_testing
 use cooper/ui/geometry
 use cooper/ui/scroll_box
 use cooper/ui/scrollbar
 use cooper/ui/style
-use cooper/testing as cooper_testing
 use cooper/ui/text
 
 private fn key(name: Str) mut event::KeyEvent {
@@ -54,7 +54,7 @@ test fn scroll_box_owns_multiple_vertical_children_and_reveals_them() Void!Str {
   }
   application.root.add(viewport)
   application.render()
-
+  
   try testing::assert(viewport.child_count() == 5, "Expected direct multi-child ScrollBox")
   try testing::assert(viewport.scroll_height() == 5, "Expected complete scroll height")
   try testing::assert(viewport.maximum_scroll_top() == 3, "Expected maximum scroll offset")
@@ -62,7 +62,7 @@ test fn scroll_box_owns_multiple_vertical_children_and_reveals_them() Void!Str {
     viewport.style().overflow == style::Overflow::hidden and viewport.style().flex_direction == style::FlexDirection::column and viewport.style().flex_wrap == style::FlexWrap::no_wrap,
     "Expected enforced composed ScrollBox root style",
   )
-
+  
   let last = rows.at(4).expect("last ScrollBox row")
   try testing::assert(viewport.scroll_child_into_view(last), "Expected child reveal movement")
   try testing::assert(
@@ -74,7 +74,7 @@ test fn scroll_box_owns_multiple_vertical_children_and_reveals_them() Void!Str {
     viewport.remove(last) and viewport.child_count() == 4,
     "Expected ScrollBox tree removal",
   )
-
+  
   application.destroy()
   last.destroy()
   testing::assert(last.node_ref.is_destroyed(), "Expected detached ScrollBox child cleanup")
@@ -111,13 +111,13 @@ test fn scroll_box_preserves_public_child_gap_and_alignment_through_viewport() V
   viewport.add(third)
   application.root.add(viewport)
   application.render()
-
+  
   try testing::assert(viewport.scroll_height() == 5, "Expected ScrollBox child gaps in scroll metrics")
   try testing::assert(
     first.layout().screen.x == 3 and third.layout().screen.y == 4,
     "Expected viewport child alignment and gaps",
   )
-
+  
   viewport.set_style(
     style::new(width: style::cells(6), height: style::cells(5), align_items: style::Align::start),
   )
@@ -127,7 +127,7 @@ test fn scroll_box_preserves_public_child_gap_and_alignment_through_viewport() V
     first.layout().screen.x == 0 and third.layout().screen.y == 2,
     "Expected updated viewport child alignment",
   )
-
+  
   application.destroy()
   testing::assert(viewport.node_ref.is_destroyed(), "Expected styled ScrollBox composition cleanup")
 }
@@ -152,7 +152,7 @@ test fn scroll_box_builtin_scrollbar_tracks_drag_resize_and_visibility() Void!St
   }
   application.root.add(viewport)
   application.render()
-
+  
   try testing::assert(
     rows.at(0).expect("first row").layout().screen.width == 3,
     "Expected stable vertical gutter",
@@ -168,10 +168,10 @@ test fn scroll_box_builtin_scrollbar_tracks_drag_resize_and_visibility() Void!St
   let focused_row = rows.at(0).expect("focused row")
   focused_row.node_ref.set_focusable(true)
   try testing::assert(focused_row.node_ref.focus(), "Expected focused ScrollBox descendant")
-
+  
   application.drag(3, 0, 3, 3)
   try testing::assert(viewport.scroll_top() == 6, "Expected built-in thumb drag to maximum")
-
+  
   index = 9
   while index >= 4 {
     let row = rows.at(index).expect("overflow row")
@@ -188,14 +188,14 @@ test fn scroll_box_builtin_scrollbar_tracks_drag_resize_and_visibility() Void!St
     rows.at(0).expect("stable row").layout().screen.width == 3,
     "Expected automatic gutter to remain stable",
   )
-
+  
   viewport.set_scrollbar_options(scrollbar::options(visibility: scrollbar::Visibility::hidden))
   application.render()
   try testing::assert(
     rows.at(0).expect("expanded row").layout().screen.width == 4,
     "Expected hidden bar to release gutter",
   )
-
+  
   application.destroy()
   testing::assert(
     viewport.node_ref.is_destroyed(),
@@ -225,7 +225,7 @@ test fn scroll_box_horizontal_state_bar_input_and_reveal_are_two_axis() Void!Str
   viewport.add(wide)
   application.root.add(viewport)
   application.render()
-
+  
   try testing::assert(
     viewport.scroll_width() == 10 and viewport.scroll_height() == 6,
     "Expected two-axis content extent",
@@ -240,7 +240,7 @@ test fn scroll_box_horizontal_state_bar_input_and_reveal_are_two_axis() Void!Str
     application.frame().cell(5, 3).expect("scrollbar corner").grapheme == "│",
     "Expected vertical ownership of corner cell",
   )
-
+  
   focused_row.node_ref.set_focusable(true)
   try testing::assert(focused_row.node_ref.focus(), "Expected focused horizontal descendant")
   application.drag(0, 3, 4, 3)
@@ -248,7 +248,7 @@ test fn scroll_box_horizontal_state_bar_input_and_reveal_are_two_axis() Void!Str
     viewport.scroll_left() == 5 and viewport.scroll_top() == 0,
     "Expected horizontal thumb drag with preserved focus scroll",
   )
-
+  
   let _ = viewport.scroll_to_x(0)
   application.render()
   application.mouse(
@@ -267,14 +267,14 @@ test fn scroll_box_horizontal_state_bar_input_and_reveal_are_two_axis() Void!Str
     ),
   )
   try testing::assert(viewport.scroll_left() == 3, "Expected Shift+wheel horizontal movement")
-
+  
   try testing::assert(viewport.focus(), "Expected ScrollBox focus for horizontal keys")
   application.key(shifted_key("end"))
   try testing::assert(viewport.scroll_left() == 5, "Expected Shift+End horizontal movement")
   application.key(shifted_key("home"))
   application.key(key("right"))
   try testing::assert(viewport.scroll_left() == 1, "Expected Right horizontal movement")
-
+  
   let _ = viewport.scroll_to_position(geometry::Point{x: 5, y: 3})
   let positioned = viewport.scroll_position()
   try testing::assert(positioned.x == 5 and positioned.y == 3, "Expected coordinate scrolling")
@@ -282,7 +282,7 @@ test fn scroll_box_horizontal_state_bar_input_and_reveal_are_two_axis() Void!Str
   try testing::assert(viewport.scroll_child_into_view(wide), "Expected two-axis child reveal")
   let revealed = viewport.scroll_position()
   try testing::assert(revealed.x == 5 and revealed.y == 3, "Expected revealed horizontal child")
-
+  
   wide.set_style(style::new(width: style::cells(4), height: style::cells(5), flex_shrink: 0.0))
   application.render()
   try testing::assert(
@@ -292,7 +292,7 @@ test fn scroll_box_horizontal_state_bar_input_and_reveal_are_two_axis() Void!Str
   wide.set_style(style::new(width: style::cells(10), height: style::cells(5), flex_shrink: 0.0))
   application.render()
   try testing::assert(viewport.scroll_left() == 5, "Expected horizontal request restoration")
-
+  
   application.destroy()
   testing::assert(viewport.node_ref.is_destroyed(), "Expected two-axis ScrollBox cleanup")
 }
@@ -314,7 +314,7 @@ test fn scroll_box_non_recursive_destroy_preserves_public_children_only() Void!S
     blur_calls =+ 1
     viewport.destroy()
   })
-
+  
   viewport.destroy()
   try testing::assert(viewport.node_ref.is_destroyed(), "Expected ScrollBox root destruction")
   try testing::assert(
@@ -322,7 +322,7 @@ test fn scroll_box_non_recursive_destroy_preserves_public_children_only() Void!S
     "Expected detached public child preservation",
   )
   try testing::assert(blur_calls == 1, "Expected idempotent reentrant ScrollBox destruction")
-
+  
   application.destroy()
   child.destroy()
   testing::assert(child.node_ref.is_destroyed(), "Expected preserved child cleanup")
@@ -340,7 +340,7 @@ test fn focused_scroll_box_handles_navigation_keys_and_test_scroll() Void!Str {
   application.root.add(viewport)
   application.render()
   try testing::assert(viewport.focus(), "Expected focusable ScrollBox")
-
+  
   application.key(key("end"))
   try testing::assert(viewport.scroll_top() == 3, "Expected End navigation")
   application.key(key("home"))
@@ -365,7 +365,7 @@ test fn focused_scroll_box_handles_navigation_keys_and_test_scroll() Void!Str {
   try testing::assert(viewport.scroll_top() == 1, "Expected modified arrow to skip ScrollBox default")
   application.scroll(0, 0, 1)
   try testing::assert(viewport.scroll_top() == 3, "Expected TestApp scroll input")
-
+  
   viewport.set_style(
     style::new(
       width: style::cells(4),
@@ -378,7 +378,65 @@ test fn focused_scroll_box_handles_navigation_keys_and_test_scroll() Void!Str {
     viewport.style().flex_direction == style::FlexDirection::column,
     "Expected vertical style enforcement",
   )
-
+  
   application.destroy()
   testing::assert(viewport.node_ref.is_destroyed(), "Expected keyboard ScrollBox cleanup")
+}
+
+test fn scroll_metrics_clipping_and_requested_offset_follow_gap_reset_and_hidden_rows() Void!Str {
+  let application = cooper_testing::new(6, 3)
+  let viewport = scroll_box::new(
+    application.context,
+    styles: style::new(width: style::cells(6), height: style::cells(3), gap: style::cells(2)),
+  )
+  let first = text::new(application.context, content: "AAA", styles: row_style())
+  let second = text::new(application.context, content: "BBB", styles: row_style())
+  let third = text::new(application.context, content: "CCC", styles: row_style())
+  viewport.add(first)
+  viewport.add(second)
+  viewport.add(third)
+  application.root.add(viewport)
+  application.render()
+  try testing::assert(
+    viewport.scroll_height() == 7 and viewport.maximum_scroll_top() == 4,
+    "Three rows plus two gaps determine extent",
+  )
+  let _ = viewport.scroll_to(4)
+  application.render()
+  try testing::assert(third.layout().screen.y == 2, "Last row must be translated to bottom")
+  try testing::assert(
+    application.frame().cell(0, 2).expect("last row").grapheme == "C",
+    "Expected translated row paint",
+  )
+  viewport.set_style(style::new(width: style::cells(6), height: style::cells(3)))
+  application.render()
+  try testing::assert(
+    viewport.scroll_height() == 3 and viewport.scroll_top() == 0,
+    "Gap removal clamps effective offset",
+  )
+  try testing::assert(viewport.requested_scroll_top() == 4, "Gap removal must preserve requested offset")
+  try testing::assert(second.layout().screen.y == 1, "No stale translated geometry after clamp")
+  viewport.set_style(
+    style::new(width: style::cells(6), height: style::cells(3), gap: style::cells(2)),
+  )
+  application.render()
+  try testing::assert(viewport.scroll_top() == 4, "Restored extent reuses requested offset")
+  second.set_style(style::new(display: style::Display::none))
+  application.render()
+  try testing::assert(
+    viewport.scroll_height() == 4 and viewport.scroll_top() == 1,
+    "Hidden row removes its size and one gap",
+  )
+  try testing::assert(third.layout().screen.y == 2, "Hidden row reflows translated geometry")
+  mut third_clicked = false
+  let _ = third.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::down {
+      third_clicked = true
+    }
+  })
+  application.click(0, 2)
+  try testing::assert(third_clicked, "Hit routing must follow reflow and clamp")
+  try testing::assert(not application.frame().text().contains("BBB"), "Hidden row must not leak paint")
+  application.destroy()
+  Result::ok(())
 }

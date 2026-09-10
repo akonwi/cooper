@@ -175,7 +175,7 @@ private fn validate_scalar(length: Length, name: Str) {
 }
 
 private fn validate_numeric(length: Length, name: Str) {
-  if not finite(length.value) or length.value < 0.0 {
+  if (not finite(length.value)) or length.value < 0.0 {
     panic("{name} must be finite and non-negative")
   }
   if length.kind == LengthKind::percent and length.value > 100.0 {
@@ -240,10 +240,10 @@ fn internal_validate(value: Style) {
   validate_edges(value.padding, "padding", false)
   validate_edges(value.margin, "margin", true)
   validate_spacing(value.gap, "gap", false)
-  if not finite(value.flex_grow) or value.flex_grow < 0.0 {
+  if (not finite(value.flex_grow)) or value.flex_grow < 0.0 {
     panic("flex_grow must be finite and non-negative")
   }
-  if not finite(value.flex_shrink) or value.flex_shrink < 0.0 {
+  if (not finite(value.flex_shrink)) or value.flex_shrink < 0.0 {
     panic("flex_shrink must be finite and non-negative")
   }
 }

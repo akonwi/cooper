@@ -1,14 +1,14 @@
 use ard/testing
 
-use cooper/ui/box
-use cooper/ui/color
-use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/paint
 use cooper/event
+use cooper/runtime
+use cooper/testing as cooper_testing
+use cooper/ui/box
+use cooper/ui/color
 use cooper/ui/input
 use cooper/ui/style
-use cooper/testing as cooper_testing
 use cooper/ui/text
 
 private fn fixed(width: Int) style::Style {
@@ -93,11 +93,11 @@ private fn send_mouse(field: mut input::Input, local_x: Int) event_delivery::Dis
 test fn input_inserts_moves_and_deletes_graphemes() Void!Str {
   let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "ac", styles: fixed(10))
-
+  
   let _ = send_key(field, key("left"))
   let _ = send_key(field, key("b", text: "b"))
   try testing::assert(field.value() == "abc", "Expected insertion at retained cursor")
-
+  
   field.set_value("a🙂")
   let _ = send_key(field, key("backspace"))
   testing::assert(field.value() == "a", "Expected one grapheme backspace")
@@ -106,13 +106,13 @@ test fn input_inserts_moves_and_deletes_graphemes() Void!Str {
 test fn input_normalizes_combining_and_merged_grapheme_boundaries() Void!Str {
   let ctx = runtime::new_detached()
   let field = input::new(ctx, styles: fixed(10))
-
+  
   let _ = send_key(field, key("e", text: "e"))
   let _ = send_key(field, key("combining", text: "́"))
   try testing::assert(field.value() == "é", "Expected combining input")
   let _ = send_key(field, key("backspace"))
   try testing::assert(field.value().is_empty(), "Expected combined grapheme removal")
-
+  
   field.set_value("🇦x🇧")
   let _ = send_key(field, key("left"))
   let _ = send_key(field, key("backspace"))
@@ -128,7 +128,7 @@ test fn input_paints_and_scrolls_cursor_into_narrow_viewport() Void!Str {
   field.node().set_focused(true)
   let buffer = paint::new_buffer(5, 1)
   field.node().paint(buffer)
-
+  
   try testing::assert(
     buffer.cell_at(0, 0).expect("first visible cell").grapheme == "e",
     "Expected horizontal input scroll",
@@ -147,7 +147,7 @@ test fn input_does_not_paint_partial_wide_grapheme() Void!Str {
   ctx.compute_layout(field, 1, 1)
   let buffer = paint::new_buffer(1, 1)
   field.node().paint(buffer)
-
+  
   testing::assert(
     buffer.cell_at(0, 0).expect("only cell").grapheme == " ",
     "Expected wide grapheme clipping",
@@ -167,7 +167,7 @@ test fn input_uses_runtime_terminal_width_measurement() Void!Str {
   ctx.compute_layout(field, 3, 1)
   let buffer = paint::new_buffer(3, 1)
   field.node().paint(buffer)
-
+  
   testing::assert(
     buffer.cell_at(0, 0).expect("first cell").grapheme == " ",
     "Expected terminal-aware clipping",
@@ -177,9 +177,9 @@ test fn input_uses_runtime_terminal_width_measurement() Void!Str {
 test fn input_inserts_pasted_ctrl_c_as_text() Void!Str {
   let ctx = runtime::new_detached()
   let field = input::new(ctx, styles: fixed(5))
-
+  
   let result = send_paste(field, event::paste("c"))
-
+  
   try testing::assert(result == event_delivery::Disposition::handled, "Expected paste handling")
   testing::assert(field.value() == "c", "Expected pasted Ctrl+C text")
 }
@@ -187,9 +187,9 @@ test fn input_inserts_pasted_ctrl_c_as_text() Void!Str {
 test fn input_normalizes_every_pasted_line_ending() Void!Str {
   let ctx = runtime::new_detached()
   let field = input::new(ctx, styles: fixed(20))
-
+  
   let _ = send_paste(field, event::paste("a\r\nb\r\nc\rd\ne"))
-
+  
   testing::assert(field.value() == "abcde", "Expected complete single-line paste normalization")
 }
 
@@ -208,7 +208,7 @@ test fn input_mouse_preserves_wide_grapheme_boundaries() Void!Str {
   ctx.compute_layout(field, 4, 1)
   let _ = send_mouse(field, 1)
   let _ = send_key(field, key("x", text: "X"))
-
+  
   testing::assert(field.value() == "🙂Xa", "Expected trailing wide boundary")
 }
 
@@ -220,9 +220,9 @@ test fn input_mouse_selection_replaces_range_and_clears_global_selection() Void!
   let _ = field.on_input(fn(value: Str) {
     inputs =+ 1
   })
-
+  
   application.drag(1, 0, 4, 0)
-
+  
   let selected = field.selection().expect("Input mouse selection")
   try testing::assert(
     selected.start == 1 and selected.end == 4 and field.selected_text() == "bcd",
@@ -236,9 +236,9 @@ test fn input_mouse_selection_replaces_range_and_clears_global_selection() Void!
     application.frame().cell(1, 0).expect("selected Input cell").style.reverse,
     "Expected Input selection paint",
   )
-
+  
   application.key(key("x", text: "X"))
-
+  
   try testing::assert(field.value() == "aXef", "Expected typing to replace selected Input range")
   try testing::assert(inputs == 1, "Expected one input event for range replacement")
   try testing::assert(
@@ -261,10 +261,10 @@ test fn input_keyboard_selection_extends_collapses_and_persists_blur() Void!Str 
     alt: false,
     super: false,
   }
-
+  
   application.key(event::key("left", "", event::KeyEventType::press, shift))
   application.key(event::key("left", "", event::KeyEventType::press, shift))
-
+  
   let selected = field.selection().expect("keyboard Input selection")
   try testing::assert(
     selected.start == 4 and selected.end == 6 and field.selected_text() == "ef",
@@ -278,10 +278,10 @@ test fn input_keyboard_selection_extends_collapses_and_persists_blur() Void!Str 
   application.render()
   try testing::assert(field.selection().is_some(), "Expected blur to preserve editable selection")
   field.focus()
-
+  
   application.key(key("left"))
   application.key(key("x", text: "X"))
-
+  
   try testing::assert(field.value() == "abcdXef", "Expected unshifted movement to collapse toward start")
   try testing::assert(not field.selection().is_some(), "Expected collapsed selection clear")
   application.destroy()
@@ -292,9 +292,9 @@ test fn input_selection_tracks_panned_content_offsets() Void!Str {
   let application = cooper_testing::new(4, 1)
   let field = input::new(application.context, value: "abcdef", styles: fixed(4))
   application.root.add(field)
-
+  
   application.drag(0, 0, 3, 0)
-
+  
   let selected = field.selection().expect("panned Input selection")
   try testing::assert(
     selected.start == 3 and selected.end == 6 and field.selected_text() == "def",
@@ -313,9 +313,9 @@ test fn input_selection_replacement_respects_max_length_after_removal() Void!Str
   let field = input::new(application.context, value: "abcde", max_length: 5, styles: fixed(6))
   application.root.add(field)
   application.drag(1, 0, 3, 0)
-
+  
   application.key(key("insert", text: "XYZ"))
-
+  
   try testing::assert(
     field.value() == "aXYde",
     "Expected replacement capacity after selected range removal",
@@ -329,10 +329,10 @@ test fn collapsed_input_selection_is_consumed_before_repeated_typing() Void!Str 
   let field = input::new(application.context, value: "abc", styles: fixed(5))
   application.root.add(field)
   application.click(1, 0)
-
+  
   application.key(key("x", text: "X"))
   application.key(key("y", text: "Y"))
-
+  
   try testing::assert(
     field.value() == "aXYbc",
     "Expected collapsed click anchor not to select inserted text",
@@ -355,10 +355,10 @@ test fn input_mouse_default_does_not_recreate_reentrantly_cleared_anchor() Void!
     }
   })
   application.click(1, 0)
-
+  
   application.key(key("x", text: "X"))
   application.key(key("y", text: "Y"))
-
+  
   try testing::assert(
     field.value() == "aXYbc",
     "Expected mouse default not to recreate cleared selection anchor",
@@ -379,9 +379,9 @@ test fn input_contributes_complete_logical_selection_when_panned() Void!Str {
     alt: false,
     super: false,
   }
-
+  
   application.key(event::key("home", "", event::KeyEventType::press, shift))
-
+  
   try testing::assert(field.selected_text() == "abcdef", "Expected complete local keyboard selection")
   try testing::assert(
     application.selection().expect("complete panned global selection").selected_text == "abcdef",
@@ -396,9 +396,9 @@ test fn atomic_selection_replacement_preserves_original_insertion_boundary() Voi
   let field = input::new(application.context, value: "🇦x🇧", styles: fixed(6))
   application.root.add(field)
   application.drag(1, 0, 2, 0)
-
+  
   application.key(key("replace", text: "X"))
-
+  
   try testing::assert(field.value() == "🇦X🇧", "Expected insertion at original selected boundary")
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected atomic replacement cleanup")
@@ -409,7 +409,7 @@ test fn selected_deletion_normalizes_merged_grapheme_cursor() Void!Str {
   let field = input::new(application.context, value: "🇦x🇧", styles: fixed(6))
   application.root.add(field)
   application.drag(1, 0, 2, 0)
-
+  
   application.key(key("backspace"))
   try testing::assert(field.value() == "🇦🇧", "Expected selected separator deletion")
   application.key(key("backspace"))
@@ -440,9 +440,9 @@ test fn non_selectable_input_does_not_extend_another_control_selection() Void!St
     alt: false,
     super: false,
   }
-
+  
   application.key(event::key("left", "", event::KeyEventType::press, shift))
-
+  
   try testing::assert(
     application.selection().expect("preserved Text selection").selected_text == before,
     "Expected failed Input selection start not to update Text selection",
@@ -456,7 +456,7 @@ test fn pointer_edge_drag_pans_input_one_grapheme_per_event() Void!Str {
   let field = input::new(application.context, value: "abcdefghij", styles: fixed(4))
   application.root.add(field)
   application.mouse_down(0, 0)
-
+  
   application.mouse(
     event::mouse(event::MouseEventType::drag, event::MouseButton::left, -1, 0, modifiers()),
   )
@@ -472,7 +472,7 @@ test fn pointer_edge_drag_pans_input_one_grapheme_per_event() Void!Str {
     "Expected second left-edge viewport step, got {application.frame().text()}",
   )
   application.mouse_up(-1, 0)
-
+  
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected edge-pan selection cleanup")
 }
@@ -498,7 +498,7 @@ test fn active_geometry_change_does_not_add_pointer_edge_pan_step() Void!Str {
     application.frame().text().starts_with("ghij"),
     "Expected first explicit edge-pan step",
   )
-
+  
   field.set_style(
     style::new(
       position: style::Position::absolute,
@@ -508,7 +508,7 @@ test fn active_geometry_change_does_not_add_pointer_edge_pan_step() Void!Str {
     ),
   )
   application.render()
-
+  
   try testing::assert(
     application.frame().text().slice(start: 1).or("").starts_with("ghij"),
     "Expected geometry reconciliation without an extra edge-pan step",
@@ -534,9 +534,9 @@ test fn vertical_cross_control_selection_uses_complete_panned_input() Void!Str {
   application.root.add(top)
   application.root.add(field)
   application.root.add(bottom)
-
+  
   application.drag(0, 0, 0, 2)
-
+  
   try testing::assert(
     field.selected_text() == "abcdefghij",
     "Expected complete panned Input in vertical selection",
@@ -549,7 +549,7 @@ test fn vertical_cross_control_selection_uses_complete_panned_input() Void!Str {
     application.frame().cell(0, 1).expect("downward Input focus").grapheme == "h",
     "Expected downward focus to reveal Input end",
   )
-
+  
   application.drag(0, 2, 0, 0)
   try testing::assert(field.selected_text() == "abcdefghij", "Expected reverse complete Input selection")
   try testing::assert(
@@ -603,7 +603,7 @@ test fn moved_focus_control_reconciles_cross_control_input_endpoint() Void!Str {
     field.selected_text() == "abcd",
     "Expected initial full cross-control Input selection",
   )
-
+  
   focus.set_style(
     style::new(
       position: style::Position::absolute,
@@ -614,7 +614,7 @@ test fn moved_focus_control_reconciles_cross_control_input_endpoint() Void!Str {
     ),
   )
   application.render()
-
+  
   try testing::assert(
     field.selected_text() == "abc",
     "Expected moved focus endpoint to reconcile Input range, got {field.selected_text()}",
@@ -660,7 +660,7 @@ test fn moved_intermediate_input_reconciles_local_selection_coordinates() Void!S
   application.root.add(finish)
   application.drag(0, 0, 7, 0)
   try testing::assert(field.selected_text() == "abcd", "Expected initial intermediate Input selection")
-
+  
   field.set_style(
     style::new(
       position: style::Position::absolute,
@@ -670,7 +670,7 @@ test fn moved_intermediate_input_reconciles_local_selection_coordinates() Void!S
     ),
   )
   application.render()
-
+  
   try testing::assert(
     field.selected_text() == "ab",
     "Expected moved intermediate Input coordinates to reconcile, got {field.selected_text()}",
@@ -717,7 +717,7 @@ test fn resized_intermediate_input_reconciles_viewport_mapping() Void!Str {
   application.root.add(finish)
   application.drag(0, 0, 4, 0)
   let before = field.selected_text()
-
+  
   field.set_style(
     style::new(
       position: style::Position::absolute,
@@ -727,7 +727,7 @@ test fn resized_intermediate_input_reconciles_viewport_mapping() Void!Str {
     ),
   )
   application.render()
-
+  
   try testing::assert(
     field.selected_text() != before,
     "Expected width change to invalidate intermediate Input mapping",
@@ -761,9 +761,9 @@ test fn fully_clipped_input_keeps_local_selection_without_global_fragment() Void
     alt: false,
     super: false,
   }
-
+  
   application.key(event::key("home", "", event::KeyEventType::press, shift))
-
+  
   try testing::assert(field.selected_text() == "abc", "Expected clipped Input local logical selection")
   try testing::assert(
     application.selection().expect("clipped Input global state").selected_text == "",
@@ -785,9 +785,9 @@ test fn bound_empty_text_key_replaces_active_input_selection() Void!Str {
     alt: false,
     super: false,
   }
-
+  
   application.key(event::key("backspace", "", event::KeyEventType::press, ctrl))
-
+  
   try testing::assert(before == "bc", "Expected initial selected range")
   try testing::assert(
     field.value() == "ad" and field.selected_text() == "",
@@ -824,7 +824,7 @@ test fn input_hides_cursor_at_viewport_boundary_during_selection() Void!Str {
   application.mouse(
     event::mouse(event::MouseEventType::drag, event::MouseButton::left, 4, 0, modifiers()),
   )
-
+  
   let cursor_x = application.frame().cursor_x().or(-1)
   try testing::assert(
     cursor_x >= 0 and cursor_x < 4,
@@ -849,7 +849,7 @@ test fn selection_overlay_stops_at_non_fitting_wide_glyph() Void!Str {
     super: false,
   }
   application.key(event::key("end", "", event::KeyEventType::press, shift))
-
+  
   let cell = application.frame().cell(0, 0).expect("wide selection viewport")
   try testing::assert(
     cell.grapheme == " " and not cell.style.reverse,
@@ -865,7 +865,7 @@ test fn unfocused_input_is_focusable_without_hardware_cursor() Void!Str {
   ctx.compute_layout(field, 10, 1)
   let buffer = paint::new_buffer(10, 1)
   field.node().paint(buffer)
-
+  
   try testing::assert(field.node().is_focusable(), "Expected Input focus participation")
   testing::assert(not buffer.cursor.is_some(), "Expected hidden unfocused cursor")
 }
@@ -887,7 +887,7 @@ test fn input_validates_lengths_and_emits_commit_callbacks() Void!Str {
     field.min_length() == 2 and field.max_length().or(-1) == 4,
     "Expected length getters",
   )
-
+  
   mut calls = ""
   let remove_input = field.on_input(fn(value: Str) {
     calls = "{calls}input:{value};"
@@ -898,7 +898,7 @@ test fn input_validates_lengths_and_emits_commit_callbacks() Void!Str {
   let _ = field.on_submit(fn(value: Str) {
     calls = "{calls}submit:{value};"
   })
-
+  
   field.set_value("ab")
   try testing::assert(calls == "input:ab;", "Expected changed set_value input")
   field.focus()
@@ -917,7 +917,7 @@ test fn input_validates_lengths_and_emits_commit_callbacks() Void!Str {
   )
   field.blur()
   try testing::assert(calls == "input:ab;input:a;change:a;", "Expected edit input then blur change")
-
+  
   field.focus()
   application.key(
     event::key(
@@ -938,14 +938,14 @@ test fn input_validates_lengths_and_emits_commit_callbacks() Void!Str {
     calls == "input:ab;input:a;change:a;input:ax;change:ax;submit:ax;",
     "Expected pending change before submit without duplicate blur",
   )
-
+  
   field.set_value("z")
   try testing::assert(not field.submit(), "Expected min_length submit rejection")
   remove_input()
   remove_input()
   field.set_value("zz")
   try testing::assert(not calls.contains("input:zz"), "Expected idempotent input listener disposal")
-
+  
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected callback Input cleanup")
 }
@@ -964,7 +964,7 @@ test fn input_inherits_colors_from_common_style() Void!Str {
   )
   application.root.add(field)
   application.render()
-
+  
   try testing::assert(
     application.frame().cell(
       0,
@@ -979,7 +979,7 @@ test fn input_inherits_colors_from_common_style() Void!Str {
     ).expect("Input tail").style.background.expect("common background").blue == Uint8::from(6),
     "Expected common background to fill Input bounds",
   )
-
+  
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected common-style Input cleanup")
 }
@@ -997,7 +997,7 @@ test fn input_exposes_placeholder_styles_and_fills_text_background() Void!Str {
   application.root.add(field)
   field.set_placeholder("next\nline")
   application.render()
-
+  
   try testing::assert(field.placeholder() == "nextline", "Expected normalized placeholder setter")
   try testing::assert(field.text_style().bold, "Expected Input TextStyle getter")
   try testing::assert(field.placeholder_style().dim, "Expected placeholder TextStyle getter")
@@ -1016,7 +1016,7 @@ test fn input_exposes_placeholder_styles_and_fills_text_background() Void!Str {
     ).expect("Input background tail").style.background.expect("Input background").blue == Uint8::from(6),
     "Expected complete Input TextStyle background fill",
   )
-
+  
   field.set_text_style(text::style(background: background, italic: true, hidden: true))
   field.set_placeholder_style(text::style(underline: true))
   field.set_min_length(1)
@@ -1028,8 +1028,11 @@ test fn input_exposes_placeholder_styles_and_fills_text_background() Void!Str {
     field.text_style().italic and field.text_style().hidden and field.placeholder_style().underline,
     "Expected style setters",
   )
-  try testing::assert(application.frame().cell(0, 0).expect("hidden Input value").style.hidden, "Expected hidden Input value paint")
-
+  try testing::assert(
+    application.frame().cell(0, 0).expect("hidden Input value").style.hidden,
+    "Expected hidden Input value paint",
+  )
+  
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected styled Input cleanup")
 }
@@ -1040,7 +1043,7 @@ test fn input_max_length_allows_combining_grapheme_extension() Void!Str {
   application.root.add(field)
   application.render()
   field.focus()
-
+  
   application.key(
     event::key(
       "combining",
@@ -1054,9 +1057,9 @@ test fn input_max_length_allows_combining_grapheme_extension() Void!Str {
       },
     ),
   )
-
+  
   try testing::assert(field.value() == "é", "Expected one extended grapheme at max_length")
-
+  
   field.set_max_length(2)
   field.set_value("e")
   application.key(
@@ -1073,7 +1076,7 @@ test fn input_max_length_allows_combining_grapheme_extension() Void!Str {
     ),
   )
   try testing::assert(field.value() == "éb", "Expected longest valid combining prefix")
-
+  
   field.set_max_length(1)
   field.set_value("🇦")
   application.key(
@@ -1090,7 +1093,7 @@ test fn input_max_length_allows_combining_grapheme_extension() Void!Str {
     ),
   )
   try testing::assert(field.value() == "🇦🇧", "Expected concatenation-aware regional prefix")
-
+  
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected combining Input cleanup")
 }
@@ -1105,9 +1108,9 @@ test fn rejected_max_length_insertion_does_not_emit_input() Void!Str {
   let _ = field.on_input(fn(value: Str) {
     inputs =+ 1
   })
-
+  
   application.key(key("x", text: "X"))
-
+  
   try testing::assert(
     field.value() == "abc" and inputs == 0,
     "Expected rejected max-length insertion without false input",
@@ -1122,7 +1125,7 @@ test fn input_defaults_include_modified_cli_control_keys() Void!Str {
   application.root.add(field)
   application.render()
   field.focus()
-
+  
   application.key(
     event::key(
       "backspace",
@@ -1136,7 +1139,7 @@ test fn input_defaults_include_modified_cli_control_keys() Void!Str {
       },
     ),
   )
-
+  
   try testing::assert(field.value() == "", "Expected Ctrl-Backspace to delete the previous word")
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected modified-key Input cleanup")
@@ -1152,20 +1155,20 @@ test fn input_cli_word_navigation_and_deletion_are_grapheme_safe() Void!Str {
   let _ = field.on_input(fn(value: Str) {
     inputs =+ 1
   })
-
+  
   application.key(modified_key("w", ctrl: true))
   try testing::assert(field.value() == "hello brave ", "Expected Ctrl-W previous-word deletion")
   try testing::assert(inputs == 1, "Expected one callback for word deletion")
-
+  
   application.key(modified_key("b", alt: true))
   application.key(key("x", text: "界"))
   try testing::assert(field.value() == "hello 界brave ", "Expected Alt-B word navigation")
-
+  
   application.key(modified_key("u", ctrl: true))
   try testing::assert(field.value() == "brave ", "Expected Ctrl-U delete to start")
   application.key(modified_key("k", ctrl: true))
   try testing::assert(field.value() == "", "Expected Ctrl-K delete to end")
-
+  
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected CLI word editing cleanup")
 }
@@ -1176,18 +1179,18 @@ test fn input_cli_word_selection_and_select_all_replace_atomically() Void!Str {
   application.root.add(field)
   application.render()
   field.focus()
-
+  
   application.key(modified_key("left", shift: true, alt: true))
   try testing::assert(field.selected_text() == "two", "Expected Shift-Alt-Left word selection")
   application.key(key("x", text: "X"))
   try testing::assert(field.value() == "one X", "Expected selected word replacement")
-
+  
   application.key(modified_key("a", super: true))
   try testing::assert(field.selected_text() == "one X", "Expected Super-A select all")
   application.key(key("y", text: "Y"))
   try testing::assert(field.value() == "Y", "Expected select-all replacement")
   try testing::assert(application.selection().is_none(), "Expected replacement to clear global selection")
-
+  
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected CLI selection cleanup")
 }
@@ -1198,16 +1201,16 @@ test fn input_cli_home_end_and_character_aliases_follow_readline() Void!Str {
   application.root.add(field)
   application.render()
   field.focus()
-
+  
   application.key(modified_key("a", ctrl: true))
   application.key(key("x", text: "X"))
   try testing::assert(field.value() == "Xabc", "Expected Ctrl-A line start")
   application.key(modified_key("e", ctrl: true))
   application.key(modified_key("b", ctrl: true))
   application.key(key("y", text: "Y"))
-
+  
   try testing::assert(field.value() == "XabYc", "Expected Ctrl-E and Ctrl-B cursor aliases")
-
+  
   application.key(modified_key("left", super: true))
   application.key(key("start", text: ">"))
   application.key(modified_key("right", super: true))
@@ -1222,7 +1225,7 @@ test fn input_cli_home_end_and_character_aliases_follow_readline() Void!Str {
 test fn input_cli_bindings_handle_repeat_release_and_modified_text() Void!Str {
   let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "one two three", styles: fixed(16))
-
+  
   let repeated = send_key(
     field,
     modified_key("w", ctrl: true, event_type: event::KeyEventType::repeat),
@@ -1232,14 +1235,14 @@ test fn input_cli_bindings_handle_repeat_release_and_modified_text() Void!Str {
     "Expected repeated binding handled",
   )
   try testing::assert(field.value() == "one two ", "Expected repeat to execute word deletion")
-
+  
   let released = send_key(
     field,
     modified_key("w", ctrl: true, event_type: event::KeyEventType::release),
   )
   try testing::assert(released == event_delivery::Disposition::ignored, "Expected release ignored")
   try testing::assert(field.value() == "one two ", "Expected release not to edit")
-
+  
   let unsupported = send_key(field, modified_key("q", text: "q", ctrl: true, alt: true))
   try testing::assert(
     unsupported == event_delivery::Disposition::ignored,
@@ -1251,12 +1254,12 @@ test fn input_cli_bindings_handle_repeat_release_and_modified_text() Void!Str {
 test fn deferred_input_history_chords_are_consumed_without_editing() Void!Str {
   let ctx = runtime::new_detached()
   let field = input::new(ctx, value: "value", styles: fixed(8))
-
+  
   let undone = send_key(field, modified_key("z", super: true))
   let redone = send_key(field, modified_key("z", shift: true, super: true))
   let cli_undo = send_key(field, modified_key("-", ctrl: true))
   let cli_redo = send_key(field, modified_key(".", ctrl: true))
-
+  
   try testing::assert(
     undone == event_delivery::Disposition::handled,
     "Expected deferred undo chord handled",
@@ -1274,4 +1277,57 @@ test fn deferred_input_history_chords_are_consumed_without_editing() Void!Str {
     "Expected Ctrl-period redo chord handled",
   )
   testing::assert(field.value() == "value", "Expected deferred history no-op")
+}
+
+test fn input_intrinsic_measurement_reflows_siblings_after_value_placeholder_and_constraint_changes() Void!Str {
+  let application = cooper_testing::new(20, 3)
+  let row = box::new(
+    application.context,
+    styles: style::new(flex_direction: style::FlexDirection::row, gap: style::cells(2)),
+  )
+  let field = input::new(application.context, placeholder: "hello")
+  let following = text::new(application.context, content: "end")
+  row.add(field)
+  row.add(following)
+  application.root.add(row)
+  application.render()
+  // Five placeholder cells plus one caret cell, then a two-cell gap.
+  try testing::assert(
+    field.layout().local.width == 6 and following.layout().local.x == 8,
+    "Placeholder determines intrinsic width including caret room",
+  )
+  field.set_value("ab")
+  application.render()
+  try testing::assert(
+    field.layout().local.width == 3 and following.layout().local.x == 5,
+    "Value replaces placeholder measurement",
+  )
+  field.set_value("")
+  field.set_placeholder("12345678")
+  field.set_style(style::new(max_width: style::cells(4)))
+  application.render()
+  try testing::assert(
+    field.layout().local.width == 4 and following.layout().local.x == 6,
+    "Maximum constrains remeasured placeholder",
+  )
+  field.set_style(style::new())
+  application.render()
+  try testing::assert(
+    field.layout().local.width == 9 and following.layout().local.x == 11,
+    "Reset restores intrinsic width rather than stale clamp",
+  )
+  try testing::assert(
+    application.frame().cell(11, 0).expect("following label").grapheme == "e",
+    "Paint follows sibling reflow",
+  )
+  let fresh = input::new(application.context, placeholder: "12345678")
+  let _ = row.remove(field)
+  row.add(fresh, 0)
+  application.render()
+  try testing::assert(
+    fresh.layout().local.width == 9 and following.layout().local.x == 11,
+    "Fresh measured control agrees with mutated control",
+  )
+  application.destroy()
+  Result::ok(())
 }

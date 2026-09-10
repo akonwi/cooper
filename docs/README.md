@@ -33,6 +33,16 @@ Design decisions for Cooper's Ard-native retained-mode framework.
   Runtime-scoped, demand-driven, typed animation timelines.
 - [ADR 0015](./adrs/0015-define-package-entry-points-and-ui-namespace.md) — accepted
   canonical `cooper` and `cooper/ui` entry points backed by the physical UI namespace.
+- [ADR 0016](./adrs/0016-define-intrinsic-sizing-and-constraints.md) — accepted
+  intrinsic sizing and constraint resolution contract; implementation pending.
+- [ADR 0017](./adrs/0017-define-item-alignment-and-line-distribution.md) — accepted
+  item alignment and wrapped-line distribution contract; implementation pending.
+- [ADR 0018](./adrs/0018-define-baseline-alignment.md) — accepted
+  bottom-edge box baseline contract; implementation pending.
+- [ADR 0019](./adrs/0019-define-display-contents.md) — accepted
+  boxless retained grouping contract; implementation pending.
+- [ADR 0020](./adrs/0020-define-layout-cell-rounding.md) — accepted
+  shared-edge cell rounding contract; implementation pending.
 
 ## Architecture Decision Records
 
@@ -55,6 +65,11 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0013](./adrs/0013-consolidate-context-into-runtime.md) | Accepted | Consolidate Context into Runtime |
 | [0014](./adrs/0014-define-animation-timelines.md) | Accepted | Define animation timelines |
 | [0015](./adrs/0015-define-package-entry-points-and-ui-namespace.md) | Accepted | Define package entry points and the UI namespace |
+| [0016](./adrs/0016-define-intrinsic-sizing-and-constraints.md) | Accepted | Define intrinsic sizing and constraint resolution |
+| [0017](./adrs/0017-define-item-alignment-and-line-distribution.md) | Accepted | Define item alignment and wrapped-line distribution |
+| [0018](./adrs/0018-define-baseline-alignment.md) | Accepted | Define baseline alignment |
+| [0019](./adrs/0019-define-display-contents.md) | Accepted | Define display contents for retained nodes |
+| [0020](./adrs/0020-define-layout-cell-rounding.md) | Accepted | Define layout cell rounding |
 
 ### Add an ADR
 

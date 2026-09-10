@@ -1,11 +1,11 @@
 use ard/testing
 
-use cooper/ui/box
 use cooper/event
+use cooper/testing as cooper_testing
+use cooper/ui/box
 use cooper/ui/scroll_box
 use cooper/ui/scrollbar
 use cooper/ui/style
-use cooper/testing as cooper_testing
 use cooper/ui/text
 use cooper/ui/text_area
 
@@ -36,15 +36,12 @@ test fn text_area_inserts_newlines_and_normalizes_multiline_paste() Void!Str {
   let _ = area.on_input(fn(value: Str) {
     inputs =+ 1
   })
-
+  
   application.key(key("a", value: "a"))
   application.key(key("return"))
   application.paste(event::paste("b\r\nc\r\nd\re\rf"))
-
-  try testing::assert(
-    area.value() == "a\nb\nc\nd\ne\nf",
-    "Expected repeated CRLF and CR normalization",
-  )
+  
+  try testing::assert(area.value() == "a\nb\nc\nd\ne\nf", "Expected repeated CRLF and CR normalization")
   try testing::assert(inputs == 3, "Expected one input callback per edit transaction")
   application.destroy()
   testing::assert(area.node_ref.is_destroyed(), "Expected TextArea cleanup")
@@ -63,9 +60,9 @@ test fn text_area_listener_can_reserve_ctrl_enter_without_inserting() Void!Str {
       received.prevent_default()
     }
   })
-
+  
   application.key(key("return", ctrl: true))
-
+  
   try testing::assert(submitted, "Expected TextArea key listener before default editing")
   try testing::assert(area.value() == "draft", "Expected prevented Ctrl-Enter not to insert")
   application.destroy()
@@ -84,7 +81,7 @@ test fn text_area_wraps_exact_width_and_keeps_trailing_cursor_visible() Void!Str
   application.render()
   area.focus()
   application.render()
-
+  
   try testing::assert(
     application.frame().text() == "cd│\n  ┃",
     "Expected exact-width content to scroll to its trailing caret row, got {application.frame().text()}",
@@ -104,11 +101,11 @@ test fn text_area_vertical_movement_preserves_display_column() Void!Str {
   application.root.add(area)
   application.render()
   area.focus()
-
+  
   application.key(key("up"))
   application.key(key("up"))
   application.key(key("insert", value: "!"))
-
+  
   try testing::assert(
     area.value() == "abcd!\nx\nwxyz",
     "Expected sticky-column vertical movement, got {area.value()}",
@@ -123,7 +120,7 @@ test fn text_area_select_all_copies_and_replaces_multiline_source() Void!Str {
   application.root.add(area)
   application.render()
   area.focus()
-
+  
   application.key(key("a", super: true))
   application.render()
   try testing::assert(area.selected_text() == "one\ntwo", "Expected multiline local selection")
@@ -131,7 +128,7 @@ test fn text_area_select_all_copies_and_replaces_multiline_source() Void!Str {
     application.selection().expect("TextArea global selection").selected_text == "one\ntwo",
     "Expected multiline global selected source",
   )
-
+  
   application.key(key("replacement", value: "X"))
   try testing::assert(area.value() == "X", "Expected atomic multiline selection replacement")
   try testing::assert(application.selection().is_none(), "Expected replacement to clear global selection")
@@ -145,7 +142,7 @@ test fn text_area_home_end_and_line_kills_are_hard_line_scoped() Void!Str {
   application.root.add(area)
   application.render()
   area.focus()
-
+  
   application.key(key("a", ctrl: true))
   application.key(key("insert", value: ">"))
   try testing::assert(area.value() == "one\n>two", "Expected Ctrl-A current hard-line start")
@@ -154,7 +151,7 @@ test fn text_area_home_end_and_line_kills_are_hard_line_scoped() Void!Str {
   try testing::assert(area.value() == "one\n>two<", "Expected Ctrl-E current hard-line end")
   application.key(key("u", ctrl: true))
   try testing::assert(area.value() == "one\n", "Expected Ctrl-U to kill only current line prefix")
-
+  
   application.destroy()
   testing::assert(area.node_ref.is_destroyed(), "Expected line-action TextArea cleanup")
 }
@@ -164,11 +161,14 @@ test fn text_area_mouse_selection_crosses_hard_lines_and_preserves_source() Void
   let area = text_area::new(application.context, value: "abc\ndef", styles: fixed(8, 3))
   application.root.add(area)
   application.render()
-
+  
   application.drag(1, 0, 2, 1)
   application.render()
-
-  try testing::assert(area.selected_text() == "bc\nde", "Expected mouse selection across hard lines, got {area.selected_text()}")
+  
+  try testing::assert(
+    area.selected_text() == "bc\nde",
+    "Expected mouse selection across hard lines, got {area.selected_text()}",
+  )
   try testing::assert(
     application.selection().expect("mouse TextArea selection").selected_text == "bc\nde",
     "Expected exact mouse-selected multiline source",
@@ -193,10 +193,10 @@ test fn text_area_focus_reveals_its_caret_through_ancestor_scroll_boxes() Void!S
   viewport.add(area)
   application.root.add(viewport)
   application.render()
-
+  
   area.focus()
   application.render()
-
+  
   try testing::assert(viewport.scroll_top() == 3, "Expected ancestor reveal to follow TextArea caret")
   application.destroy()
   testing::assert(area.node_ref.is_destroyed(), "Expected revealed TextArea cleanup")
@@ -209,7 +209,7 @@ test fn text_area_clips_content_to_its_own_viewport() Void!Str {
   application.root.add(area)
   application.root.add(sibling)
   application.render()
-
+  
   try testing::assert(
     application.frame().text() == "a  ┃\nb  │\nSAFE",
     "Expected TextArea content clipped before its sibling, got {application.frame().text()}",
@@ -231,7 +231,7 @@ test fn text_area_wheel_scroll_falls_back_only_at_internal_boundary() Void!Str {
   viewport.add(tail)
   application.root.add(viewport)
   application.render()
-
+  
   application.mouse(
     event::mouse(
       event::MouseEventType::scroll,
@@ -243,8 +243,11 @@ test fn text_area_wheel_scroll_falls_back_only_at_internal_boundary() Void!Str {
     ),
   )
   try testing::assert(viewport.scroll_top() == 0, "Expected TextArea to consume movable wheel input")
-  try testing::assert(application.frame().text() == "d   │\ne   ┃", "Expected internally scrolled TextArea, got {application.frame().text()}")
-
+  try testing::assert(
+    application.frame().text() == "d   │\ne   ┃",
+    "Expected internally scrolled TextArea, got {application.frame().text()}",
+  )
+  
   application.mouse(
     event::mouse(
       event::MouseEventType::scroll,
@@ -267,12 +270,12 @@ test fn text_area_select_all_survives_internal_scroll_and_reflow() Void!Str {
   application.root.add(area)
   application.render()
   area.focus()
-
+  
   application.key(key("a", super: true))
   application.render()
   area.set_wrap(text::TextWrap::character)
   application.render()
-
+  
   try testing::assert(area.selected_text() == source, "Expected complete offscreen local selection")
   try testing::assert(
     application.selection().expect("reflowed TextArea selection").selected_text == source,
@@ -287,19 +290,13 @@ test fn text_area_edge_drag_extends_one_revealed_row_per_event() Void!Str {
   let area = text_area::new(application.context, value: "a\nb\nc\nd\ne", styles: fixed(4, 2))
   application.root.add(area)
   application.render()
-
+  
   application.mouse_down(0, 0)
   application.mouse(
-    event::mouse(
-      event::MouseEventType::drag,
-      event::MouseButton::left,
-      0,
-      2,
-      modifiers(),
-    ),
+    event::mouse(event::MouseEventType::drag, event::MouseButton::left, 0, 2, modifiers()),
   )
   application.render()
-
+  
   try testing::assert(
     area.selected_text() != "a\nb\nc\nd\ne",
     "Expected one edge drag not to jump to the complete buffer",
@@ -317,7 +314,7 @@ test fn text_area_selection_marks_empty_hard_line() Void!Str {
   area.focus()
   application.key(key("a", super: true))
   application.render()
-
+  
   try testing::assert(
     application.frame().cell(0, 1).expect("selected empty line marker").style.reverse,
     "Expected selected empty line marker style",
@@ -344,7 +341,7 @@ test fn fully_clipped_text_area_contributes_no_global_selected_text() Void!Str {
   area.focus()
   application.key(key("a", super: true))
   application.render()
-
+  
   panel.set_style(
     style::new(
       width: style::cells(4),
@@ -354,7 +351,7 @@ test fn fully_clipped_text_area_contributes_no_global_selected_text() Void!Str {
     ),
   )
   application.render()
-
+  
   try testing::assert(
     application.selection().expect("clipped TextArea selection").selected_text.is_empty(),
     "Expected fully clipped TextArea not to contribute copied source",
@@ -372,12 +369,14 @@ test fn cross_control_selection_includes_complete_intermediate_text_area() Void!
   application.root.add(area)
   application.root.add(after)
   application.render()
-
+  
   application.drag(0, 0, 2, 3)
   application.render()
-
+  
   try testing::assert(
-    application.selection().expect("cross-control TextArea selection").selected_text.contains("a\nb\nc\nd"),
+    application.selection().expect(
+      "cross-control TextArea selection",
+    ).selected_text.contains("a\nb\nc\nd"),
     "Expected complete intermediate TextArea source",
   )
   application.destroy()
@@ -401,7 +400,7 @@ test fn manual_text_area_scroll_does_not_reveal_hidden_caret_in_parent() Void!St
   application.render()
   area.focus()
   application.render()
-
+  
   application.mouse(
     event::mouse(
       event::MouseEventType::scroll,
@@ -414,9 +413,12 @@ test fn manual_text_area_scroll_does_not_reveal_hidden_caret_in_parent() Void!St
   )
   status.set_content("tick")
   application.render()
-
+  
   try testing::assert(viewport.scroll_top() == 0, "Expected hidden caret not to move parent viewport")
-  try testing::assert(application.frame().text().starts_with("a   ┃\nb   │"), "Expected manual internal scroll to persist, got {application.frame().text()}")
+  try testing::assert(
+    application.frame().text().starts_with("a   ┃\nb   │"),
+    "Expected manual internal scroll to persist, got {application.frame().text()}",
+  )
   application.destroy()
   testing::assert(area.node_ref.is_destroyed(), "Expected manually scrolled TextArea cleanup")
 }
@@ -437,11 +439,14 @@ test fn finalized_partial_text_area_selection_survives_scroll_and_zero_height() 
   let area = text_area::new(application.context, value: "aa\nbb\ncc\ndd", styles: fixed(4, 2))
   application.root.add(area)
   application.render()
-
+  
   application.drag(0, 1, 2, 1)
   application.render()
-  try testing::assert(area.selected_text() == "bb", "Expected finalized middle-line selection, got {area.selected_text()}")
-
+  try testing::assert(
+    area.selected_text() == "bb",
+    "Expected finalized middle-line selection, got {area.selected_text()}",
+  )
+  
   application.mouse(
     event::mouse(
       event::MouseEventType::scroll,
@@ -456,8 +461,11 @@ test fn finalized_partial_text_area_selection_survives_scroll_and_zero_height() 
   application.render()
   area.set_style(fixed(4, 2))
   application.render()
-
-  try testing::assert(area.selected_text() == "bb", "Expected source-locked selection after viewport changes")
+  
+  try testing::assert(
+    area.selected_text() == "bb",
+    "Expected source-locked selection after viewport changes",
+  )
   application.key(key("replacement", value: "X"))
   try testing::assert(area.value() == "aa\nX\ncc\ndd", "Expected replacement of only source-locked range")
   application.destroy()
@@ -469,7 +477,7 @@ test fn text_area_automatic_scrollbar_tracks_overflow_and_pointer_input() Void!S
   let area = text_area::new(application.context, value: "a\nb\nc\nd\ne\nf", styles: fixed(5, 3))
   application.root.add(area)
   application.render()
-
+  
   try testing::assert(
     application.frame().text() == "a   ┃\nb   │\nc   │",
     "Expected automatic TextArea scrollbar for overflow, got {application.frame().text()}",
@@ -480,7 +488,7 @@ test fn text_area_automatic_scrollbar_tracks_overflow_and_pointer_input() Void!S
     application.frame().text() == "d   │\ne   │\nf   ┃",
     "Expected TextArea scrollbar track press to scroll, got {application.frame().text()}",
   )
-
+  
   area.set_scrollbar_options(scrollbar::options(visibility: scrollbar::Visibility::hidden))
   application.render()
   try testing::assert(
@@ -496,7 +504,7 @@ test fn text_area_automatic_scrollbar_keeps_empty_gutter_without_overflow() Void
   let area = text_area::new(application.context, value: "hey", styles: fixed(5, 2))
   application.root.add(area)
   application.render()
-
+  
   try testing::assert(
     application.frame().text() == "hey  \n     ",
     "Expected stable unpainted automatic scrollbar gutter",
@@ -521,7 +529,7 @@ test fn text_area_private_scrollbar_composition_respects_public_padding() Void!S
   )
   application.root.add(area)
   application.render()
-
+  
   try testing::assert(
     application.frame().text() == "        \n a    ┃ \n b    │ \n        ",
     "Expected padded content and a stretched private scrollbar, got {application.frame().text()}",
@@ -534,4 +542,59 @@ test fn text_area_private_scrollbar_composition_respects_public_padding() Void!S
   )
   application.destroy()
   testing::assert(area.node_ref.is_destroyed(), "Expected padded TextArea cleanup")
+}
+
+test fn text_area_percent_resize_reflows_private_viewport_and_trailing_caret() Void!Str {
+  let application = cooper_testing::new(14, 4)
+  let area = text_area::new(
+    application.context,
+    value: "abcdefgh",
+    wrap: text::TextWrap::character,
+    styles: style::new(width: style::percent(50.0), height: style::cells(3)),
+  )
+  application.root.add(area)
+  application.render()
+  area.focus()
+  let widths = [14, 10, 18, 14]
+  let area_widths = [7, 5, 9, 7]
+  let cursor_columns = [2, 0, 0, 2]
+  let cursor_rows = [1, 2, 1, 1]
+  mut index = 0
+  for width in widths {
+    application.resize(width, 4)
+    application.render()
+    try testing::assert(
+      area.layout().local.width == area_widths.at(index).expect("area width") and area.layout().local.height == 3,
+      "Expected percentage outer bounds",
+    )
+    // The permanent scrollbar gutter consumes one cell. Exact multiples of
+    // the remaining width need a fresh trailing caret row.
+    try testing::assert(
+      application.frame().cursor_x().or(-1) == cursor_columns.at(index).expect("cursor column"),
+      "Caret column must use final private viewport width",
+    )
+    try testing::assert(
+      application.frame().cursor_y().or(-1) == cursor_rows.at(index).expect("cursor row"),
+      "Caret row must reflow at exact width boundary",
+    )
+    let fresh = cooper_testing::new(width, 4)
+    let fresh_area = text_area::new(
+      fresh.context,
+      value: "abcdefgh",
+      wrap: text::TextWrap::character,
+      styles: area.style(),
+    )
+    fresh.root.add(fresh_area)
+    fresh.render()
+    fresh_area.focus()
+    fresh.render()
+    try testing::assert(
+      application.frame().text() == fresh.frame().text(),
+      "Resized private viewport must match fresh paint",
+    )
+    fresh.destroy()
+    index =+ 1
+  }
+  application.destroy()
+  Result::ok(())
 }

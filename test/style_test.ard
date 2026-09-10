@@ -1,9 +1,29 @@
 use ard/testing
 
+use cooper/runtime
 use cooper/ui/box
 use cooper/ui/color
-use cooper/runtime
+use cooper/ui/geometry
 use cooper/ui/style
+use cooper/ui/text
+use go:math
+
+private fn rejects_style(child: mut box::Box, value: mut style::Style, expected: Str) Void!Str {
+  let outcome = unsafe {
+    child.set_style(value.@)
+  }
+  match outcome {
+    ok(_) => testing::fail("Expected invalid {expected} to panic at set_style"),
+    err(message) => testing::assert(message.contains(expected), "Expected {expected}, got {message}"),
+  }
+}
+
+private fn rect(actual: geometry::Rect, x: Int, y: Int, width: Int, height: Int) Void!Str {
+  testing::assert(
+    actual.x == x and actual.y == y and actual.width == width and actual.height == height,
+    "Expected ({x},{y},{width},{height}), got ({actual.x},{actual.y},{actual.width},{actual.height})",
+  )
+}
 
 private fn all_edges(value: style::Length) style::Edges {
   style::Edges{
@@ -46,7 +66,7 @@ test fn style_new_configures_the_complete_public_vocabulary() Void!Str {
     gap: style::cells(2),
     z_index: 7,
   )
-
+  
   try testing::assert(
     configured.foreground.expect("foreground").blue == Uint8::from(3),
     "Expected foreground",
@@ -107,18 +127,18 @@ test fn style_replacement_clears_dimensions_constraints_and_offsets() Void!Str {
     child.layout().local.x == 2 and child.layout().local.y == 1 and child.layout().local.width == 4,
     "Expected initial dimensions, constraint, and offsets",
   )
-
+  
   child.set_style(style::new(width: style::cells(8), height: style::cells(1)))
   ctx.compute_layout(parent, 10, 5)
   let reset = child.layout().local
-
+  
   try testing::assert(reset.x == 0 and reset.y == 0, "Expected undefined offsets to clear backend state")
   try testing::assert(reset.width == 8, "Expected undefined max width to clear backend state")
-
+  
   child.set_style(style::new())
   ctx.compute_layout(parent, 10, 5)
   try testing::assert(child.layout().local.width == 0, "Expected undefined width to clear backend state")
-
+  
   ctx.destroy_detached()
   testing::assert(child.node_ref.is_destroyed(), "Expected style reset cleanup")
 }
@@ -137,12 +157,957 @@ test fn absolute_edge_offsets_reach_the_layout_backend() Void!Str {
     ),
   )
   parent.add(child)
-
+  
   ctx.compute_layout(parent, 10, 5)
   let layout = child.layout().local
-
+  
   try testing::assert(layout.x == 6, "Expected right offset in backend layout")
   try testing::assert(layout.y == 3, "Expected bottom offset in backend layout")
   ctx.destroy_detached()
   testing::assert(child.node_ref.is_destroyed(), "Expected offset test cleanup")
+}
+
+test fn grow_ratios_redistribute_after_maximum_and_reset() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let first = box::new(ctx, styles: style::new(flex_basis: style::cells(0), flex_grow: 1.0))
+  let second = box::new(ctx, styles: style::new(flex_basis: style::cells(0), flex_grow: 2.0))
+  let third = box::new(ctx, styles: style::new(flex_basis: style::cells(0), flex_grow: 3.0))
+  parent.add(first)
+  parent.add(second)
+  parent.add(third)
+  ctx.compute_layout(parent, 60, 7)
+  try rect(first.layout().local, 0, 0, 10, 7)
+  try rect(second.layout().local, 10, 0, 20, 7)
+  try rect(third.layout().local, 30, 0, 30, 7)
+  
+  second.set_style(
+    style::new(flex_basis: style::cells(0), flex_grow: 2.0, max_width: style::cells(16)),
+  )
+  ctx.compute_layout(parent, 60, 7)
+  // Freeze 16, then distribute 44 in ratio 1:3, not a final clamp of 20.
+  try rect(first.layout().local, 0, 0, 11, 7)
+  try rect(second.layout().local, 11, 0, 16, 7)
+  try rect(third.layout().local, 27, 0, 33, 7)
+  second.set_style(style::new(flex_basis: style::cells(0), flex_grow: 2.0))
+  ctx.compute_layout(parent, 60, 7)
+  try rect(second.layout().local, 10, 0, 20, 7)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn basis_overrides_main_size_and_growth_adds_to_nonzero_bases() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let first = box::new(
+    ctx,
+    styles: style::new(width: style::cells(40), flex_basis: style::cells(10), flex_grow: 1.0),
+  )
+  let second = box::new(
+    ctx,
+    styles: style::new(width: style::cells(5), flex_basis: style::percent(25.0), flex_grow: 3.0),
+  )
+  parent.add(first)
+  parent.add(second)
+  ctx.compute_layout(parent, 40, 6)
+  try rect(first.layout().local, 0, 0, 15, 6)
+  try rect(second.layout().local, 15, 0, 25, 6)
+  first.set_style(style::new(width: style::cells(7), flex_basis: style::auto()))
+  second.set_style(style::new(width: style::cells(9), flex_basis: style::undefined()))
+  ctx.compute_layout(parent, 40, 6)
+  try rect(first.layout().local, 0, 0, 7, 6)
+  try rect(second.layout().local, 7, 0, 9, 6)
+  parent.set_style(style::new(flex_direction: style::FlexDirection::column))
+  first.set_style(style::new(height: style::cells(19), flex_basis: style::cells(4)))
+  second.set_style(style::new(height: style::cells(2), flex_basis: style::percent(50.0)))
+  ctx.compute_layout(parent, 7, 20)
+  try rect(first.layout().local, 0, 0, 7, 4)
+  try rect(second.layout().local, 0, 4, 7, 10)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn fractional_total_grow_leaves_unclaimed_space() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let first = box::new(ctx, styles: style::new(flex_basis: style::cells(8), flex_grow: 0.25))
+  let second = box::new(ctx, styles: style::new(flex_basis: style::cells(4), flex_grow: 0.5))
+  let fixed = box::new(ctx, styles: style::new(width: style::cells(8)))
+  parent.add(first)
+  parent.add(second)
+  parent.add(fixed)
+  ctx.compute_layout(parent, 60, 3)
+  // 40 free cells: claim 10 and 20; the zero-grow child keeps 8.
+  try rect(first.layout().local, 0, 0, 18, 3)
+  try rect(second.layout().local, 18, 0, 24, 3)
+  try rect(fixed.layout().local, 42, 0, 8, 3)
+  ctx.compute_layout(parent, 20, 3)
+  try rect(first.layout().local, 0, 0, 8, 3)
+  try rect(second.layout().local, 8, 0, 4, 3)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn weighted_shrink_freezes_minimum_and_redistributes_on_both_axes() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let first = box::new(ctx, styles: style::new(flex_basis: style::cells(80)))
+  let second = box::new(ctx, styles: style::new(flex_basis: style::cells(40)))
+  parent.add(first)
+  parent.add(second)
+  ctx.compute_layout(parent, 90, 5)
+  try rect(first.layout().local, 0, 0, 60, 5)
+  try rect(second.layout().local, 60, 0, 30, 5)
+  first.set_style(style::new(flex_basis: style::cells(80), min_width: style::cells(70)))
+  ctx.compute_layout(parent, 90, 5)
+  try rect(first.layout().local, 0, 0, 70, 5)
+  try rect(second.layout().local, 70, 0, 20, 5)
+  parent.set_style(style::new())
+  first.set_style(style::new(flex_basis: style::cells(80), min_height: style::cells(70)))
+  ctx.compute_layout(parent, 5, 90)
+  try rect(first.layout().local, 0, 0, 5, 70)
+  try rect(second.layout().local, 0, 70, 5, 20)
+  second.set_style(style::new(flex_basis: style::cells(40), min_height: style::cells(30)))
+  ctx.compute_layout(parent, 5, 90)
+  try rect(second.layout().local, 0, 70, 5, 30)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn shrink_weights_multiply_basis_and_zero_disables_shrinking() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let first = box::new(ctx, styles: style::new(width: style::cells(60), flex_shrink: 1.0))
+  let second = box::new(ctx, styles: style::new(width: style::cells(30), flex_shrink: 2.0))
+  parent.add(first)
+  parent.add(second)
+  ctx.compute_layout(parent, 70, 3)
+  try rect(first.layout().local, 0, 0, 50, 3)
+  try rect(second.layout().local, 50, 0, 20, 3)
+  first.set_style(style::new(width: style::cells(60), flex_shrink: 0.0))
+  ctx.compute_layout(parent, 70, 3)
+  try rect(first.layout().local, 0, 0, 60, 3)
+  try rect(second.layout().local, 60, 0, 10, 3)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn asymmetric_percent_dimensions_nest_and_constraints_apply_on_both_axes() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx)
+  let child = box::new(
+    ctx,
+    styles: style::new(width: style::percent(75.0), height: style::percent(50.0)),
+  )
+  let nested = box::new(
+    ctx,
+    styles: style::new(width: style::percent(50.0), height: style::percent(40.0)),
+  )
+  parent.add(child)
+  child.add(nested)
+  ctx.compute_layout(parent, 40, 20)
+  try rect(child.layout().local, 0, 0, 30, 10)
+  try rect(nested.layout().local, 0, 0, 15, 4)
+  child.set_style(
+    style::new(
+      width: style::cells(1),
+      height: style::cells(1),
+      min_width: style::percent(50.0),
+      min_height: style::percent(30.0),
+    ),
+  )
+  ctx.compute_layout(parent, 40, 20)
+  try rect(child.layout().local, 0, 0, 20, 6)
+  child.set_style(
+    style::new(
+      width: style::cells(50),
+      height: style::cells(50),
+      max_width: style::percent(75.0),
+      max_height: style::percent(40.0),
+    ),
+  )
+  ctx.compute_layout(parent, 40, 20)
+  try rect(child.layout().local, 0, 0, 30, 8)
+  child.set_style(style::new(width: style::cells(0), height: style::cells(0)))
+  ctx.compute_layout(parent, 40, 20)
+  try rect(child.layout().local, 0, 0, 0, 0)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn justification_modes_have_exact_asymmetric_positions() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx)
+  let first = box::new(ctx, styles: style::new(width: style::cells(3)))
+  let second = box::new(ctx, styles: style::new(width: style::cells(5)))
+  parent.add(first)
+  parent.add(second)
+  let modes = [
+    style::Justify::start,
+    style::Justify::end,
+    style::Justify::center,
+    style::Justify::space_between,
+    style::Justify::space_around,
+    style::Justify::space_evenly,
+  ]
+  let starts = [0, 12, 6, 0, 3, 4]
+  let seconds = [3, 15, 9, 15, 12, 11]
+  mut index = 0
+  for mode in modes {
+    parent.set_style(style::new(flex_direction: style::FlexDirection::row, justify_content: mode))
+    ctx.compute_layout(parent, 20, 4)
+    try rect(first.layout().local, starts.at(index).expect("start"), 0, 3, 4)
+    try rect(second.layout().local, seconds.at(index).expect("second"), 0, 5, 4)
+    index =+ 1
+  }
+  let _ = parent.remove(second)
+  parent.set_style(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      justify_content: style::Justify::space_between,
+    ),
+  )
+  ctx.compute_layout(parent, 19, 4)
+  try rect(first.layout().local, 0, 0, 3, 4)
+  parent.set_style(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      justify_content: style::Justify::space_evenly,
+    ),
+  )
+  ctx.compute_layout(parent, 19, 4)
+  try rect(first.layout().local, 8, 0, 3, 4)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn item_alignment_inheritance_overrides_and_stretch_constraints() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(flex_direction: style::FlexDirection::row, align_items: style::Align::end),
+  )
+  let inherited = box::new(ctx, styles: style::new(width: style::cells(3), height: style::cells(2)))
+  let centered = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(5),
+      height: style::cells(4),
+      align_self: style::Align::center,
+    ),
+  )
+  let stretched = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(2),
+      align_self: style::Align::stretch,
+      max_height: style::cells(6),
+    ),
+  )
+  parent.add(inherited)
+  parent.add(centered)
+  parent.add(stretched)
+  ctx.compute_layout(parent, 20, 10)
+  try rect(inherited.layout().local, 0, 8, 3, 2)
+  try rect(centered.layout().local, 3, 3, 5, 4)
+  try rect(stretched.layout().local, 8, 0, 2, 6)
+  parent.set_style(
+    style::new(flex_direction: style::FlexDirection::row, align_items: style::Align::stretch),
+  )
+  centered.set_style(
+    style::new(
+      width: style::cells(5),
+      align_self: style::Align::start,
+      min_height: style::cells(3),
+    ),
+  )
+  ctx.compute_layout(parent, 20, 10)
+  try rect(inherited.layout().local, 0, 0, 3, 2)
+  try rect(centered.layout().local, 3, 0, 5, 3)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn auto_margins_consume_free_space_before_justification_and_alignment() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
+      justify_content: style::Justify::end,
+      align_items: style::Align::end,
+    ),
+  )
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(4),
+      height: style::cells(2),
+      margin: style::Edges{
+        left: style::auto(),
+        right: style::auto(),
+        top: style::auto(),
+        bottom: style::auto(),
+      },
+    ),
+  )
+  parent.add(child)
+  ctx.compute_layout(parent, 20, 10)
+  try rect(child.layout().local, 8, 4, 4, 2)
+  child.set_style(
+    style::new(
+      width: style::cells(4),
+      height: style::cells(2),
+      margin: style::Edges{
+        left: style::auto(),
+        right: style::cells(2),
+        top: style::cells(1),
+        bottom: style::auto(),
+      },
+    ),
+  )
+  ctx.compute_layout(parent, 20, 10)
+  try rect(child.layout().local, 14, 1, 4, 2)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn percent_spacing_uses_width_for_edges_and_axis_for_gap() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      padding: style::Edges{
+        left: style::percent(10.0),
+        right: style::percent(20.0),
+        top: style::percent(5.0),
+        bottom: style::percent(15.0),
+      },
+    ),
+  )
+  let child = box::new(ctx, styles: style::new(height: style::cells(3)))
+  parent.add(child)
+  ctx.compute_layout(parent, 40, 20)
+  try rect(child.layout().local, 4, 2, 28, 3)
+  parent.set_style(style::new(gap: style::percent(10.0)))
+  child.set_style(
+    style::new(
+      width: style::cells(4),
+      height: style::cells(3),
+      margin: style::Edges{
+        left: style::percent(10.0),
+        right: style::percent(20.0),
+        top: style::percent(5.0),
+        bottom: style::percent(15.0),
+      },
+    ),
+  )
+  let second = box::new(ctx, styles: style::new(width: style::cells(5), height: style::cells(2)))
+  parent.add(second)
+  ctx.compute_layout(parent, 40, 20)
+  try rect(child.layout().local, 4, 2, 4, 3)
+  try rect(second.layout().local, 0, 13, 5, 2)
+  parent.set_style(style::new(flex_direction: style::FlexDirection::row, gap: style::percent(10.0)))
+  ctx.compute_layout(parent, 40, 20)
+  try rect(second.layout().local, 20, 0, 5, 2)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn reverse_directions_preserve_retained_order_with_unequal_sizes_and_gap() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(flex_direction: style::FlexDirection::row_reverse, gap: style::cells(2)),
+  )
+  let first = box::new(ctx, styles: style::new(width: style::cells(3), height: style::cells(2)))
+  let second = box::new(ctx, styles: style::new(width: style::cells(5), height: style::cells(4)))
+  parent.add(first)
+  parent.add(second)
+  ctx.compute_layout(parent, 20, 12)
+  try rect(first.layout().local, 17, 0, 3, 2)
+  try rect(second.layout().local, 10, 0, 5, 4)
+  parent.add(first, 1)
+  ctx.compute_layout(parent, 20, 12)
+  try rect(second.layout().local, 15, 0, 5, 4)
+  try rect(first.layout().local, 10, 0, 3, 2)
+  parent.set_style(
+    style::new(flex_direction: style::FlexDirection::column_reverse, gap: style::cells(2)),
+  )
+  ctx.compute_layout(parent, 20, 12)
+  try rect(second.layout().local, 0, 8, 5, 4)
+  try rect(first.layout().local, 0, 4, 3, 2)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn wrap_boundary_and_reverse_lines_use_exact_gap_without_outer_gaps() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      gap: style::cells(2),
+    ),
+  )
+  let first = box::new(
+    ctx,
+    styles: style::new(width: style::cells(3), height: style::cells(2), flex_shrink: 0.0),
+  )
+  let second = box::new(
+    ctx,
+    styles: style::new(width: style::cells(5), height: style::cells(4), flex_shrink: 0.0),
+  )
+  parent.add(first)
+  parent.add(second)
+  ctx.compute_layout(parent, 10, 8)
+  try rect(first.layout().local, 0, 0, 3, 2)
+  try rect(second.layout().local, 5, 0, 5, 4)
+  ctx.compute_layout(parent, 9, 8)
+  try rect(second.layout().local, 0, 4, 5, 4)
+  parent.set_style(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap_reverse,
+      gap: style::cells(2),
+    ),
+  )
+  ctx.compute_layout(parent, 9, 8)
+  try rect(first.layout().local, 0, 6, 3, 2)
+  try rect(second.layout().local, 0, 0, 5, 4)
+  parent.set_style(
+    style::new(
+      flex_direction: style::FlexDirection::column,
+      flex_wrap: style::FlexWrap::wrap,
+      gap: style::cells(2),
+    ),
+  )
+  ctx.compute_layout(parent, 10, 7)
+  try rect(first.layout().local, 0, 0, 3, 2)
+  try rect(second.layout().local, 5, 0, 5, 4)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn static_relative_and_absolute_offsets_separate_visual_position_from_flow() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let first = box::new(
+    ctx,
+    styles: style::new(
+      position: style::Position::static,
+      width: style::cells(3),
+      height: style::cells(2),
+      left: style::cells(4),
+      top: style::cells(1),
+    ),
+  )
+  let second = box::new(ctx, styles: style::new(width: style::cells(5), height: style::cells(4)))
+  parent.add(first)
+  parent.add(second)
+  ctx.compute_layout(parent, 40, 20)
+  try rect(first.layout().local, 0, 0, 3, 2)
+  try rect(second.layout().local, 3, 0, 5, 4)
+  first.set_style(
+    style::new(
+      position: style::Position::relative,
+      width: style::cells(3),
+      height: style::cells(2),
+      left: style::cells(4),
+      top: style::cells(1),
+    ),
+  )
+  ctx.compute_layout(parent, 40, 20)
+  try rect(first.layout().local, 4, 1, 3, 2)
+  try rect(second.layout().local, 3, 0, 5, 4)
+  first.set_style(
+    style::new(
+      position: style::Position::absolute,
+      left: style::percent(10.0),
+      right: style::percent(20.0),
+      top: style::percent(10.0),
+      bottom: style::percent(20.0),
+    ),
+  )
+  ctx.compute_layout(parent, 40, 20)
+  try rect(first.layout().local, 4, 2, 28, 14)
+  try rect(second.layout().local, 0, 0, 5, 4)
+  first.set_style(
+    style::new(
+      position: style::Position::absolute,
+      width: style::cells(3),
+      height: style::cells(2),
+      left: style::cells(4),
+      right: style::cells(8),
+      top: style::cells(2),
+      bottom: style::cells(4),
+    ),
+  )
+  ctx.compute_layout(parent, 40, 20)
+  try rect(first.layout().local, 4, 2, 3, 2)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn border_variants_share_one_cell_extent_and_reset_preserves_padding() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx)
+  let child = box::new(ctx)
+  parent.add(child)
+  let padding = style::Edges{
+    top: style::cells(1),
+    right: style::cells(2),
+    bottom: style::cells(3),
+    left: style::cells(4),
+  }
+  for border in [style::Border::single, style::Border::double, style::Border::rounded, style::Border::heavy] {
+    parent.set_style(style::new(border: border, padding: padding))
+    child.set_style(style::new(flex_grow: 1.0))
+    ctx.compute_layout(parent, 20, 12)
+    try rect(child.layout().local, 5, 2, 12, 6)
+  }
+  parent.set_style(style::new(padding: padding))
+  ctx.compute_layout(parent, 20, 12)
+  try rect(child.layout().local, 4, 1, 14, 8)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn directly_constructed_nonfinite_and_out_of_range_lengths_are_rejected_by_setters() Void!Str {
+  let ctx = runtime::new_detached()
+  let child = box::new(ctx, styles: style::new(width: style::cells(7)))
+  let invalid = [
+    style::Length{kind: style::LengthKind::cells, value: -1.0},
+    style::Length{kind: style::LengthKind::cells, value: Float32::from(math::NaN())},
+    style::Length{kind: style::LengthKind::cells, value: Float32::from(math::Inf(1))},
+    style::Length{kind: style::LengthKind::percent, value: -0.5},
+    style::Length{kind: style::LengthKind::percent, value: 100.5},
+  ]
+  for length in invalid {
+    mut value = mut style::new()
+    value.width = length
+    try rejects_style(child, value, "width")
+    value = mut style::new()
+    value.height = length
+    try rejects_style(child, value, "height")
+    value = mut style::new()
+    value.min_width = length
+    try rejects_style(child, value, "min_width")
+    value = mut style::new()
+    value.min_height = length
+    try rejects_style(child, value, "min_height")
+    value = mut style::new()
+    value.max_width = length
+    try rejects_style(child, value, "max_width")
+    value = mut style::new()
+    value.max_height = length
+    try rejects_style(child, value, "max_height")
+    value = mut style::new()
+    value.flex_basis = length
+    try rejects_style(child, value, "flex_basis")
+    value = mut style::new()
+    value.top = length
+    try rejects_style(child, value, "top")
+    value = mut style::new()
+    value.right = length
+    try rejects_style(child, value, "right")
+    value = mut style::new()
+    value.bottom = length
+    try rejects_style(child, value, "bottom")
+    value = mut style::new()
+    value.left = length
+    try rejects_style(child, value, "left")
+    value = mut style::new()
+    value.gap = length
+    try rejects_style(child, value, "gap")
+    value = mut style::new()
+    value.padding = all_edges(length)
+    try rejects_style(child, value, "padding.top")
+    value = mut style::new()
+    value.margin = all_edges(length)
+    try rejects_style(child, value, "margin.top")
+  }
+  try testing::assert(child.style().width.value == 7.0, "Rejected style must not replace public state")
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn setters_validate_property_specific_units_scalar_payloads_and_flex_factors() Void!Str {
+  let ctx = runtime::new_detached()
+  let child = box::new(ctx)
+  for kind in [
+    style::LengthKind::undefined,
+    style::LengthKind::auto,
+    style::LengthKind::max_content,
+    style::LengthKind::fit_content,
+    style::LengthKind::stretch,
+  ] {
+    let value = mut style::new()
+    value.width = style::Length{kind: kind, value: 1.0}
+    try rejects_style(child, value, "does not accept a numeric value")
+  }
+  for length in [style::auto(), style::max_content(), style::fit_content(), style::stretch()] {
+    mut value = mut style::new()
+    value.gap = length
+    try rejects_style(child, value, "gap")
+    value = mut style::new()
+    value.padding = all_edges(length)
+    try rejects_style(child, value, "padding.top")
+    if length.kind != style::LengthKind::auto {
+      value = mut style::new()
+      value.margin = all_edges(length)
+      try rejects_style(child, value, "margin.top")
+      value = mut style::new()
+      value.left = length
+      try rejects_style(child, value, "left")
+    }
+  }
+  mut value = mut style::new()
+  value.min_width = style::auto()
+  try rejects_style(child, value, "min_width does not accept auto")
+  value = mut style::new()
+  value.min_height = style::auto()
+  try rejects_style(child, value, "min_height does not accept auto")
+  value = mut style::new()
+  value.max_width = style::auto()
+  try rejects_style(child, value, "max_width does not accept auto")
+  value = mut style::new()
+  value.max_height = style::auto()
+  try rejects_style(child, value, "max_height does not accept auto")
+  for factor in [
+    Float32::from(-0.1),
+    Float32::from(math::NaN()),
+    Float32::from(math::Inf(1)),
+    Float32::from(math::Inf(-1)),
+  ] {
+    value = mut style::new()
+    value.flex_grow = factor
+    try rejects_style(child, value, "flex_grow")
+    value = mut style::new()
+    value.flex_shrink = factor
+    try rejects_style(child, value, "flex_shrink")
+  }
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn setters_accept_zero_full_percent_and_intrinsic_units_without_narrowing_vocabulary() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx)
+  let child = box::new(ctx)
+  parent.add(child)
+  for amount in [0.0, 100.0] {
+    let value = mut style::new()
+    value.width = style::Length{kind: style::LengthKind::percent, value: Float32::from(amount)}
+    value.height = style::Length{kind: style::LengthKind::percent, value: Float32::from(amount)}
+    value.flex_grow = 0.0
+    value.flex_shrink = 0.0
+    child.set_style(value.@)
+    ctx.compute_layout(parent, 40, 20)
+    if amount == 0.0 {
+      try rect(child.layout().local, 0, 0, 0, 0)
+    } else {
+      try rect(child.layout().local, 0, 0, 40, 20)
+    }
+  }
+  // Vocabulary acceptance only. ADR 0016 geometry needs separate conformance
+  // tests; accepting a keyword does not establish its sizing behavior.
+  for length in [
+    style::undefined(),
+    style::cells(0),
+    style::percent(0.0),
+    style::percent(100.0),
+    style::max_content(),
+    style::fit_content(),
+    style::stretch(),
+  ] {
+    let value = mut style::new()
+    value.width = length
+    value.height = length
+    value.min_width = length
+    value.min_height = length
+    value.max_width = length
+    value.max_height = length
+    value.flex_basis = length
+    child.set_style(value.@)
+    try testing::assert(child.style().min_height.kind == length.kind, "Expected accepted constraint kind")
+  }
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn auto_and_undefined_measure_content_while_explicit_zero_stays_bounded() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(ctx, content: "abc defgh", styles: style::new(flex_shrink: 0.0))
+  parent.add(label)
+  for length in [style::auto(), style::undefined()] {
+    label.set_style(style::new(width: length))
+    ctx.compute_layout(parent, 15, 12)
+    try rect(label.layout().local, 0, 0, 9, 1)
+  }
+  label.set_style(style::new(width: style::cells(0), height: style::cells(1)))
+  ctx.compute_layout(parent, 15, 12)
+  try rect(label.layout().local, 0, 0, 0, 1)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn wrapped_lines_resolve_growth_independently_and_reorder_recollects_lines() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      gap: style::cells(2),
+    ),
+  )
+  let first = box::new(
+    ctx,
+    styles: style::new(flex_basis: style::cells(3), flex_grow: 1.0, height: style::cells(2)),
+  )
+  let second = box::new(
+    ctx,
+    styles: style::new(flex_basis: style::cells(5), flex_grow: 3.0, height: style::cells(2)),
+  )
+  let third = box::new(
+    ctx,
+    styles: style::new(flex_basis: style::cells(6), flex_grow: 1.0, height: style::cells(3)),
+  )
+  parent.add(first)
+  parent.add(second)
+  parent.add(third)
+  ctx.compute_layout(parent, 14, 7)
+  try rect(first.layout().local, 0, 0, 4, 2)
+  try rect(second.layout().local, 6, 0, 8, 2)
+  try rect(third.layout().local, 0, 4, 14, 3)
+  parent.add(third, 0)
+  ctx.compute_layout(parent, 15, 7)
+  // Third+first have bases 6+3, gap 2, leaving 4 shared equally.
+  try rect(third.layout().local, 0, 0, 8, 3)
+  try rect(first.layout().local, 10, 0, 5, 2)
+  try rect(second.layout().local, 0, 5, 15, 2)
+  let fresh = box::new(ctx, styles: parent.style())
+  let fresh_third = box::new(ctx, styles: third.style())
+  let fresh_first = box::new(ctx, styles: first.style())
+  let fresh_second = box::new(ctx, styles: second.style())
+  fresh.add(fresh_third)
+  fresh.add(fresh_first)
+  fresh.add(fresh_second)
+  ctx.compute_layout(fresh, 15, 7)
+  try rect(fresh_third.layout().local, 0, 0, 8, 3)
+  try rect(fresh_first.layout().local, 10, 0, 5, 2)
+  try rect(fresh_second.layout().local, 0, 5, 15, 2)
+  let _ = parent.remove(first)
+  // Remaining two items exactly fill one line, avoiding fractional growth.
+  ctx.compute_layout(parent, 13, 7)
+  try rect(third.layout().local, 0, 0, 6, 3)
+  try rect(second.layout().local, 8, 0, 5, 2)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn adjacent_margins_add_without_collapsing_and_auto_margins_do_not_shrink_overflow() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx, styles: style::new(gap: style::cells(1)))
+  let first = box::new(
+    ctx,
+    styles: style::new(
+      height: style::cells(2),
+      margin: style::Edges{
+        top: style::cells(1),
+        bottom: style::cells(3),
+        left: style::cells(2),
+        right: style::cells(4),
+      },
+    ),
+  )
+  let second = box::new(
+    ctx,
+    styles: style::new(
+      height: style::cells(3),
+      margin: style::Edges{
+        top: style::cells(2),
+        bottom: style::cells(1),
+        left: style::cells(1),
+        right: style::cells(3),
+      },
+    ),
+  )
+  parent.add(first)
+  parent.add(second)
+  ctx.compute_layout(parent, 20, 20)
+  try rect(first.layout().local, 2, 1, 14, 2)
+  try rect(second.layout().local, 1, 9, 16, 3)
+  let _ = parent.remove(second)
+  parent.set_style(style::new(flex_direction: style::FlexDirection::row))
+  first.set_style(
+    style::new(
+      width: style::cells(8),
+      height: style::cells(2),
+      flex_shrink: 0.0,
+      margin: style::Edges{
+        left: style::auto(),
+        right: style::auto(),
+        top: style::undefined(),
+        bottom: style::undefined(),
+      },
+    ),
+  )
+  ctx.compute_layout(parent, 6, 5)
+  try rect(first.layout().local, 0, 0, 8, 2)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn absolute_descendant_uses_nearest_nonstatic_containing_block() Void!Str {
+  let ctx = runtime::new_detached()
+  let root = box::new(ctx, styles: style::new(padding: style::edges(style::cells(2))))
+  let middle = box::new(
+    ctx,
+    styles: style::new(
+      position: style::Position::static,
+      width: style::cells(10),
+      height: style::cells(6),
+    ),
+  )
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::percent(25.0),
+      height: style::percent(50.0),
+      right: style::cells(1),
+      bottom: style::cells(2),
+    ),
+  )
+  root.add(middle)
+  middle.add(child)
+  ctx.compute_layout(root, 40, 20)
+  try rect(child.layout().screen, 29, 8, 10, 10)
+  middle.set_style(
+    style::new(
+      position: style::Position::relative,
+      width: style::cells(12),
+      height: style::cells(6),
+    ),
+  )
+  ctx.compute_layout(root, 40, 20)
+  try rect(child.layout().local, 8, 1, 3, 3)
+  try rect(child.layout().screen, 10, 3, 3, 3)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn resized_percent_child_crosses_minimum_and_maximum_without_stale_freeze() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let constrained = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(50.0),
+      min_width: style::cells(8),
+      max_width: style::cells(14),
+      flex_shrink: 0.0,
+    ),
+  )
+  let fill = box::new(ctx, styles: style::new(flex_grow: 1.0))
+  parent.add(constrained)
+  parent.add(fill)
+  let widths = [12, 20, 40, 20, 12]
+  let expected = [8, 10, 14, 10, 8]
+  mut index = 0
+  for width in widths {
+    let fixed_width = expected.at(index).expect("expected constrained width")
+    ctx.compute_layout(parent, width, 7)
+    try rect(constrained.layout().local, 0, 0, fixed_width, 7)
+    try rect(fill.layout().local, fixed_width, 0, width - fixed_width, 7)
+    let fresh = box::new(ctx, styles: parent.style())
+    let fresh_constrained = box::new(ctx, styles: constrained.style())
+    let fresh_fill = box::new(ctx, styles: fill.style())
+    fresh.add(fresh_constrained)
+    fresh.add(fresh_fill)
+    ctx.compute_layout(fresh, width, 7)
+    try rect(fresh_constrained.layout().local, 0, 0, fixed_width, 7)
+    try rect(fresh_fill.layout().local, fixed_width, 0, width - fixed_width, 7)
+    index =+ 1
+  }
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn negative_free_space_justification_keeps_unshrunk_sizes() Void!Str {
+  let ctx = runtime::new_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
+      justify_content: style::Justify::end,
+    ),
+  )
+  let child = box::new(ctx, styles: style::new(width: style::cells(10), flex_shrink: 0.0))
+  parent.add(child)
+  ctx.compute_layout(parent, 6, 4)
+  try rect(child.layout().local, -4, 0, 10, 4)
+  parent.set_style(
+    style::new(flex_direction: style::FlexDirection::row, justify_content: style::Justify::center),
+  )
+  ctx.compute_layout(parent, 6, 4)
+  try rect(child.layout().local, -2, 0, 10, 4)
+  parent.set_style(
+    style::new(flex_direction: style::FlexDirection::row, justify_content: style::Justify::start),
+  )
+  ctx.compute_layout(parent, 6, 4)
+  try rect(child.layout().local, 0, 0, 10, 4)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn every_padding_and_margin_edge_is_validated_independently() Void!Str {
+  let ctx = runtime::new_detached()
+  let child = box::new(ctx)
+  let bad = style::Length{kind: style::LengthKind::cells, value: -1.0}
+  let zero = style::cells(0)
+  let edges = [
+    style::Edges{
+      top: bad,
+      right: zero,
+      bottom: zero,
+      left: zero,
+    },
+    style::Edges{
+      top: zero,
+      right: bad,
+      bottom: zero,
+      left: zero,
+    },
+    style::Edges{
+      top: zero,
+      right: zero,
+      bottom: bad,
+      left: zero,
+    },
+    style::Edges{
+      top: zero,
+      right: zero,
+      bottom: zero,
+      left: bad,
+    },
+  ]
+  let names = ["top", "right", "bottom", "left"]
+  mut index = 0
+  for edge in edges {
+    let name = names.at(index).expect("edge name")
+    let padding = mut style::new()
+    padding.padding = edge
+    try rejects_style(child, padding, "padding.{name}")
+    let margin = mut style::new()
+    margin.margin = edge
+    try rejects_style(child, margin, "margin.{name}")
+    index =+ 1
+  }
+  ctx.destroy_detached()
+  Result::ok(())
 }

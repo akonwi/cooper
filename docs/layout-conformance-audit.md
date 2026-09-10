@@ -1,7 +1,53 @@
 # Public layout conformance audit
 
-September 9, 2026. Source audit of the current test suite, not a claim that the
-gaps below have been filled.
+September 10, 2026. The original September 9 source-audit matrices below are
+preserved as a baseline. The integration evidence here records which gaps now
+have additional tests, without claiming complete conformance.
+
+## Integrated conformance baseline
+
+Integrated 32 additional tests from the test sub-thread: 24 Style tests, five
+retained-framework tests, and one each for ScrollBox, Input, and TextArea.
+Its Select regression was already integrated with the popup anchoring fix;
+the additional parent-layout/height-resize regression remains intact. The moved
+anchor assertion now also checks that the owner's height remains one cell.
+
+| Test owner | Added coverage |
+| --- | --- |
+| [Style](../test/style_test.ard) | Independent grow ratios, fractional total grow, weighted shrink and bound freezing on both axes; explicit/percent/auto basis; asymmetric percentages and constraints; all Justify modes; item inheritance, overrides, stretch and auto margins; percentage spacing; reverse/wrap/reorder; static/relative/absolute containing blocks; border insets/reset; direct malformed length/factor validation and each spacing edge. |
+| [Framework](../test/framework_test.ard) | Hidden subtree reflow, focus/hits and changed hidden measurement; wrap/resize-dependent sibling geometry; percent reparent and screen coordinates; scroll-parent shrink policy without public Style mutation; complete Style reset and paint-only updates. |
+| [ScrollBox](../test/scroll_box_test.ard) | Gap reset and hidden rows update extents, effective/requested offsets, translated paint and hit routing. |
+| [Input](../test/input_test.ard) | Value/placeholder/caret-room measurement and max-width/reset move following siblings; fresh-control comparison. |
+| [TextArea](../test/text_area_test.ard) | Percentage resize, private scrollbar gutter, exact-width trailing caret rows and fresh-frame comparison. |
+| [Select](../test/select_test.ard) | Open menu follows owner movement, sibling growth and terminal resize in the same frame; old cells clear and relocated menu rows remain clickable. |
+
+The only production change in this integration parenthesizes three `not finite`
+checks in `ui/style.ard`. Current Ard parses `not finite(x) or x < 0` as
+`not (finite(x) or x < 0)`, which accepted negative directly constructed lengths
+and flex factors. The imported setter tests enforce the existing non-negative
+contract, including rejection without replacing the previous public Style.
+
+The worker's assertion that broad item-alignment distribution values are
+accepted was deliberately not integrated: it contradicts accepted ADR 0017.
+No runtime alignment validation change is included in this baseline step.
+Intrinsic keyword setter acceptance remains value-only evidence, not proof of
+the geometry required by ADR 0016. No 5×2 max-content fallback was made a golden.
+Exact arithmetic tests do not establish ADR 0020's fractional rounding contract.
+
+Verification in the combined checkout:
+
+- `ard test`: **299 passed; 0 failed; 0 panicked** (267 before integration).
+- `ard format`, `ard check`, and `ard format --check` passed for `ui/style.ard`
+  and the six affected test files listed above.
+- `go test ./...`: seven packages passed; retainedyoga has no Go tests.
+- From `examples/`, `python3` passed each of `test_layout_playground.py`,
+  `test_scroll_form.py`, `test_horizontal_scroll.py`, `test_text_gallery.py`,
+  `test_input_lab.py`, `test_text_area.py`, `test_select.py`, and
+  `test_interaction.py`.
+
+These results establish a passing current-backend baseline. The accepted ADRs
+remain the specification for subsequent contract tests and the Ard replacement;
+passing this suite alone does not establish conformance to all five decisions.
 
 ## Cooper defines the contract
 
@@ -89,6 +135,23 @@ golden geometry becomes authoritative:
    clipping and hit participation; layout flattening alone is not sufficient.
 4. Intrinsic keyword constraints, percentage resolution under indefinite sizes,
    wrapped-line cross distribution, and fractional cell-rounding policy.
+
+[Accepted ADR 0016](./adrs/0016-define-intrinsic-sizing-and-constraints.md)
+specifies intrinsic dimensions, constraint precedence, flex basis and indefinite
+percentage resolution. The remaining decisions have accepted contracts:
+
+- [ADR 0017](./adrs/0017-define-item-alignment-and-line-distribution.md):
+  property-specific alignment validity and explicit wrapped-line distribution.
+- [ADR 0018](./adrs/0018-define-baseline-alignment.md): deterministic bottom-edge
+  box baselines rather than implicit descendant selection.
+- [ADR 0019](./adrs/0019-define-display-contents.md): boxless layout/paint
+  participation with retained ownership and event ancestry.
+- [ADR 0020](./adrs/0020-define-layout-cell-rounding.md): shared absolute-edge
+  rounding, half-tie policy, and measured-content reconciliation.
+
+ADRs 0016–0020 are Accepted, with runtime implementation
+and conformance tests pending. Their acceptance-check sections describe required
+future coverage, not tests already passing today.
 
 Investigate existing backend behavior as evidence, then state the intended public
 rule. Do not silently make unsupported enum combinations panic, remove public

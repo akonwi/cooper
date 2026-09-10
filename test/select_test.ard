@@ -524,7 +524,10 @@ test fn open_select_popup_tracks_moved_anchor_and_terminal_edge_resize() Void!St
     ),
   )
   application.render()
-  try testing::assert(control.layout().screen.x == 7 and control.layout().screen.y == 7, "Owner moves")
+  try testing::assert(
+    control.layout().screen.x == 7 and control.layout().screen.y == 7 and control.layout().screen.height == 1,
+    "Moving the anchor must not expand its flow bounds",
+  )
   try testing::assert(
     application.frame().cell(7, 5).expect("moved menu").grapheme == "*",
     "Menu moves above bottom-edge owner in the same frame",

@@ -4,6 +4,69 @@ September 10, 2026. The original September 9 source-audit matrices below are
 preserved as a baseline. The integration evidence here records which gaps now
 have additional tests, without claiming complete conformance.
 
+## Initial Ard replacement: current evidence and remaining work
+
+`core/node.ard` now computes layout through `core/layout.ard`, not the Go Yoga
+adapter. Ard owns sizing, flex allocation, positioning, and cell projection.
+The numeric bridge only widens Float32 values because the current Ard API lacks
+that conversion. The unused Yoga adapter and dependency remain in the repository
+for now; this is an implementation milestone, not a completed backend retirement.
+
+All nine failures in the historical ADR 0016 table below now pass, including the
+assertions previously unreachable after each first failure. `max_content` Text
+`abc defgh` in a five-cell parent is 9×1, and bordered/padded multiline Text is
+9×6. Text uses the Node's committed local content rectangle for wrapping, paint,
+clipping, links, cursor placement, and selection. Its border resets with Style.
+
+Additional regressions distinguish independently allocated stretch width from
+an equal natural width, measured/unmeasured edge rounding, zero-height text
+after flex shrinking, and auto versus explicit absolute offsets inside borders.
+These are targeted cases, not complete acceptance coverage for ADR 0020.
+
+Two PTY expectations needed deliberate migration away from Yoga's text-specific
+rounding. The gallery's character sample has 11 cells instead of 12; its test
+checks the new split and preserves complete-source assertions for both ordinary
+and long-token samples. In the 50×12 TextArea fixture, fixed editor height left
+the status only 1/3 of a row, whose edges both project to row 11. The fixture now
+lets the editor shrink and makes title/status nonshrinking. The headless test
+`cell_projection_can_collapse_shrunk_text_like_an_unmeasured_box` preserves the
+zero-height rule instead of adding an implicit one-cell Text minimum.
+
+Verification:
+
+- `ard test`: **321 passed; 0 failed; 0 panicked**, including all 299 checkpoint
+  tests, 16 intrinsic-contract tests, three Text border tests, two projection
+  tests, and one absolute-default-origin test.
+- `ard format`, `ard check`, and `ard format --check` passed for all seven changed
+  Ard files, including the new engine and the TextArea fixture.
+- `go test ./...`: all seven tested packages passed; retainedyoga has no tests.
+- All 20 PTY entry points listed in `AGENTS.md` passed. Layout/Select checks were
+  rerun after the final absolute-default-origin correction.
+- `python3 benchmarks/run.py --iterations 3 --warmups 1` completed every case.
+  This was a smoke run concurrent with PTY tests, not a comparative performance
+  claim. Dirty-layout caching and a controlled old/new comparison remain pending.
+- Inspected `text-border-states.png` (headless Frame visualization) and
+  `text-area-layout.png` (captured PTY text, empty and edited states). These are
+  cell-content visualizations, not native terminal color/cursor screenshots.
+
+**The port is not yet fully conformant to the accepted ADRs.** Remaining work:
+
+- ADR 0016: broaden intrinsic constraints/basis, percentage bounds and spacing,
+  and independently definite versus content-derived allocation coverage on both
+  axes. Passing the 16 cases does not establish all combinations.
+- ADR 0017: add `align_content`, property-specific validation, and wrapped-line
+  distribution tests. Current wrapped lines only use stretch distribution.
+- ADR 0018: implement and test bottom-border-edge baseline groups with margins;
+  the initial engine does not implement that baseline policy.
+- ADR 0019: complete boxless retained geometry, paint/stacking, hit/focus,
+  scrolling, inheritance, and transitions. Layout flattening alone is insufficient.
+- ADR 0020: reconcile width-dependent measurement with projected cell width
+  before committing dependent heights. Edge projection is implemented, but the
+  full measurement/projection convergence contract is not.
+
+The sections below retain the earlier Yoga baseline and initial failing-test
+evidence; their counts are historical, not the current test result.
+
 ## Integrated conformance baseline
 
 Integrated 32 additional tests from the test sub-thread: 24 Style tests, five
@@ -48,6 +111,49 @@ Verification in the combined checkout:
 These results establish a passing current-backend baseline. The accepted ADRs
 remain the specification for subsequent contract tests and the Ard replacement;
 passing this suite alone does not establish conformance to all five decisions.
+
+## ADR 0016 executable contract cases
+
+After the passing checkpoint, 15 `intrinsic_contract_*` tests were added to
+`test/style_test.ard`. Expected rectangles come from ADR 0016, not backend
+snapshots. They run in the ordinary suite without skips or expected-failure
+wrappers. Each test destroys its detached Runtime even when an assertion fails.
+
+Full `ard test`: **305 passed; 9 failed; 0 panicked**. All 299 baseline tests
+still pass; six new contract tests pass and nine expose current implementation
+gaps. `ard format`, `ard check`, and `ard format --check` pass for the changed
+test file. Run just this group with `ard test --filter intrinsic_contract`.
+
+| Failing case (test suffix) | Required width×height | Observed width×height |
+| --- | --- | --- |
+| `max_content_overflows_narrow_parent` | 9×1 | 5×2 |
+| `stretch_fills_available_width_minus_margins` | 14×1 at (3,3) | 3×1 at (3,3) |
+| `height_preserves_finite_width_wrapping` | 5×2 | 5×1 |
+| `explicit_width_is_not_alignment_stretch` | 9×1 | 20×1 |
+| `explicit_lines_and_insets_count_once` | 9×6 | 7×4 |
+| `max_content_minimum_prevents_shrink` | 9×1 | 3×4 |
+| `max_content_bound_limits_explicit_width` | 9×1 | 20×1 |
+| `basis_overrides_conflicting_preferred_width` | 9×1 | 3×4 |
+| `container_natural_width_ignores_soft_wrap_and_out_of_flow` | 9×2 | 5×4 |
+
+Passing cases cover fit-content below/equal/above natural width with a long word
+(no CSS min-content floor); max-width remeasurement and reset moving a following
+sibling; widest explicit line; minimum-over-maximum precedence on both axes;
+physical inset floors; and an indefinite percentage that stays content-sized
+until an independently definite parent width becomes available.
+
+The Text inset failure is not solely a Yoga keyword issue: `Node` stores border
+width separately from Style, and `Box` calls `set_border_width` while `Text`
+does not. The plain explicit-lines case passes. The accepted Text border-box
+example therefore requires Cooper integration work as well as sizing changes.
+
+Assertions following the first failure in the basis and container tests are not
+reached; their sibling/child coordinates are requirements, not verified evidence.
+This is initial ADR 0016 coverage, not full conformance: remaining combinations
+include fit/stretch intrinsic constraints and basis, indefinite percentage bounds
+and spacing, Unicode/zero-size keyword cases, and broader retained mutations.
+ADRs 0017–0020 also require their own contract tests. No solver or runtime behavior
+was changed in this test-only step, and no fallback was blessed to keep it green.
 
 ## Cooper defines the contract
 

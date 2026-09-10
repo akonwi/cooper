@@ -89,7 +89,15 @@ def main():
             assert expected in initial, f"missing gallery specimen {expected!r}"
         word_region, character_region, none_region = wrap_regions(screen)
         assert "Text wraps" in word_region, "word-wrapped sample was not rendered"
-        assert "Text wraps c" in character_region, "character wrapping did not split the next word"
+        assert "Text wraps" in character_region, "character-wrapped sample was not rendered"
+        # Uniform absolute-edge rounding gives this sample 11 cells rather
+        # than Yoga's measured-text ceil to 12. The second row splits across.
+        lines = screen.text().splitlines()
+        wrap_row = next(index for index, line in enumerate(lines) if "┌─ WORD" in line)
+        character_col = lines[wrap_row].index("┌─ CHAR")
+        none_col = lines[wrap_row].index("┌─ NONE")
+        assert "cleanly acr" in lines[wrap_row + 2][character_col:none_col], "character wrapping did not split the next word"
+        assert character_source(screen) == "Textwrapscleanlyacrossterminal.", "character wrap dropped source text"
         assert "…" in none_region, "NONE card did not paint its targeted ellipsis"
 
         # Text selection uses the gallery's custom selection style and reports
@@ -109,7 +117,8 @@ def main():
         # Complete content replacement preserves the three retained Text
         # controls and demonstrates long-token and Unicode wrapping.
         choose(fd, screen, "2", "SAMPLE 2/3 · ELLIPSIS")
-        assert "supercalifra" in screen.text(), "long-token sample was not rendered"
+        assert "supercalifr" in screen.text(), "long-token sample was not rendered"
+        assert character_source(screen) == "supercalifragilistic/without-breaks", "long-token wrap dropped source text"
         # Complex grapheme cell geometry is covered by Cooper's deterministic
         # headless tests; this minimal PTY emulator only verifies the mode swap.
         choose(fd, screen, "3", "SAMPLE 3/3 · ELLIPSIS")

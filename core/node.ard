@@ -1,35 +1,29 @@
 use ard/unsafe
 
 use cooper/core/event_delivery
+use cooper/core/layout as engine
 use cooper/core/paint
 use cooper/core/runtime
 use cooper/event
 use cooper/ui/color
 use cooper/ui/geometry
 use cooper/ui/style
-use go:github.com/akonwi/cooper/ffi/core/backend/retainedyoga as yoga
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
 use go:math
 
-enum MeasureMode {
-  undefined,
-  exactly,
-  at_most,
-}
-
-struct MeasureInput {
-  width: Float32,
-  width_mode: MeasureMode,
-  height: Float32,
-  height_mode: MeasureMode,
-}
-
-struct MeasureSize {
-  width: Float32,
-  height: Float32,
-}
+type MeasureMode = engine::MeasureMode
+type MeasureInput = engine::MeasureInput
+type MeasureSize = engine::MeasureSize
 
 fn measure_limit(value: Float32) Int {
-  yoga::MeasureLimit(value)
+  let number = numbers::Widen(value)
+  if number != number or number <= 0.0 {
+    0
+  } else if number >= math::MaxInt.to_f64() {
+    math::MaxInt
+  } else {
+    number.to_int()
+  }
 }
 
 struct MountContext {
@@ -191,7 +185,7 @@ struct Node {
   children: [mut Node],
   stacking_children: [mut Node],
   stacking_dirty: Bool,
-  yoga: mut yoga::Node,
+  layout_node: mut engine::Node,
   current_style: style::Style,
   border_width: Int,
   geometry: geometry::Geometry,
@@ -257,132 +251,6 @@ private fn saturating_subtract(left: Int, right: Int) Int {
   }
 }
 
-private fn measure_mode(code: Int) MeasureMode {
-  match code {
-    1 => MeasureMode::exactly,
-    2 => MeasureMode::at_most,
-    _ => MeasureMode::undefined,
-  }
-}
-
-private fn to_value(length: style::Length) yoga::Value {
-  let kind = match length.kind {
-    style::LengthKind::undefined => 0,
-    style::LengthKind::auto => 1,
-    style::LengthKind::cells => 2,
-    style::LengthKind::percent => 3,
-    style::LengthKind::max_content => 4,
-    style::LengthKind::fit_content => 5,
-    style::LengthKind::stretch => 6,
-  }
-  yoga::Value{Kind: kind, Value: length.value}
-}
-
-private fn direction_code(direction: style::FlexDirection) Int {
-  match direction {
-    style::FlexDirection::column => 0,
-    style::FlexDirection::column_reverse => 1,
-    style::FlexDirection::row => 2,
-    style::FlexDirection::row_reverse => 3,
-  }
-}
-
-private fn align_code(align: style::Align) Int {
-  match align {
-    style::Align::auto => 0,
-    style::Align::stretch => 1,
-    style::Align::baseline => 2,
-    style::Align::start => 3,
-    style::Align::end => 4,
-    style::Align::center => 5,
-    style::Align::space_between => 6,
-    style::Align::space_around => 7,
-    style::Align::space_evenly => 8,
-  }
-}
-
-private fn justify_code(justify: style::Justify) Int {
-  match justify {
-    style::Justify::start => 0,
-    style::Justify::end => 1,
-    style::Justify::center => 2,
-    style::Justify::space_between => 3,
-    style::Justify::space_around => 4,
-    style::Justify::space_evenly => 5,
-  }
-}
-
-private fn wrap_code(wrap: style::FlexWrap) Int {
-  match wrap {
-    style::FlexWrap::no_wrap => 0,
-    style::FlexWrap::wrap => 1,
-    style::FlexWrap::wrap_reverse => 2,
-  }
-}
-
-private fn position_code(position: style::Position) Int {
-  match position {
-    style::Position::static => 0,
-    style::Position::relative => 1,
-    style::Position::absolute => 2,
-  }
-}
-
-private fn overflow_code(overflow: style::Overflow) Int {
-  match overflow {
-    style::Overflow::visible => 0,
-    style::Overflow::hidden => 1,
-    style::Overflow::scroll => 2,
-  }
-}
-
-private fn display_code(display: style::Display) Int {
-  match display {
-    style::Display::flex => 0,
-    style::Display::contents => 1,
-    style::Display::none => 2,
-  }
-}
-
-private fn to_edges(edges: style::Edges) yoga::Edges {
-  yoga::Edges{
-    Top: to_value(edges.top),
-    Right: to_value(edges.right),
-    Bottom: to_value(edges.bottom),
-    Left: to_value(edges.left),
-  }
-}
-
-private fn to_backend_style(value: style::Style, border_width: Int) yoga::Style {
-  yoga::Style{
-    Display: display_code(value.display),
-    Direction: direction_code(value.flex_direction),
-    AlignItems: align_code(value.align_items),
-    AlignSelf: align_code(value.align_self),
-    Justify: justify_code(value.justify_content),
-    Wrap: wrap_code(value.flex_wrap),
-    Position: position_code(value.position),
-    Overflow: overflow_code(value.overflow),
-    Width: to_value(value.width),
-    Height: to_value(value.height),
-    MinWidth: to_value(value.min_width),
-    MinHeight: to_value(value.min_height),
-    MaxWidth: to_value(value.max_width),
-    MaxHeight: to_value(value.max_height),
-    Top: to_value(value.top),
-    Right: to_value(value.right),
-    Bottom: to_value(value.bottom),
-    Left: to_value(value.left),
-    Basis: to_value(value.flex_basis),
-    Grow: value.flex_grow,
-    Shrink: value.flex_shrink,
-    Padding: to_edges(value.padding),
-    Margin: to_edges(value.margin),
-    Gap: to_value(value.gap),
-    Border: border_width,
-  }
-}
-
 fn create(
   id: Int,
   context_token: mut ContextToken,
@@ -410,7 +278,7 @@ fn create(
     children: [],
     stacking_children: [],
     stacking_dirty: true,
-    yoga: yoga::NewNode(),
+    layout_node: engine::new(),
     current_style: initial_style,
     border_width: 0,
     geometry: geometry::Geometry{local: empty, screen: empty},
@@ -1127,6 +995,10 @@ impl Node {
     self.geometry
   }
   
+  fn content_rect() geometry::Rect {
+    self.layout_node.content
+  }
+  
   fn layout_viewport() geometry::Rect {
     self.viewport
   }
@@ -1335,7 +1207,7 @@ impl Node {
       },
       _ => (),
     }
-    self.yoga.Apply(to_backend_style(effective.@, self.border_width))
+    self.layout_node.apply(effective.@, self.border_width)
   }
   
   fn mut set_border_width(value: Int) {
@@ -1443,7 +1315,7 @@ impl Node {
       ()
     } else {
       if same_parent {
-        self.yoga.RemoveChild(child.yoga)
+        self.layout_node.remove(child.layout_node)
       } else {
         match child.parent {
           current_parent => {
@@ -1469,7 +1341,7 @@ impl Node {
       }
       self.children = ordered.@
       self.invalidate_stacking()
-      self.yoga.InsertChild(child.yoga, target_index)
+      self.layout_node.insert(child.layout_node, target_index)
       if not same_parent {
         match self.mount_dispatch_base {
           base => child.mount_subtree(base),
@@ -1497,7 +1369,7 @@ impl Node {
     if removed {
       self.children = retained.@
       self.invalidate_stacking()
-      self.yoga.RemoveChild(child.yoga)
+      self.layout_node.remove(child.layout_node)
       child.parent = Maybe::new<mut Node>()
       child.unmount_subtree()
       child.apply_backend_style(child.current_style)
@@ -1517,26 +1389,13 @@ impl Node {
       panic("a retained Node with children cannot become measured")
     }
     self.measured = true
-    self.yoga.SetMeasureFunc(
-      fn(width: Float32, width_mode: Int, height: Float32, height_mode: Int) yoga::Size {
-        let measured = measure(
-          MeasureInput{
-            width: width,
-            width_mode: measure_mode(width_mode),
-            height: height,
-            height_mode: measure_mode(height_mode),
-          },
-        )
-        yoga::Size{Width: measured.width, Height: measured.height}
-      },
-    )
+    self.layout_node.measure = Maybe::new<fn(MeasureInput) MeasureSize>(measure)
   }
   
   fn mut mark_measure_dirty() {
     if self.destroyed or not self.measured {
       panic("only a live measured retained Node can be marked dirty")
     }
-    self.yoga.MarkDirty()
     self.request_render()
   }
   
@@ -1547,7 +1406,7 @@ impl Node {
     if width < 0 or height < 0 {
       panic("retained layout bounds must be non-negative")
     }
-    self.yoga.Compute(width, height)
+    self.layout_node.compute(width, height)
     self.viewport = geometry::Rect{
       x: 0,
       y: 0,
@@ -1558,13 +1417,7 @@ impl Node {
   }
   
   private fn mut sync_geometry(parent_x: Int, parent_y: Int) {
-    let computed = self.yoga.Layout()
-    let local = geometry::Rect{
-      x: computed.Left,
-      y: computed.Top,
-      width: computed.Width,
-      height: computed.Height,
-    }
+    let local = self.layout_node.local
     let screen = geometry::Rect{
       x: parent_x + local.x,
       y: parent_y + local.y,
@@ -1678,7 +1531,7 @@ impl Node {
       self.stacking_children = []
       self.stacking_dirty = false
       for child in preserved {
-        self.yoga.RemoveChild(child.yoga)
+        self.layout_node.remove(child.layout_node)
         child.parent = Maybe::new<mut Node>()
         child.apply_backend_style(child.current_style)
       }
@@ -1698,7 +1551,7 @@ impl Node {
         handler()
       }
       self.owner = Maybe::new<Any>()
-      self.yoga.Free()
+      self.layout_node.measure = Maybe::new<fn(MeasureInput) MeasureSize>()
       self.destroying = false
       self.on_destroy(self.id)
       self.request_render()

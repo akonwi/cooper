@@ -5,6 +5,10 @@ import (
 	"math"
 )
 
+// Widen exposes the numeric conversion missing from Ard's Float32 API.
+// Layout arithmetic and rounding policy remain in Ard.
+func Widen(value float32) float64 { return float64(value) }
+
 // RoundedInt rounds value to the nearest integer, with halves away from zero,
 // and rejects values outside the platform int range.
 func RoundedInt(value float64) (int, error) {

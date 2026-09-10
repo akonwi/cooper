@@ -1,0 +1,1090 @@
+use cooper/ui/geometry
+use cooper/ui/style
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
+
+enum MeasureMode {
+  undefined,
+  exactly,
+  at_most,
+}
+
+struct MeasureInput {
+  width: Float32,
+  width_mode: MeasureMode,
+  height: Float32,
+  height_mode: MeasureMode,
+}
+
+struct MeasureSize {
+  width: Float32,
+  height: Float32,
+}
+struct Size {
+  width: Float64,
+  height: Float64,
+}
+struct Insets {
+  left: Float64,
+  top: Float64,
+  right: Float64,
+  bottom: Float64,
+}
+
+// Negative availability means indefinite, never a zero-sized constraint.
+// Only final projection converts fractional edges into terminal cells.
+struct Node {
+  value: style::Style,
+  border: Int,
+  children: [mut Node],
+  measure: (fn(MeasureInput) MeasureSize)?,
+  x: Float64,
+  y: Float64,
+  width: Float64,
+  height: Float64,
+  insets: Insets,
+  local: geometry::Rect,
+  content: geometry::Rect,
+}
+
+fn new() mut Node {
+  (mut Node{
+    value: style::new(),
+    border: 0,
+    children: [],
+    measure: Maybe::new<fn(MeasureInput) MeasureSize>(),
+    x: 0.0,
+    y: 0.0,
+    width: 0.0,
+    height: 0.0,
+    insets: Insets{
+      left: 0.0,
+      top: 0.0,
+      right: 0.0,
+      bottom: 0.0,
+    },
+    local: geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    },
+    content: geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    },
+  })
+}
+
+fn max(a: Float64, b: Float64) Float64 {
+  match a > b {
+    true => a,
+    false => b,
+  }
+}
+fn min(a: Float64, b: Float64) Float64 {
+  match a < b {
+    true => a,
+    false => b,
+  }
+}
+fn finite_length(length: style::Length, reference: Float64) Float64 {
+  match length.kind {
+    style::LengthKind::cells => numbers::Widen(length.value),
+    style::LengthKind::percent => {
+      match reference >= 0.0 {
+        true => reference * numbers::Widen(length.value) / 100.0,
+        false => -1.0,
+      }
+    },
+    _ => -1.0,
+  }
+}
+fn spacing(length: style::Length, reference: Float64) Float64 {
+  max(0.0, finite_length(length, reference))
+}
+fn automatic(length: style::Length) Bool {
+  length.kind == style::LengthKind::auto or length.kind == style::LengthKind::undefined
+}
+fn intrinsic(length: style::Length) Bool {
+  length.kind == style::LengthKind::max_content or length.kind == style::LengthKind::fit_content or length.kind == style::LengthKind::stretch
+}
+fn resolve(length: style::Length, reference: Float64, available: Float64, natural: Float64) Float64 {
+  match length.kind {
+    style::LengthKind::max_content => natural,
+    style::LengthKind::fit_content => {
+      match available >= 0.0 {
+        true => min(natural, available),
+        false => natural,
+      }
+    },
+    style::LengthKind::stretch => {
+      match available >= 0.0 {
+        true => available,
+        false => natural,
+      }
+    },
+    _ => finite_length(length, reference),
+  }
+}
+fn bounded(value: Float64, lower: Float64, upper: Float64, floor: Float64) Float64 {
+  mut result = value
+  match upper >= 0.0 {
+    true => { result = min(result, upper) },
+    false => (),
+  }
+  match lower >= 0.0 {
+    true => { result = max(result, lower) },
+    false => (),
+  }
+  max(floor, result)
+}
+fn axis_size(size: Size, row: Bool) Float64 {
+  match row {
+    true => size.width,
+    false => size.height,
+  }
+}
+fn row_direction(value: style::FlexDirection) Bool {
+  value == style::FlexDirection::row or value == style::FlexDirection::row_reverse
+}
+fn rounded(value: Float64) Int {
+  let shifted = value + 0.5
+  let truncated = shifted.to_int()
+  match truncated.to_f64() > shifted {
+    true => truncated - 1,
+    false => truncated,
+  }
+}
+fn measure_mode(available: Float64, exact: Bool) MeasureMode {
+  match available < 0.0 {
+    true => MeasureMode::undefined,
+    false => {
+      match exact {
+        true => MeasureMode::exactly,
+        false => MeasureMode::at_most,
+      }
+    },
+  }
+}
+
+struct Item {
+  node: mut Node,
+  basis: Float64,
+  main: Float64,
+  cross: Float64,
+  before: Float64,
+  after: Float64,
+  cross_before: Float64,
+  cross_after: Float64,
+  auto_before: Bool,
+  auto_after: Bool,
+  auto_cross_before: Bool,
+  auto_cross_after: Bool,
+  lower: Float64,
+  upper: Float64,
+  floor: Float64,
+  frozen: Bool,
+  align: style::Align,
+}
+
+struct Line {
+  items: [mut Item],
+  main: Float64,
+  cross: Float64,
+  ascent: Float64,
+}
+
+fn collect(node: mut Node) [mut Node] {
+  let result = mut List::new<mut Node>()
+  for child in node.children {
+    match child.value.display == style::Display::contents {
+      true => {
+        for descendant in collect(child) {
+          result.push(descendant)
+        }
+      },
+      false => {
+        match child.value.display != style::Display::none {
+          true => result.push(child),
+          false => child.clear(),
+        }
+      },
+    }
+  }
+  result.@
+}
+
+// mode 1 computes unconstrained natural width; mode 2 computes natural height
+// at an already selected width. Neither consults this node's own bounds.
+fn compute(
+  node: mut Node,
+  aw: Float64,
+  ah: Float64,
+  rw: Float64,
+  rh: Float64,
+  forced_w: Float64,
+  forced_h: Float64,
+  mode: Int,
+) Size {
+  let s = node.value
+  match s.display == style::Display::none {
+    true => {
+      node.clear()
+      Size{width: 0.0, height: 0.0}
+    },
+    false => compute_visible(node, aw, ah, rw, rh, forced_w, forced_h, mode),
+  }
+}
+
+fn compute_visible(
+  node: mut Node,
+  aw: Float64,
+  ah: Float64,
+  rw: Float64,
+  rh: Float64,
+  forced_w: Float64,
+  forced_h: Float64,
+  mode: Int,
+) Size {
+  let s = node.value
+  let border = node.border.to_f64()
+  let pad = Insets{
+    left: spacing(s.padding.left, rw) + border,
+    top: spacing(s.padding.top, rw) + border,
+    right: spacing(s.padding.right, rw) + border,
+    bottom: spacing(s.padding.bottom, rw) + border,
+  }
+  let horizontal = pad.left + pad.right
+  let vertical = pad.top + pad.bottom
+  mut nw = 0.to_f64()
+  match mode == 0 and (intrinsic(s.width) or intrinsic(s.min_width) or intrinsic(s.max_width)) {
+    true => { nw = compute(node, -1.0, -1.0, rw, rh, -1.0, -1.0, 1).width },
+    false => (),
+  }
+  mut width = forced_w
+  match width < 0.0 and mode != 1 {
+    true => { width = resolve(s.width, rw, aw, nw) },
+    false => (),
+  }
+  let minw = match mode == 0 {
+    true => resolve(s.min_width, rw, aw, nw),
+    false => -1.0,
+  }
+  let maxw = match mode == 0 {
+    true => resolve(s.max_width, rw, aw, nw),
+    false => -1.0,
+  }
+  match width >= 0.0 {
+    true => { width = bounded(width, minw, maxw, horizontal) },
+    false => (),
+  }
+  mut height = forced_h
+  match height < 0.0 and mode == 0 and (not intrinsic(s.height)) {
+    true => { height = finite_length(s.height, rh) },
+    false => (),
+  }
+  mut nh = 0.to_f64()
+  match mode == 0 and (intrinsic(s.height) or intrinsic(s.min_height) or intrinsic(s.max_height)) {
+    true => {
+      nh = compute(node, aw, -1.0, rw, rh, width, -1.0, 2).height
+      match height < 0.0 {
+        true => { height = resolve(s.height, rh, ah, nh) },
+        false => (),
+      }
+    },
+    false => (),
+  }
+  let minh = match mode == 0 {
+    true => resolve(s.min_height, rh, ah, nh),
+    false => -1.0,
+  }
+  let maxh = match mode == 0 {
+    true => resolve(s.max_height, rh, ah, nh),
+    false => -1.0,
+  }
+  match height >= 0.0 {
+    true => { height = bounded(height, minh, maxh, vertical) },
+    false => (),
+  }
+  mut available_w = match width >= 0.0 {
+    true => width,
+    false => aw,
+  }
+  match mode == 1 {
+    true => { available_w = -1.0 },
+    false => (),
+  }
+  match available_w >= 0.0 and maxw >= 0.0 {
+    true => { available_w = min(available_w, maxw) },
+    false => (),
+  }
+  match available_w >= 0.0 {
+    true => { available_w = max(0.0, available_w - horizontal) },
+    false => (),
+  }
+  mut available_h = match height >= 0.0 {
+    true => height,
+    false => ah,
+  }
+  match mode != 0 {
+    true => { available_h = -1.0 },
+    false => (),
+  }
+  match available_h >= 0.0 and maxh >= 0.0 {
+    true => { available_h = min(available_h, maxh) },
+    false => (),
+  }
+  match available_h >= 0.0 {
+    true => { available_h = max(0.0, available_h - vertical) },
+    false => (),
+  }
+  match node.measure {
+    measure => {
+      let measured = measure(
+        MeasureInput{
+          width: Float32::from(max(0.0, available_w)),
+          width_mode: measure_mode(available_w, width >= 0.0),
+          height: Float32::from(max(0.0, available_h)),
+          height_mode: measure_mode(available_h, height >= 0.0),
+        },
+      )
+      match width < 0.0 {
+        true => { width = bounded(numbers::Widen(measured.width) + horizontal, minw, maxw, horizontal) },
+        false => (),
+      }
+      match height < 0.0 {
+        true => { height = bounded(numbers::Widen(measured.height) + vertical, minh, maxh, vertical) },
+        false => (),
+      }
+      node.width = width
+      node.height = height
+      node.insets = pad
+      Size{width: width, height: height}
+    },
+    _ => {
+      let row = row_direction(s.flex_direction)
+      let reverse = s.flex_direction == style::FlexDirection::row_reverse or s.flex_direction == style::FlexDirection::column_reverse
+      let content_w = match width >= 0.0 {
+        true => max(0.0, width - horizontal),
+        false => -1.0,
+      }
+      let content_h = match height >= 0.0 {
+        true => max(0.0, height - vertical),
+        false => -1.0,
+      }
+      // Allocation provenance matters even when an allocated width happens to
+      // equal the natural width. Natural content alone cannot resolve a cycle.
+      let definite_w = forced_w >= 0.0 or finite_length(s.width, rw) >= 0.0 or s.width.kind == style::LengthKind::stretch and aw >= 0.0 or s.width.kind == style::LengthKind::fit_content and aw >= 0.0 and aw < nw
+      let percent_w = match definite_w {
+        true => content_w,
+        false => -1.0,
+      }
+      let main_limit = match row {
+        true => available_w,
+        false => available_h,
+      }
+      let main_ref = match row {
+        true => content_w,
+        false => content_h,
+      }
+      let cross_ref = match row {
+        true => content_h,
+        false => content_w,
+      }
+      let gap = spacing(s.gap, main_ref)
+      let cross_gap = spacing(s.gap, cross_ref)
+      let lines = mut List::new<mut Line>()
+      mut line = mut Line{
+        items: [],
+        main: 0.0,
+        cross: 0.0,
+        ascent: 0.0,
+      }
+      lines.push(line)
+      let children = collect(node)
+      for child in children {
+        let cs = child.value
+        match cs.position != style::Position::absolute {
+          true => {
+            let ml = spacing(cs.margin.left, content_w)
+            let mr = spacing(cs.margin.right, content_w)
+            let mt = spacing(cs.margin.top, content_w)
+            let mb = spacing(cs.margin.bottom, content_w)
+            let before = match row {
+              true => ml,
+              false => mt,
+            }
+            let after = match row {
+              true => mr,
+              false => mb,
+            }
+            let cross_before = match row {
+              true => mt,
+              false => ml,
+            }
+            let cross_after = match row {
+              true => mb,
+              false => mr,
+            }
+            let child_aw = match available_w >= 0.0 {
+              true => max(0.0, available_w - ml - mr),
+              false => -1.0,
+            }
+            let child_ah = match available_h >= 0.0 {
+              true => max(0.0, available_h - mt - mb),
+              false => -1.0,
+            }
+            mut natural = Size{width: 0.0, height: 0.0}
+            let lower_length = match row {
+              true => cs.min_width,
+              false => cs.min_height,
+            }
+            let upper_length = match row {
+              true => cs.max_width,
+              false => cs.max_height,
+            }
+            match intrinsic(cs.flex_basis) or intrinsic(lower_length) or intrinsic(upper_length) {
+              true => { natural = compute(child, -1.0, -1.0, content_w, content_h, -1.0, -1.0, 1) },
+              false => (),
+            }
+            let natural_main = axis_size(natural, row)
+            let basis = resolve(
+              cs.flex_basis,
+              main_ref,
+              match main_limit >= 0.0 {
+                true => max(0.0, main_limit - before - after),
+                false => -1.0,
+              },
+              natural_main,
+            )
+            let align = match cs.align_self == style::Align::auto {
+              true => s.align_items,
+              false => cs.align_self,
+            }
+            mut fw = match row {
+              true => basis,
+              false => -1.0,
+            }
+            mut fh = match row {
+              true => -1.0,
+              false => basis,
+            }
+            match align == style::Align::stretch and s.flex_wrap == style::FlexWrap::no_wrap {
+              true => {
+                match row and automatic(cs.height) and content_h >= 0.0 {
+                  true => { fh = max(0.0, content_h - mt - mb) },
+                  false => (),
+                }
+                match (not row) and automatic(cs.width) and content_w >= 0.0 {
+                  true => { fw = max(0.0, content_w - ml - mr) },
+                  false => (),
+                }
+              },
+              false => (),
+            }
+            let measured = compute(child, child_aw, child_ah, percent_w, content_h, fw, fh, 0)
+            let size = axis_size(measured, row)
+            let child_cross = axis_size(measured, not row)
+            let floor = match row {
+              true => child.insets.left + child.insets.right,
+              false => child.insets.top + child.insets.bottom,
+            }
+            let lower = resolve(lower_length, main_ref, main_limit, natural_main)
+            let upper = resolve(upper_length, main_ref, main_limit, natural_main)
+            let item = mut Item{
+              node: child,
+              basis: match basis >= 0.0 {
+                true => basis,
+                false => size,
+              },
+              main: size,
+              cross: child_cross,
+              before: before,
+              after: after,
+              cross_before: cross_before,
+              cross_after: cross_after,
+              auto_before: match row {
+                true => cs.margin.left.kind == style::LengthKind::auto,
+                false => cs.margin.top.kind == style::LengthKind::auto,
+              },
+              auto_after: match row {
+                true => cs.margin.right.kind == style::LengthKind::auto,
+                false => cs.margin.bottom.kind == style::LengthKind::auto,
+              },
+              auto_cross_before: match row {
+                true => cs.margin.top.kind == style::LengthKind::auto,
+                false => cs.margin.left.kind == style::LengthKind::auto,
+              },
+              auto_cross_after: match row {
+                true => cs.margin.bottom.kind == style::LengthKind::auto,
+                false => cs.margin.right.kind == style::LengthKind::auto,
+              },
+              lower: lower,
+              upper: upper,
+              floor: floor,
+              frozen: false,
+              align: align,
+            }
+            let extra_gap = match line.items.size() > 0 {
+              true => gap,
+              false => 0.0,
+            }
+            match s.flex_wrap != style::FlexWrap::no_wrap and main_limit >= 0.0 and line.items.size() > 0 and line.main + extra_gap + size + before + after > main_limit {
+              true => {
+                line = mut Line{
+                  items: [],
+                  main: 0.0,
+                  cross: 0.0,
+                  ascent: 0.0,
+                }
+                lines.push(line)
+              },
+              false => (),
+            }
+            match line.items.size() > 0 {
+              true => { line.main = line.main + gap },
+              false => (),
+            }
+            line.items.push(item)
+            line.main = line.main + size + before + after
+            line.cross = max(line.cross, child_cross + cross_before + cross_after)
+          },
+          false => (),
+        }
+      }
+      mut used_main = 0.to_f64()
+      mut used_cross = 0.to_f64()
+      for current in lines {
+        match main_ref >= 0.0 {
+          true => flex(current, main_ref, gap, s.overflow == style::Overflow::scroll),
+          false => (),
+        }
+        current.main = 0.0
+        current.cross = 0.0
+        for item, index in current.items {
+          let margins_w = match row {
+            true => item.before + item.after,
+            false => item.cross_before + item.cross_after,
+          }
+          let margins_h = match row {
+            true => item.cross_before + item.cross_after,
+            false => item.before + item.after,
+          }
+          let prior = Size{width: item.node.width, height: item.node.height}
+          let result = match axis_size(prior, row) == item.main {
+            true => prior,
+            false => {
+              compute(
+                item.node,
+                match available_w >= 0.0 {
+                  true => max(0.0, available_w - margins_w),
+                  false => -1.0,
+                },
+                match available_h >= 0.0 {
+                  true => max(0.0, available_h - margins_h),
+                  false => -1.0,
+                },
+                percent_w,
+                content_h,
+                match row {
+                  true => item.main,
+                  false => -1.0,
+                },
+                match row {
+                  true => -1.0,
+                  false => item.main,
+                },
+                0,
+              )
+            },
+          }
+          item.cross = axis_size(result, not row)
+          current.main = current.main + item.main + item.before + item.after
+          match index > 0 {
+            true => { current.main = current.main + gap },
+            false => (),
+          }
+          current.cross = max(current.cross, item.cross + item.cross_before + item.cross_after)
+        }
+        used_main = max(used_main, current.main)
+        used_cross = used_cross + current.cross
+      }
+      match lines.size() > 1 {
+        true => { used_cross = used_cross + (lines.size() - 1).to_f64() * cross_gap },
+        false => (),
+      }
+      match width < 0.0 {
+        true => {
+          let selected = match row {
+            true => used_main,
+            false => used_cross,
+          }
+          width = bounded(selected + horizontal, minw, maxw, horizontal)
+        },
+        false => (),
+      }
+      match height < 0.0 {
+        true => {
+          let selected = match row {
+            true => used_cross,
+            false => used_main,
+          }
+          height = bounded(selected + vertical, minh, maxh, vertical)
+        },
+        false => (),
+      }
+      let final_main = match row {
+        true => max(0.0, width - horizontal),
+        false => max(0.0, height - vertical),
+      }
+      let final_cross = match row {
+        true => max(0.0, height - vertical),
+        false => max(0.0, width - horizontal),
+      }
+      let line_extra = match s.flex_wrap == style::FlexWrap::no_wrap {
+        true => 0.0,
+        false => max(0.0, final_cross - used_cross) / lines.size().to_f64(),
+      }
+      mut cross_pos = 0.to_f64()
+      for current in lines {
+        let line_cross = match s.flex_wrap == style::FlexWrap::no_wrap {
+          true => final_cross,
+          false => current.cross + line_extra,
+        }
+        mut free = final_main - current.main
+        mut auto_count = 0
+        for item in current.items {
+          match item.auto_before {
+            true => { auto_count =+ 1 },
+            false => (),
+          }
+          match item.auto_after {
+            true => { auto_count =+ 1 },
+            false => (),
+          }
+        }
+        let auto_space = match auto_count > 0 {
+          true => max(0.0, free) / auto_count.to_f64(),
+          false => 0.0,
+        }
+        match auto_count > 0 and free > 0.0 {
+          true => { free = 0.0 },
+          false => (),
+        }
+        let count = current.items.size()
+        mut between = gap
+        mut main_pos = 0.to_f64()
+        match s.justify_content {
+          style::Justify::end => { main_pos = free },
+          style::Justify::center => { main_pos = free / 2.0 },
+          style::Justify::space_between => {
+            match count > 1 and free > 0.0 {
+              true => { between = between + free / (count - 1).to_f64() },
+              false => (),
+            }
+          },
+          style::Justify::space_around => {
+            match count > 0 {
+              true => {
+                main_pos = free / (2.0 * count.to_f64())
+                between = between + max(0.0, free) / count.to_f64()
+              },
+              false => (),
+            }
+          },
+          style::Justify::space_evenly => {
+            match count > 0 {
+              true => {
+                main_pos = free / (count + 1).to_f64()
+                between = between + max(0.0, free) / (count + 1).to_f64()
+              },
+              false => (),
+            }
+          },
+          _ => (),
+        }
+        for item in current.items {
+          let cs = item.node.value
+          let cross_length = match row {
+            true => cs.height,
+            false => cs.width,
+          }
+          let spare_cross = line_cross - item.cross - item.cross_before - item.cross_after
+          mut cp = item.cross_before
+          mut target_cross = item.cross
+          match item.auto_cross_before or item.auto_cross_after {
+            true => {
+              match item.auto_cross_before {
+                true => {
+                  let divisor = match item.auto_cross_after {
+                    true => 2.0,
+                    false => 1.0,
+                  }
+                  cp = cp + max(0.0, spare_cross) / divisor
+                },
+                false => (),
+              }
+            },
+            false => {
+              match item.align {
+                style::Align::end => { cp = cp + spare_cross },
+                style::Align::center => { cp = cp + spare_cross / 2.0 },
+                style::Align::stretch => {
+                  match automatic(cross_length) {
+                    true => { target_cross = max(0.0, line_cross - item.cross_before - item.cross_after) },
+                    false => (),
+                  }
+                },
+                _ => (),
+              }
+            },
+          }
+          let target_w = match row {
+            true => item.main,
+            false => target_cross,
+          }
+          let target_h = match row {
+            true => target_cross,
+            false => item.main,
+          }
+          if item.node.width != target_w or item.node.height != target_h {
+            let _ = compute(
+              item.node,
+              available_w,
+              available_h,
+              percent_w,
+              content_h,
+              match row {
+                true => item.main,
+                false => target_cross,
+              },
+              match row {
+                true => target_cross,
+                false => item.main,
+              },
+              0,
+            )
+          }
+          let before_space = match item.auto_before {
+            true => auto_space,
+            false => 0.0,
+          }
+          main_pos = main_pos + item.before + before_space
+          let mp = match reverse {
+            true => final_main - main_pos - item.main,
+            false => main_pos,
+          }
+          let reversed_cross = match s.flex_wrap == style::FlexWrap::wrap_reverse {
+            true => {
+              final_cross - cross_pos - cp - axis_size(Size{width: item.node.width, height: item.node.height}, not row)
+            },
+            false => cross_pos + cp,
+          }
+          let item_x = match row {
+            true => mp,
+            false => reversed_cross,
+          }
+          let item_y = match row {
+            true => reversed_cross,
+            false => mp,
+          }
+          item.node.x = pad.left + item_x
+          item.node.y = pad.top + item_y
+          match cs.position == style::Position::relative {
+            true => {
+              let left = finite_length(cs.left, width - horizontal)
+              let right = finite_length(cs.right, width - horizontal)
+              let top = finite_length(cs.top, height - vertical)
+              let bottom = finite_length(cs.bottom, height - vertical)
+              let dx = match left >= 0.0 {
+                true => left,
+                false => {
+                  match right >= 0.0 {
+                    true => 0.0 - right,
+                    false => 0.0,
+                  }
+                },
+              }
+              let dy = match top >= 0.0 {
+                true => top,
+                false => {
+                  match bottom >= 0.0 {
+                    true => 0.0 - bottom,
+                    false => 0.0,
+                  }
+                },
+              }
+              item.node.x = item.node.x + dx
+              item.node.y = item.node.y + dy
+            },
+            false => (),
+          }
+          let after_space = match item.auto_after {
+            true => auto_space,
+            false => 0.0,
+          }
+          main_pos = main_pos + item.main + item.after + after_space + between
+        }
+        cross_pos = cross_pos + line_cross + cross_gap
+      }
+      node.width = width
+      node.height = height
+      node.insets = pad
+      Size{width: width, height: height}
+    },
+  }
+}
+
+fn flex(line: mut Line, available: Float64, gap: Float64, scrolling: Bool) {
+  let growing = available > line.main
+  mut initial = available
+  for item, index in line.items {
+    initial = initial - item.basis - item.before - item.after
+    match index > 0 {
+      true => { initial = initial - gap },
+      false => (),
+    }
+    item.main = item.basis
+    let factor = match growing {
+      true => numbers::Widen(item.node.value.flex_grow),
+      false => {
+        match scrolling {
+          true => 0.0,
+          false => numbers::Widen(item.node.value.flex_shrink),
+        }
+      },
+    }
+    item.frozen = factor == 0.0
+    match item.frozen {
+      true => { item.main = bounded(item.main, item.lower, item.upper, item.floor) },
+      false => (),
+    }
+  }
+  mut remaining_items = line.items.size() + 1
+  while remaining_items > 0 {
+    remaining_items = remaining_items - 1
+    mut free = available
+    mut weights = 0.to_f64()
+    mut factors = 0.to_f64()
+    for item, index in line.items {
+      free = free - item.main - item.before - item.after
+      match index > 0 {
+        true => { free = free - gap },
+        false => (),
+      }
+      match not item.frozen {
+        true => {
+          let factor = match growing {
+            true => numbers::Widen(item.node.value.flex_grow),
+            false => numbers::Widen(item.node.value.flex_shrink),
+          }
+          factors = factors + factor
+          let basis_weight = match growing {
+            true => 1.0,
+            false => item.basis,
+          }
+          weights = weights + factor * basis_weight
+        },
+        false => (),
+      }
+    }
+    match weights == 0.0 {
+      true => break,
+      false => (),
+    }
+    let proportional = match initial >= 0.0 {
+      true => initial * factors < free,
+      false => initial * factors > free,
+    }
+    match factors < 1.0 and proportional {
+      true => { free = initial * factors },
+      false => (),
+    }
+    mut violated = false
+    for item in line.items {
+      match not item.frozen {
+        true => {
+          let weight = match growing {
+            true => numbers::Widen(item.node.value.flex_grow),
+            false => numbers::Widen(item.node.value.flex_shrink) * item.basis,
+          }
+          let target = item.main + free * weight / weights
+          let limited = bounded(target, item.lower, item.upper, item.floor)
+          match limited != target {
+            true => {
+              item.frozen = true
+              violated = true
+            },
+            false => (),
+          }
+          item.main = limited
+        },
+        false => (),
+      }
+    }
+    match not violated {
+      true => break,
+      false => (),
+    }
+  }
+}
+
+impl Node {
+  fn mut apply(value: style::Style, border: Int) {
+    self.value = value
+    self.border = border
+  }
+  
+  fn mut insert(child: mut Node, index: Int) {
+    let next = mut List::new<mut Node>()
+    for existing, current in self.children {
+      match current == index {
+        true => next.push(child),
+        false => (),
+      }
+      next.push(existing)
+    }
+    match index == self.children.size() {
+      true => next.push(child),
+      false => (),
+    }
+    self.children = next.@
+  }
+  
+  fn mut remove(child: mut Node) {
+    let retained = mut List::new<mut Node>()
+    for existing in self.children {
+      match existing != child {
+        true => retained.push(existing),
+        false => (),
+      }
+    }
+    self.children = retained.@
+  }
+  
+  fn mut clear() {
+    self.x = 0.0
+    self.y = 0.0
+    self.width = 0.0
+    self.height = 0.0
+    self.local = geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    }
+    self.content = self.local
+    for child in self.children {
+      child.clear()
+    }
+  }
+  
+  fn mut project(px: Float64, py: Float64) {
+    let x = px + self.x
+    let y = py + self.y
+    let left = rounded(x)
+    let top = rounded(y)
+    self.local = geometry::Rect{
+      x: left - rounded(px),
+      y: top - rounded(py),
+      width: rounded(x + self.width) - left,
+      height: rounded(y + self.height) - top,
+    }
+    self.content = geometry::Rect{
+      x: rounded(x + self.insets.left) - left,
+      y: rounded(y + self.insets.top) - top,
+      width: rounded(x + max(self.insets.left, self.width - self.insets.right)) - rounded(x + self.insets.left),
+      height: rounded(y + max(self.insets.top, self.height - self.insets.bottom)) - rounded(y + self.insets.top),
+    }
+    for child in self.children {
+      child.project(x, y)
+    }
+  }
+  
+  fn mut compute(width: Int, height: Int) {
+    let w = width.to_f64()
+    let h = height.to_f64()
+    let _ = compute(
+      self,
+      w,
+      h,
+      w,
+      h,
+      match automatic(self.value.width) and not self.measure.is_some() {
+        true => w,
+        false => -1.0,
+      },
+      match automatic(self.value.height) and not self.measure.is_some() {
+        true => h,
+        false => -1.0,
+      },
+      0,
+    )
+    self.x = spacing(self.value.left, w)
+    self.y = spacing(self.value.top, h)
+    let border = self.border.to_f64()
+    self.absolute(self.width - 2.0 * border, self.height - 2.0 * border, 0.0 - border, 0.0 - border)
+    self.project(0.0, 0.0)
+  }
+  
+  fn mut absolute(cw: Float64, ch: Float64, ox: Float64, oy: Float64) {
+    for child in self.children {
+      let cs = child.value
+      match cs.display != style::Display::none {
+        true => {
+          match cs.position == style::Position::absolute {
+            true => {
+              let left = finite_length(cs.left, cw)
+              let right = finite_length(cs.right, cw)
+              let top = finite_length(cs.top, ch)
+              let bottom = finite_length(cs.bottom, ch)
+              let fw = match automatic(cs.width) and left >= 0.0 and right >= 0.0 {
+                true => max(0.0, cw - left - right),
+                false => -1.0,
+              }
+              let fh = match automatic(cs.height) and top >= 0.0 and bottom >= 0.0 {
+                true => max(0.0, ch - top - bottom),
+                false => -1.0,
+              }
+              let _ = compute(child, cw, ch, cw, ch, fw, fh, 0)
+              child.x = match left >= 0.0 {
+                true => left - ox,
+                false => {
+                  match right >= 0.0 {
+                    true => cw - right - child.width - ox,
+                    false => self.insets.left,
+                  }
+                },
+              }
+              child.y = match top >= 0.0 {
+                true => top - oy,
+                false => {
+                  match bottom >= 0.0 {
+                    true => ch - bottom - child.height - oy,
+                    false => self.insets.top,
+                  }
+                },
+              }
+            },
+            false => (),
+          }
+          match cs.position == style::Position::static or cs.display == style::Display::contents {
+            true => child.absolute(cw, ch, ox + child.x, oy + child.y),
+            false => {
+              let border = child.border.to_f64()
+              child.absolute(
+                child.width - 2.0 * border,
+                child.height - 2.0 * border,
+                0.0 - border,
+                0.0 - border,
+              )
+            },
+          }
+        },
+        false => (),
+      }
+    }
+  }
+}

@@ -42,6 +42,20 @@ fn callback_mode(mode: cache::SizingMode) Mode {
 }
 
 impl Axis {
+  // CalculateLayout.cpp: isFixedSize / measureNodeWithFixedSize. The caller
+  // removes margins and requires both axes to be fixed before taking this path.
+  fn is_fixed() Bool {
+    self.mode == cache::SizingMode::stretch_fit or self.mode == cache::SizingMode::fit_content and numeric::is_defined(self.available) and self.available <= 0.0
+  }
+  
+  fn fixed_size() Float32 {
+    let size = match numeric::is_undefined(self.available) or self.mode == cache::SizingMode::fit_content and self.available < 0.0 {
+      true => Float32::from(0.0),
+      false => self.available,
+    }
+    self.bound(size)
+  }
+  
   // CalculateLayout.cpp: constrainMaxSizeForMode. Available size includes
   // margins here; maximum is an already-resolved border-box constraint.
   fn constrain_max(margin: Float32) Axis {

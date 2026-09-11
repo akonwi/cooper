@@ -56,6 +56,57 @@ fn main() {
   basis_reference()
   fallback_reference()
   flex_reference()
+  fixed_reference()
+}
+
+fn fixed_reference() {
+  let sizes = [
+    numeric::undefined(),
+    Float32::from(-1.0),
+    Float32::from(0.0),
+    Float32::from(0.01),
+    Float32::from(8.0),
+  ]
+  let modes = [
+    cache::SizingMode::max_content,
+    cache::SizingMode::fit_content,
+    cache::SizingMode::stretch_fit,
+  ]
+  for wm in modes {
+    for hm in modes {
+      for w in sizes {
+        for h in sizes {
+          let width = measure::Axis{
+            available: w,
+            mode: wm,
+            padding_border: Float32::from(2.0),
+            minimum: Float32::from(3.0),
+            maximum: Float32::from(7.0),
+          }
+          let height = measure::Axis{
+            available: h,
+            mode: hm,
+            padding_border: Float32::from(4.0),
+            minimum: Float32::from(1.0),
+            maximum: Float32::from(9.0),
+          }
+          let fixed = width.is_fixed() and height.is_fixed()
+          fmt::Printf("fixed %t", fixed)
+          match fixed {
+            true => {
+              emit(width.fixed_size())
+              emit(height.fixed_size())
+            },
+            false => {
+              emit(numeric::undefined())
+              emit(numeric::undefined())
+            },
+          }
+          fmt::Println()
+        }
+      }
+    }
+  }
 }
 
 fn flex_reference() {

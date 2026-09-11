@@ -614,3 +614,24 @@ boundary**, as already required by accepted ADR0017. No new contract approval
 is needed. These native expectations must not become public conformance tests.
 The same source also adds the cross-axis margin to a column child's main size;
 that path is preserved but not covered by this row-only matrix.
+
+### Fixed-size container measurement shortcut
+
+The visitor now skips container traversal when both margin-adjusted axes meet
+Yoga's fixed-size predicate and the request is measurement-only. Exact axes
+qualify; FitContent qualifies only at a defined nonpositive size. Bounds and
+padding floors still apply. Contents-only descendant paths are cleaned without
+visiting box descendants. A later full layout does not reuse this shortcut to
+skip child layout.
+
+The retained regression failed before implementation and now passes, checking
+zero child callbacks, an untouched child basis, cleared nested contents geometry,
+uncommitted parent geometry, and subsequent full layout. The numeric differential
+runner adds225 comparisons against the actual private Yoga
+`measureNodeWithFixedSize` function: five sizes (undefined, -1,0,0.01,8) on each
+axis and all nine mode pairs, with asymmetric min/max and padding. All match.
+Full `ard test`:410 passed,0 failed,0 panicked; compiler and formatter checks pass.
+
+Remaining container work includes `canSkipFlex`, scroll-specific final sizing,
+baseline line extents, and owner-relative constraint parity. Positioning,
+accepted-policy integration, and removal of Tess remain pending.

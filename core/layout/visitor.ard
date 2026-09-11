@@ -117,13 +117,22 @@ fn visit(
       margin_column,
       true,
     )
+    let own_width = width.without_margin(margin_row)
+    let own_height = height.without_margin(margin_column)
     if (not required) and cached.is_some() {
       let result = cached.expect("cached container dimensions")
       node.measured_width = result.computed_width
       node.measured_height = result.computed_height
+    } else if perform_layout == false and own_width.is_fixed() and own_height.is_fixed() {
+      node.measured_width = own_width.fixed_size()
+      node.measured_height = own_height.fixed_size()
+      children::cleanup_contents(node)
+      if cached.is_some() == false {
+        request.computed_width = node.measured_width
+        request.computed_height = node.measured_height
+        node.cache_state.store(request.@, false)
+      }
     } else {
-      let own_width = width.without_margin(margin_row)
-      let own_height = height.without_margin(margin_column)
       let inner_width = own_width.available_inner_dimension()
       let inner_height = own_height.available_inner_dimension()
       let prepared = children::prepare(

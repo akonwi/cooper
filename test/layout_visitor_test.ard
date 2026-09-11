@@ -433,3 +433,57 @@ test fn multiline_stretch_distributes_only_positive_cross_space() Void!Str {
   }
   Result::ok(())
 }
+
+test fn fixed_measurement_skips_boxes_but_cleans_contents_paths() Void!Str {
+  let root = layout::new()
+  root.apply(style::new(align_items: style::Align::start), 0)
+  let group = layout::new()
+  group.apply(style::new(display: style::Display::contents), 0)
+  group.width = 9.0
+  let nested = layout::new()
+  nested.apply(style::new(display: style::Display::contents), 0)
+  nested.height = 7.0
+  group.insert(nested, 0)
+  let leaf = layout::new()
+  mut calls = 0
+  leaf.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
+    calls =+ 1
+    layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
+  })
+  nested.insert(leaf, 0)
+  root.insert(group, 0)
+  visitor::visit(
+    root,
+    axis(8.0, cache::SizingMode::stretch_fit),
+    axis(6.0, cache::SizingMode::stretch_fit),
+    zero(),
+    zero(),
+    1,
+    false,
+  )
+  try testing::assert(
+    calls == 0 and leaf.dirty and numeric::is_undefined(leaf.cache_state.computed_flex_basis),
+    "Fixed measurement must not visit box descendants or compute their basis",
+  )
+  try testing::assert(
+    root.measured_width == 8.0 and root.measured_height == 6.0 and root.width == 0.0 and root.dirty,
+    "Shortcut records measurement without committing geometry",
+  )
+  try testing::assert(
+    group.width == 0.0 and nested.height == 0.0 and group.dirty == false and nested.dirty == false,
+    "Contents-only paths are cleaned even without a box traversal",
+  )
+  visitor::visit(
+    root,
+    axis(8.0, cache::SizingMode::stretch_fit),
+    axis(6.0, cache::SizingMode::stretch_fit),
+    zero(),
+    zero(),
+    1,
+    true,
+  )
+  testing::assert(
+    calls > 0 and leaf.dirty == false and root.width == 8.0,
+    "A later full layout cannot reuse the shortcut to skip descendants",
+  )
+}

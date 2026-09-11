@@ -18,6 +18,7 @@ static void length_reference();
 static void basis_reference();
 static void fallback_reference();
 static void flex_reference();
+static void fixed_reference();
 
 static void emit(float value) {
   if (value != value) {
@@ -56,6 +57,32 @@ int main() {
   basis_reference();
   fallback_reference();
   flex_reference();
+  fixed_reference();
+}
+
+static void fixed_reference() {
+  using namespace facebook::yoga;
+  auto config = YGConfigNew();
+  YGConfigSetUseWebDefaults(config, true);
+  auto node = YGNodeNewWithConfig(config);
+  YGNodeStyleSetMinWidth(node, 3);
+  YGNodeStyleSetMaxWidth(node, 7);
+  YGNodeStyleSetMinHeight(node, 1);
+  YGNodeStyleSetMaxHeight(node, 9);
+  YGNodeStyleSetPadding(node, YGEdgeLeft, 2);
+  YGNodeStyleSetPadding(node, YGEdgeTop, 4);
+  const float sizes[] = {YGUndefined, -1, 0, 0.01f, 8};
+  const SizingMode modes[] = {SizingMode::MaxContent, SizingMode::FitContent, SizingMode::StretchFit};
+  for (auto wm : modes) for (auto hm : modes)
+  for (float w : sizes) for (float h : sizes) {
+    bool fixed = measureNodeWithFixedSize(resolveRef(node), Direction::LTR, w, h, wm, hm, 80, 40);
+    std::printf("fixed %s", fixed ? "true" : "false");
+    emit(fixed ? resolveRef(node)->getLayout().measuredDimension(Dimension::Width) : YGUndefined);
+    emit(fixed ? resolveRef(node)->getLayout().measuredDimension(Dimension::Height) : YGUndefined);
+    std::printf("\n");
+  }
+  YGNodeFree(node);
+  YGConfigFree(config);
 }
 
 static void flex_reference() {

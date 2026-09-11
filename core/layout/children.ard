@@ -77,6 +77,21 @@ fn flatten(node: mut layout::Node, result: mut [mut layout::Node]) {
   }
 }
 
+// CalculateLayout.cpp cleanupContentsNodesRecursively: only walk contents
+// paths. Box descendants must remain unvisited during fixed measurement.
+fn cleanup_contents(node: mut layout::Node) {
+  for child in node.children {
+    if child.value.display == style::Display::contents {
+      zero_own_geometry(child)
+      child.measured_width = numeric::undefined()
+      child.measured_height = numeric::undefined()
+      child.cache_state = cache::new_state()
+      child.dirty = false
+      cleanup_contents(child)
+    }
+  }
+}
+
 fn axis(
   available: Float32,
   mode: cache::SizingMode,

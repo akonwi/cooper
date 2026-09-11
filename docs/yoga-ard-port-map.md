@@ -583,3 +583,34 @@ the same dimensions for both child and container. All nine visitor tests pass.
 Align-content remeasurement across multiple lines, fixed-size measurement
 shortcuts, and full owner-relative constraint parity remain unfinished. This
 code still does not position children or replace the production solver.
+
+### Multi-line remeasurement and the ADR0017 integration adaptation
+
+The visitor now retains line membership and runs the dimension portion of
+Yoga step8 for wrapped containers. The initial positive-space stretch regression
+failed before implementation; the expanded matrix passes all21 combinations
+of seven align-content modes and positive/zero/negative cross free space.
+`test/layout_cross_reference.cpp` independently asserts the same native results.
+The ten visitor tests pass. Positions and baseline line extents remain separate
+unfinished work, as do fixed-size shortcuts and owner-relative constraints.
+
+The matrix uses a10-wide row, two wrapped children of natural heights2 and4,
+gap2, and container heights14/8/4. The first child has auto height; the second
+has explicit height4. At height14, the first child's resulting heights are:
+
+| Mode | Native Yoga and raw visitor | ADR0017 public requirement |
+| --- | --- | --- |
+| start/end/center | 2 | 2 |
+| stretch | 5 | 5 |
+| space_between | 8 | 2 |
+| space_around | 5 | 2 |
+| space_evenly | 4 | 2 |
+
+At heights8 and4 all modes leave the first child at2. The explicit sibling
+stays4 throughout. Pinned Yoga includes `leadPerLine` in the exact cross size
+sent to the child during step8. Preserve this in the raw translation, but
+**exclude distributed spacing from child sizing at the Cooper integration
+boundary**, as already required by accepted ADR0017. No new contract approval
+is needed. These native expectations must not become public conformance tests.
+The same source also adds the cross-axis margin to a column child's main size;
+that path is preserved but not covered by this row-only matrix.

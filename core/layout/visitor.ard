@@ -166,6 +166,7 @@ fn visit(
       mut natural_main = Float32::from(0.0)
       mut natural_cross = Float32::from(0.0)
       mut line_count = 0
+      let lines = mut List::new<[mut layout::Node]>()
       while index < prepared.children.size() {
         let line = flex::collect_line(items.@, index, available_main, gap, wrap)
         // CalculateLayout.cpp step5: non-exact lines are content-based unless
@@ -204,8 +205,10 @@ fn visit(
         mut line_cross = Float32::from(0.0)
         mut local = 0
         let stretching = mut List::new<StretchVisit>()
+        let line_children = mut List::new<mut layout::Node>()
         for allocated in distribution.sizes {
           let child = prepared.children.at(index + local).expect("line child")
+          line_children.push(child)
           let value = child.value
           let mr = resolved_zero(value.margin.left, inner_width) + resolved_zero(value.margin.right, inner_width)
           let mc = resolved_zero(value.margin.top, inner_width) + resolved_zero(value.margin.bottom, inner_width)
@@ -340,8 +343,95 @@ fn visit(
         }
         natural_main = numeric::max_or_defined(natural_main, line_main)
         natural_cross = natural_cross + line_cross + choose_float(line_count > 0, cross_gap, Float32::from(0.0))
+        lines.push(line_children.@)
         line_count =+ 1
         index = line.next_index
+      }
+      // CalculateLayout.cpp step8 remeasurement. Group offsets and baseline
+      // positioning are separate from this dimension-only pass.
+      if perform_layout and wrap and line_count > 0 {
+        let own_cross = match row {
+          true => own_height,
+          false => own_width,
+        }
+        let inner_cross = own_cross.measured_size(natural_cross) - own_cross.padding_border
+        let remaining_cross = inner_cross - natural_cross
+        let extra = match remaining_cross > 0.0 and node.value.align_content == style::Align::stretch {
+          true => remaining_cross / Float32::from(line_count),
+          false => Float32::from(0.0),
+        }
+        mut lead_per_line = Float32::from(0.0)
+        if remaining_cross > 0.0 {
+          lead_per_line = match node.value.align_content {
+            style::Align::space_around => remaining_cross / Float32::from(line_count),
+            style::Align::space_evenly => remaining_cross / Float32::from(line_count + 1),
+            style::Align::space_between => {
+              match line_count > 1 {
+                true => remaining_cross / Float32::from(line_count - 1),
+                false => Float32::from(0.0),
+              }
+            },
+            _ => Float32::from(0.0),
+          }
+        }
+        for line_children in lines {
+          mut extent = Float32::from(0.0)
+          for child in line_children {
+            let item = axis_item(child, row == false, inner_width, inner_height)
+            extent = numeric::max_or_defined(
+              extent,
+              choose_float(row, child.measured_height, child.measured_width) + item.margin,
+            )
+          }
+          extent = extent + extra
+          for child in line_children {
+            let value = child.value
+            let alignment = match value.align_self == style::Align::auto {
+              true => node.value.align_items,
+              false => value.align_self,
+            }
+            let preferred = length::processed_dimension(
+              choose_length(row, value.height, value.width),
+              choose_length(row, value.min_height, value.min_width),
+              choose_length(row, value.max_height, value.max_width),
+            )
+            if alignment == style::Align::stretch and length::is_definite(preferred, available_cross) == false {
+              let wi = axis_item(child, true, inner_width, inner_height)
+              let hi = axis_item(child, false, inner_width, inner_height)
+              // Pinned Yoga includes distributed inter-line space in this
+              // remeasurement. ADR0017 requires an explicit adapter upstream.
+              let child_width = choose_float(
+                row,
+                child.measured_width + wi.margin,
+                lead_per_line + extent,
+              )
+              // Preserve pinned Yoga's column-path cross-margin reference.
+              let child_height = choose_float(
+                row,
+                lead_per_line + extent,
+                child.measured_height + wi.margin,
+              )
+              let same = numeric::inexact_equals(child_width, child.measured_width) and numeric::inexact_equals(child_height, child.measured_height)
+              if same == false {
+                let width_axis = measure::Axis{
+                  available: child_width,
+                  mode: cache::SizingMode::stretch_fit,
+                  padding_border: wi.padding_border,
+                  minimum: wi.minimum,
+                  maximum: wi.maximum,
+                }
+                let height_axis = measure::Axis{
+                  available: child_height,
+                  mode: cache::SizingMode::stretch_fit,
+                  padding_border: hi.padding_border,
+                  minimum: hi.minimum,
+                  maximum: hi.maximum,
+                }
+                visit(child, width_axis, height_axis, wi.margin, hi.margin, generation, true)
+              }
+            }
+          }
+        }
       }
       let content_width = choose_float(row, natural_main, natural_cross)
       let content_height = choose_float(row, natural_cross, natural_main)

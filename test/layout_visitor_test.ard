@@ -374,3 +374,62 @@ test fn line_stretch_revisits_children_after_cross_extent_is_known() Void!Str {
   }
   Result::ok(())
 }
+
+test fn multiline_stretch_distributes_only_positive_cross_space() Void!Str {
+  for height in [14.0, 8.0, 4.0] {
+    for alignment in [
+      style::Align::start,
+      style::Align::end,
+      style::Align::center,
+      style::Align::stretch,
+      style::Align::space_between,
+      style::Align::space_around,
+      style::Align::space_evenly,
+    ] {
+      let root = layout::new()
+      root.apply(
+        style::new(
+          flex_direction: style::FlexDirection::row,
+          flex_wrap: style::FlexWrap::wrap,
+          align_content: alignment,
+          gap: style::cells(2),
+        ),
+        0,
+      )
+      let child = layout::new()
+      child.apply(style::new(width: style::cells(6)), 0)
+      child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
+        layout::MeasureSize{width: Float32::from(6.0), height: Float32::from(2.0)}
+      })
+      root.insert(child, 0)
+      let peer = fixed(6, 4)
+      root.insert(peer, 1)
+      visitor::visit(
+        root,
+        axis(10.0, cache::SizingMode::stretch_fit),
+        axis(height, cache::SizingMode::stretch_fit),
+        zero(),
+        zero(),
+        1,
+        true,
+      )
+      let expected = match height == 14.0 {
+        true => {
+          match alignment {
+            style::Align::stretch => 5.0,
+            style::Align::space_between => 8.0,
+            style::Align::space_around => 5.0,
+            style::Align::space_evenly => 4.0,
+            _ => 2.0,
+          }
+        },
+        false => 2.0,
+      }
+      try testing::assert(
+        child.height == expected and peer.height == 4.0,
+        "Raw Yoga multiline remeasurement; distribution-mode growth is not the ADR0017 public contract",
+      )
+    }
+  }
+  Result::ok(())
+}

@@ -59,5 +59,35 @@ int main() {
     std::printf("line minimum%d child height=%.0f\n", minimum, expected);
     YGNodeFreeRecursive(root);
   }
+  for (int height : {14, 8, 4}) {
+    for (auto alignment : {YGAlignFlexStart, YGAlignFlexEnd, YGAlignCenter,
+             YGAlignStretch, YGAlignSpaceBetween, YGAlignSpaceAround, YGAlignSpaceEvenly}) {
+    auto root = YGNodeNewWithConfig(config);
+    YGNodeStyleSetWidth(root, 10);
+    YGNodeStyleSetHeight(root, height);
+    YGNodeStyleSetFlexWrap(root, YGWrapWrap);
+    YGNodeStyleSetAlignContent(root, alignment);
+    YGNodeStyleSetGap(root, YGGutterAll, 2);
+    auto child = YGNodeNewWithConfig(config);
+    YGNodeStyleSetWidth(child, 6);
+    YGNodeSetMeasureFunc(child, measure);
+    auto peer = YGNodeNewWithConfig(config);
+    YGNodeStyleSetWidth(peer, 6);
+    YGNodeStyleSetHeight(peer, 4);
+    YGNodeInsertChild(root, child, 0);
+    YGNodeInsertChild(root, peer, 1);
+    YGNodeCalculateLayout(root, 10, height, YGDirectionLTR);
+    float expected = 2;
+    if (height == 14) {
+      if (alignment == YGAlignStretch || alignment == YGAlignSpaceAround) expected = 5;
+      if (alignment == YGAlignSpaceBetween) expected = 8;
+      if (alignment == YGAlignSpaceEvenly) expected = 4;
+    }
+    assert(YGNodeLayoutGetHeight(child) == expected);
+    assert(YGNodeLayoutGetHeight(peer) == 4);
+    std::printf("multiline height%d align%d child=%.0f peer=4\n", height, alignment, expected);
+    YGNodeFreeRecursive(root);
+    }
+  }
   YGConfigFree(config);
 }

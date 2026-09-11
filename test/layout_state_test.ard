@@ -1,0 +1,126 @@
+use ard/testing
+
+use cooper/core/layout
+use cooper/core/node
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/color
+use cooper/ui/style
+
+test fn layout_dirty_tracks_layout_values_not_paint_or_identical_replacement() Void!Str {
+  let root = layout::new()
+  let child = layout::new()
+  root.insert(child, 0)
+  root.compute(40, 20)
+  child.apply(style::new(), 0)
+  try testing::assert(child.dirty == false and root.dirty == false, "Identical style remains clean")
+  child.apply(
+    style::new(foreground: color::rgb(1, 2, 3), z_index: 7, border: style::Border::double),
+    0,
+  )
+  try testing::assert(child.dirty == false and root.dirty == false, "Paint does not invalidate layout")
+  for value in [
+    style::new(display: style::Display::none),
+    style::new(position: style::Position::absolute),
+    style::new(overflow: style::Overflow::hidden),
+    style::new(flex_direction: style::FlexDirection::row),
+    style::new(flex_wrap: style::FlexWrap::wrap),
+    style::new(flex_basis: style::cells(3)),
+    style::new(flex_grow: 0.5),
+    style::new(flex_shrink: 0.5),
+    style::new(align_items: style::Align::start),
+    style::new(align_self: style::Align::end),
+    style::new(align_content: style::Align::center),
+    style::new(justify_content: style::Justify::center),
+    style::new(width: style::cells(3)),
+    style::new(height: style::cells(2)),
+    style::new(min_width: style::cells(3)),
+    style::new(min_height: style::cells(2)),
+    style::new(max_width: style::cells(3)),
+    style::new(max_height: style::cells(2)),
+    style::new(top: style::cells(1)),
+    style::new(right: style::cells(1)),
+    style::new(bottom: style::cells(1)),
+    style::new(left: style::cells(1)),
+    style::new(padding: style::edges(style::cells(1))),
+    style::new(margin: style::edges(style::cells(1))),
+    style::new(gap: style::cells(1)),
+  ] {
+    child.apply(style::new(), 0)
+    root.compute(40, 20)
+    child.apply(value, 0)
+    try testing::assert(child.dirty and root.dirty, "Each layout property invalidates its owner")
+    root.compute(40, 20)
+    try testing::assert(child.dirty == false and root.dirty == false, "Completed layout is clean")
+    child.apply(value, 0)
+    try testing::assert(child.dirty == false and root.dirty == false, "Repeated value remains clean")
+  }
+  child.apply(child.value, 1)
+  testing::assert(child.dirty and root.dirty, "Resolved border thickness affects layout")
+}
+
+test fn layout_owner_changes_route_dirtiness_to_new_ancestors_only() Void!Str {
+  let root = layout::new()
+  let old = layout::new()
+  let next = layout::new()
+  let leaf = layout::new()
+  root.insert(old, 0)
+  root.insert(next, 1)
+  old.insert(leaf, 0)
+  root.compute(40, 20)
+  leaf.mark_dirty()
+  try testing::assert(
+    leaf.dirty and old.dirty and root.dirty and next.dirty == false,
+    "Only owner chain dirtied",
+  )
+  root.compute(40, 20)
+  old.remove(leaf)
+  try testing::assert(
+    leaf.owner.is_some() == false and old.dirty and root.dirty,
+    "Removal clears owner and invalidates old chain",
+  )
+  root.compute(40, 20)
+  old.remove(leaf)
+  try testing::assert(root.dirty == false, "Repeated removal is a no-op")
+  leaf.mark_dirty()
+  try testing::assert(root.dirty == false, "Detached dirty leaf cannot reach former owner")
+  next.insert(leaf, 0)
+  try testing::assert(next.dirty and root.dirty, "Attaching already-dirty leaf invalidates new owner")
+  root.compute(40, 20)
+  leaf.apply(style::new(width: style::cells(7)), 0)
+  try testing::assert(leaf.owner.expect("new owner") == next, "Owner follows reparenting")
+  testing::assert(
+    next.dirty and root.dirty and old.dirty == false,
+    "Later mutation uses new chain only",
+  )
+}
+
+test fn retained_measure_changes_dirty_layout_and_preserve_geometry() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let leaf = box::new(ctx)
+  let measured = mut node::MeasureSize{width: Float32::from(3.0), height: Float32::from(1.0)}
+  leaf.node().set_measure(fn(input: node::MeasureInput) node::MeasureSize {
+    measured.@
+  })
+  root.add(leaf)
+  ctx.compute_layout(root, 20, 10)
+  measured.width = Float32::from(7.0)
+  leaf.node().mark_measure_dirty()
+  try testing::assert(
+    leaf.node().layout_node.dirty and root.node().layout_node.dirty,
+    "Content invalidates layout, not only rendering",
+  )
+  ctx.compute_layout(root, 20, 10)
+  try testing::assert(leaf.layout().local.width == 7, "Changed content is measured")
+  leaf.node().set_measure(fn(input: node::MeasureInput) node::MeasureSize {
+    node::MeasureSize{width: Float32::from(9.0), height: Float32::from(2.0)}
+  })
+  try testing::assert(root.node().layout_node.dirty, "Replacing callback invalidates owner")
+  ctx.compute_layout(root, 20, 10)
+  testing::assert(
+    leaf.layout().local.width == 9 and leaf.layout().local.height == 2,
+    "New callback determines geometry",
+  )
+}

@@ -198,3 +198,31 @@ and recursion, not an unsafe partial change of numeric representation.
 then the cache-aware recursion and leaf paths. The independent production
 kernel and Tess dependency remain; this stage does not claim a completed port
 or a measurement-performance improvement.
+
+## Ownership and dirty propagation stage
+
+Layout nodes now track their owner and dirty state. The clean-to-dirty transition
+propagates through owners, following Yoga's `markDirtyAndPropagate`; insertion
+invalidates the new owner even when the child is already dirty, and removal
+clears the owner link and invalidates the old chain. Repeated removal does
+nothing. Change-aware Style application compares layout properties and resolved
+border thickness, excluding colors, z-order and border appearance.
+
+Retained `mark_measure_dirty` and measure-callback replacement now invalidate
+layout state. The focused test failed before these retained hooks were wired
+(`2 passed, 1 failed`, at "Content invalidates layout, not only rendering") and
+passes afterward. Its mutable-content fixture uses an explicit shared object,
+not a scalar captured by value. Geometry changes from width 3 to 7 and then to
+9×2 after callback replacement.
+
+`test/layout_state_test.ard`: **3 passed**. It also checks all 25 compared layout
+Style properties, identical replacements, paint-only changes, resolved border
+thickness, owner-chain isolation and detach/reparent transitions. Full `ard test`:
+**378 passed, 0 failed, 0 panicked**. Compiler/formatter checks, `go test ./...`,
+and the geometry/numeric differential runner pass.
+
+This is deliberately not cache reuse yet. The existing full-tree solver clears
+dirty state only after completing its transaction. Basis invalidation, cache
+entries, generations and visit-local clean transitions must be translated with
+Yoga's persistent layout results and recursive wrapper next; no performance
+improvement or complete state-machine equivalence is claimed at this stage.

@@ -47,6 +47,8 @@ struct Node {
   value: style::Style,
   border: Int,
   children: [mut Node],
+  owner: (mut Node)?,
+  dirty: Bool,
   measure: (fn(MeasureInput) MeasureSize)?,
   x: Float64,
   y: Float64,
@@ -65,6 +67,8 @@ fn new() mut Node {
     value: style::new(),
     border: 0,
     children: [],
+    owner: Maybe::new<mut Node>(),
+    dirty: true,
     measure: Maybe::new<fn(MeasureInput) MeasureSize>(),
     allocation: Maybe::new<Allocation>(),
     line: 0,
@@ -1116,8 +1120,50 @@ fn flex(line: mut Line, available: Float64, gap: Float64, scrolling: Bool) {
   }
 }
 
+// Yoga's change-aware style setters compare layout values, not paint data.
+// Cooper supplies resolved border thickness separately from border appearance.
+fn same_length(a: style::Length, b: style::Length) Bool {
+  a.kind == b.kind and a.value == b.value
+}
+
+fn same_edges(a: style::Edges, b: style::Edges) Bool {
+  same_length(a.top, b.top) and same_length(a.right, b.right) and same_length(a.bottom, b.bottom) and same_length(a.left, b.left)
+}
+
+fn same_layout_style(a: style::Style, b: style::Style) Bool {
+  let flow = a.display == b.display and a.position == b.position and a.overflow == b.overflow and a.flex_direction == b.flex_direction and a.flex_wrap == b.flex_wrap
+  let flex = same_length(a.flex_basis, b.flex_basis) and a.flex_grow == b.flex_grow and a.flex_shrink == b.flex_shrink
+  let alignment = a.align_items == b.align_items and a.align_self == b.align_self and a.align_content == b.align_content and a.justify_content == b.justify_content
+  let dimensions = same_length(a.width, b.width) and same_length(a.height, b.height) and same_length(a.min_width, b.min_width) and same_length(a.min_height, b.min_height) and same_length(a.max_width, b.max_width) and same_length(a.max_height, b.max_height)
+  let offsets = same_length(a.top, b.top) and same_length(a.right, b.right) and same_length(a.bottom, b.bottom) and same_length(a.left, b.left)
+  let spacing = same_edges(a.padding, b.padding) and same_edges(a.margin, b.margin) and same_length(a.gap, b.gap)
+  flow and flex and alignment and dimensions and offsets and spacing
+}
+
 impl Node {
+  // Translated ownership/dirty propagation from Yoga 8ba025e node/Node.cpp
+  // and YGNode.cpp. Copyright (c) Meta Platforms, Inc. and affiliates.
+  // MIT license: layout/LICENSE.yoga. Basis/cache invalidation joins this
+  // transition when those source structures are translated.
+  fn mut mark_dirty() {
+    if not self.dirty {
+      self.dirty = true
+      match self.owner {
+        owner => owner.mark_dirty(),
+        _ => (),
+      }
+    }
+  }
+  
+  fn mut set_measure(measure: fn(MeasureInput) MeasureSize) {
+    self.measure = Maybe::new<fn(MeasureInput) MeasureSize>(measure)
+    self.mark_dirty()
+  }
+  
   fn mut apply(value: style::Style, border: Int) {
+    if self.border != border or not same_layout_style(self.value, value) {
+      self.mark_dirty()
+    }
     self.value = value
     self.border = border
   }
@@ -1136,17 +1182,33 @@ impl Node {
       false => (),
     }
     self.children = next.@
+    child.owner = Maybe::new<mut Node>(self)
+    self.mark_dirty()
   }
   
   fn mut remove(child: mut Node) {
+    mut removed = false
     let retained = mut List::new<mut Node>()
     for existing in self.children {
       match existing != child {
         true => retained.push(existing),
-        false => (),
+        false => { removed = true },
       }
     }
     self.children = retained.@
+    if removed {
+      child.owner = Maybe::new<mut Node>()
+      self.mark_dirty()
+    }
+  }
+  
+  // The current solver visits the full tree. Until the Yoga visit/cache
+  // wrapper is translated, only the completed transaction marks nodes clean.
+  private fn mut mark_layout_clean() {
+    self.dirty = false
+    for child in self.children {
+      child.mark_layout_clean()
+    }
   }
   
   fn mut clear() {
@@ -1250,6 +1312,7 @@ impl Node {
       true,
     )
     self.project(0.0, 0.0)
+    self.mark_layout_clean()
   }
   
   fn mut absolute(cw: Float64, ch: Float64, ox: Float64, oy: Float64, allocated: Bool) {

@@ -1440,13 +1440,14 @@ impl Node {
       panic("a retained Node with children cannot become measured")
     }
     self.measured = true
-    self.layout_node.measure = Maybe::new<fn(MeasureInput) MeasureSize>(measure)
+    self.layout_node.set_measure(measure)
   }
   
   fn mut mark_measure_dirty() {
     if self.destroyed or not self.measured {
       panic("only a live measured retained Node can be marked dirty")
     }
+    self.layout_node.mark_dirty()
     self.request_render()
   }
   

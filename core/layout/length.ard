@@ -1,0 +1,34 @@
+use cooper/core/layout/numeric
+use cooper/ui/style
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// MIT license: LICENSE.yoga. Yoga 8ba025e StyleSizeLength::resolve,
+// Node::processDimensions and Node::hasDefiniteLength, border-box paths.
+// Inputs are validated Cooper lengths. Undefined reference space is NaN,
+// never the old solver's negative sentinel. Keywords remain unresolved here;
+// ADR 0016 intrinsic contributions belong to the higher-level sizing phase.
+
+fn resolve(value: style::Length, reference: Float32) Float32 {
+  match value.kind {
+    // Preserve Yoga's Float32 multiplication order, not division by 100.
+    style::LengthKind::cells => value.value,
+    style::LengthKind::percent => value.value * reference * Float32::from(0.01),
+    _ => numeric::undefined(),
+  }
+}
+
+fn processed_dimension(preferred: style::Length, minimum: style::Length, maximum: style::Length) style::Length {
+  mut equal = minimum.kind == maximum.kind
+  if equal and (maximum.kind == style::LengthKind::cells or maximum.kind == style::LengthKind::percent) {
+    equal = numeric::inexact_equals(minimum.value, maximum.value)
+  }
+  match maximum.kind != style::LengthKind::undefined and equal {
+    true => maximum,
+    false => preferred,
+  }
+}
+
+fn is_definite(processed: style::Length, reference: Float32) Bool {
+  let value = resolve(processed, reference)
+  numeric::is_defined(value) and value >= 0.0
+}

@@ -42,6 +42,47 @@ fn callback_mode(mode: cache::SizingMode) Mode {
 }
 
 impl Axis {
+  // CalculateLayout.cpp: constrainMaxSizeForMode. Available size includes
+  // margins here; maximum is an already-resolved border-box constraint.
+  fn constrain_max(margin: Float32) Axis {
+    let result = mut self
+    let maximum = self.maximum + margin
+    match self.mode {
+      cache::SizingMode::max_content => {
+        if numeric::is_defined(maximum) {
+          result.mode = cache::SizingMode::fit_content
+          result.available = maximum
+        }
+      },
+      _ => {
+        let below_maximum = self.available < maximum
+        if numeric::is_defined(maximum) and below_maximum == false {
+          result.available = maximum
+        }
+      },
+    }
+    result.@
+  }
+  
+  // CalculateLayout.cpp: calculateAvailableInnerDimension. Unlike callback
+  // inner_size, this uses resolved min/max and does not always floor at zero.
+  // Available space has already had margins removed by the caller.
+  fn available_inner_dimension() Float32 {
+    mut available = self.available - self.padding_border
+    if numeric::is_defined(available) {
+      let minimum = match numeric::is_undefined(self.minimum) {
+        true => Float32::from(0.0),
+        false => self.minimum - self.padding_border,
+      }
+      let maximum = match numeric::is_undefined(self.maximum) {
+        true => Float32::from(340282346638528859811704183484516925440.0),
+        false => self.maximum - self.padding_border,
+      }
+      available = numeric::max_or_defined(numeric::min_or_defined(available, maximum), minimum)
+    }
+    available
+  }
+  
   fn without_margin(margin: Float32) Axis {
     Axis{
       available: self.available - margin,

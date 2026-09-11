@@ -1,7 +1,9 @@
 use cooper/core/layout
 use cooper/core/layout/cache
+use cooper/core/layout/length
 use cooper/core/layout/measure
 use cooper/core/layout/numeric
+use cooper/ui/style
 use go:fmt
 use go:math
 
@@ -47,6 +49,112 @@ fn main() {
   }
   cache_reference()
   leaf_reference()
+  axis_reference()
+  length_reference()
+}
+
+fn unit_number(kind: style::LengthKind) Int {
+  match kind {
+    style::LengthKind::undefined => 0,
+    style::LengthKind::cells => 1,
+    style::LengthKind::percent => 2,
+    style::LengthKind::auto => 3,
+    style::LengthKind::max_content => 4,
+    style::LengthKind::fit_content => 5,
+    style::LengthKind::stretch => 6,
+  }
+}
+
+fn length_reference() {
+  let lengths = [
+    style::undefined(),
+    style::auto(),
+    style::cells(0),
+    style::cells(7),
+    style::Length{kind: style::LengthKind::cells, value: Float32::from(7.00005)},
+    style::Length{kind: style::LengthKind::cells, value: Float32::from(7.0002)},
+    style::percent(0.0),
+    style::percent(33.3),
+    style::percent(100.0),
+    style::max_content(),
+    style::fit_content(),
+    style::stretch(),
+  ]
+  for value in lengths {
+    for reference in [
+      numeric::undefined(),
+      Float32::from(0.0),
+      Float32::from(38.0),
+      Float32::from(113.7),
+      Float32::from(1000000.0),
+    ] {
+      fmt::Printf("length %d", unit_number(value.kind))
+      emit(reference)
+      emit(length::resolve(value, reference))
+      fmt::Printf(" %t\n", length::is_definite(value, reference))
+    }
+  }
+  for preferred in lengths {
+    for minimum in lengths {
+      for maximum in lengths {
+        let processed = length::processed_dimension(preferred, minimum, maximum)
+        fmt::Printf("processed %d", unit_number(processed.kind))
+        emit(length::resolve(processed, Float32::from(40.0)))
+        fmt::Println()
+      }
+    }
+  }
+}
+
+fn mode_number(mode: cache::SizingMode) Int {
+  match mode {
+    cache::SizingMode::stretch_fit => 0,
+    cache::SizingMode::max_content => 1,
+    cache::SizingMode::fit_content => 2,
+  }
+}
+
+fn axis_reference() {
+  let values = [
+    numeric::undefined(),
+    Float32::from(-2.0),
+    Float32::from(0.0),
+    Float32::from(2.0),
+    Float32::from(11.0),
+    Float32::from(math::Inf(1)),
+    Float32::from(3000000000000000000000000000000.0),
+  ]
+  let bounds = [numeric::undefined(), Float32::from(0.0), Float32::from(5.0), Float32::from(13.0)]
+  for mode in [cache::SizingMode::max_content, cache::SizingMode::fit_content, cache::SizingMode::stretch_fit] {
+    for available in values {
+      for padding in [Float32::from(0.0), Float32::from(4.0), Float32::from(9.0)] {
+        for minimum in bounds {
+          for maximum in bounds {
+            for margin in [Float32::from(0.0), Float32::from(3.0)] {
+              let axis = measure::Axis{
+                available: available,
+                mode: mode,
+                padding_border: padding,
+                minimum: minimum,
+                maximum: maximum,
+              }
+              let constrained = axis.constrain_max(margin)
+              fmt::Print("axis")
+              emit(available)
+              emit(padding)
+              emit(minimum)
+              emit(maximum)
+              emit(margin)
+              fmt::Printf(" %d %d", mode_number(mode), mode_number(constrained.mode))
+              emit(constrained.available)
+              emit(axis.without_margin(margin).available_inner_dimension())
+              fmt::Println()
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 fn leaf_reference() {

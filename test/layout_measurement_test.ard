@@ -188,3 +188,51 @@ test fn yoga_leaf_visits_reuse_bounded_results_and_only_layout_commits_dimension
     "Changed content replaces cached border box",
   )
 }
+
+test fn yoga_axis_constraints_preserve_mode_margins_and_inner_bound_order() Void!Str {
+  let width = mut axis(cache::SizingMode::max_content, 40, 4)
+  width.maximum = Float32::from(13.0)
+  let constrained = width.constrain_max(Float32::from(3.0))
+  try testing::assert(
+    constrained.mode == cache::SizingMode::fit_content and constrained.available == 16.0,
+    "A maximum changes max-content to fit-content and includes margins",
+  )
+  try testing::assert(
+    width.mode == cache::SizingMode::max_content and width.available == 40.0,
+    "Constraint calculation does not mutate the caller's axis",
+  )
+  width.mode = cache::SizingMode::stretch_fit
+  width.available = Float32::from(11.0)
+  let smaller = width.constrain_max(Float32::from(3.0))
+  try testing::assert(
+    smaller.available == 11.0 and smaller.mode == cache::SizingMode::stretch_fit,
+    "A smaller exact allocation is preserved, not expanded to max",
+  )
+  width.available = numeric::undefined()
+  try testing::assert(
+    width.constrain_max(Float32::from(3.0)).available == 16.0,
+    "A defined maximum replaces undefined available size even in exact mode",
+  )
+  try testing::assert(
+    numeric::is_undefined(width.available_inner_dimension()),
+    "Inner bounds do not manufacture definite space from undefined availability",
+  )
+  width.available = Float32::from(2.0)
+  width.minimum = Float32::from(0.0)
+  try testing::assert(
+    width.available_inner_dimension() == -2.0 and width.inner_size() == 0.0,
+    "Container inner bounds differ from the nonnegative callback content size",
+  )
+  width.available = Float32::from(40.0)
+  width.minimum = Float32::from(19.0)
+  try testing::assert(
+    width.available_inner_dimension() == 15.0,
+    "Inner maximum applies first, then minimum wins: max13/min19 minus inset4 gives15",
+  )
+  width.minimum = numeric::undefined()
+  let outer = width.constrain_max(Float32::from(3.0))
+  testing::assert(
+    outer.without_margin(Float32::from(3.0)).available_inner_dimension() == 9.0,
+    "Outer16 minus margin3 minus inset4 produces9; each is subtracted once",
+  )
+}

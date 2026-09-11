@@ -1,0 +1,64 @@
+use ard/testing
+
+use cooper/core/layout/length
+use cooper/core/layout/numeric
+use cooper/ui/style
+
+test fn yoga_lengths_distinguish_zero_owner_from_indefinite_owner() Void!Str {
+  let indefinite = numeric::undefined()
+  try testing::assert(
+    length::resolve(style::cells(7), indefinite) == 7.0 and length::is_definite(style::cells(7), indefinite),
+    "Points do not depend on owner size",
+  )
+  let percentage = style::percent(25.0)
+  try testing::assert(
+    length::resolve(percentage, Float32::from(38.0)) == 9.5,
+    "Percentages preserve fractional cells",
+  )
+  try testing::assert(
+    length::resolve(percentage, Float32::from(0.0)) == 0.0 and length::is_definite(percentage, Float32::from(0.0)),
+    "Zero-sized owner is definite, not missing",
+  )
+  try testing::assert(
+    numeric::is_undefined(length::resolve(style::percent(0.0), indefinite)),
+    "Even zero percent requires a definite reference in raw Yoga resolution",
+  )
+  for keyword in [style::auto(), style::undefined(), style::max_content(), style::fit_content(), style::stretch()] {
+    try testing::assert(
+      numeric::is_undefined(length::resolve(keyword, Float32::from(38.0))) and length::is_definite(keyword, Float32::from(38.0)) == false,
+      "Raw keyword resolution must not silently replace intrinsic policy with owner size",
+    )
+  }
+  testing::assert(
+    length::is_definite(percentage, indefinite) == false,
+    "Indefinite percentage is not a definite dimension",
+  )
+}
+
+test fn yoga_processed_dimensions_compare_units_before_resolving_bounds() Void!Str {
+  let preferred = style::cells(3)
+  let minimum = style::cells(7)
+  let close = style::Length{kind: style::LengthKind::cells, value: Float32::from(7.00005)}
+  let farther = style::Length{kind: style::LengthKind::cells, value: Float32::from(7.0002)}
+  let processed = length::processed_dimension(preferred, minimum, close)
+  try testing::assert(
+    processed.value == close.value,
+    "Nearly equal bounds choose maximum, not minimum or preferred",
+  )
+  try testing::assert(
+    length::processed_dimension(preferred, minimum, farther).value == 3.0,
+    "Bounds outside Yoga's tolerance leave preferred dimension intact",
+  )
+  try testing::assert(
+    length::processed_dimension(preferred, style::cells(7), style::percent(7.0)).kind == style::LengthKind::cells and length::processed_dimension(preferred, style::cells(7), style::percent(7.0)).value == 3.0,
+    "Equal numeric values in different units cannot override preferred size",
+  )
+  try testing::assert(
+    length::processed_dimension(preferred, style::undefined(), style::undefined()).value == 3.0,
+    "Two missing bounds do not erase preferred size",
+  )
+  testing::assert(
+    length::processed_dimension(preferred, style::max_content(), style::max_content()).kind == style::LengthKind::max_content,
+    "Matching keywords remain keywords for the intrinsic phase",
+  )
+}

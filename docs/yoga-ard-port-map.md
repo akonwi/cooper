@@ -332,3 +332,73 @@ application-level reduction in callbacks or remove Tess based on this isolated
 leaf proof. The next stage must translate the caller's axis/basis resolution
 and container traversal, rather than insert a raw callback memoizer into the
 old solver.
+
+## Resolved-axis constraints stage
+
+`measure::Axis.constrain_max` translates `constrainMaxSizeForMode` after
+style resolution: a defined maximum includes margins and changes MaxContent
+to FitContent; exact/fit allocations remain smaller when already below it.
+Undefined availability is replaced by a defined maximum in those modes too.
+`available_inner_dimension` translates `calculateAvailableInnerDimension`:
+subtract padding/border after margins, apply maximum then minimum, and preserve
+undefined space. Its default upper bound is Float32's largest finite value,
+not infinity. Unlike callback `inner_size`, resolved bounds can produce negative
+inner space. These internal rules are not new public Style semantics.
+
+The native driver includes the pinned `CalculateLayout.cpp` translation unit
+to call its private helpers directly. This also rebuilds the reference leaf
+visitor from pinned source rather than taking that visitor from the archive;
+remaining native dependencies still link against the archive. The evidence
+records both the layout-source and archive hashes.
+
+Proof: **2,016** axis cases match sizing modes and Float32 result bits, spanning
+all three modes, undefined/negative/zero/finite/infinite availability, asymmetric
+margin/inset values, absent bounds and conflicting bounds. The focused test
+independently asserts outer16 − margin3 − inset4 = inner9, min19 overriding
+max13 to produce inner15 with inset4, and inner−2 versus callback0.
+`ard test test/layout_measurement_test.ard`: **4 passed**;
+full `ard test`: **387 passed, 0 failed, 0 panicked**. Compiler and formatter
+checks pass for all three changed Ard files. Existing differential cases pass.
+
+These helpers accept already-resolved dimensions and remain outside the active
+application solver. Style/percentage resolution, child flex-basis selection and
+container recursion are still next; no Tess dependency removal or application
+performance improvement is claimed by this checkpoint.
+
+## Length resolution and processed dimensions stage
+
+`core/layout/length.ard` translates `StyleSizeLength::resolve`,
+`Node::processDimensions`, and `Node::hasDefiniteLength` for Cooper's validated
+border-box lengths. Percentages use the source's Float32 multiplication order
+(`value * reference * 0.01f`). Owner zero is definite; owner NaN is indefinite,
+including for zero percent. Keywords remain unresolved at this level rather
+than acquiring Yoga's finite-measurement fallback as public semantics.
+
+Processed dimensions use the maximum when min/max have the same units and
+inexactly equal values. Otherwise they preserve the preferred dimension.
+The comparison happens before percentage resolution; values in different units
+must not collapse merely because their resolved sizes happen to agree.
+
+Proof: **60** length resolutions/definiteness checks and **1,728** processed
+dimension combinations match pinned Yoga. Cases cover all supported units,
+zero/fractional/large owner sizes, undefined owner space, and bounds just inside
+and outside the source's equality tolerance. Two deterministic tests independently
+assert fractional percentages, definite zero, unresolved keywords, unit-sensitive
+bound equality and choosing the maximum's exact value. Full `ard test`:
+**389 passed, 0 failed, 0 panicked**; targeted tests **2 passed**. Compiler and
+formatter checks pass for the three new/changed Ard files in this stage.
+
+The native processed-dimension cases intentionally use fresh nodes. Reusing one
+node across the matrix produced 295 mismatches: pinned `StyleValuePool::storeKeyword`
+can keep a prior fractional value's indexed flag and store the keyword in the
+buffer, while `StyleValueHandle::isKeyword` compares the index itself with the
+keyword ordinal. This can corrupt keyword identity after mutation. Fresh-node
+cases all match. Ard uses plain length values, not Yoga's packed/indexed storage;
+this is not behavior to port, and this proof does not claim storage-mutation
+parity. The source locations above record the limitation for future reference.
+
+These are raw resolution primitives, not the complete ADR 0016 sizing policy.
+Intrinsic contributions, percentage-cycle policy and min-wins normalization must
+be applied explicitly at the caller. Next is child flex-basis selection and its
+measurement fallback, followed by container recursion. The active application
+solver and Tess dependency remain unchanged.

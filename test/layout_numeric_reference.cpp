@@ -2,7 +2,9 @@
 #include <yoga/numeric/Comparison.h>
 #include <yoga/algorithm/Cache.h>
 #include <yoga/algorithm/PixelGrid.h>
-#include <yoga/algorithm/CalculateLayout.h>
+// Include the pinned translation unit to exercise its private axis helpers,
+// rather than duplicate their algorithms in this reference driver.
+#include <yoga/algorithm/CalculateLayout.cpp>
 
 #include <bit>
 #include <cstdint>
@@ -11,6 +13,8 @@
 
 static void cache_reference();
 static void leaf_reference();
+static void axis_reference();
+static void length_reference();
 
 static void emit(float value) {
   if (value != value) {
@@ -44,6 +48,82 @@ int main() {
   }
   cache_reference();
   leaf_reference();
+  axis_reference();
+  length_reference();
+}
+
+static void length_reference() {
+  using namespace facebook::yoga;
+  const StyleSizeLength lengths[] = {
+      StyleSizeLength::undefined(), StyleSizeLength::ofAuto(),
+      StyleSizeLength::points(0), StyleSizeLength::points(7),
+      StyleSizeLength::points(7.00005f), StyleSizeLength::points(7.0002f),
+      StyleSizeLength::percent(0), StyleSizeLength::percent(33.3f),
+      StyleSizeLength::percent(100), StyleSizeLength::ofMaxContent(),
+      StyleSizeLength::ofFitContent(), StyleSizeLength::ofStretch()};
+  for (auto value : lengths) {
+    Node node;
+    node.style().setDimension(Dimension::Width, value);
+    node.processDimensions();
+    for (float reference : {YGUndefined, 0.0f, 38.0f, 113.7f, 1000000.0f}) {
+      std::printf("length %d", static_cast<int>(static_cast<YGValue>(value).unit));
+      emit(reference);
+      emit(value.resolve(reference).unwrap());
+      std::printf(" %s\n", node.hasDefiniteLength(Dimension::Width, reference) ? "true" : "false");
+    }
+  }
+  for (auto preferred : lengths) {
+    for (auto minimum : lengths) {
+      for (auto maximum : lengths) {
+        // Independent cases: avoid the pinned pool's indexed-value to keyword
+        // mutation bug. Cooper uses value structs, not Yoga's packed storage.
+        Node node;
+        node.style().setDimension(Dimension::Width, preferred);
+        node.style().setMinDimension(Dimension::Width, minimum);
+        node.style().setMaxDimension(Dimension::Width, maximum);
+        node.processDimensions();
+        auto processed = node.getProcessedDimension(Dimension::Width);
+        std::printf("processed %d", static_cast<int>(static_cast<YGValue>(processed).unit));
+        emit(processed.resolve(40.0f).unwrap());
+        std::printf("\n");
+      }
+    }
+  }
+}
+
+static void axis_reference() {
+  using namespace facebook::yoga;
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float values[] = {nan, -2.0f, 0.0f, 2.0f, 11.0f,
+      std::numeric_limits<float>::infinity(), 3.0e30f};
+  auto leaf = YGNodeNew();
+  for (auto mode : {SizingMode::MaxContent, SizingMode::FitContent, SizingMode::StretchFit}) {
+    for (float available : values) {
+      for (float padding : {0.0f, 4.0f, 9.0f}) {
+        for (float minimum : {nan, 0.0f, 5.0f, 13.0f}) {
+          for (float maximum : {nan, 0.0f, 5.0f, 13.0f}) {
+            for (float margin : {0.0f, 3.0f}) {
+              YGNodeStyleSetMinWidth(leaf, minimum);
+              YGNodeStyleSetMaxWidth(leaf, maximum);
+              YGNodeStyleSetMargin(leaf, YGEdgeLeft, margin);
+              auto constrained_mode = mode;
+              float constrained = available;
+              constrainMaxSizeForMode(resolveRef(leaf), Direction::LTR,
+                  FlexDirection::Row, 40.0f, 40.0f, &constrained_mode, &constrained);
+              std::printf("axis");
+              emit(available); emit(padding); emit(minimum); emit(maximum); emit(margin);
+              std::printf(" %d %d", static_cast<int>(mode), static_cast<int>(constrained_mode));
+              emit(constrained);
+              emit(calculateAvailableInnerDimension(resolveRef(leaf), Direction::LTR,
+                  Dimension::Width, available - margin, padding, 40.0f, 40.0f));
+              std::printf("\n");
+            }
+          }
+        }
+      }
+    }
+  }
+  YGNodeFree(leaf);
 }
 
 static int leaf_calls = 0;

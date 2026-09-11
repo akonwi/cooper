@@ -1,4 +1,6 @@
+use cooper/core/layout
 use cooper/core/layout/cache
+use cooper/core/layout/measure
 use cooper/core/layout/numeric
 use go:fmt
 use go:math
@@ -44,6 +46,53 @@ fn main() {
     }
   }
   cache_reference()
+  leaf_reference()
+}
+
+fn leaf_reference() {
+  let leaf = layout::new()
+  let content = mut measure::Size{width: Float32::from(7.0), height: Float32::from(2.0)}
+  mut calls = 0
+  leaf.set_measure(fn(input: measure::Input) measure::Size {
+    calls =+ 1
+    content.@
+  })
+  let width = measure::Axis{
+    available: Float32::from(20.0),
+    mode: cache::SizingMode::fit_content,
+    padding_border: Float32::from(4.0),
+    minimum: numeric::undefined(),
+    maximum: numeric::undefined(),
+  }
+  let height = measure::Axis{
+    available: Float32::from(10.0),
+    mode: cache::SizingMode::max_content,
+    padding_border: Float32::from(3.0),
+    minimum: numeric::undefined(),
+    maximum: numeric::undefined(),
+  }
+  for step in [0, 1, 2, 3, 4] {
+    if step == 4 {
+      content.width = Float32::from(13.0)
+      leaf.mark_dirty()
+    }
+    let generation = match step < 3 {
+      true => 1,
+      false => step - 1,
+    }
+    let visited = leaf.calculate_leaf(
+      width,
+      height,
+      Float32::from(2.0),
+      Float32::from(0.0),
+      generation,
+      step >= 2,
+    )
+    fmt::Printf("leaf %t %t %d", visited, leaf.dirty, calls)
+    emit(leaf.measured_width)
+    emit(leaf.measured_height)
+    fmt::Println()
+  }
 }
 
 fn cache_reference() {

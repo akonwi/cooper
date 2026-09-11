@@ -1,25 +1,14 @@
 use cooper/core/layout/cache
+use cooper/core/layout/measure as measurement
+use cooper/core/layout/numeric
 use cooper/ui/geometry
 use cooper/ui/style
 use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
 
-enum MeasureMode {
-  undefined,
-  exactly,
-  at_most,
-}
+type MeasureMode = measurement::Mode
+type MeasureInput = measurement::Input
+type MeasureSize = measurement::Size
 
-struct MeasureInput {
-  width: Float32,
-  width_mode: MeasureMode,
-  height: Float32,
-  height_mode: MeasureMode,
-}
-
-struct MeasureSize {
-  width: Float32,
-  height: Float32,
-}
 struct Size {
   width: Float64,
   height: Float64,
@@ -52,6 +41,8 @@ struct Node {
   dirty: Bool,
   cache_state: mut cache::State,
   measure: (fn(MeasureInput) MeasureSize)?,
+  measured_width: Float32,
+  measured_height: Float32,
   x: Float64,
   y: Float64,
   width: Float64,
@@ -73,6 +64,8 @@ fn new() mut Node {
     dirty: true,
     cache_state: cache::new_state(),
     measure: Maybe::new<fn(MeasureInput) MeasureSize>(),
+    measured_width: numeric::undefined(),
+    measured_height: numeric::undefined(),
     allocation: Maybe::new<Allocation>(),
     line: 0,
     percent_width: -1.0,
@@ -1161,6 +1154,67 @@ impl Node {
   fn mut set_measure(measure: fn(MeasureInput) MeasureSize) {
     self.measure = Maybe::new<fn(MeasureInput) MeasureSize>(measure)
     self.mark_dirty()
+  }
+  
+  // Leaf portion of Yoga calculateLayoutInternal. Axis availability here
+  // includes margins; the leaf kernel receives border-box space instead.
+  // Only for the translated solver: legacy compute and ADR 0020 replay do not
+  // enter this path. Caller resolves lengths/bounds/insets before the visit.
+  fn mut calculate_leaf(
+    width: measurement::Axis,
+    height: measurement::Axis,
+    margin_row: Float32,
+    margin_column: Float32,
+    generation: Int,
+    perform_layout: Bool,
+  ) Bool {
+    if self.children.size() != 0 {
+      panic("calculate_leaf requires a leaf node")
+    }
+    let request = mut cache::Measurement{
+      available_width: width.available,
+      available_height: height.available,
+      width_mode: width.mode,
+      height_mode: height.mode,
+      computed_width: numeric::undefined(),
+      computed_height: numeric::undefined(),
+    }
+    // Cooper's existing backend configuration is fixed: LTR, scale one.
+    let visit = self.cache_state.prepare(self.dirty, generation, 0, cache::Direction::ltr)
+    let cached = self.cache_state.find(
+      request.@,
+      self.measure.is_some(),
+      perform_layout,
+      margin_row,
+      margin_column,
+      true,
+    )
+    if (not visit) and cached.is_some() {
+      let result = cached.expect("cached leaf measurement")
+      self.measured_width = result.computed_width
+      self.measured_height = result.computed_height
+    } else {
+      let inner_width = width.without_margin(margin_row)
+      let inner_height = height.without_margin(margin_column)
+      let result = match self.measure {
+        measure => measurement::with_callback(inner_width, inner_height, measure),
+        _ => measurement::without_children(inner_width, inner_height),
+      }
+      self.measured_width = result.width
+      self.measured_height = result.height
+      if cached.is_some() == false {
+        request.computed_width = result.width
+        request.computed_height = result.height
+        self.cache_state.store(request.@, perform_layout)
+      }
+    }
+    if perform_layout {
+      self.width = numbers::Widen(self.measured_width)
+      self.height = numbers::Widen(self.measured_height)
+      self.dirty = false
+    }
+    self.cache_state.complete(generation, 0, cache::Direction::ltr)
+    visit or cached.is_some() == false
   }
   
   fn mut apply(value: style::Style, border: Int) {

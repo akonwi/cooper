@@ -292,3 +292,43 @@ source-derived tests, not an end-to-end cached-layout differential test yet.
 Next is translating the recursive visit/measurement boundary and leaf paths,
 including committing measured dimensions, clearing dirty state only for layout
 visits, and keeping ADR 0020 projected-width replay out of natural measurements.
+
+## Cached leaf visits and measurement kernel stage
+
+`core/layout/measure.ard` translates measured and empty-leaf sizing. Callback
+constraints exclude padding/border, max-content axes pass undefined availability,
+both exact axes skip the callback, and returned content dimensions become bounded
+border-box dimensions. The existing measurement types remain available through
+aliases, with no callback conversion wrappers. `Axis.bound` preserves pinned
+Yoga's maximum-first early return; the future Cooper constraint-resolution
+boundary must normalize conflicting min/max values to maintain ADR 0016's
+minimum-wins policy. Existing application behavior remains unchanged.
+
+`Node.calculate_leaf` implements the leaf branch of `calculateLayoutInternal`:
+prepare/invalidate, lookup, measure on a miss, store bounded results, update
+measured dimensions and generation, and commit layout dimensions/clear dirty
+only for layout visits. Cache keys retain outer availability including margins;
+the measurement kernel receives margin-subtracted space. The entry uses Cooper's
+fixed LTR, scale-one configuration and requires already-resolved axis inputs.
+
+The native reference now calls actual pinned `calculateLayoutInternal` for five
+visits: initial measurement, repeated measurement, layout in the same generation,
+clean layout in the next generation, and dirty layout after changing content.
+Ard and Yoga agree on visit/reuse decisions, dirty flags, callback totals
+**1 → 1 → 1 → 1 → 2**, and measured dimensions **11×5 → 17×5** after the edit.
+The fixture has asymmetric padding and a two-cell horizontal margin. Focused
+tests separately cover all nine width/height sizing-mode combinations, callback
+inputs/modes, inset floors and bounded natural size **11×5 → 9×8**.
+
+Verification: `ard test test/layout_measurement_test.ard` **3 passed**;
+full `ard test` **386 passed, 0 failed, 0 panicked**. All four changed/new Ard
+files pass compiler and formatter checks. The extended differential runner,
+`go test ./...`, and Text Gallery PTY check pass.
+
+This leaf visitor is exercised directly, not by the current application's
+independent container solver. General container recursion, basis/line/flex
+translation and projected-width replay integration remain. Do not claim an
+application-level reduction in callbacks or remove Tess based on this isolated
+leaf proof. The next stage must translate the caller's axis/basis resolution
+and container traversal, rather than insert a raw callback memoizer into the
+old solver.

@@ -81,7 +81,7 @@ def compare_numeric(baseline, scratch):
     ], cwd=ROOT, check=True)
     reference = subprocess.check_output([str(cpp)], text=True).splitlines()
     candidate = subprocess.check_output([str(ard)], text=True).splitlines()
-    if len(reference) != 169 + 12 + 5184 or candidate != reference:
+    if len(reference) != 169 + 12 + 5184 + 5 or candidate != reference:
         difference = "\n".join(difflib.unified_diff(reference, candidate, fromfile="Yoga", tofile="Ard"))
         raise AssertionError(f"Numeric reference mismatch:\n{difference}")
     return {
@@ -93,12 +93,13 @@ def compare_numeric(baseline, scratch):
             path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
             for path in (
                 "core/layout/numeric.ard", "core/layout/cache.ard", "test/layout_numeric_reference.ard",
-                "test/layout_numeric_reference.cpp",
+                "test/layout_numeric_reference.cpp", "core/layout/measure.ard", "core/layout.ard",
             )
         },
         "pairs": 169,
         "rounding_cases": 12,
         "cache_cases": 5184,
+        "leaf_visits": 5,
         "observations": candidate,
     }
 
@@ -143,6 +144,7 @@ def main():
     print(f"PASS: {len(SHARED)} shared geometry observations; {len(ADAPTATIONS)} explicit ADR adaptation(s)")
     print(f"PASS: {report['numeric']['pairs']} Float32 operand pairs match pinned Yoga numeric/Comparison.h")
     print(f"PASS: {report['numeric']['cache_cases']} cache decisions and {report['numeric']['rounding_cases']} rounded constraints match pinned Yoga")
+    print(f"PASS: {report['numeric']['leaf_visits']} cached leaf visits match pinned Yoga dimensions, dirtiness and callback counts")
 
 
 if __name__ == "__main__":

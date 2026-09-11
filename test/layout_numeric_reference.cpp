@@ -2,6 +2,7 @@
 #include <yoga/numeric/Comparison.h>
 #include <yoga/algorithm/Cache.h>
 #include <yoga/algorithm/PixelGrid.h>
+#include <yoga/algorithm/CalculateLayout.h>
 
 #include <bit>
 #include <cstdint>
@@ -9,6 +10,7 @@
 #include <limits>
 
 static void cache_reference();
+static void leaf_reference();
 
 static void emit(float value) {
   if (value != value) {
@@ -41,6 +43,46 @@ int main() {
     }
   }
   cache_reference();
+  leaf_reference();
+}
+
+static int leaf_calls = 0;
+static float leaf_content_width = 7.0f;
+
+static YGSize leaf_measure(YGNodeConstRef, float, YGMeasureMode, float, YGMeasureMode) {
+  ++leaf_calls;
+  return {leaf_content_width, 2.0f};
+}
+
+static void leaf_reference() {
+  using namespace facebook::yoga;
+  auto config = YGConfigNew();
+  YGConfigSetUseWebDefaults(config, true);
+  auto leaf = YGNodeNewWithConfig(config);
+  YGNodeStyleSetPadding(leaf, YGEdgeLeft, 1.0f);
+  YGNodeStyleSetPadding(leaf, YGEdgeRight, 3.0f);
+  YGNodeStyleSetPadding(leaf, YGEdgeTop, 1.0f);
+  YGNodeStyleSetPadding(leaf, YGEdgeBottom, 2.0f);
+  YGNodeStyleSetMargin(leaf, YGEdgeLeft, 2.0f);
+  YGNodeSetMeasureFunc(leaf, leaf_measure);
+  LayoutData data{};
+  for (int step = 0; step < 5; ++step) {
+    if (step == 4) {
+      leaf_content_width = 13.0f;
+      YGNodeMarkDirty(leaf);
+    }
+    bool visited = calculateLayoutInternal(resolveRef(leaf), 20.0f, 10.0f,
+        Direction::LTR, SizingMode::FitContent, SizingMode::MaxContent,
+        40.0f, 20.0f, step >= 2, LayoutPassReason::kInitial, data, 0,
+        step < 3 ? 1 : step - 1);
+    std::printf("leaf %s %s %d", visited ? "true" : "false",
+        YGNodeIsDirty(leaf) ? "true" : "false", leaf_calls);
+    emit(resolveRef(leaf)->getLayout().measuredDimension(Dimension::Width));
+    emit(resolveRef(leaf)->getLayout().measuredDimension(Dimension::Height));
+    std::printf("\n");
+  }
+  YGNodeFree(leaf);
+  YGConfigFree(config);
 }
 
 static void cache_reference() {

@@ -4,6 +4,50 @@ September 10, 2026. The original September 9 source-audit matrices below are
 preserved as a baseline. The integration evidence here records which gaps now
 have additional tests, without claiming complete conformance.
 
+## Contract review and performance checkpoint
+
+The read-only contract review found implementations for all five accepted ADRs,
+but identified additional interaction-level evidence gaps. Three new passing
+tests now cover vertical shared-edge/negative-tie rounding, per-item baseline
+alignment in expanded/reversed lines (and end alignment inside stretched lines),
+and an open Select popup remaining focused/portaled while its ancestor becomes
+contents. These extend `layout_rounding_test`, `baseline_test`, and `select_test`.
+
+Remaining focused evidence gaps, not demonstrated implementation defects:
+
+- Intrinsic zero availability versus indefinite availability, including insets.
+- Dirty intrinsic container width cycles and explicit intrinsic Input/TextArea
+  placeholder/caret/gutter cases, beyond existing automatic measurement tests.
+- Negative free-space distribution combined with column/wrap_reverse.
+- Contents groups carrying otherwise influential margins/flex factors/self
+  alignment compared with manual flattening.
+- Fractional projected text/box edges under nonzero scrolling, including hit
+  testing and selection at those edges.
+
+The [performance comparison](./layout-performance-comparison.md) records both
+render and layout-only evidence against the original Yoga checkpoint. It led
+to a narrow optimization: fixed-size measured leaves no longer invoke a
+callback whose return cannot affect geometry. The regression in
+`test/layout_measurement_test.ard` failed with six callbacks across three layouts
+before the change, and passes with zero afterward; intrinsic bounds and auto
+height still measure correctly.
+
+`ard test`: **372 passed, 0 failed, 0 panicked**. All six changed/new Ard files
+passed compiler and formatter checks, including the layout-only benchmark.
+`go test ./...` passed. Text Gallery, TextArea, Input Lab and Select PTYs passed.
+Both nine-sample render comparisons passed their reported-observation checks.
+The new Python comparison runner was exercised end-to-end and compiled with
+`python3 -m py_compile benchmarks/compare.py`.
+
+**Backend removal remains deferred.** The candidate measures all 64 auto-height
+leaves three times on every unchanged layout in the isolated benchmark, whereas
+Yoga reuses them. The implementation direction is now a source-traceable
+[Yoga-to-Ard port](./yoga-ard-port-map.md), including Yoga's invalidation and
+cache pipeline, rather than further independent solver design. Preserve the
+tests and accepted ADRs, recording their intentional differences from pinned
+Yoga explicitly. Do not turn this audit's remaining cases into claims of
+complete conformance or use cheap measurement callbacks as rich-text timing.
+
 ## ADR 0016 follow-up: intrinsic axes and margin-adjusted bounds
 
 Six new tests in `test/intrinsic_axes_test.ard` cover column intrinsic basis,

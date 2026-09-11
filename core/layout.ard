@@ -368,35 +368,39 @@ fn compute_visible(
   }
   match node.measure {
     measure => {
-      let measure_w = match allocated {
-        true => node.allocation.expect("allocated content width").content_width.to_f64(),
-        false => available_w,
-      }
-      mut measured = measure(
-        MeasureInput{
-          width: Float32::from(max(0.0, measure_w)),
-          width_mode: measure_mode(measure_w, allocated or width >= 0.0),
-          height: Float32::from(max(0.0, available_h)),
-          height_mode: measure_mode(available_h, height >= 0.0),
-        },
-      )
-      match width < 0.0 {
-        true => { width = bounded(numbers::Widen(measured.width) + horizontal, minw, maxw, horizontal) },
-        false => (),
-      }
-      if allocated == false and height < 0.0 and width - horizontal != numbers::Widen(measured.width) {
-        measured = measure(
+      // Intrinsic bounds were resolved above. With both axes allocated, the
+      // callback cannot affect geometry; painting consumes the final rect.
+      if width < 0.0 or height < 0.0 {
+        let measure_w = match allocated {
+          true => node.allocation.expect("allocated content width").content_width.to_f64(),
+          false => available_w,
+        }
+        mut measured = measure(
           MeasureInput{
-            width: Float32::from(width - horizontal),
-            width_mode: MeasureMode::exactly,
+            width: Float32::from(max(0.0, measure_w)),
+            width_mode: measure_mode(measure_w, allocated or width >= 0.0),
             height: Float32::from(max(0.0, available_h)),
-            height_mode: measure_mode(available_h, false),
+            height_mode: measure_mode(available_h, height >= 0.0),
           },
         )
-      }
-      match height < 0.0 {
-        true => { height = bounded(numbers::Widen(measured.height) + vertical, minh, maxh, vertical) },
-        false => (),
+        match width < 0.0 {
+          true => { width = bounded(numbers::Widen(measured.width) + horizontal, minw, maxw, horizontal) },
+          false => (),
+        }
+        if allocated == false and height < 0.0 and width - horizontal != numbers::Widen(measured.width) {
+          measured = measure(
+            MeasureInput{
+              width: Float32::from(width - horizontal),
+              width_mode: MeasureMode::exactly,
+              height: Float32::from(max(0.0, available_h)),
+              height_mode: measure_mode(available_h, false),
+            },
+          )
+        }
+        match height < 0.0 {
+          true => { height = bounded(numbers::Widen(measured.height) + vertical, minh, maxh, vertical) },
+          false => (),
+        }
       }
       node.width = width
       node.height = height

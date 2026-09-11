@@ -759,3 +759,41 @@ test fn select_contents_and_open_destruction_clean_up_portal_once() Void!Str {
   }
   Result::ok(())
 }
+
+test fn select_popup_tracks_trigger_when_only_ancestor_becomes_contents() Void!Str {
+  let application = cooper_testing::new(20, 8)
+  defer application.destroy()
+  let group = box::new(
+    application.context,
+    styles: style::new(padding: style::edges(style::cells(2))),
+  )
+  let control = select_control::new(
+    application.context,
+    choices(2),
+    styles: style::new(width: style::cells(12)),
+  )
+  let popup = control.node_ref.children.at(0).expect("owned popup")
+  group.add(control)
+  application.root.add(group)
+  application.render()
+  try testing::assert(control.open(), "Open grouped Select")
+  application.render()
+  try testing::assert(
+    control.layout().screen.x == 2 and popup.layout().screen.x == 2,
+    "Initial padding offsets trigger and popup",
+  )
+  group.set_style(style::new(display: style::Display::contents))
+  application.render()
+  try testing::assert(
+    control.is_open() and control.is_focused(),
+    "Ancestor contents preserves boxed descendant's focus and open state",
+  )
+  try testing::assert(
+    control.layout().screen.x == 0 and popup.layout().screen.x == 0 and popup.layout().screen.y == 1,
+    "Portaled popup follows flattened trigger",
+  )
+  testing::assert(
+    popup.parent.expect("portal parent") == application.root.node(),
+    "Popup stays portaled rather than joining the flattened flow",
+  )
+}

@@ -262,3 +262,32 @@ test fn rounding_absolute_inset_content_width_includes_fractional_ancestors() Vo
     "Expected one content row plus .5 top/bottom padding",
   )
 }
+
+test fn rounding_vertical_edges_preserve_shares_reverse_identity_and_negative_ties() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx)
+  let a = box::new(ctx, styles: style::new(flex_basis: style::cells(0), flex_grow: 1.0))
+  let b = box::new(ctx, styles: a.style())
+  root.add(a)
+  root.add(b)
+  ctx.compute_layout(root, 4, 5)
+  try testing::assert(
+    a.layout().local.height == 3 and b.layout().local.y == 3 and b.layout().local.height == 2,
+    "Vertical 5/2 shares tile 3/2",
+  )
+  root.set_style(style::new(flex_direction: style::FlexDirection::column_reverse))
+  ctx.compute_layout(root, 4, 5)
+  try testing::assert(
+    a.layout().local.y == 3 and a.layout().local.height == 2 and b.layout().local.height == 3,
+    "Reverse preserves shared edges while swapping identity",
+  )
+  root.remove(b)
+  root.set_style(style::new())
+  a.set_style(style::new(height: style::cells(1), bottom: style::percent(75.0), flex_shrink: 0.0))
+  ctx.compute_layout(root, 4, 2)
+  testing::assert(
+    a.layout().local.y == -1 and a.layout().local.height == 1,
+    "Vertical edges -1.5/-.5 project to -1/0",
+  )
+}

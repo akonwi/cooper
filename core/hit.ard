@@ -1,5 +1,5 @@
-use cooper/ui/geometry
 use cooper/core/node
+use cooper/ui/geometry
 use cooper/ui/style
 
 struct Hit {
@@ -13,12 +13,16 @@ private fn test_node(current: mut node::Node, x: Int, y: Int, inherited_clip: ge
     Maybe::new<Hit>()
   } else {
     let bounds = current.layout().screen
-    let node_clip = match current.style().overflow {
+    let overflow = match current.style().display {
+      style::Display::contents => style::Overflow::visible,
+      _ => current.style().overflow,
+    }
+    let node_clip = match overflow {
       style::Overflow::hidden => geometry::intersect(inherited_clip, bounds),
       style::Overflow::scroll => geometry::intersect(inherited_clip, bounds),
       _ => inherited_clip,
     }
-
+    
     if not geometry::contains(node_clip, x, y) {
       Maybe::new<Hit>()
     } else {
@@ -30,7 +34,7 @@ private fn test_node(current: mut node::Node, x: Int, y: Int, inherited_clip: ge
         let child = stacked.at(index).expect("retained hit child index")
         found = test_node(child, x, y, node_clip)
       }
-
+      
       match found {
         hit => Maybe::new<Hit>(hit),
         _ => {

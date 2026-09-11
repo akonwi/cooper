@@ -201,6 +201,7 @@ fn collect(node: mut Node) [mut Node] {
   for child in node.children {
     match child.value.display == style::Display::contents {
       true => {
+        child.clear()
         for descendant in collect(child) {
           result.push(descendant)
         }
@@ -1046,6 +1047,18 @@ impl Node {
   }
   
   fn mut project(px: Float64, py: Float64) {
+    if self.value.display == style::Display::contents or self.value.display == style::Display::none {
+      self.x = 0.0
+      self.y = 0.0
+      self.width = 0.0
+      self.height = 0.0
+      self.insets = Insets{
+        left: 0.0,
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+      }
+    }
     let x = px + self.x
     let y = py + self.y
     let left = rounded(x)
@@ -1098,7 +1111,7 @@ impl Node {
       let cs = child.value
       match cs.display != style::Display::none {
         true => {
-          match cs.position == style::Position::absolute {
+          match cs.position == style::Position::absolute and cs.display != style::Display::contents {
             true => {
               let left = finite_length(cs.left, cw)
               let right = finite_length(cs.right, cw)

@@ -51,7 +51,7 @@ fn new() mut State {
 }
 
 private fn point_before(left_x: Int, left_y: Int, right_x: Int, right_y: Int) Bool {
-  left_y < right_y or (left_y == right_y and left_x <= right_x)
+  left_y < right_y or left_y == right_y and left_x <= right_x
 }
 
 private fn contains(nodes: [mut node::Node], target: mut node::Node) Bool {
@@ -72,7 +72,7 @@ private fn connected(root: mut node::Node, target: mut node::Node) Bool {
   while scanning {
     match current {
       retained => {
-        if (not retained.pointer_route_visible()) or (not retained.is_mounted()) {
+        if (not retained.pointer_route_visible()) or not retained.is_mounted() {
           scanning = false
         } else if retained == root {
           found = true
@@ -169,7 +169,11 @@ private fn walk(
 ) {
   if (not current.is_destroyed()) and current.style().display != style::Display::none {
     let bounds = current.layout().screen
-    let clip = match current.style().overflow {
+    let overflow = match current.style().display {
+      style::Display::contents => style::Overflow::visible,
+      _ => current.style().overflow,
+    }
+    let clip = match overflow {
       style::Overflow::hidden => geometry::intersect(inherited_clip, bounds),
       style::Overflow::scroll => geometry::intersect(inherited_clip, bounds),
       _ => inherited_clip,
@@ -209,7 +213,7 @@ private fn walk(
       touched.push(current)
       if result.has_selection {
         match result.source_text {
-          value => { source_texts.push(value) },
+          value => source_texts.push(value),
           _ => (),
         }
         for fragment in result.fragments {
@@ -218,7 +222,25 @@ private fn walk(
       }
     }
     for child in current.children {
-      walk(child, container, active, clip, anchor, focus, is_dragging, edge_pan_version, generation, version, anchor_control, logical_range, source_range, prefer_source_text, touched, fragments, source_texts)
+      walk(
+        child,
+        container,
+        active,
+        clip,
+        anchor,
+        focus,
+        is_dragging,
+        edge_pan_version,
+        generation,
+        version,
+        anchor_control,
+        logical_range,
+        source_range,
+        prefer_source_text,
+        touched,
+        fragments,
+        source_texts,
+      )
     }
   }
 }
@@ -230,10 +252,7 @@ private fn resolve_focus(root: mut node::Node, session: Session) Session {
       control => {
         if connected(root, control) {
           let bounds = control.layout().screen
-          resolved.focus = geometry::Point{
-            x: bounds.x + resolved.focus_local_x,
-            y: bounds.y + resolved.focus_local_y,
-          }
+          resolved.focus = geometry::Point{x: bounds.x + resolved.focus_local_x, y: bounds.y + resolved.focus_local_y}
         }
       },
       _ => (),
@@ -248,7 +267,7 @@ private fn selected_text(fragments: [node::SelectionFragment]) Str {
     ordered.push(fragment)
   }
   ordered.sort(fn(left: node::SelectionFragment, right: node::SelectionFragment) Bool {
-    left.screen_y < right.screen_y or (left.screen_y == right.screen_y and left.screen_x < right.screen_x)
+    left.screen_y < right.screen_y or left.screen_y == right.screen_y and left.screen_x < right.screen_x
   })
   mut output = ""
   mut previous_y = 0
@@ -271,50 +290,45 @@ impl State {
     }
     self.revision_value =+ 1
   }
-
+  
   fn revision() Int {
     self.revision_value
   }
-
+  
   fn current() selection::Selection? {
     self.snapshot
   }
-
+  
   fn has_selection() Bool {
     self.session.is_some()
   }
-
+  
   fn owns(target: mut node::Node) Bool {
     match self.session {
       active => active.anchor.control == target,
       _ => false,
     }
   }
-
+  
   fn is_dragging() Bool {
     match self.session {
       active => active.is_dragging,
       _ => false,
     }
   }
-
+  
   fn generation() Int? {
     match self.session {
       active => Maybe::new<Int>(active.generation),
       _ => Maybe::new<Int>(),
     }
   }
-
-  fn mut start(
-    root: mut node::Renderable,
-    target: mut node::Node,
-    x: Int,
-    y: Int,
-  ) Bool {
+  
+  fn mut start(root: mut node::Renderable, target: mut node::Node, x: Int, y: Int) Bool {
     let bounds = target.layout().screen
     let local_x = x - bounds.x
     let local_y = y - bounds.y
-    if (not target.is_selectable()) or (not target.selection_accepts(local_x, local_y)) {
+    if (not target.is_selectable()) or not target.selection_accepts(local_x, local_y) {
       false
     } else {
       if self.next_generation == math::MaxInt {
@@ -356,17 +370,12 @@ impl State {
       true
     }
   }
-
-  fn mut expand_word(
-    target: mut node::Node,
-    x: Int,
-    y: Int,
-    expected_generation: Int,
-  ) Bool {
+  
+  fn mut expand_word(target: mut node::Node, x: Int, y: Int, expected_generation: Int) Bool {
     match self.session {
       active => {
         let collapsed = (not active.is_dragging) and active.logical_range.is_none() and active.anchor.control == target and active.focus_control.is_some() and active.anchor.local_x == active.focus_local_x and active.anchor.local_y == active.focus_local_y
-        if active.generation != expected_generation or (not collapsed) {
+        if active.generation != expected_generation or not collapsed {
           false
         } else {
           let bounds = target.layout().screen
@@ -403,7 +412,7 @@ impl State {
       _ => false,
     }
   }
-
+  
   fn mut update(target: (mut node::Node)?, x: Int, y: Int, edge_pan: Bool?) Bool {
     match self.session {
       active => {
@@ -448,7 +457,7 @@ impl State {
       _ => false,
     }
   }
-
+  
   fn mut finish(expected_generation: Int) Bool {
     match self.session {
       active => {
@@ -458,13 +467,25 @@ impl State {
           match active.focus_control {
             target => {
               let collapsed = active.anchor.local_x == active.focus_local_x and active.anchor.local_y == active.focus_local_y
-              if target == active.anchor.control and (not collapsed) {
-                match target.lock_selection(active.anchor.local_x, active.anchor.local_y, active.focus_local_x, active.focus_local_y) {
+              if target == active.anchor.control and not collapsed {
+                match target.lock_selection(
+                  active.anchor.local_x,
+                  active.anchor.local_y,
+                  active.focus_local_x,
+                  active.focus_local_y,
+                ) {
                   expansion => {
-                    updated.logical_range = Maybe::new<node::SelectionRange>(expansion.logical_range)
+                    updated.logical_range = Maybe::new<node::SelectionRange>(
+                      expansion.logical_range,
+                    )
                     updated.source_range = Maybe::new<node::SelectionRange>(expansion.source_range)
                     updated.source_revision = expansion.source_revision
-                    updated.logical_reversed = not point_before(active.anchor.local_x, active.anchor.local_y, active.focus_local_x, active.focus_local_y)
+                    updated.logical_reversed = not point_before(
+                      active.anchor.local_x,
+                      active.anchor.local_y,
+                      active.focus_local_x,
+                      active.focus_local_y,
+                    )
                     updated.prefer_source_text = false
                     if updated.logical_reversed {
                       updated.anchor.local_x = expansion.focus_x
@@ -499,7 +520,7 @@ impl State {
       _ => false,
     }
   }
-
+  
   fn mut clear_generation(expected_generation: Int) Bool {
     match self.session {
       active => {
@@ -512,7 +533,7 @@ impl State {
       _ => false,
     }
   }
-
+  
   fn mut clear() Bool {
     let changed = self.session.is_some() or self.snapshot.is_some() or self.touched.size() > 0
     if changed {
@@ -528,7 +549,7 @@ impl State {
     }
     changed
   }
-
+  
   fn mut reconcile(root: mut node::Renderable) {
     let previous = self.snapshot
     match self.session {
@@ -575,10 +596,7 @@ impl State {
           } else {
             let resolved = resolve_focus(root_node, current_active)
             let anchor_bounds = resolved.anchor.control.layout().screen
-            let anchor = geometry::Point{
-              x: anchor_bounds.x + resolved.anchor.local_x,
-              y: anchor_bounds.y + resolved.anchor.local_y,
-            }
+            let anchor = geometry::Point{x: anchor_bounds.x + resolved.anchor.local_x, y: anchor_bounds.y + resolved.anchor.local_y}
             let container = expanded_container(
               root_node,
               resolved.container,
@@ -621,7 +639,7 @@ impl State {
               source_texts,
             )
             for old in self.touched {
-              if (not contains(touched.@, old)) and (not old.is_destroyed()) {
+              if (not contains(touched.@, old)) and not old.is_destroyed() {
                 let _ = old.apply_selection(Maybe::new<node::LocalSelection>())
               }
             }
@@ -650,7 +668,12 @@ impl State {
               selection::Selection{
                 anchor: anchor,
                 focus: current_session.focus,
-                bounds: geometry::Rect{x: min_x, y: min_y, width: max_x - min_x + 1, height: max_y - min_y + 1},
+                bounds: geometry::Rect{
+                  x: min_x,
+                  y: min_y,
+                  width: max_x - min_x + 1,
+                  height: max_y - min_y + 1,
+                },
                 selected_text: selection_text,
                 is_dragging: current_session.is_dragging,
               },
@@ -672,7 +695,7 @@ impl State {
       self.bump()
     }
   }
-
+  
   fn mut destroy() {
     for old in self.touched {
       if not old.is_destroyed() {

@@ -4,6 +4,72 @@ September 10, 2026. The original September 9 source-audit matrices below are
 preserved as a baseline. The integration evidence here records which gaps now
 have additional tests, without claiming complete conformance.
 
+## ADR 0019 retained integration
+
+The engine and retained implementation now agree on boxless contents groups:
+empty local/content anchors, flattened layout/stacking/hit children, retained
+color inheritance and event-listener ancestry, suppressed owner paint/default
+interaction/cursor/focus/selection/scroll, and exactly-once ancestor translation.
+Focus/reveal and effective scroll-parent styles skip contents. Transitions,
+reparenting, reorder, detach, and explicit recursive destruction preserve the
+existing ownership/lifecycle contracts.
+
+Integrated verification:
+
+- `ard test test/display_contents_test.ard`: **9 passed; 0 failed; 0 panicked**.
+- `ard test`: **341 passed; 0 failed; 0 panicked**.
+- Compiler and formatter checks passed for all six changed Ard files.
+- Interaction Lab, Text Gallery, horizontal scrolling, terminal focus, and
+  Select PTY checks passed in the combined checkout.
+- Inspected `display-contents-frames.png`, visualized from actual headless cells:
+  viewport (4,2), size 7×3 stays fixed; scroll (2,1) changes visible rows from
+  `0123456/abcdefg/ABCDEFG` to `cdefghi/CDEFGHI/mnopqrs`.
+
+The worker also ran the nine tests against the original downloaded checkpoint
+and reported **2 passed, 6 failed, 1 panicked** (missing selection). That is
+worker-reported before evidence; the passing results above were independently
+rerun after integration.
+
+**Remaining ADR 0019 work:** separately owned overlays are not claimed supported.
+An open Select popup needs owner flex→contents→flex/none and destruction tests
+for visibility, focus, and cleanup. Passing the existing Select PTY test does not
+exercise those transitions. No control or Runtime overlay changes are included.
+
+## ADR 0020 reconciliation: verified packing cycle, decision pending
+
+A repeat-until-stable measurement/projection loop does not always converge if
+corrected Text heights reopen ordinary flex-line packing. This counterexample
+was verified with the current compiler and a temporary executable probe:
+
+- Parent: 5×2, column, wrap_reverse, align_items start.
+- A: empty box, width 50%, height 1; grow/shrink zero.
+- B: character-wrapped Text `abc`, width 50%, automatic height; grow/shrink zero.
+- No insets, margins, gaps, or offsets. Each ideal child width is 2.5.
+
+The probe supplied each possible height for B, laid out the parent, then
+independently measured the same Text at its projected width:
+
+```text
+assumed_height=1 x=3 width=2 required_height=2
+assumed_height=2 x=0 width=3 required_height=1
+```
+
+If B is one row, both children pack into one column. Its edges 2.5/5 project
+to 3/5, leaving two cells and requiring two rows. If B is two rows, it moves
+to a second column; edges 0/2.5 project to 0/3, allowing one row. Neither
+partition is consistent with repacking from the final measured height.
+
+Proposed clarification, **not yet accepted or implemented**: select line
+membership and horizontal allocation in the fractional contribution pass;
+freeze those decisions during projected-width measurement and vertical replay.
+Correct dependent heights/vertical positions without reforming lines or changing
+horizontal positions. Each new layout transaction starts afresh. This terminates,
+but may deliberately leave spare space or overflow in the selected lines.
+In this example, the selected two columns would remain while B shrinks to one row.
+
+Approval is required before changing the accepted contract to make that
+tradeoff explicit. The independent ADR 0019 implementation continues meanwhile.
+
 ## Oracle review tracker
 
 Review of the initial Ard replacement against checkpoint

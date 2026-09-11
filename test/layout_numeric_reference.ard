@@ -1,3 +1,4 @@
+use cooper/core/layout/cache
 use cooper/core/layout/numeric
 use go:fmt
 use go:math
@@ -40,6 +41,68 @@ fn main() {
       emit(numeric::max_or_defined(a, b))
       emit(numeric::min_or_defined(a, b))
       fmt::Println()
+    }
+  }
+  cache_reference()
+}
+
+fn cache_reference() {
+  let values = [
+    numeric::undefined(),
+    Float32::from(-0.5),
+    Float32::from(-0.50005),
+    Float32::from(0.0),
+    Float32::from(4.49),
+    Float32::from(4.49995),
+    Float32::from(4.5),
+    Float32::from(5.0),
+    Float32::from(7.0),
+    Float32::from(10.0),
+    Float32::from(8388608.0),
+    Float32::from(3000000000000000000000000000000.0),
+  ]
+  let modes = [
+    cache::SizingMode::max_content,
+    cache::SizingMode::fit_content,
+    cache::SizingMode::stretch_fit,
+  ]
+  for value in values {
+    fmt::Print("round")
+    emit(value)
+    emit(cache::rounded_constraint(value))
+    fmt::Println()
+  }
+  for round in [false, true] {
+    for mode in modes {
+      for old_mode in modes {
+        for available in values {
+          for old_available in values {
+            for computed in [Float32::from(-1.0), Float32::from(5.0)] {
+              let old = cache::Measurement{
+                available_width: old_available,
+                available_height: Float32::from(3.0),
+                width_mode: old_mode,
+                height_mode: cache::SizingMode::stretch_fit,
+                computed_width: computed,
+                computed_height: Float32::from(3.0),
+              }
+              fmt::Printf(
+                "cache %t\n",
+                cache::can_use_cached_measurement(
+                  mode,
+                  available,
+                  cache::SizingMode::stretch_fit,
+                  Float32::from(3.0),
+                  old,
+                  Float32::from(2.0),
+                  Float32::from(0.0),
+                  round,
+                ),
+              )
+            }
+          }
+        }
+      }
     }
   }
 }

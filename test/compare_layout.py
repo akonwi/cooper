@@ -69,29 +69,36 @@ def compare_numeric(baseline, scratch):
         raise AssertionError(f"Unexpected Yoga reference: {yoga_revision}")
     cpp = scratch / "numeric-cpp"
     ard = scratch / "numeric-ard"
+    platform = "_".join(subprocess.check_output(["go", "env", "GOOS", "GOARCH"], text=True).split())
+    archive = tess / "etc/lib" / platform / "libyogacore.a"
     subprocess.run([
         "c++", "-std=c++20", "-I", str(tess / "etc/include"),
-        str(ROOT / "test/layout_numeric_reference.cpp"), "-o", str(cpp),
+        str(ROOT / "test/layout_numeric_reference.cpp"),
+        str(tess / "etc/include/yoga/algorithm/Cache.cpp"), str(archive), "-o", str(cpp),
     ], check=True)
     subprocess.run([
         "ard", "build", "test/layout_numeric_reference.ard", "--out", str(ard),
     ], cwd=ROOT, check=True)
     reference = subprocess.check_output([str(cpp)], text=True).splitlines()
     candidate = subprocess.check_output([str(ard)], text=True).splitlines()
-    if len(reference) != 169 or candidate != reference:
+    if len(reference) != 169 + 12 + 5184 or candidate != reference:
         difference = "\n".join(difflib.unified_diff(reference, candidate, fromfile="Yoga", tofile="Ard"))
         raise AssertionError(f"Numeric reference mismatch:\n{difference}")
     return {
         "yoga_revision": yoga_revision,
         "header_sha256": hashlib.sha256((tess / "etc/include/yoga/numeric/Comparison.h").read_bytes()).hexdigest(),
+        "cache_source_sha256": hashlib.sha256((tess / "etc/include/yoga/algorithm/Cache.cpp").read_bytes()).hexdigest(),
+        "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "sources_sha256": {
             path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
             for path in (
-                "core/layout/numeric.ard", "test/layout_numeric_reference.ard",
+                "core/layout/numeric.ard", "core/layout/cache.ard", "test/layout_numeric_reference.ard",
                 "test/layout_numeric_reference.cpp",
             )
         },
-        "pairs": len(reference),
+        "pairs": 169,
+        "rounding_cases": 12,
+        "cache_cases": 5184,
         "observations": candidate,
     }
 
@@ -135,6 +142,7 @@ def main():
         args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(f"PASS: {len(SHARED)} shared geometry observations; {len(ADAPTATIONS)} explicit ADR adaptation(s)")
     print(f"PASS: {report['numeric']['pairs']} Float32 operand pairs match pinned Yoga numeric/Comparison.h")
+    print(f"PASS: {report['numeric']['cache_cases']} cache decisions and {report['numeric']['rounding_cases']} rounded constraints match pinned Yoga")
 
 
 if __name__ == "__main__":

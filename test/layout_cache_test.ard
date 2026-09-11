@@ -1,0 +1,159 @@
+use ard/testing
+
+use cooper/core/layout/cache
+use cooper/core/layout/numeric
+
+test fn cache_requires_both_axes_and_rejects_uninitialized_results() Void!Str {
+  let five = Float32::from(5.0)
+  let zero = Float32::from(0.0)
+  try testing::assert(
+    cache::can_use_cached_measurement(
+      cache::SizingMode::max_content,
+      five,
+      cache::SizingMode::max_content,
+      five,
+      cache::empty(),
+      zero,
+      zero,
+      true,
+    ) == false,
+    "Empty record must never hit",
+  )
+  let old = cache::Measurement{
+    available_width: five,
+    available_height: five,
+    width_mode: cache::SizingMode::stretch_fit,
+    height_mode: cache::SizingMode::stretch_fit,
+    computed_width: five,
+    computed_height: five,
+  }
+  try testing::assert(
+    cache::can_use_cached_measurement(
+      cache::SizingMode::stretch_fit,
+      five,
+      cache::SizingMode::stretch_fit,
+      five,
+      old,
+      zero,
+      zero,
+      true,
+    ),
+    "Both exact axes match",
+  )
+  for swapped in [false, true] {
+    let width = match swapped {
+      true => Float32::from(6.0),
+      false => five,
+    }
+    let height = match swapped {
+      true => five,
+      false => Float32::from(6.0),
+    }
+    try testing::assert(
+      cache::can_use_cached_measurement(
+        cache::SizingMode::stretch_fit,
+        width,
+        cache::SizingMode::stretch_fit,
+        height,
+        old,
+        zero,
+        zero,
+        true,
+      ) == false,
+      "One mismatched axis rejects the cache",
+    )
+  }
+  Result::ok(())
+}
+
+test fn cache_measurement_compatibility_accounts_for_modes_margins_and_bounds() Void!Str {
+  let missing = numeric::undefined()
+  let five = Float32::from(5.0)
+  let seven = Float32::from(7.0)
+  let zero = Float32::from(0.0)
+  let two = Float32::from(2.0)
+  try testing::assert(
+    cache::compatible_axis(
+      cache::SizingMode::fit_content,
+      seven,
+      cache::SizingMode::max_content,
+      missing,
+      five,
+      two,
+      false,
+    ),
+    "Unconstrained result fits margin-adjusted bound",
+  )
+  try testing::assert(
+    cache::compatible_axis(
+      cache::SizingMode::fit_content,
+      five,
+      cache::SizingMode::max_content,
+      missing,
+      five,
+      two,
+      false,
+    ) == false,
+    "Margins can make old result too large",
+  )
+  try testing::assert(
+    cache::compatible_axis(
+      cache::SizingMode::stretch_fit,
+      seven,
+      cache::SizingMode::max_content,
+      missing,
+      five,
+      two,
+      false,
+    ),
+    "Exact size matches after margins",
+  )
+  try testing::assert(
+    cache::compatible_axis(
+      cache::SizingMode::fit_content,
+      seven,
+      cache::SizingMode::fit_content,
+      Float32::from(10.0),
+      five,
+      zero,
+      false,
+    ),
+    "Stricter bound still fits",
+  )
+  try testing::assert(
+    cache::compatible_axis(
+      cache::SizingMode::fit_content,
+      Float32::from(10.0),
+      cache::SizingMode::fit_content,
+      seven,
+      five,
+      zero,
+      false,
+    ) == false,
+    "Looser bound may change the measurement",
+  )
+  try testing::assert(
+    cache::compatible_axis(
+      cache::SizingMode::stretch_fit,
+      Float32::from(5.49),
+      cache::SizingMode::stretch_fit,
+      Float32::from(5.1),
+      five,
+      zero,
+      true,
+    ),
+    "Rounded constraint cache comparison",
+  )
+  testing::assert(
+    cache::compatible_axis(
+      cache::SizingMode::stretch_fit,
+      Float32::from(5.49),
+      cache::SizingMode::stretch_fit,
+      Float32::from(5.1),
+      five,
+      zero,
+      false,
+    ) == false,
+    "Unrounded specs do not match",
+  )
+}

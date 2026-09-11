@@ -226,3 +226,35 @@ dirty state only after completing its transaction. Basis invalidation, cache
 entries, generations and visit-local clean transitions must be translated with
 Yoga's persistent layout results and recursive wrapper next; no performance
 improvement or complete state-machine equivalence is claimed at this stage.
+
+## Cached measurement representation and compatibility stage
+
+`core/layout/cache.ard` now contains Yoga's sizing modes, cached measurement
+record/defaults, and two-axis `canUseCachedMeasurement` rules. Compatibility
+checks matching constraints, exact measured size after margins, an unconstrained
+result that fits a new bound, or a stricter bound still containing the result.
+Negative cached dimensions reject reuse; both axes must qualify.
+
+Constraint rounding follows pinned Yoga's scale-one, unforced pixel-grid path,
+including its near-half tolerance. It is **not** the ADR 0020 final geometry
+projection. The internal flag selects scale-one comparison or unrounded
+comparison; arbitrary point scales are not a Cooper capability. Computation is
+Ard-native except the existing numeric widening helper, which only converts
+Float32 to Float64. No new Go behavior or Tess runtime import was added.
+
+`python3 test/compare_layout.py` now compiles pinned `Cache.cpp`, links Tess's
+platform Yoga archive for its configuration/pixel-grid functions, and compares
+**5,184 cache decisions and 12 rounded constraints** against Ard. The matrix
+varies old/new sizing modes, rounded/unrounded comparison, availability
+(including undefined and near-half values), and valid/invalid cached width;
+its height is fixed and row margin is two. Separate focused assertions cover
+height mismatch, zero margins, exact fits and looser-bound rejection. This is
+not exhaustive cache or layout equivalence. Archive and source hashes are
+recorded in the JSON evidence.
+
+Verification: `ard test test/layout_cache_test.ard` **2 passed**; full `ard test`
+**380 passed, 0 failed, 0 panicked**; all three changed/new Ard files pass compiler
+and formatter checks. Existing geometry and numeric comparisons still pass.
+No production geometry changed. Persistent cache storage, generations, lookup
+ordering and recursive visit integration remain next; the new predicates are
+not wired into the independent solver and do not yet reduce measurement calls.

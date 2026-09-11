@@ -158,3 +158,43 @@ measurement callbacks versus Yoga's zero across 1,000 layouts. The translation
 must eliminate that unnecessary work without hiding stale-layout bugs. Timing,
 allocation and real-text costs still require measurement; callback parity alone
 does not establish performance parity.
+
+## First translation stage: executable reference and numeric rules
+
+The reference is now reproducible with `python3 test/compare_layout.py` (optional
+`--output /tmp/tess-layout-reference.json`). It creates and removes a temporary
+worktree at the pinned Cooper/Tess checkpoint, copies the same public-API input
+program into it, and builds both programs separately. It requires Ard, Go, Git,
+a C++20 compiler and the baseline commit in local Git history. No production
+backend selector is involved.
+
+The initial fixture asserts 14 shared rectangles: asymmetric grow/shrink with
+bounds, reparented percentages, resize, zero availability, and text content
+mutation/unchanged layout/resize with following-sibling geometry. It also checks
+the exact ADR 0016 max-content difference: Tess 5×2, candidate 9×1. These are
+starter fixtures, not complete differential coverage. The runner checks both
+implementations against independently specified rectangles rather than accepting
+any matching output. A failure-injection check rejected 35 corrupted reports
+(wrong widths, missing/extra observations, and a duplicate name).
+
+`core/layout/numeric.ard` translates the Float32 scalar undefined, defined,
+min/max-or-defined and inexact-equality rules from `numeric/Comparison.h`.
+The upstream MIT notice is retained. It has no Go interop. Three focused Ard
+tests cover undefined versus zero/negative/infinity, both sides of the strict
+0.0001 tolerance, asymmetric extrema, and first-operand signed-zero preservation.
+The comparison runner also compiles the actual pinned C++ header and compares
+169 operand pairs against Ard, including input/output bits for defined floats
+and normalized NaNs. All pairs match. JSON evidence includes source/header
+hashes and observations.
+
+Verification at this stage: `ard test` **375 passed, 0 failed, 0 panicked**;
+all four new Ard files pass `ard check` and `ard format --check`; the differential
+runner passes both geometry and numeric comparisons. No production appearance
+change was made. The numeric module is not yet wired into the live Float64 /
+negative-sentinel solver: that transition belongs with translated node state
+and recursion, not an unsafe partial change of numeric representation.
+
+**Next:** translate owner links, dirty propagation and persistent layout state,
+then the cache-aware recursion and leaf paths. The independent production
+kernel and Tess dependency remain; this stage does not claim a completed port
+or a measurement-performance improvement.

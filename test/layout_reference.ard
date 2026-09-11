@@ -1,0 +1,75 @@
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/geometry
+use cooper/ui/style
+use cooper/ui/text
+use go:fmt
+
+// Identical public-API input for the Tess checkpoint and its Ard replacement.
+// Expected geometry is owned by compare_layout.py, not either implementation.
+
+fn emit(name: Str, rect: geometry::Rect) {
+  fmt::Printf("%s %d %d %d %d\n", name, rect.x, rect.y, rect.width, rect.height)
+}
+
+fn main() {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let row = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let a = box::new(ctx, styles: style::new(flex_basis: style::cells(0), flex_grow: 1.0))
+  let b = box::new(
+    ctx,
+    styles: style::new(flex_basis: style::cells(0), flex_grow: 2.0, max_width: style::cells(16)),
+  )
+  let c = box::new(ctx, styles: style::new(flex_basis: style::cells(0), flex_grow: 3.0))
+  row.add(a)
+  row.add(b)
+  row.add(c)
+  ctx.compute_layout(row, 60, 4)
+  emit("grow.a", a.layout().local)
+  emit("grow.b", b.layout().local)
+  emit("grow.c", c.layout().local)
+  row.remove(c)
+  a.set_style(style::new(flex_basis: style::cells(80), min_width: style::cells(70)))
+  b.set_style(style::new(flex_basis: style::cells(40)))
+  ctx.compute_layout(row, 90, 4)
+  emit("shrink.a", a.layout().local)
+  emit("shrink.b", b.layout().local)
+  
+  // Percent references must change after reparenting and root resize.
+  let other = box::new(ctx)
+  a.set_style(style::new(width: style::percent(25.0), height: style::percent(50.0)))
+  row.remove(a)
+  other.add(a)
+  ctx.compute_layout(other, 40, 12)
+  emit("reparent", a.layout().local)
+  ctx.compute_layout(other, 28, 8)
+  emit("resize", a.layout().local)
+  ctx.compute_layout(other, 0, 0)
+  emit("zero", a.layout().local)
+  
+  let column = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(ctx, content: "abc", styles: style::new(flex_shrink: 0.0))
+  let tail = box::new(
+    ctx,
+    styles: style::new(width: style::cells(2), height: style::cells(1), flex_shrink: 0.0),
+  )
+  column.add(label)
+  column.add(tail)
+  ctx.compute_layout(column, 5, 10)
+  emit("text.initial", label.layout().local)
+  label.set_content("abc defgh")
+  ctx.compute_layout(column, 5, 10)
+  emit("text.changed", label.layout().local)
+  emit("text.tail", tail.layout().local)
+  ctx.compute_layout(column, 5, 10)
+  emit("text.unchanged", label.layout().local)
+  ctx.compute_layout(column, 10, 10)
+  emit("text.resized", label.layout().local)
+  emit("text.resized_tail", tail.layout().local)
+  
+  // Explicitly documented ADR 0016 divergence, not a blanket exclusion.
+  label.set_style(style::new(width: style::max_content(), flex_shrink: 0.0))
+  ctx.compute_layout(column, 5, 10)
+  emit("adr0016.max_content", label.layout().local)
+}

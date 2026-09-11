@@ -1,0 +1,78 @@
+use ard/testing
+
+use cooper/core/layout/numeric
+use go:math
+
+test fn yoga_numeric_undefined_is_not_zero_negative_or_infinity() Void!Str {
+  let missing = numeric::undefined()
+  try testing::assert(numeric::is_undefined(missing), "Undefined is NaN")
+  try testing::assert(numeric::is_defined(missing) == false, "NaN is not defined")
+  for value in [Float32::from(0.0), Float32::from(-1.0), Float32::from(math::Inf(1))] {
+    try testing::assert(numeric::is_defined(value), "Zero, negative and infinity are defined")
+    try testing::assert(numeric::is_undefined(value) == false, "Not a negative sentinel")
+    try testing::assert(numeric::inexact_equals(missing, value) == false, "One undefined never matches")
+    try testing::assert(numeric::inexact_equals(value, missing) == false, "Either operand may be undefined")
+  }
+  testing::assert(numeric::inexact_equals(missing, missing), "Two undefined values compare equal")
+}
+
+test fn yoga_numeric_equality_uses_strict_float32_tolerance() Void!Str {
+  let zero = Float32::from(0.0)
+  for difference in [Float32::from(0.000099), Float32::from(-0.000099)] {
+    try testing::assert(numeric::inexact_equals(zero, difference), "Inside tolerance")
+    try testing::assert(numeric::inexact_equals(difference, zero), "Symmetric tolerance")
+  }
+  for difference in [Float32::from(0.0001), Float32::from(-0.0001), Float32::from(0.000101)] {
+    try testing::assert(numeric::inexact_equals(zero, difference) == false, "Boundary is excluded")
+    try testing::assert(numeric::inexact_equals(difference, zero) == false, "Both signs exclude boundary")
+  }
+  let infinity = Float32::from(math::Inf(1))
+  testing::assert(
+    numeric::inexact_equals(infinity, infinity) == false,
+    "Yoga subtracts defined operands; infinity minus itself is NaN, not equal",
+  )
+}
+
+test fn yoga_numeric_extrema_preserve_defined_operand_and_signed_zero() Void!Str {
+  let missing = numeric::undefined()
+  let low = Float32::from(-7.0)
+  let high = Float32::from(-2.0)
+  try testing::assert(numeric::max_or_defined(low, high) == high, "Maximum of negative values")
+  try testing::assert(numeric::min_or_defined(low, high) == low, "Minimum of negative values")
+  try testing::assert(numeric::max_or_defined(high, low) == high, "Reversed maximum")
+  try testing::assert(numeric::min_or_defined(high, low) == low, "Reversed minimum")
+  for value in [Float32::from(-3.0), Float32::from(0.0), Float32::from(7.0)] {
+    try testing::assert(numeric::max_or_defined(missing, value) == value, "Left undefined max")
+    try testing::assert(numeric::max_or_defined(value, missing) == value, "Right undefined max")
+    try testing::assert(numeric::min_or_defined(missing, value) == value, "Left undefined min")
+    try testing::assert(numeric::min_or_defined(value, missing) == value, "Right undefined min")
+  }
+  try testing::assert(
+    numeric::is_undefined(numeric::max_or_defined(missing, missing)),
+    "Both undefined max",
+  )
+  try testing::assert(
+    numeric::is_undefined(numeric::min_or_defined(missing, missing)),
+    "Both undefined min",
+  )
+  let negative_zero = Float32::from(math::Copysign(0.0, -1.0))
+  let positive_zero = Float32::from(0.0)
+  let one = Float32::from(1.0)
+  let infinity = Float32::from(math::Inf(1))
+  try testing::assert(
+    one / numeric::max_or_defined(negative_zero, positive_zero) == 0.0 - infinity,
+    "Max keeps first -0",
+  )
+  try testing::assert(
+    one / numeric::min_or_defined(negative_zero, positive_zero) == 0.0 - infinity,
+    "Min keeps first -0",
+  )
+  try testing::assert(
+    one / numeric::max_or_defined(positive_zero, negative_zero) == infinity,
+    "Max keeps first +0",
+  )
+  testing::assert(
+    one / numeric::min_or_defined(positive_zero, negative_zero) == infinity,
+    "Min keeps first +0",
+  )
+}

@@ -1,0 +1,58 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// Licensed under the MIT license in LICENSE.yoga in this directory.
+// Translated from Yoga 8ba025e, numeric/Comparison.h (Float32 scalar paths).
+
+fn undefined() Float32 {
+  let zero = Float32::from(0.0)
+  zero / zero
+}
+
+fn is_undefined(value: Float32) Bool {
+  value != value
+}
+
+fn is_defined(value: Float32) Bool {
+  value == value
+}
+
+fn max_or_defined(a: Float32, b: Float32) Float32 {
+  if is_defined(a) and is_defined(b) {
+    // std::max preserves the first operand on equality, including signed zero.
+    match a < b {
+      true => b,
+      false => a,
+    }
+  } else {
+    match is_undefined(a) {
+      true => b,
+      false => a,
+    }
+  }
+}
+
+fn min_or_defined(a: Float32, b: Float32) Float32 {
+  if is_defined(a) and is_defined(b) {
+    match b < a {
+      true => b,
+      false => a,
+    }
+  } else {
+    match is_undefined(a) {
+      true => b,
+      false => a,
+    }
+  }
+}
+
+fn inexact_equals(a: Float32, b: Float32) Bool {
+  if is_defined(a) and is_defined(b) {
+    let difference = a - b
+    let magnitude = match difference < 0.0 {
+      true => 0.0 - difference,
+      false => difference,
+    }
+    magnitude < 0.0001
+  } else {
+    is_undefined(a) and is_undefined(b)
+  }
+}

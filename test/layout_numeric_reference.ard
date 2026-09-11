@@ -1,0 +1,45 @@
+use cooper/core/layout/numeric
+use go:fmt
+use go:math
+
+fn emit(value: Float32) {
+  if value != value {
+    fmt::Print(" nan")
+  } else {
+    fmt::Printf(" %08x", math::Float32bits(value))
+  }
+}
+
+fn main() {
+  let values = [
+    numeric::undefined(),
+    Float32::from(math::Inf(1)),
+    Float32::from(math::Inf(-1)),
+    Float32::from(0.0),
+    Float32::from(math::Copysign(0.0, -1.0)),
+    Float32::from(-7.0),
+    Float32::from(2.0),
+    Float32::from(0.000099),
+    Float32::from(0.0001),
+    Float32::from(0.000101),
+    Float32::from(-0.000099),
+    Float32::from(-0.0001),
+    Float32::from(-0.000101),
+  ]
+  for a in values {
+    for b in values {
+      // Include input bits so mismatched fixtures cannot appear to agree.
+      emit(a)
+      emit(b)
+      fmt::Printf(
+        " %t %t %t",
+        numeric::is_undefined(a),
+        numeric::is_defined(a),
+        numeric::inexact_equals(a, b),
+      )
+      emit(numeric::max_or_defined(a, b))
+      emit(numeric::min_or_defined(a, b))
+      fmt::Println()
+    }
+  }
+}

@@ -1,0 +1,105 @@
+use ard/testing
+
+use cooper/core/layout/basis
+use cooper/core/layout/cache
+use cooper/core/layout/numeric
+use cooper/ui/style
+
+test fn yoga_direct_basis_preserves_explicit_cache_but_recomputes_definite_dimensions() Void!Str {
+  let state = cache::new_state()
+  let available = Float32::from(20.0)
+  let owner = Float32::from(40.0)
+  let padding = Float32::from(9.0)
+  try testing::assert(
+    basis::resolve_without_measurement(
+      state,
+      style::percent(25.0),
+      style::cells(7),
+      available,
+      owner,
+      padding,
+      1,
+    ),
+    "Explicit percentage basis is selectable",
+  )
+  try testing::assert(
+    state.computed_flex_basis == 10.0,
+    "Basis25% of owner40 wins over preferred7 and inset9",
+  )
+  try testing::assert(
+    basis::resolve_without_measurement(
+      state,
+      style::percent(25.0),
+      style::cells(7),
+      available,
+      Float32::from(80.0),
+      padding,
+      2,
+    ),
+    "Explicit basis reuses cache with WebFlexBasis disabled",
+  )
+  try testing::assert(
+    state.computed_flex_basis == 10.0 and state.computed_flex_basis_generation == 2,
+    "New generation alone does not recalculate explicit basis",
+  )
+  state.invalidate_basis()
+  try testing::assert(
+    basis::resolve_without_measurement(
+      state,
+      style::percent(25.0),
+      style::cells(7),
+      available,
+      Float32::from(80.0),
+      padding,
+      3,
+    ),
+    "Invalidation permits recomputation",
+  )
+  try testing::assert(state.computed_flex_basis == 20.0, "Invalidated basis now uses owner80")
+  try testing::assert(
+    basis::resolve_without_measurement(
+      state,
+      style::cells(5),
+      style::cells(7),
+      numeric::undefined(),
+      owner,
+      padding,
+      4,
+    ),
+    "Explicit basis requires definite available main space; otherwise preferred dimension wins",
+  )
+  try testing::assert(
+    state.computed_flex_basis == 9.0,
+    "Definite preferred dimension replaces old cache and preserves inset floor",
+  )
+  let selected = basis::resolve_without_measurement(
+    state,
+    style::auto(),
+    style::max_content(),
+    available,
+    owner,
+    padding,
+    5,
+  )
+  testing::assert(
+    selected == false and state.computed_flex_basis_generation == 4,
+    "Intrinsic fallback is required even with an old cached basis; generation remains uncommitted",
+  )
+}
+
+test fn yoga_zero_available_space_still_selects_explicit_basis() Void!Str {
+  let state = cache::new_state()
+  let selected = basis::resolve_without_measurement(
+    state,
+    style::cells(5),
+    style::cells(7),
+    Float32::from(0.0),
+    numeric::undefined(),
+    Float32::from(2.0),
+    1,
+  )
+  testing::assert(
+    selected and state.computed_flex_basis == 5.0,
+    "Zero availability is definite, and point basis does not need definite owner size",
+  )
+}

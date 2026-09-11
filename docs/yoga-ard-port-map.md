@@ -402,3 +402,36 @@ Intrinsic contributions, percentage-cycle policy and min-wins normalization must
 be applied explicitly at the caller. Next is child flex-basis selection and its
 measurement fallback, followed by container recursion. The active application
 solver and Tess dependency remain unchanged.
+
+## Direct flex-basis selection stage
+
+`basis::resolve_without_measurement` translates the first branches of
+`computeFlexBasisForChild`: select an explicit resolved basis only when main-axis
+available space is defined, otherwise use the processed definite main dimension.
+Both preserve the padding/border floor. With experimental WebFlexBasis disabled,
+an existing explicit basis survives a new generation; definite dimensions instead
+recompute it. Dirty invalidation permits the explicit basis to be recalculated.
+Zero availability is defined; owner size need not be defined for point lengths.
+
+The helper receives the caller-selected main dimension and resolved insets.
+Returning false requires measurement even if an old basis exists; it leaves
+generation unchanged so the future measurement branch can finish the operation.
+This is not yet the complete child-basis visitor or a production solver change.
+
+Proof: **720** fixtures call pinned `computeFlexBasisForChild` directly with row
+and column parents, point/percentage/auto/intrinsic basis values, definite and
+indefinite owner/available sizes, inset floors, and absent/existing cache values.
+For these fixtures, native callback invocation identifies the required fallback.
+Ard matches selection versus fallback, and the direct branches' Float32 basis
+and generation. Fallback measured sizes and final generations are explicitly
+excluded, not asserted to match the still-untranslated branch.
+
+Two deterministic tests independently verify the cache/invalidation sequence
+**10 → 10 → 20 → 9**, basis precedence and zero-space behavior.
+`ard test test/layout_basis_test.ard`: **2 passed**; full `ard test`:
+**391 passed, 0 failed, 0 panicked**. Compiler/formatter checks pass for all
+three new/changed Ard files. All earlier differential cases pass.
+
+Next is child measurement constraint construction (cross-axis stretch, scrolling,
+maximum constraints), invoking the translated visit and storing its measured
+main-axis basis. Container recursion and ADR-specific intrinsic policy remain.

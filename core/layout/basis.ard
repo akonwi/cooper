@@ -1,0 +1,39 @@
+use cooper/core/layout/cache
+use cooper/core/layout/length
+use cooper/core/layout/numeric
+use cooper/ui/style
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// MIT license: LICENSE.yoga. Yoga 8ba025e computeFlexBasisForChild's
+// explicit-basis and definite main-dimension branches. Cooper uses border-box
+// sizing and disables the experimental WebFlexBasis generation policy.
+// False means the caller must run the child measurement fallback; it does not
+// mean a previously cached basis is usable. Intrinsic policy remains upstream.
+fn resolve_without_measurement(
+  state: mut cache::State,
+  basis: style::Length,
+  processed_main: style::Length,
+  available_main: Float32,
+  owner_main: Float32,
+  padding_border: Float32,
+  generation: Int,
+) Bool {
+  let resolved_basis = length::resolve(basis, owner_main)
+  mut selected = true
+  if numeric::is_defined(resolved_basis) and numeric::is_defined(available_main) {
+    if numeric::is_undefined(state.computed_flex_basis) {
+      state.computed_flex_basis = numeric::max_or_defined(resolved_basis, padding_border)
+    }
+  } else if length::is_definite(processed_main, owner_main) {
+    state.computed_flex_basis = numeric::max_or_defined(
+      length::resolve(processed_main, owner_main),
+      padding_border,
+    )
+  } else {
+    selected = false
+  }
+  if selected {
+    state.computed_flex_basis_generation = generation
+  }
+  selected
+}

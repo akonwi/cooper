@@ -81,7 +81,7 @@ def compare_numeric(baseline, scratch):
     ], cwd=ROOT, check=True)
     reference = subprocess.check_output([str(cpp)], text=True).splitlines()
     candidate = subprocess.check_output([str(ard)], text=True).splitlines()
-    if len(reference) != 169 + 12 + 5184 + 5 + 2016 + 60 + 1728 or candidate != reference:
+    if len(reference) != 169 + 12 + 5184 + 5 + 2016 + 60 + 1728 + 720 or candidate != reference:
         difference = "\n".join(difflib.unified_diff(reference, candidate, fromfile="Yoga", tofile="Ard"))
         raise AssertionError(f"Numeric reference mismatch:\n{difference}")
     return {
@@ -95,7 +95,7 @@ def compare_numeric(baseline, scratch):
             for path in (
                 "core/layout/numeric.ard", "core/layout/cache.ard", "test/layout_numeric_reference.ard",
                 "test/layout_numeric_reference.cpp", "core/layout/measure.ard", "core/layout.ard",
-                "core/layout/length.ard",
+                "core/layout/length.ard", "core/layout/basis.ard",
             )
         },
         "pairs": 169,
@@ -105,6 +105,7 @@ def compare_numeric(baseline, scratch):
         "axis_cases": 2016,
         "length_cases": 60,
         "processed_dimension_cases": 1728,
+        "basis_cases": 720,
         "observations": candidate,
     }
 
@@ -152,6 +153,7 @@ def main():
     print(f"PASS: {report['numeric']['leaf_visits']} cached leaf visits match pinned Yoga dimensions, dirtiness and callback counts")
     print(f"PASS: {report['numeric']['axis_cases']} resolved-axis constraints match pinned Yoga modes and Float32 results")
     print(f"PASS: {report['numeric']['length_cases']} length resolutions and {report['numeric']['processed_dimension_cases']} processed dimensions match pinned Yoga")
+    print(f"PASS: {report['numeric']['basis_cases']} direct flex-basis selections match pinned Yoga; measurement fallback results excluded")
 
 
 if __name__ == "__main__":

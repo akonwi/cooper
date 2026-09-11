@@ -1,4 +1,5 @@
 use cooper/core/layout
+use cooper/core/layout/basis
 use cooper/core/layout/cache
 use cooper/core/layout/length
 use cooper/core/layout/measure
@@ -51,6 +52,39 @@ fn main() {
   leaf_reference()
   axis_reference()
   length_reference()
+  basis_reference()
+}
+
+fn basis_reference() {
+  for row in [true, false] {
+    for value in [style::cells(0), style::cells(5), style::percent(25.0), style::auto(), style::max_content()] {
+      for available in [numeric::undefined(), Float32::from(0.0), Float32::from(20.0)] {
+        for owner in [numeric::undefined(), Float32::from(40.0)] {
+          for dimension in [style::cells(7), style::percent(50.0), style::auto()] {
+            for padding in [Float32::from(0.0), Float32::from(9.0)] {
+              for previous in [numeric::undefined(), Float32::from(17.0)] {
+                let state = cache::new_state()
+                state.computed_flex_basis = previous
+                state.computed_flex_basis_generation = 4
+                let selected = basis::resolve_without_measurement(
+                  state,
+                  value,
+                  dimension,
+                  available,
+                  owner,
+                  padding,
+                  9,
+                )
+                fmt::Printf("basis %t", selected)
+                emit(state.computed_flex_basis)
+                fmt::Printf(" %d\n", state.computed_flex_basis_generation)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 fn unit_number(kind: style::LengthKind) Int {

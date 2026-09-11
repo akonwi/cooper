@@ -15,6 +15,7 @@ static void cache_reference();
 static void leaf_reference();
 static void axis_reference();
 static void length_reference();
+static void basis_reference();
 
 static void emit(float value) {
   if (value != value) {
@@ -50,6 +51,50 @@ int main() {
   leaf_reference();
   axis_reference();
   length_reference();
+  basis_reference();
+}
+
+static int basis_calls;
+static YGSize basis_measure(YGNodeConstRef, float, YGMeasureMode, float, YGMeasureMode) {
+  ++basis_calls;
+  return {11.0f, 3.0f};
+}
+
+static void basis_reference() {
+  using namespace facebook::yoga;
+  auto config = YGConfigNew();
+  YGConfigSetUseWebDefaults(config, true);
+  const StyleSizeLength bases[] = {StyleSizeLength::points(0), StyleSizeLength::points(5),
+      StyleSizeLength::percent(25), StyleSizeLength::ofAuto(), StyleSizeLength::ofMaxContent()};
+  for (bool row : {true, false}) for (auto basis : bases)
+  for (float available : {YGUndefined, 0.0f, 20.0f}) for (float owner : {YGUndefined, 40.0f})
+  for (auto dimension : {StyleSizeLength::points(7), StyleSizeLength::percent(50), StyleSizeLength::ofAuto()})
+  for (float padding : {0.0f, 9.0f}) for (float previous : {YGUndefined, 17.0f}) {
+    auto parent = YGNodeNewWithConfig(config);
+    auto child = YGNodeNewWithConfig(config);
+    YGNodeStyleSetFlexDirection(parent, row ? YGFlexDirectionRow : YGFlexDirectionColumn);
+    YGNodeStyleSetAlignItems(parent, YGAlignFlexStart);
+    resolveRef(child)->style().setFlexBasis(basis);
+    resolveRef(child)->style().setDimension(row ? Dimension::Width : Dimension::Height, dimension);
+    YGNodeStyleSetPadding(child, row ? YGEdgeLeft : YGEdgeTop, padding);
+    YGNodeSetMeasureFunc(child, basis_measure);
+    resolveRef(child)->processDimensions();
+    resolveRef(child)->setLayoutComputedFlexBasis(FloatOptional(previous));
+    resolveRef(child)->setLayoutComputedFlexBasisGeneration(4);
+    basis_calls = 0;
+    LayoutData data{};
+    computeFlexBasisForChild(resolveRef(parent), resolveRef(child), row ? available : 73.0f,
+        SizingMode::FitContent, row ? 73.0f : available, row ? owner : 73.0f,
+        row ? 73.0f : owner, SizingMode::FitContent, Direction::LTR, data, 0, 9);
+    const bool selected = basis_calls == 0;
+    std::printf("basis %s", selected ? "true" : "false");
+    // The untranslated measurement branch is tested only as a required fallback.
+    emit(selected ? resolveRef(child)->getLayout().computedFlexBasis.unwrap() : previous);
+    std::printf(" %d\n", selected ? resolveRef(child)->getLayout().computedFlexBasisGeneration : 4);
+    YGNodeFree(child);
+    YGNodeFree(parent);
+  }
+  YGConfigFree(config);
 }
 
 static void length_reference() {

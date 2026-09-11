@@ -1,6 +1,7 @@
 #include <yoga/Yoga.h>
 #include <cassert>
 #include <cstdio>
+#include <initializer_list>
 
 // Independent native reference for the corresponding visitor regression.
 static YGSize measure(YGNodeConstRef, float, YGMeasureMode, float, YGMeasureMode) {
@@ -34,6 +35,28 @@ int main() {
       assert(height == (scenario == 2 ? 12 : 2));
       std::printf("scenario%d child%d height=%.0f\n", scenario, i, height);
     }
+    YGNodeFreeRecursive(root);
+  }
+  for (int minimum : {0, 8}) {
+    auto root = YGNodeNewWithConfig(config);
+    YGNodeStyleSetWidth(root, 10);
+    YGNodeStyleSetMaxHeight(root, 20);
+    YGNodeStyleSetMinHeight(root, minimum);
+    YGNodeStyleSetAlignItems(root, YGAlignStretch);
+    auto child = YGNodeNewWithConfig(config);
+    YGNodeStyleSetWidth(child, 3);
+    YGNodeSetMeasureFunc(child, measure);
+    auto peer = YGNodeNewWithConfig(config);
+    YGNodeStyleSetWidth(peer, 4);
+    YGNodeStyleSetHeight(peer, 5);
+    YGNodeInsertChild(root, child, 0);
+    YGNodeInsertChild(root, peer, 1);
+    YGNodeCalculateLayout(root, 10, YGUndefined, YGDirectionLTR);
+    const float expected = minimum == 0 ? 5 : 8;
+    assert(YGNodeLayoutGetHeight(child) == expected);
+    assert(YGNodeLayoutGetHeight(root) == expected);
+    assert(YGNodeLayoutGetWidth(child) == 3);
+    std::printf("line minimum%d child height=%.0f\n", minimum, expected);
     YGNodeFreeRecursive(root);
   }
   YGConfigFree(config);

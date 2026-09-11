@@ -15,6 +15,16 @@ use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
 // It intentionally does not assign positions, project pixels, place absolute
 // children, or adapt intrinsic keywords and percentage cycles.
 
+// Stretch children are measured during distribution and laid out after the
+// complete line cross extent is known (CalculateLayout.cpp steps5 and7).
+struct StretchVisit {
+  child: mut layout::Node,
+  main: measure::Axis,
+  cross: measure::Axis,
+  margin_row: Float32,
+  margin_column: Float32,
+}
+
 fn resolved_zero(value: style::Length, reference: Float32) Float32 {
   let result = length::resolve(value, reference)
   match numeric::is_defined(result) {
@@ -193,6 +203,7 @@ fn visit(
         mut line_main = Float32::from(0.0)
         mut line_cross = Float32::from(0.0)
         mut local = 0
+        let stretching = mut List::new<StretchVisit>()
         for allocated in distribution.sizes {
           let child = prepared.children.at(index + local).expect("line child")
           let value = child.value
@@ -245,14 +256,87 @@ fn visit(
             minimum: length::resolve(choose_length(row, value.min_width, value.min_height), available_main),
             maximum: length::resolve(choose_length(row, value.max_width, value.max_height), available_main),
           }
+          let requires_stretch = definite_cross == false and alignment == style::Align::stretch and cross_margins_auto == false
+          let main_axis = child_main.constrain_max(choose_float(row, mr, mc))
+          let cross_axis = child_cross.constrain_max(cross_margin)
+          let layout_now = perform_layout and requires_stretch == false
           match row {
-            true => visit(child, child_main, child_cross, mr, mc, generation, perform_layout),
-            false => visit(child, child_cross, child_main, mr, mc, generation, perform_layout),
+            true => visit(child, main_axis, cross_axis, mr, mc, generation, layout_now),
+            false => visit(child, cross_axis, main_axis, mr, mc, generation, layout_now),
+          }
+          if requires_stretch and perform_layout {
+            stretching.push(
+              StretchVisit{
+                child: child,
+                main: child_main,
+                cross: child_cross,
+                margin_row: mr,
+                margin_column: mc,
+              },
+            )
           }
           let measured_cross = choose_float(row, child.measured_height, child.measured_width)
           line_cross = numeric::max_or_defined(line_cross, measured_cross + cross_margin)
           line_main = line_main + allocated + choose_float(local > 0, gap, Float32::from(0.0)) + choose_float(row, mr, mc)
           local =+ 1
+        }
+        if wrap == false {
+          if cross_mode == cache::SizingMode::stretch_fit {
+            line_cross = available_cross
+          }
+          line_cross = match row {
+            true => own_height.bound(line_cross + own_height.padding_border) - own_height.padding_border,
+            false => own_width.bound(line_cross + own_width.padding_border) - own_width.padding_border,
+          }
+        }
+        for deferred in stretching {
+          let main = mut deferred.main
+          main.available = choose_float(
+            row,
+            deferred.child.measured_width + deferred.margin_row,
+            deferred.child.measured_height + deferred.margin_column,
+          )
+          let cross = mut deferred.cross
+          cross.available = line_cross
+          cross.mode = cache::SizingMode::stretch_fit
+          let bounded_main = mut main.constrain_max(
+            choose_float(row, deferred.margin_row, deferred.margin_column),
+          )
+          let bounded_cross = mut cross.constrain_max(
+            choose_float(row, deferred.margin_column, deferred.margin_row),
+          )
+          bounded_main.mode = match numeric::is_undefined(bounded_main.available) {
+            true => cache::SizingMode::max_content,
+            false => cache::SizingMode::stretch_fit,
+          }
+          bounded_cross.mode = match numeric::is_undefined(bounded_cross.available) or wrap and node.value.align_content != style::Align::stretch {
+            true => cache::SizingMode::max_content,
+            false => cache::SizingMode::stretch_fit,
+          }
+          match row {
+            true => {
+              visit(
+                deferred.child,
+                bounded_main.@,
+                bounded_cross.@,
+                deferred.margin_row,
+                deferred.margin_column,
+                generation,
+                true,
+              )
+            },
+            false => {
+              visit(
+                deferred.child,
+                bounded_cross.@,
+                bounded_main.@,
+                deferred.margin_row,
+                deferred.margin_column,
+                generation,
+                true,
+              )
+            },
+          }
         }
         natural_main = numeric::max_or_defined(natural_main, line_main)
         natural_cross = natural_cross + line_cross + choose_float(line_count > 0, cross_gap, Float32::from(0.0))

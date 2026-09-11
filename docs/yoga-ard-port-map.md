@@ -564,6 +564,22 @@ c++ -std=c++20 -I "$tess/etc/include" test/layout_cross_reference.cpp \
 ard test test/layout_visitor_test.ard --filter cross_stretch
 ```
 
-This verifies the initial stretch decision only. Later per-line stretch,
-align-content remeasurement, and layout-versus-measurement visitation ordering
-remain untranslated; do not infer full cross-axis parity from these cases.
+These cases verify the initial stretch decision only; they do not establish
+full cross-axis parity.
+
+### Per-line stretch visitation
+
+The visitor now measures stretch children during distribution and defers their
+layout until the complete line cross extent is known. Nonwrapping line extents
+honor the container's exact cross size and min/max bounds. The deferred visit
+uses the child's measured main size and constrains both axes before applying
+Yoga's wrap/align-content sizing modes.
+
+The new `line_stretch` regression failed before implementation. A3×2 measured
+child beside a4×5 fixed sibling now stretches to height5, or height8 with a
+container minimum of8, while keeping width3. The native reference above asserts
+the same dimensions for both child and container. All nine visitor tests pass.
+
+Align-content remeasurement across multiple lines, fixed-size measurement
+shortcuts, and full owner-relative constraint parity remain unfinished. This
+code still does not position children or replace the production solver.

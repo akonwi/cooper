@@ -333,3 +333,44 @@ test fn cross_stretch_respects_wrapped_overflow_and_auto_margins() Void!Str {
   }
   Result::ok(())
 }
+
+test fn line_stretch_revisits_children_after_cross_extent_is_known() Void!Str {
+  for minimum in [0, 8] {
+    let root = layout::new()
+    root.apply(
+      style::new(
+        flex_direction: style::FlexDirection::row,
+        align_items: style::Align::stretch,
+        min_height: style::cells(minimum),
+      ),
+      0,
+    )
+    let child = layout::new()
+    child.apply(style::new(width: style::cells(3)), 0)
+    child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
+      layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
+    })
+    root.insert(child, 0)
+    root.insert(fixed(4, 5), 1)
+    let height = mut axis(20.0, cache::SizingMode::fit_content)
+    height.minimum = Float32::from(minimum)
+    visitor::visit(
+      root,
+      axis(10.0, cache::SizingMode::stretch_fit),
+      height.@,
+      zero(),
+      zero(),
+      1,
+      true,
+    )
+    let expected = match minimum == 0 {
+      true => 5.0,
+      false => 8.0,
+    }
+    try testing::assert(
+      child.width == 3.0 and child.height == expected and root.height == expected,
+      "Stretch uses sibling line height5 or the container minimum8, not natural child height2",
+    )
+  }
+  Result::ok(())
+}

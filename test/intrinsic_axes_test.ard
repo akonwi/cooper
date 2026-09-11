@@ -1,0 +1,382 @@
+use ard/testing
+
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/style
+use cooper/ui/text
+
+test fn intrinsic_column_basis_uses_resolved_width_before_selecting_lines() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      flex_wrap: style::FlexWrap::wrap,
+      align_items: style::Align::start,
+      align_content: style::Align::start,
+    ),
+  )
+  let label = text::new(
+    ctx,
+    content: "abcdef",
+    wrap: text::TextWrap::character,
+    styles: style::new(
+      width: style::cells(3),
+      height: style::cells(9),
+      flex_basis: style::max_content(),
+      flex_shrink: 0.0,
+    ),
+  )
+  let tail = box::new(
+    ctx,
+    styles: style::new(width: style::cells(1), height: style::cells(1), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  parent.add(tail)
+  ctx.compute_layout(parent, 6, 2)
+  try testing::assert(
+    label.layout().local.height == 2 and tail.layout().local.x == 3 and tail.layout().local.y == 0,
+    "Column natural basis is two rows at width3; tail belongs in next column, got label height {label.layout().local.height}, tail ({tail.layout().local.x},{tail.layout().local.y})",
+  )
+  for width in [style::max_content(), style::fit_content(), style::stretch(), style::auto()] {
+    label.set_style(
+      style::new(
+        width: width,
+        max_width: style::cells(3),
+        height: style::cells(9),
+        flex_basis: style::max_content(),
+        flex_shrink: 0.0,
+      ),
+    )
+    ctx.compute_layout(parent, 6, 2)
+    try testing::assert(
+      label.layout().local.width == 3 and label.layout().local.height == 2 and tail.layout().local.x == 3 and tail.layout().local.y == 0,
+      "Height-basis probe must honor width policy and maximum before packing",
+    )
+  }
+  Result::ok(())
+}
+
+test fn intrinsic_height_constraints_use_width_dependent_natural_extent() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(ctx, content: "abcdef", wrap: text::TextWrap::character)
+  let tail = box::new(
+    ctx,
+    styles: style::new(width: style::cells(1), height: style::cells(1), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  parent.add(tail)
+  for keyword, index in [style::max_content(), style::fit_content(), style::stretch()] {
+    let expected = match index == 2 {
+      true => 5,
+      false => 2,
+    }
+    label.set_style(
+      style::new(
+        width: style::cells(3),
+        height: style::cells(9),
+        max_height: keyword,
+        flex_shrink: 0.0,
+      ),
+    )
+    ctx.compute_layout(parent, 6, 5)
+    try testing::assert(
+      label.layout().local.height == expected and tail.layout().local.y == expected,
+      "Intrinsic maximum height keyword {index}",
+    )
+    label.set_style(
+      style::new(
+        width: style::cells(3),
+        height: style::cells(0),
+        min_height: keyword,
+        flex_shrink: 0.0,
+      ),
+    )
+    ctx.compute_layout(parent, 6, 5)
+    try testing::assert(
+      label.layout().local.height == expected and tail.layout().local.y == expected,
+      "Intrinsic minimum height keyword {index}",
+    )
+  }
+  Result::ok(())
+}
+
+test fn intrinsic_basis_policies_account_for_margins_on_both_main_axes() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(ctx, content: "abcdef", wrap: text::TextWrap::character)
+  parent.add(label)
+  for direction in [style::FlexDirection::row, style::FlexDirection::column] {
+    let row = direction == style::FlexDirection::row
+    parent.set_style(style::new(flex_direction: direction, align_items: style::Align::start))
+    for basis, index in [style::max_content(), style::fit_content(), style::stretch()] {
+      let margins = match row {
+        true => {
+          style::Edges{
+            left: style::cells(2),
+            right: style::cells(3),
+            top: style::cells(0),
+            bottom: style::cells(0),
+          }
+        },
+        false => {
+          style::Edges{
+            left: style::cells(0),
+            right: style::cells(0),
+            top: style::cells(2),
+            bottom: style::cells(3),
+          }
+        },
+      }
+      let width = match row {
+        true => style::cells(1),
+        false => style::cells(2),
+      }
+      label.set_style(
+        style::new(
+          width: width,
+          height: style::cells(9),
+          flex_basis: basis,
+          margin: margins,
+          flex_shrink: 0.0,
+        ),
+      )
+      ctx.compute_layout(parent, 20, 10)
+      let expected = match row {
+        true => {
+          match index == 2 {
+            true => 15,
+            false => 6,
+          }
+        },
+        false => {
+          match index == 2 {
+            true => 5,
+            false => 3,
+          }
+        },
+      }
+      let actual = match row {
+        true => label.layout().local.width,
+        false => label.layout().local.height,
+      }
+      try testing::assert(actual == expected, "Basis keyword {index}: expected {expected}, got {actual}")
+      // Below intrinsic size: available main space is two after margins.
+      let small_width = match row {
+        true => 7,
+        false => 20,
+      }
+      ctx.compute_layout(parent, small_width, 7)
+      let small_expected = match index == 0 {
+        true => {
+          match row {
+            true => 6,
+            false => 3,
+          }
+        },
+        false => 2,
+      }
+      let small_actual = match row {
+        true => label.layout().local.width,
+        false => label.layout().local.height,
+      }
+      try testing::assert(small_actual == small_expected, "Basis keyword {index} under bounded availability")
+    }
+  }
+  Result::ok(())
+}
+
+test fn intrinsic_flex_allocation_makes_percent_reference_definite_on_both_axes() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      flex_basis: style::cells(0),
+      flex_grow: 1.0,
+      align_items: style::Align::start,
+    ),
+  )
+  let label = text::new(
+    ctx,
+    content: "abcd",
+    styles: style::new(width: style::percent(50.0), height: style::percent(50.0), flex_shrink: 0.0),
+  )
+  child.add(label)
+  parent.add(child)
+  for direction in [style::FlexDirection::row, style::FlexDirection::column] {
+    parent.set_style(style::new(flex_direction: direction))
+    ctx.compute_layout(parent, 20, 12)
+    try testing::assert(
+      child.layout().local.width == 20 and child.layout().local.height == 12 and label.layout().local.width == 10 and label.layout().local.height == 6,
+      "Final flex allocation supplies independent 20x12 reference",
+    )
+    ctx.compute_layout(parent, 12, 8)
+    try testing::assert(
+      label.layout().local.width == 6 and label.layout().local.height == 4,
+      "Resize must replace percentage references",
+    )
+  }
+  Result::ok(())
+}
+
+test fn intrinsic_constraint_available_space_excludes_main_axis_margins() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let label = text::new(ctx, content: "abcdef", wrap: text::TextWrap::character)
+  parent.add(label)
+  for row in [true, false] {
+    let direction = match row {
+      true => style::FlexDirection::row,
+      false => style::FlexDirection::column,
+    }
+    parent.set_style(style::new(flex_direction: direction, align_items: style::Align::start))
+    for bound, index in [style::max_content(), style::fit_content(), style::stretch()] {
+      for minimum in [true, false] {
+        let preferred = match minimum {
+          true => style::cells(0),
+          false => style::cells(30),
+        }
+        let configured = mut style::new(
+          width: style::cells(2),
+          height: style::cells(3),
+          flex_shrink: 0.0,
+        )
+        if row {
+          configured.width = preferred
+          configured.margin = style::Edges{
+            left: style::cells(2),
+            right: style::cells(3),
+            top: style::cells(0),
+            bottom: style::cells(0),
+          }
+          if minimum {
+            configured.min_width = bound
+          } else {
+            configured.max_width = bound
+          }
+        } else {
+          configured.height = preferred
+          configured.margin = style::Edges{
+            top: style::cells(2),
+            bottom: style::cells(3),
+            left: style::cells(0),
+            right: style::cells(0),
+          }
+          if minimum {
+            configured.min_height = bound
+          } else {
+            configured.max_height = bound
+          }
+        }
+        label.set_style(configured.@)
+        ctx.compute_layout(parent, 20, 10)
+        let expected = match row {
+          true => {
+            match index == 2 {
+              true => 15,
+              false => 6,
+            }
+          },
+          false => {
+            match index == 2 {
+              true => 5,
+              false => 3,
+            }
+          },
+        }
+        let actual = match row {
+          true => label.layout().local.width,
+          false => label.layout().local.height,
+        }
+        try testing::assert(
+          actual == expected,
+          "Bound {index}, row {row}, minimum {minimum}: expected {expected}, got {actual}",
+        )
+      }
+    }
+  }
+  Result::ok(())
+}
+
+test fn intrinsic_nested_container_axes_include_insets_and_ignore_out_of_flow() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let container = box::new(ctx)
+  let group = box::new(ctx, styles: style::new(display: style::Display::contents))
+  group.add(
+    box::new(
+      ctx,
+      styles: style::new(width: style::cells(3), height: style::cells(1), flex_shrink: 0.0),
+    ),
+  )
+  group.add(
+    box::new(
+      ctx,
+      styles: style::new(width: style::cells(5), height: style::cells(2), flex_shrink: 0.0),
+    ),
+  )
+  container.add(group)
+  container.add(
+    box::new(
+      ctx,
+      styles: style::new(
+        position: style::Position::absolute,
+        width: style::cells(50),
+        height: style::cells(30),
+      ),
+    ),
+  )
+  container.add(
+    box::new(
+      ctx,
+      styles: style::new(
+        display: style::Display::none,
+        width: style::cells(60),
+        height: style::cells(40),
+      ),
+    ),
+  )
+  root.add(container)
+  for direction in [
+    style::FlexDirection::row,
+    style::FlexDirection::row_reverse,
+    style::FlexDirection::column,
+    style::FlexDirection::column_reverse,
+  ] {
+    container.set_style(
+      style::new(
+        width: style::max_content(),
+        height: style::max_content(),
+        flex_direction: direction,
+        flex_wrap: style::FlexWrap::wrap,
+        align_items: style::Align::start,
+        border: style::Border::single,
+        padding: style::edges(style::cells(1)),
+        gap: style::cells(1),
+        flex_shrink: 0.0,
+      ),
+    )
+    ctx.compute_layout(root, 4, 3)
+    let row = direction == style::FlexDirection::row or direction == style::FlexDirection::row_reverse
+    let expected_width = match row {
+      true => 13,
+      false => 9,
+    }
+    let expected_height = match row {
+      true => 6,
+      false => 8,
+    }
+    try testing::assert(
+      container.layout().local.width == expected_width and container.layout().local.height == expected_height,
+      "Natural nested flow must include gap/insets once and ignore finite ancestor cap",
+    )
+  }
+  Result::ok(())
+}

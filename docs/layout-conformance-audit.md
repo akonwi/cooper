@@ -4,6 +4,41 @@ September 10, 2026. The original September 9 source-audit matrices below are
 preserved as a baseline. The integration evidence here records which gaps now
 have additional tests, without claiming complete conformance.
 
+## ADR 0016 follow-up: intrinsic axes and margin-adjusted bounds
+
+Six new tests in `test/intrinsic_axes_test.ard` cover column intrinsic basis,
+height bounds, all three intrinsic basis policies on both axes with margins,
+percentage descendants after flex allocation and resize, intrinsic min/max
+constraints with margins, and nested natural row/column extents with contents,
+insets, gaps, reverse direction and excluded absolute/hidden children.
+
+Two executed failures exposed engine defects:
+
+1. **Column basis queried natural width instead of natural height.** In a 6×2
+   wrapping column, `abcdef` at width 3 and max-content basis ultimately had
+   height 2, but its following sibling remained at (0,2), outside that column.
+   Initial packing had used an unwrapped one-row basis. The height probe now
+   respects resolved width and width constraints before packing; the sibling
+   is at (3,0). This also passes for max-content/fit-content/stretch/auto width
+   constrained by max-width 3. Horizontal reconciliation stays frozen under
+   ADR 0020; the fix corrects the initial contribution rather than repacking.
+2. **Flex bounds did not exclude margins from available space.** A stretch
+   minimum in a 20-cell row with margins 2/3 produced width 20 instead of 15.
+   Bounds now use the same margin-adjusted availability as flex basis. Both
+   min/max, both axes, and all three intrinsic keywords pass the added matrix.
+
+Proof: the initial three tests ran **2 passed, 1 failed** before the column fix.
+The later constraint test failed with `expected 15, got 20` before the margin
+fix. All **6 tests pass** now; full `ard test` is **368 passed, 0 failed,
+0 panicked**. Compiler and formatter checks pass for both changed Ard files.
+Layout Playground, Text Gallery, TextArea, Scroll Form, Horizontal Scroll and
+Select PTY checks pass. Inspected `intrinsic-axis-fixes.png`, generated from
+actual headless Frame cells: `abcZ/def` and 15-column text wrapping with margins.
+
+This extends the earlier ADR 0016 cases in `test/style_test.ard` and OR-4's
+indefinite-percentage regressions. A final contract/evidence pass and controlled
+performance comparison still precede removal of the unused Yoga backend.
+
 ## ADRs 0017–0018: alignment and box baselines implemented
 
 `Style.align_content` now independently distributes wrapped lines, defaulting to

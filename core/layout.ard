@@ -282,7 +282,7 @@ fn compute_visible(
   let horizontal = pad.left + pad.right
   let vertical = pad.top + pad.bottom
   mut nw = 0.to_f64()
-  match allocated == false and mode == 0 and (intrinsic(s.width) or intrinsic(s.min_width) or intrinsic(s.max_width)) {
+  match allocated == false and mode != 1 and (intrinsic(s.width) or intrinsic(s.min_width) or intrinsic(s.max_width)) {
     true => { nw = compute(node, -1.0, -1.0, rw, rh, -1.0, -1.0, 1, false).width },
     false => (),
   }
@@ -291,11 +291,11 @@ fn compute_visible(
     true => { width = resolve(s.width, rw, aw, nw) },
     false => (),
   }
-  let minw = match mode == 0 {
+  let minw = match mode != 1 {
     true => resolve(s.min_width, rw, aw, nw),
     false => -1.0,
   }
-  let maxw = match mode == 0 {
+  let maxw = match mode != 1 {
     true => resolve(s.max_width, rw, aw, nw),
     false => -1.0,
   }
@@ -502,15 +502,18 @@ fn compute_visible(
               true => {
                 natural = compute(
                   child,
-                  -1.0,
+                  match row {
+                    true => -1.0,
+                    false => child_aw,
+                  },
                   -1.0,
                   percent_w,
                   percent_h,
                   -1.0,
                   -1.0,
-                  match allocated and row == false {
-                    true => 2,
-                    false => 1,
+                  match row {
+                    true => 1,
+                    false => 2,
                   },
                   allocated and row == false,
                 )
@@ -518,15 +521,11 @@ fn compute_visible(
               false => (),
             }
             let natural_main = axis_size(natural, row)
-            let basis = resolve(
-              cs.flex_basis,
-              main_percent,
-              match main_limit >= 0.0 {
-                true => max(0.0, main_limit - before - after),
-                false => -1.0,
-              },
-              natural_main,
-            )
+            let main_available = match main_limit >= 0.0 {
+              true => max(0.0, main_limit - before - after),
+              false => -1.0,
+            }
+            let basis = resolve(cs.flex_basis, main_percent, main_available, natural_main)
             let align = match cs.align_self == style::Align::auto {
               true => s.align_items,
               false => cs.align_self,
@@ -569,8 +568,8 @@ fn compute_visible(
               true => child.insets.left + child.insets.right,
               false => child.insets.top + child.insets.bottom,
             }
-            let lower = resolve(lower_length, main_percent, main_limit, natural_main)
-            let upper = resolve(upper_length, main_percent, main_limit, natural_main)
+            let lower = resolve(lower_length, main_percent, main_available, natural_main)
+            let upper = resolve(upper_length, main_percent, main_available, natural_main)
             let item = mut Item{
               node: child,
               basis: match basis >= 0.0 {

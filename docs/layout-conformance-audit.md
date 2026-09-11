@@ -4,6 +4,66 @@ September 10, 2026. The original September 9 source-audit matrices below are
 preserved as a baseline. The integration evidence here records which gaps now
 have additional tests, without claiming complete conformance.
 
+## Oracle review tracker
+
+Review of the initial Ard replacement against checkpoint
+`650013dc9525c504b42089cb5c30ddd54e3c5ff0`. Findings were initially derived
+from source/arithmetic, not executed reproductions. Stable IDs below distinguish
+these defects from the separately deferred ADR work. Each fix will record an
+executed failing regression and its passing result below.
+
+| ID | Priority | Defect | Status |
+| --- | --- | --- | --- |
+| OR-1 | P1 | Finite main-axis measurement truncates scrollable Text overflow on both axes. | Fixed; 3 regressions pass |
+| OR-2 | P1 | Bounds change widths without recomputing dependent measurement or child allocation; a losing maximum also constrains measurement. | Fixed; 2 regressions pass |
+| OR-3 | P1 | Flex freezes all clamped targets, leaving distributable free space unused with mixed min/max constraints. | Fixed; regression passes |
+| OR-4 | P2 | Percentage-reference definiteness is bypassed for heights, bounds, basis, and spacing. | Reported cases fixed; 2 regressions pass |
+| OR-5 | P2 | Absolute positioning ignores margins in placement and opposing-edge allocation. | Fixed; regression passes |
+| OR-6 | P2 | Reverse main/cross placement confuses physical leading/trailing margins, including auto margins. | Fixed; regression passes |
+| OR-7 | P2 | Early cross-axis stretch defeats auto-margin alignment of naturally sized children. | Fixed; regression passes |
+
+### Reproduce the proof for each finding
+
+Tests live in [test/layout_regression_test.ard](../test/layout_regression_test.ard).
+Run `ard test --filter or1_`, substituting `or2_` through `or7_` for the other
+findings, or run the whole file. The before column records actual failed runs
+before each corresponding fix, not predictions copied from the review.
+Assertions after the first failure were only exercised by the passing run.
+
+| ID | Executed failure before fix | Passing assertions after fix |
+| --- | --- | --- |
+| OR-1 | Four Text rows measured as 2; eight columns measured as 3. Both tests failed. | Full extents 4/8; maximum scroll offsets 2/5. Additional integration test renders `a/b`, scrolls two rows, then renders `c/d`. |
+| OR-2 | Minimum-width Text retained height 2 instead of 1; six-cell container retained children 4+4. Both tests failed. | Text height 1 and following sibling y=1; losing maximum does not constrain measurement; container children tile 3+3. |
+| OR-3 | Mixed grow constraints produced 60/20 instead of 70/20. | Allocation 70/20 consumes all 90 cells. Fractional grow with a frozen sibling produces 25/10, without repeatedly adding the first child's share. |
+| OR-4 | Intrinsic parent resolved percentage child height to 2 instead of 4; unresolved width bounds/basis/spacing produced child width 1 and sibling x=6 instead of 4/4. | Child height stays 4 until explicit parent height 10 resolves it to 5. Intrinsic row remains width 6, child width 4, sibling x=4 across repeated layout. |
+| OR-5 | Leading margins were ignored: position (0,0) instead of (2,1). | Leading position (2,1), trailing position (13,6), opposing-edge allocation 11×3 at (3,2). |
+| OR-6 | Row-reverse position x=15 instead of x=13. | Unequal physical margins work in row_reverse, column_reverse, wrap_reverse; right auto margin pushes the child to x=1. |
+| OR-7 | Auto-margin Text stretched to height 7 at y=0. | Natural height 1 at y=3 in a row; natural width 1 at projected x=5 in a column. |
+
+The fixes remove the scroll main-axis measurement cap, settle bounded sizes
+before dependent layout, freeze flex items by net constraint violation, use
+definite percentage references consistently on both axes, account for absolute
+margins, map margins to effective reversed axes, and suppress early stretch when
+cross-axis auto margins take precedence. Bound-driven container relayout fixes
+at least one previously unsettled axis per pass; it does not iterate projected
+fractional widths.
+
+Final combined verification after these fixes:
+
+- `ard test test/layout_regression_test.ard`: **11 passed; 0 failed; 0 panicked**.
+- `ard test`: **332 passed; 0 failed; 0 panicked** (321 before this review).
+- `ard check` and `ard format --check` passed for both changed Ard files.
+- `go test ./...` and all 20 PTY entry points in `AGENTS.md` passed.
+- `python3 benchmarks/run.py --iterations 1 --warmups 0` completed all cases;
+  this is a smoke check, not evidence of performance parity.
+
+These regressions address the review's concrete failures. They do not establish
+full percentage/intrinsic conformance, fractional measurement reconciliation,
+absolute auto-margin distribution, or the other deferred ADR features below.
+Visual validation also inspected `oracle-layout-fixes.png`, a visualization of
+actual headless Frame cells for scrolling and auto-margin alignment. Its outlines
+mark frame extents; they are not application borders or native terminal styling.
+
 ## Initial Ard replacement: current evidence and remaining work
 
 `core/node.ard` now computes layout through `core/layout.ard`, not the Go Yoga

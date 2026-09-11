@@ -81,7 +81,7 @@ def compare_numeric(baseline, scratch):
     ], cwd=ROOT, check=True)
     reference = subprocess.check_output([str(cpp)], text=True).splitlines()
     candidate = subprocess.check_output([str(ard)], text=True).splitlines()
-    if len(reference) != 169 + 12 + 5184 + 5 + 2016 + 60 + 1728 + 720 or candidate != reference:
+    if len(reference) != 169 + 12 + 5184 + 5 + 2016 + 60 + 1728 + 720 + 32 + 32 or candidate != reference:
         difference = "\n".join(difflib.unified_diff(reference, candidate, fromfile="Yoga", tofile="Ard"))
         raise AssertionError(f"Numeric reference mismatch:\n{difference}")
     return {
@@ -96,6 +96,7 @@ def compare_numeric(baseline, scratch):
                 "core/layout/numeric.ard", "core/layout/cache.ard", "test/layout_numeric_reference.ard",
                 "test/layout_numeric_reference.cpp", "core/layout/measure.ard", "core/layout.ard",
                 "core/layout/length.ard", "core/layout/basis.ard",
+                "core/layout/flex.ard",
             )
         },
         "pairs": 169,
@@ -106,6 +107,8 @@ def compare_numeric(baseline, scratch):
         "length_cases": 60,
         "processed_dimension_cases": 1728,
         "basis_cases": 720,
+        "basis_fallback_visits": 32,
+        "flex_cases": 32,
         "observations": candidate,
     }
 
@@ -154,6 +157,8 @@ def main():
     print(f"PASS: {report['numeric']['axis_cases']} resolved-axis constraints match pinned Yoga modes and Float32 results")
     print(f"PASS: {report['numeric']['length_cases']} length resolutions and {report['numeric']['processed_dimension_cases']} processed dimensions match pinned Yoga")
     print(f"PASS: {report['numeric']['basis_cases']} direct flex-basis selections match pinned Yoga; measurement fallback results excluded")
+    print(f"PASS: {report['numeric']['basis_fallback_visits']} leaf basis fallback visits match pinned Yoga callbacks, constraints, dimensions and basis")
+    print(f"PASS: {report['numeric']['flex_cases']} two-pass distributions match pinned Yoga sizes and intermediate/final totals")
 
 
 if __name__ == "__main__":

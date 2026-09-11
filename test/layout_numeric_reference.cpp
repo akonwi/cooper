@@ -16,6 +16,8 @@ static void leaf_reference();
 static void axis_reference();
 static void length_reference();
 static void basis_reference();
+static void fallback_reference();
+static void flex_reference();
 
 static void emit(float value) {
   if (value != value) {
@@ -52,6 +54,98 @@ int main() {
   axis_reference();
   length_reference();
   basis_reference();
+  fallback_reference();
+  flex_reference();
+}
+
+static void flex_reference() {
+  using namespace facebook::yoga;
+  auto config = YGConfigNew();
+  YGConfigSetUseWebDefaults(config, true);
+  for (bool minimum : {false, true}) for (bool maximum : {false, true})
+  for (bool fractional : {false, true}) for (float space : {-20.0f, 0.0f, 6.0f, 40.0f}) {
+    auto parent = YGNodeNewWithConfig(config);
+    YGNodeStyleSetFlexDirection(parent, YGFlexDirectionRow);
+    YGNodeStyleSetAlignItems(parent, YGAlignFlexStart);
+    const float bases[] = {8, 13, 5}, mins[] = {6, 4, 0}, maxes[] = {10, 14, 7};
+    const float grows[] = {0.25f, 1, 3}, shrinks[] = {1, 2, 0.5f};
+    for (int i = 0; i < 3; ++i) {
+      auto child = YGNodeNewWithConfig(config);
+      YGNodeStyleSetHeight(child, 1);
+      YGNodeStyleSetFlexGrow(child, fractional ? grows[i] : 1);
+      YGNodeStyleSetFlexShrink(child, fractional ? shrinks[i] : 1);
+      if (minimum) YGNodeStyleSetMinWidth(child, mins[i]);
+      if (maximum) YGNodeStyleSetMaxWidth(child, maxes[i]);
+      YGNodeInsertChild(parent, child, i);
+      resolveRef(child)->processDimensions();
+      resolveRef(child)->setLayoutComputedFlexBasis(FloatOptional(bases[i]));
+    }
+    auto iterator = resolveRef(parent)->getLayoutChildren().begin();
+    auto line = calculateFlexLine(resolveRef(parent), Direction::LTR, 100, 100, 100, 100, iterator, 0);
+    line.layout.remainingFreeSpace = space;
+    distributeFreeSpaceFirstPass(line, Direction::LTR, FlexDirection::Row, 100, 100, 100, 100);
+    std::printf("flex");
+    emit(line.sizeConsumed);
+    emit(line.layout.remainingFreeSpace);
+    emit(line.layout.totalFlexGrowFactors);
+    emit(line.layout.totalFlexShrinkScaledFactors);
+    LayoutData data{};
+    const float delta = distributeFreeSpaceSecondPass(line, resolveRef(parent), FlexDirection::Row,
+        FlexDirection::Column, Direction::LTR, 100, 100, 100, 10, 100, 10, false,
+        SizingMode::StretchFit, false, data, 0, 1);
+    for (int i = 0; i < 3; ++i)
+      emit(resolveRef(YGNodeGetChild(parent, i))->getLayout().measuredDimension(Dimension::Width));
+    emit(delta);
+    emit(space - delta);
+    std::printf("\n");
+    YGNodeFreeRecursive(parent);
+  }
+  YGConfigFree(config);
+}
+
+static float fallback_width, fallback_height;
+static YGMeasureMode fallback_wm, fallback_hm;
+static int fallback_calls;
+static YGSize fallback_measure(YGNodeConstRef, float w, YGMeasureMode wm, float h, YGMeasureMode hm) {
+  ++fallback_calls;
+  fallback_width = w; fallback_height = h; fallback_wm = wm; fallback_hm = hm;
+  return {wm == YGMeasureModeUndefined ? 31.0f : std::min(31.0f, w),
+          hm == YGMeasureModeUndefined ? 17.0f : std::min(17.0f, h)};
+}
+
+static void fallback_reference() {
+  using namespace facebook::yoga;
+  auto config = YGConfigNew();
+  YGConfigSetUseWebDefaults(config, true);
+  for (bool row : {true, false}) for (bool scroll : {false, true})
+  for (bool stretch : {false, true}) for (bool bounded : {false, true}) {
+    auto parent = YGNodeNewWithConfig(config);
+    auto child = YGNodeNewWithConfig(config);
+    YGNodeStyleSetFlexDirection(parent, row ? YGFlexDirectionRow : YGFlexDirectionColumn);
+    YGNodeStyleSetOverflow(parent, scroll ? YGOverflowScroll : YGOverflowVisible);
+    YGNodeStyleSetAlignItems(parent, stretch ? YGAlignStretch : YGAlignFlexStart);
+    YGNodeStyleSetMargin(child, YGEdgeLeft, 3);
+    YGNodeStyleSetMargin(child, YGEdgeTop, 2);
+    YGNodeStyleSetPadding(child, YGEdgeLeft, 4);
+    YGNodeStyleSetPadding(child, YGEdgeTop, 1);
+    if (bounded) { YGNodeStyleSetMaxWidth(child, 10); YGNodeStyleSetMaxHeight(child, 6); }
+    YGNodeSetMeasureFunc(child, fallback_measure);
+    resolveRef(child)->processDimensions();
+    fallback_calls = 0;
+    LayoutData data{};
+    for (int visit = 0; visit < 2; ++visit) {
+      computeFlexBasisForChild(resolveRef(parent), resolveRef(child), 20, SizingMode::StretchFit,
+          12, 40, 30, SizingMode::StretchFit, Direction::LTR, data, 0, 1);
+      std::printf("fallback %d %d %d", fallback_calls, fallback_wm, fallback_hm);
+      emit(fallback_width); emit(fallback_height);
+      emit(resolveRef(child)->getLayout().measuredDimension(Dimension::Width));
+      emit(resolveRef(child)->getLayout().measuredDimension(Dimension::Height));
+      emit(resolveRef(child)->getLayout().computedFlexBasis.unwrap());
+      std::printf(" %d\n", resolveRef(child)->getLayout().computedFlexBasisGeneration);
+    }
+    YGNodeFree(child); YGNodeFree(parent);
+  }
+  YGConfigFree(config);
 }
 
 static int basis_calls;

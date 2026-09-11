@@ -1217,6 +1217,25 @@ impl Node {
     visit or cached.is_some() == false
   }
   
+  // computeFlexBasisForChild's measurement branch, for leaf children only.
+  // Caller constructs both axes with basis::measurement_axis. Containers will
+  // use the general recursive visitor once translated, not calculate_leaf.
+  fn mut measure_leaf_basis(
+    width: measurement::Axis,
+    height: measurement::Axis,
+    margin_row: Float32,
+    margin_column: Float32,
+    row: Bool,
+    generation: Int,
+  ) {
+    self.calculate_leaf(width, height, margin_row, margin_column, generation, false)
+    self.cache_state.computed_flex_basis = match row {
+      true => numeric::max_or_defined(self.measured_width, width.padding_border),
+      false => numeric::max_or_defined(self.measured_height, height.padding_border),
+    }
+    self.cache_state.computed_flex_basis_generation = generation
+  }
+  
   fn mut apply(value: style::Style, border: Int) {
     if self.border != border or not same_layout_style(self.value, value) {
       self.mark_dirty()

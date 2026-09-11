@@ -1,0 +1,130 @@
+use ard/testing
+
+use cooper/core/layout/flex
+use cooper/core/layout/numeric
+
+fn f(value: Float64) Float32 {
+  Float32::from(value)
+}
+
+fn item(basis: Float32, minimum: Float32, maximum: Float32, grow: Float32, shrink: Float32) flex::Item {
+  flex::Item{
+    basis: basis,
+    minimum: minimum,
+    maximum: maximum,
+    padding_border: Float32::from(0.0),
+    margin: Float32::from(0.0),
+    flex_grow: grow,
+    flex_shrink: shrink,
+    flexible: true,
+    auto_margin_start: false,
+    auto_margin_end: false,
+  }
+}
+
+test fn collection_reports_boundaries_gaps_factors_and_auto_margins() Void!Str {
+  let undef = numeric::undefined()
+  let first = mut item(f(4.0), undef, undef, f(0.25), f(1.0))
+  first.margin = Float32::from(1.0)
+  first.auto_margin_start = true
+  let second = mut item(f(8.0), undef, f(5.0), f(0.25), f(2.0))
+  second.auto_margin_end = true
+  let third = mut item(f(2.0), undef, undef, f(0.0), f(0.0))
+  third.auto_margin_start = true
+  let line = flex::collect_line([first.@, second.@, third.@], 0, f(12.0), f(1.0), true)
+  try testing::assert(
+    line.items.size() == 2 and line.next_index == 2,
+    "wrap boundary retains the overflowing item",
+  )
+  try testing::assert(
+    line.size_consumed == 11.0 and line.auto_margin_count == 2,
+    "Only accepted items contribute auto margins; the rejected next-line item is excluded",
+  )
+  let next = flex::collect_line(
+    [first.@, second.@, third.@],
+    line.next_index,
+    f(12.0),
+    f(1.0),
+    true,
+  )
+  try testing::assert(
+    next.auto_margin_count == 1 and next.size_consumed == 2.0,
+    "The next line counts its margin once without a leading gap",
+  )
+  testing::assert(
+    line.total_flex_grow_factors == 1.0 and line.total_flex_shrink_scaled_factors == -20.0,
+    "grow floor and raw-basis shrink scaling match Yoga",
+  )
+}
+
+test fn growth_freezes_max_constrained_item_before_asymmetric_distribution() Void!Str {
+  let undef = numeric::undefined()
+  let line = flex::collect_line(
+    [item(f(20.0), undef, f(25.0), f(1.0), f(1.0)), item(f(20.0), undef, undef, f(3.0), f(1.0))],
+    0,
+    f(100.0),
+    f(0.0),
+    false,
+  )
+  let result = flex::distribute(line, f(40.0))
+  mut sizes_ok = true
+  for size, index in result.sizes {
+    let current_ok = match index {
+      0 => size == 25.0,
+      _ => size == 55.0,
+    }
+    sizes_ok = sizes_ok and current_ok
+  }
+  try testing::assert(
+    sizes_ok and result.sizes.size() == 2,
+    "max-frozen grow item is excluded from second-pass factors",
+  )
+  testing::assert(
+    result.distributed_free_space == 40.0 and result.remaining_free_space == 0.0,
+    "line totals reflect allocated main sizes",
+  )
+}
+
+test fn shrinking_uses_scaled_basis_and_freezes_minimum_asymmetrically() Void!Str {
+  let undef = numeric::undefined()
+  let line = flex::collect_line(
+    [item(f(40.0), f(35.0), undef, f(0.0), f(1.0)), item(f(20.0), undef, undef, f(0.0), f(2.0))],
+    0,
+    f(60.0),
+    f(0.0),
+    false,
+  )
+  let result = flex::distribute(line, f(-20.0))
+  mut sizes_ok = true
+  for size, index in result.sizes {
+    let current_ok = match index {
+      0 => size == 35.0,
+      _ => size == 5.0,
+    }
+    sizes_ok = sizes_ok and current_ok
+  }
+  try testing::assert(
+    sizes_ok and result.sizes.size() == 2,
+    "minimum freeze leaves shrink space for the equal scaled-factor peer",
+  )
+  testing::assert(result.remaining_free_space == 0.0, "all negative free space is consumed")
+}
+
+test fn bound_axis_preserves_yoga_maximum_first_and_padding_floor_rules() Void!Str {
+  let odd = mut item(f(10.0), f(8.0), f(5.0), f(1.0), f(1.0))
+  odd.padding_border = Float32::from(7.0)
+  let line = flex::collect_line([odd.@], 0, f(20.0), f(0.0), false)
+  try testing::assert(
+    line.size_consumed == 5.0,
+    "contradictory bounds choose maximum during line collection",
+  )
+  let result = flex::distribute(line, f(1.0))
+  mut size_ok = false
+  for size in result.sizes {
+    size_ok = size == 8.0
+  }
+  testing::assert(
+    size_ok and result.sizes.size() == 1,
+    "maximum-first is evaluated on each pass; the redistributed value triggers minimum",
+  )
+}

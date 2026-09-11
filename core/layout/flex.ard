@@ -1,0 +1,207 @@
+use cooper/core/layout/numeric
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// Licensed under the MIT license in LICENSE.yoga in this directory.
+// Translated from Yoga 8ba025e algorithm/FlexLine.cpp and the main-axis
+// arithmetic in algorithm/CalculateLayout.cpp's two free-space passes.
+//
+// Inputs are resolved main-axis values. This unit deliberately excludes tree
+// traversal, physical positioning, callbacks, and cross-axis measurement.
+
+struct Item {
+  basis: Float32,
+  minimum: Float32,
+  maximum: Float32,
+  padding_border: Float32,
+  margin: Float32,
+  flex_grow: Float32,
+  flex_shrink: Float32,
+  flexible: Bool,
+  auto_margin_start: Bool,
+  auto_margin_end: Bool,
+}
+
+struct Line {
+  items: [Item],
+  start_index: Int,
+  next_index: Int,
+  size_consumed: Float32,
+  auto_margin_count: Int,
+  total_flex_grow_factors: Float32,
+  total_flex_shrink_scaled_factors: Float32,
+}
+
+struct FirstPass {
+  remaining_free_space: Float32,
+  total_flex_grow_factors: Float32,
+  total_flex_shrink_scaled_factors: Float32,
+}
+
+struct Distribution {
+  sizes: [Float32],
+  // Yoga restores this from the original free space minus second-pass delta.
+  remaining_free_space: Float32,
+  distributed_free_space: Float32,
+  total_flex_grow_factors: Float32,
+  total_flex_shrink_scaled_factors: Float32,
+}
+
+// Yoga checks maximum before minimum. In particular, contradictory resolved
+// bounds choose maximum when the value exceeds it; this is not normalized.
+fn bound_min_max(item: Item, value: Float32) Float32 {
+  if numeric::is_defined(item.maximum) and item.maximum >= 0.0 and value > item.maximum {
+    item.maximum
+  } else if numeric::is_defined(item.minimum) and item.minimum >= 0.0 and value < item.minimum {
+    item.minimum
+  } else {
+    value
+  }
+}
+
+fn bound_axis(item: Item, value: Float32) Float32 {
+  numeric::max_or_defined(bound_min_max(item, value), item.padding_border)
+}
+
+fn collect_line(
+  items: [Item],
+  start_index: Int,
+  available_inner_main: Float32,
+  gap: Float32,
+  wrap: Bool,
+) Line {
+  let selected = mut List::new<Item>()
+  mut consumed = Float32::from(0.0)
+  mut constrained_consumed = Float32::from(0.0)
+  mut grow = Float32::from(0.0)
+  mut shrink = Float32::from(0.0)
+  mut auto_margins = 0
+  mut index = start_index
+  mut scanning = true
+  for item, current_index in items {
+    if scanning and current_index >= start_index {
+      let leading_gap = match selected.size() == 0 {
+        true => Float32::from(0.0),
+        false => gap,
+      }
+      let basis = bound_min_max(item, item.basis)
+      let outer = basis + item.margin + leading_gap
+      if wrap and selected.size() > 0 and constrained_consumed + basis + item.margin + leading_gap > available_inner_main {
+        scanning = false
+      } else {
+        // Accepted Cooper adaptation: only this line's items contribute auto
+        // margins. Yoga counts the rejected next-line item before this branch.
+        if item.auto_margin_start {
+          auto_margins =+ 1
+        }
+        if item.auto_margin_end {
+          auto_margins =+ 1
+        }
+        selected.push(item)
+        constrained_consumed = constrained_consumed + outer
+        consumed = consumed + outer
+        if item.flexible {
+          grow = grow + item.flex_grow
+          // resolveFlexShrink is positive; Yoga stores its negative scaled value.
+          shrink = shrink + (0.0 - item.flex_shrink) * item.basis
+        }
+        index = current_index + 1
+      }
+    }
+  }
+  // Preserve Yoga's factor floor, including its perhaps surprising effect on
+  // fractional factors. Negative shrink totals are not floored.
+  if grow > 0.0 and grow < 1.0 {
+    grow = Float32::from(1.0)
+  }
+  if shrink > 0.0 and shrink < 1.0 {
+    shrink = Float32::from(1.0)
+  }
+  Line{
+    items: selected.@,
+    start_index: start_index,
+    next_index: index,
+    size_consumed: consumed,
+    auto_margin_count: auto_margins,
+    total_flex_grow_factors: grow,
+    total_flex_shrink_scaled_factors: shrink,
+  }
+}
+
+fn distribute_first_pass(line: Line, remaining_free_space: Float32) FirstPass {
+  mut remaining = remaining_free_space
+  mut total_grow = line.total_flex_grow_factors
+  mut total_shrink = line.total_flex_shrink_scaled_factors
+  mut delta = Float32::from(0.0)
+  for item in line.items {
+    let basis = bound_min_max(item, item.basis)
+    if remaining < 0.0 {
+      let factor = (0.0 - item.flex_shrink) * basis
+      if numeric::is_defined(factor) and factor != 0.0 {
+        let base = basis + remaining / total_shrink * factor
+        let bounded = bound_axis(item, base)
+        if numeric::is_defined(base) and numeric::is_defined(bounded) and base != bounded {
+          delta = delta + (bounded - basis)
+          // Yoga removes the factor formed from the raw (not bounded) basis.
+          total_shrink = total_shrink - (0.0 - item.flex_shrink) * item.basis
+        }
+      }
+    } else if numeric::is_defined(remaining) and remaining > 0.0 {
+      let factor = item.flex_grow
+      if numeric::is_defined(factor) and factor != 0.0 {
+        let base = basis + remaining / total_grow * factor
+        let bounded = bound_axis(item, base)
+        if numeric::is_defined(base) and numeric::is_defined(bounded) and base != bounded {
+          delta = delta + (bounded - basis)
+          total_grow = total_grow - factor
+        }
+      }
+    }
+  }
+  remaining = remaining - delta
+  FirstPass{
+    remaining_free_space: remaining,
+    total_flex_grow_factors: total_grow,
+    total_flex_shrink_scaled_factors: total_shrink,
+  }
+}
+
+fn distribute_second_pass(line: Line, first: FirstPass, original_free_space: Float32) Distribution {
+  let sizes = mut List::new<Float32>()
+  mut delta = Float32::from(0.0)
+  for item in line.items {
+    let basis = bound_min_max(item, item.basis)
+    mut updated = basis
+    if numeric::is_defined(first.remaining_free_space) and first.remaining_free_space < 0.0 {
+      let factor = (0.0 - item.flex_shrink) * basis
+      if factor != 0.0 {
+        let child_size = match numeric::is_defined(first.total_flex_shrink_scaled_factors) and first.total_flex_shrink_scaled_factors == 0.0 {
+          true => basis + factor,
+          false => basis + first.remaining_free_space / first.total_flex_shrink_scaled_factors * factor,
+        }
+        updated = bound_axis(item, child_size)
+      }
+    } else if numeric::is_defined(first.remaining_free_space) and first.remaining_free_space > 0.0 {
+      let factor = item.flex_grow
+      if numeric::is_defined(factor) and factor != 0.0 {
+        updated = bound_axis(
+          item,
+          basis + first.remaining_free_space / first.total_flex_grow_factors * factor,
+        )
+      }
+    }
+    delta = delta + (updated - basis)
+    sizes.push(updated)
+  }
+  Distribution{
+    sizes: sizes.@,
+    remaining_free_space: original_free_space - delta,
+    distributed_free_space: delta,
+    total_flex_grow_factors: first.total_flex_grow_factors,
+    total_flex_shrink_scaled_factors: first.total_flex_shrink_scaled_factors,
+  }
+}
+
+fn distribute(line: Line, remaining_free_space: Float32) Distribution {
+  let first = distribute_first_pass(line, remaining_free_space)
+  distribute_second_pass(line, first, remaining_free_space)
+}

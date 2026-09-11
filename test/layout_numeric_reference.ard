@@ -1,6 +1,7 @@
 use cooper/core/layout
 use cooper/core/layout/basis
 use cooper/core/layout/cache
+use cooper/core/layout/flex
 use cooper/core/layout/length
 use cooper/core/layout/measure
 use cooper/core/layout/numeric
@@ -53,6 +54,171 @@ fn main() {
   axis_reference()
   length_reference()
   basis_reference()
+  fallback_reference()
+  flex_reference()
+}
+
+fn flex_reference() {
+  for minimum in [false, true] {
+    for maximum in [false, true] {
+      for fractional in [false, true] {
+        for space in [Float32::from(-20.0), Float32::from(0.0), Float32::from(6.0), Float32::from(40.0)] {
+          let items = mut List::new<flex::Item>()
+          for base, index in [Float32::from(8.0), Float32::from(13.0), Float32::from(5.0)] {
+            mut low = numeric::undefined()
+            mut high = numeric::undefined()
+            mut grow = Float32::from(1.0)
+            mut shrink = Float32::from(1.0)
+            if minimum {
+              low = match index {
+                0 => Float32::from(6.0),
+                1 => Float32::from(4.0),
+                _ => Float32::from(0.0),
+              }
+            }
+            if maximum {
+              high = match index {
+                0 => Float32::from(10.0),
+                1 => Float32::from(14.0),
+                _ => Float32::from(7.0),
+              }
+            }
+            if fractional {
+              grow = match index {
+                0 => Float32::from(0.25),
+                1 => Float32::from(1.0),
+                _ => Float32::from(3.0),
+              }
+              shrink = match index {
+                0 => Float32::from(1.0),
+                1 => Float32::from(2.0),
+                _ => Float32::from(0.5),
+              }
+            }
+            items.push(
+              flex::Item{
+                basis: base,
+                minimum: low,
+                maximum: high,
+                padding_border: Float32::from(0.0),
+                margin: Float32::from(0.0),
+                flex_grow: grow,
+                flex_shrink: shrink,
+                flexible: true,
+                auto_margin_start: false,
+                auto_margin_end: false,
+              },
+            )
+          }
+          let line = flex::collect_line(items.@, 0, Float32::from(100.0), Float32::from(0.0), false)
+          let first = flex::distribute_first_pass(line, space)
+          let result = flex::distribute_second_pass(line, first, space)
+          fmt::Print("flex")
+          emit(line.size_consumed)
+          emit(first.remaining_free_space)
+          emit(first.total_flex_grow_factors)
+          emit(first.total_flex_shrink_scaled_factors)
+          for size in result.sizes {
+            emit(size)
+          }
+          emit(result.distributed_free_space)
+          emit(result.remaining_free_space)
+          fmt::Println()
+        }
+      }
+    }
+  }
+}
+
+fn callback_number(mode: measure::Mode) Int {
+  match mode {
+    measure::Mode::undefined => 0,
+    measure::Mode::exactly => 1,
+    measure::Mode::at_most => 2,
+  }
+}
+
+fn fallback_reference() {
+  for row in [true, false] {
+    for scroll in [false, true] {
+      for stretch in [false, true] {
+        for bounded in [false, true] {
+          let child = layout::new()
+          let seen = mut measure::Input{
+            width: numeric::undefined(),
+            height: numeric::undefined(),
+            width_mode: measure::Mode::undefined,
+            height_mode: measure::Mode::undefined,
+          }
+          mut calls = 0
+          child.set_measure(fn(input: measure::Input) measure::Size {
+            calls =+ 1
+            seen.width = input.width
+            seen.height = input.height
+            seen.width_mode = input.width_mode
+            seen.height_mode = input.height_mode
+            measure::Size{
+              width: numeric::min_or_defined(Float32::from(31.0), input.width),
+              height: numeric::min_or_defined(Float32::from(17.0), input.height),
+            }
+          })
+          let w = measure::Axis{
+            available: Float32::from(20.0),
+            mode: cache::SizingMode::stretch_fit,
+            padding_border: Float32::from(4.0),
+            minimum: numeric::undefined(),
+            maximum: match bounded {
+              true => Float32::from(10.0),
+              false => numeric::undefined(),
+            },
+          }
+          let h = measure::Axis{
+            available: Float32::from(12.0),
+            mode: cache::SizingMode::stretch_fit,
+            padding_border: Float32::from(1.0),
+            minimum: numeric::undefined(),
+            maximum: match bounded {
+              true => Float32::from(6.0),
+              false => numeric::undefined(),
+            },
+          }
+          let width = basis::measurement_axis(
+            w,
+            style::auto(),
+            Float32::from(40.0),
+            Float32::from(3.0),
+            not row,
+            scroll,
+            stretch,
+          )
+          let height = basis::measurement_axis(
+            h,
+            style::auto(),
+            Float32::from(30.0),
+            Float32::from(2.0),
+            row,
+            scroll,
+            stretch,
+          )
+          for visit in [0, 1] {
+            child.measure_leaf_basis(width, height, Float32::from(3.0), Float32::from(2.0), row, 1)
+            fmt::Printf(
+              "fallback %d %d %d",
+              calls,
+              callback_number(seen.width_mode),
+              callback_number(seen.height_mode),
+            )
+            emit(seen.width)
+            emit(seen.height)
+            emit(child.measured_width)
+            emit(child.measured_height)
+            emit(child.cache_state.computed_flex_basis)
+            fmt::Printf(" %d\n", child.cache_state.computed_flex_basis_generation)
+          }
+        }
+      }
+    }
+  }
 }
 
 fn basis_reference() {

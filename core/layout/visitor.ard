@@ -1,0 +1,280 @@
+use cooper/core/layout
+use cooper/core/layout/cache
+use cooper/core/layout/children
+use cooper/core/layout/flex
+use cooper/core/layout/length
+use cooper/core/layout/measure
+use cooper/core/layout/numeric
+use cooper/ui/style
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// MIT license: LICENSE.yoga. Dimension-only translation of the flex-container
+// phases in Yoga 8ba025e algorithm/CalculateLayout.cpp. This recursively
+// measures descendants and commits border-box dimensions only when requested.
+// It intentionally does not assign positions, project pixels, place absolute
+// children, or adapt intrinsic keywords and percentage cycles.
+
+fn resolved_zero(value: style::Length, reference: Float32) Float32 {
+  let result = length::resolve(value, reference)
+  match numeric::is_defined(result) {
+    true => result,
+    false => Float32::from(0.0),
+  }
+}
+
+fn choose_float(condition: Bool, yes: Float32, no: Float32) Float32 {
+  match condition {
+    true => yes,
+    false => no,
+  }
+}
+
+fn choose_length(condition: Bool, yes: style::Length, no: style::Length) style::Length {
+  match condition {
+    true => yes,
+    false => no,
+  }
+}
+
+fn basis_visit(
+  child: mut layout::Node,
+  width: measure::Axis,
+  height: measure::Axis,
+  margin_row: Float32,
+  margin_column: Float32,
+  generation: Int,
+) {
+  visit(child, width, height, margin_row, margin_column, generation, false)
+}
+
+fn axis_item(child: mut layout::Node, row: Bool, owner_width: Float32, owner_height: Float32) flex::Item {
+  let value = child.value
+  let owner_main = choose_float(row, owner_width, owner_height)
+  let minimum = length::resolve(choose_length(row, value.min_width, value.min_height), owner_main)
+  let maximum = length::resolve(choose_length(row, value.max_width, value.max_height), owner_main)
+  let border = Float32::from(child.border * 2)
+  let padding = match row {
+    true => {
+      resolved_zero(value.padding.left, owner_width) + resolved_zero(value.padding.right, owner_width) + border
+    },
+    false => {
+      resolved_zero(value.padding.top, owner_width) + resolved_zero(value.padding.bottom, owner_width) + border
+    },
+  }
+  let start = choose_length(row, value.margin.left, value.margin.top)
+  let end = choose_length(row, value.margin.right, value.margin.bottom)
+  flex::Item{
+    basis: child.cache_state.computed_flex_basis,
+    minimum: minimum,
+    maximum: maximum,
+    padding_border: padding,
+    margin: resolved_zero(start, owner_width) + resolved_zero(end, owner_width),
+    flex_grow: value.flex_grow,
+    flex_shrink: value.flex_shrink,
+    flexible: value.flex_grow != 0.0 or value.flex_shrink != 0.0,
+    auto_margin_start: start.kind == style::LengthKind::auto,
+    auto_margin_end: end.kind == style::LengthKind::auto,
+  }
+}
+
+fn visit(
+  node: mut layout::Node,
+  width: measure::Axis,
+  height: measure::Axis,
+  margin_row: Float32,
+  margin_column: Float32,
+  generation: Int,
+  perform_layout: Bool,
+) Bool {
+  if node.children.size() == 0 {
+    node.calculate_leaf(width, height, margin_row, margin_column, generation, perform_layout)
+  } else {
+    let request = mut cache::Measurement{
+      available_width: width.available,
+      available_height: height.available,
+      width_mode: width.mode,
+      height_mode: height.mode,
+      computed_width: numeric::undefined(),
+      computed_height: numeric::undefined(),
+    }
+    let required = node.cache_state.prepare(node.dirty, generation, 0, cache::Direction::ltr)
+    let cached = node.cache_state.find(
+      request.@,
+      false,
+      perform_layout,
+      margin_row,
+      margin_column,
+      true,
+    )
+    if (not required) and cached.is_some() {
+      let result = cached.expect("cached container dimensions")
+      node.measured_width = result.computed_width
+      node.measured_height = result.computed_height
+    } else {
+      let own_width = width.without_margin(margin_row)
+      let own_height = height.without_margin(margin_column)
+      let inner_width = own_width.available_inner_dimension()
+      let inner_height = own_height.available_inner_dimension()
+      let prepared = children::prepare(
+        node,
+        inner_width,
+        inner_height,
+        own_width.mode,
+        own_height.mode,
+        generation,
+        basis_visit,
+      )
+      let row = node.value.flex_direction == style::FlexDirection::row or node.value.flex_direction == style::FlexDirection::row_reverse
+      mut available_main = choose_float(row, inner_width, inner_height)
+      let available_cross = choose_float(row, inner_height, inner_width)
+      mut main_mode = match row {
+        true => own_width.mode,
+        false => own_height.mode,
+      }
+      let cross_mode = match row {
+        true => own_height.mode,
+        false => own_width.mode,
+      }
+      let gap_reference = choose_float(row, inner_width, inner_height)
+      let gap = resolved_zero(node.value.gap, gap_reference)
+      let cross_gap = resolved_zero(node.value.gap, available_cross)
+      let wrap = node.value.flex_wrap != style::FlexWrap::no_wrap
+      mut total_main = prepared.outer_basis
+      if prepared.children.size() > 1 {
+        total_main = total_main + gap * Float32::from(prepared.children.size() - 1)
+      }
+      let main_overflows = main_mode != cache::SizingMode::max_content and total_main > available_main
+      if wrap and main_overflows and main_mode == cache::SizingMode::fit_content {
+        main_mode = cache::SizingMode::stretch_fit
+      }
+      let items = mut List::new<flex::Item>()
+      for child in prepared.children {
+        items.push(axis_item(child, row, inner_width, inner_height))
+      }
+      mut index = 0
+      mut natural_main = Float32::from(0.0)
+      mut natural_cross = Float32::from(0.0)
+      mut line_count = 0
+      while index < prepared.children.size() {
+        let line = flex::collect_line(items.@, index, available_main, gap, wrap)
+        // CalculateLayout.cpp step5: non-exact lines are content-based unless
+        // a resolved minimum or maximum forces allocation against that bound.
+        mut size_based_on_content = false
+        if main_mode != cache::SizingMode::stretch_fit {
+          let minimum = choose_float(
+            row,
+            own_width.minimum - own_width.padding_border,
+            own_height.minimum - own_height.padding_border,
+          )
+          let maximum = choose_float(
+            row,
+            own_width.maximum - own_width.padding_border,
+            own_height.maximum - own_height.padding_border,
+          )
+          if numeric::is_defined(minimum) and line.size_consumed < minimum {
+            available_main = minimum
+          } else if numeric::is_defined(maximum) and line.size_consumed > maximum {
+            available_main = maximum
+          } else {
+            if line.total_flex_grow_factors == 0.0 or node.owner.is_some() == false or node.value.flex_grow == 0.0 {
+              available_main = line.size_consumed
+            }
+            size_based_on_content = true
+          }
+        }
+        mut remaining = Float32::from(0.0)
+        if size_based_on_content == false and numeric::is_defined(available_main) {
+          remaining = available_main - line.size_consumed
+        } else if line.size_consumed < 0.0 {
+          remaining = -line.size_consumed
+        }
+        let distribution = flex::distribute(line, remaining)
+        mut line_main = Float32::from(0.0)
+        mut line_cross = Float32::from(0.0)
+        mut local = 0
+        for allocated in distribution.sizes {
+          let child = prepared.children.at(index + local).expect("line child")
+          let value = child.value
+          let mr = resolved_zero(value.margin.left, inner_width) + resolved_zero(value.margin.right, inner_width)
+          let mc = resolved_zero(value.margin.top, inner_width) + resolved_zero(value.margin.bottom, inner_width)
+          let cross_margin = choose_float(row, mc, mr)
+          let processed_cross = length::processed_dimension(
+            choose_length(row, value.height, value.width),
+            choose_length(row, value.min_height, value.min_width),
+            choose_length(row, value.max_height, value.max_width),
+          )
+          let resolved_cross = length::resolve(processed_cross, available_cross)
+          let definite_cross = numeric::is_defined(resolved_cross) and resolved_cross >= 0.0
+          let alignment = match value.align_self == style::Align::auto {
+            true => node.value.align_items,
+            false => value.align_self,
+          }
+          let cross_start = choose_length(row, value.margin.top, value.margin.left)
+          let cross_end = choose_length(row, value.margin.bottom, value.margin.right)
+          let cross_margins_auto = cross_start.kind == style::LengthKind::auto or cross_end.kind == style::LengthKind::auto
+          let wrapped_overflow = wrap and main_overflows
+          let stretch_cross = numeric::is_defined(available_cross) and cross_mode == cache::SizingMode::stretch_fit and wrapped_overflow == false and alignment == style::Align::stretch and cross_margins_auto == false
+          let child_cross = measure::Axis{
+            available: choose_float(definite_cross, resolved_cross + cross_margin, available_cross),
+            mode: match definite_cross {
+              true => cache::SizingMode::stretch_fit,
+              false => {
+                match stretch_cross {
+                  true => cache::SizingMode::stretch_fit,
+                  false => {
+                    match numeric::is_defined(available_cross) {
+                      true => cache::SizingMode::fit_content,
+                      false => cache::SizingMode::max_content,
+                    }
+                  },
+                }
+              },
+            },
+            padding_border: match row {
+              true => axis_item(child, false, inner_width, inner_height).padding_border,
+              false => axis_item(child, true, inner_width, inner_height).padding_border,
+            },
+            minimum: length::resolve(choose_length(row, value.min_height, value.min_width), available_cross),
+            maximum: length::resolve(choose_length(row, value.max_height, value.max_width), available_cross),
+          }
+          let child_main = measure::Axis{
+            available: allocated + choose_float(row, mr, mc),
+            mode: cache::SizingMode::stretch_fit,
+            padding_border: axis_item(child, row, inner_width, inner_height).padding_border,
+            minimum: length::resolve(choose_length(row, value.min_width, value.min_height), available_main),
+            maximum: length::resolve(choose_length(row, value.max_width, value.max_height), available_main),
+          }
+          match row {
+            true => visit(child, child_main, child_cross, mr, mc, generation, perform_layout),
+            false => visit(child, child_cross, child_main, mr, mc, generation, perform_layout),
+          }
+          let measured_cross = choose_float(row, child.measured_height, child.measured_width)
+          line_cross = numeric::max_or_defined(line_cross, measured_cross + cross_margin)
+          line_main = line_main + allocated + choose_float(local > 0, gap, Float32::from(0.0)) + choose_float(row, mr, mc)
+          local =+ 1
+        }
+        natural_main = numeric::max_or_defined(natural_main, line_main)
+        natural_cross = natural_cross + line_cross + choose_float(line_count > 0, cross_gap, Float32::from(0.0))
+        line_count =+ 1
+        index = line.next_index
+      }
+      let content_width = choose_float(row, natural_main, natural_cross)
+      let content_height = choose_float(row, natural_cross, natural_main)
+      node.measured_width = own_width.measured_size(content_width)
+      node.measured_height = own_height.measured_size(content_height)
+      if cached.is_some() == false {
+        request.computed_width = node.measured_width
+        request.computed_height = node.measured_height
+        node.cache_state.store(request.@, perform_layout)
+      }
+    }
+    if perform_layout {
+      node.width = numbers::Widen(node.measured_width)
+      node.height = numbers::Widen(node.measured_height)
+      node.dirty = false
+    }
+    node.cache_state.complete(generation, 0, cache::Direction::ltr)
+    required or cached.is_some() == false
+  }
+}

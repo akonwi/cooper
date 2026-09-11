@@ -1,0 +1,186 @@
+use ard/testing
+
+use cooper/core/layout
+use cooper/core/layout/cache
+use cooper/core/layout/children
+use cooper/core/layout/measure
+use cooper/ui/style
+
+fn leaf_visit(
+  child: mut layout::Node,
+  width: measure::Axis,
+  height: measure::Axis,
+  margin_row: Float32,
+  margin_column: Float32,
+  generation: Int,
+) {
+  child.measure_leaf_basis(width, height, margin_row, margin_column, true, generation)
+}
+
+test fn children_prepare_flattens_and_resolves_owner_width_spacing() Void!Str {
+  let parent = layout::new()
+  parent.apply(style::new(flex_direction: style::FlexDirection::row), 0)
+  let contents = layout::new()
+  contents.apply(style::new(display: style::Display::contents), 0)
+  let child = layout::new()
+  child.apply(
+    style::new(
+      width: style::cells(10),
+      margin: style::Edges{
+        left: style::percent(10.0),
+        right: style::percent(5.0),
+        top: style::percent(20.0),
+        bottom: style::percent(5.0),
+      },
+    ),
+    0,
+  )
+  contents.insert(child, 0)
+  parent.insert(contents, 0)
+  let absolute = layout::new()
+  absolute.apply(style::new(position: style::Position::absolute), 0)
+  parent.insert(absolute, 1)
+  let hidden = layout::new()
+  hidden.apply(style::new(display: style::Display::none), 0)
+  hidden.width = 99.0
+  hidden.measured_width = 99.0
+  parent.insert(hidden, 2)
+  let result = children::prepare(
+    parent,
+    Float32::from(100.0),
+    Float32::from(40.0),
+    cache::SizingMode::fit_content,
+    cache::SizingMode::fit_content,
+    7,
+    leaf_visit,
+  )
+  try testing::assert(
+    result.children.size() == 1 and result.children.at(0).expect("flow child") == child,
+    "Contents flatten in retained order; absolute and none are out of flow",
+  )
+  try testing::assert(result.outer_basis == 25.0, "Row basis10 plus owner-width percentage margins15")
+  testing::assert(
+    contents.width == 0.0 and hidden.width == 0.0 and hidden.measured_width == 0.0 and hidden.cache_state.computed_flex_basis != hidden.cache_state.computed_flex_basis,
+    "Contents geometry and display-none geometry/cache are zeroed recursively",
+  )
+}
+
+test fn children_prepare_single_flex_bypasses_but_two_flex_measure() Void!Str {
+  let parent = layout::new()
+  parent.apply(style::new(flex_direction: style::FlexDirection::column), 0)
+  let first = layout::new()
+  first.apply(style::new(flex_grow: 1.0, flex_shrink: 1.0), 0)
+  parent.insert(first, 0)
+  mut calls = 0
+  let bypassed = children::prepare(
+    parent,
+    Float32::from(80.0),
+    Float32::from(30.0),
+    cache::SizingMode::stretch_fit,
+    cache::SizingMode::stretch_fit,
+    1,
+    fn(
+      child: mut layout::Node,
+      width: measure::Axis,
+      height: measure::Axis,
+      mr: Float32,
+      mc: Float32,
+      generation: Int,
+    ) {
+      calls =+ 1
+      child.measure_leaf_basis(width, height, mr, mc, false, generation)
+    },
+  )
+  try testing::assert(
+    calls == 0 and bypassed.outer_basis == 0.0 and first.cache_state.computed_flex_basis_generation == 1,
+    "Exact main size and one grow+shrink child pins zero basis",
+  )
+  let second = layout::new()
+  second.apply(style::new(flex_grow: 1.0, flex_shrink: 1.0), 0)
+  parent.insert(second, 1)
+  let measured = children::prepare(
+    parent,
+    Float32::from(80.0),
+    Float32::from(30.0),
+    cache::SizingMode::stretch_fit,
+    cache::SizingMode::stretch_fit,
+    2,
+    fn(
+      child: mut layout::Node,
+      width: measure::Axis,
+      height: measure::Axis,
+      mr: Float32,
+      mc: Float32,
+      generation: Int,
+    ) {
+      calls =+ 1
+      if width.available != 80.0 or width.mode != cache::SizingMode::stretch_fit or height.available != 30.0 or height.mode != cache::SizingMode::fit_content {
+        panic("Column cross stretch must use width80 and main fit constraint30")
+      }
+      child.measure_leaf_basis(width, height, mr, mc, false, generation)
+    },
+  )
+  testing::assert(
+    calls == 2 and measured.children.size() == 2 and first.cache_state.computed_flex_basis_generation == 2 and second.cache_state.computed_flex_basis_generation == 2,
+    "Two flexible children invoke measurement and helper commits generations",
+  )
+}
+
+test fn children_prepare_uses_processed_cross_dimension_and_width_based_vertical_spacing() Void!Str {
+  let parent = layout::new()
+  parent.apply(
+    style::new(flex_direction: style::FlexDirection::column, align_items: style::Align::start),
+    0,
+  )
+  let child = layout::new()
+  child.apply(
+    style::new(
+      min_width: style::cells(10),
+      max_width: style::cells(10),
+      padding: style::Edges{
+        left: style::cells(0),
+        right: style::cells(0),
+        top: style::percent(25.0),
+        bottom: style::cells(0),
+      },
+      margin: style::Edges{
+        left: style::cells(0),
+        right: style::cells(0),
+        top: style::percent(10.0),
+        bottom: style::cells(0),
+      },
+    ),
+    0,
+  )
+  parent.insert(child, 0)
+  mut calls = 0
+  let result = children::prepare(
+    parent,
+    Float32::from(80.0),
+    Float32::from(30.0),
+    cache::SizingMode::fit_content,
+    cache::SizingMode::fit_content,
+    3,
+    fn(
+      child: mut layout::Node,
+      w: measure::Axis,
+      h: measure::Axis,
+      mr: Float32,
+      mc: Float32,
+      generation: Int,
+    ) {
+      calls =+ 1
+      if w.available != 10.0 or w.mode != cache::SizingMode::stretch_fit or h.padding_border != 20.0 or mc != 8.0 {
+        panic(
+          "Equal width bounds must yield exact10; vertical percentages resolve against width80, not height30",
+        )
+      }
+      child.measured_width = 10.0
+      child.measured_height = 23.0
+    },
+  )
+  testing::assert(
+    calls == 1 and result.outer_basis == 31.0 and child.cache_state.computed_flex_basis == 23.0,
+    "Column total uses measured23 plus margin8; padding is already in border-box measurement",
+  )
+}

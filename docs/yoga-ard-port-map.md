@@ -435,3 +435,135 @@ three new/changed Ard files. All earlier differential cases pass.
 Next is child measurement constraint construction (cross-axis stretch, scrolling,
 maximum constraints), invoking the translated visit and storing its measured
 main-axis basis. Container recursion and ADR-specific intrinsic policy remain.
+
+## Leaf child-basis measurement fallback stage
+
+`basis::measurement_axis` translates the fallback's constraint construction:
+definite dimensions include margins; otherwise finite parent space supplies a
+FitContent limit except along a scrolling main axis. Exact cross-axis stretch
+then applies, followed by maximum constraints. Cooper exposes no aspect-ratio
+style, so those upstream branches are not included. Inputs are processed lengths,
+resolved bounds/insets and resolved alignment, not arbitrary raw Style values.
+
+`Node.measure_leaf_basis` connects those constraints to the translated cached
+leaf visit, stores the measured main-axis basis with its inset floor, and updates
+basis generation. It does not commit layout dimensions or clear dirty state.
+It remains a leaf-only path, outside the active application solver.
+
+Proof: **32** native/Ard visits (16 fixtures, each repeated in the same generation)
+match callback counts, callback content sizes and modes, measured width/height,
+basis and generation. Fixtures combine row/column, scroll/non-scroll,
+stretch/start, and max-bounded/unbounded with asymmetric margins and padding.
+Unlike the earlier direct-basis matrix, this explicitly compares fallback results.
+The deterministic integration test independently checks unbounded scroll width,
+exact cross content height13, measured border box35×17, basis35, and one callback
+over two visits. It also verifies a definite percentage cross dimension overrides
+stretch. The test initially caught resetting the working axis before preserving
+parent availability; the fixed implementation snapshots the parent constraint.
+
+`ard test test/layout_basis_test.ard`: **3 passed**; full `ard test`:
+**392 passed, 0 failed, 0 panicked**. Compiler and formatter checks pass for all
+four changed Ard files. All previous differential checks pass.
+
+Next is the general container visitor and flex-line collection, allowing child
+basis measurement to recurse into containers. Public intrinsic/cycle adaptations
+and final production integration still remain; Tess has not been removed.
+
+## Flex-line and two-pass kernel; accepted wrapped auto-margin adaptation
+
+`core/layout/flex.ard` now translates resolved-item line collection and the
+main-size arithmetic of Yoga's first/second distribution passes. It owns no
+tree traversal, callbacks or physical positioning yet. Four focused tests cover
+line breaks/gaps, factor sums, asymmetric maximum-constrained grow (25,55),
+minimum-constrained shrink (35,5), and raw contradictory-bound behavior.
+Parent review restored source ordering for auto-margin counting and Float32
+delta arithmetic. The differential runner now compares 32 line collection and
+two-pass distribution cases against native Yoga; all match. Container integration
+remains separate; kernel agreement alone does not prove whole-tree parity.
+
+**Accepted: auto margins are counted per line.**
+Pinned `FlexLine.cpp` increments `numberOfAutoMargins` before checking whether
+the candidate fits the line. The rejected first item of the next line therefore
+contributes its auto margins to the previous line's free-space division.
+Cooper deliberately counts them only after accepting the item onto the line.
+
+Reproduction: row width10, wrap enabled, align-content start, two children each
+width6/height1/shrink0 with left auto margin. The first child fills line1 and
+the second wraps to line2. Each line has four spare cells.
+
+| Implementation | First child | Second child |
+| --- | --- | --- |
+| Pinned native Yoga | x2, y0, width6 | x4, y1, width6 |
+| Current Cooper | x4, y0, width6 | x4, y1, width6 |
+
+The native first line divides four spare cells by two margins, despite only one
+item belonging to it. The user approved counting only margins belonging to
+accepted items on each line, preserving current Cooper behavior. This is an
+explicit additional adaptation to the pinned Yoga source, not an accidental
+translation difference. The kernel test checks both sides of the line break.
+
+Reproducible diagnostic fixtures (not public conformance expectations):
+`test/layout_auto_margin_reference.cpp` and
+`test/layout_auto_margin_reference.ard`. Run:
+
+```sh
+tess=$(go list -m -f '{{.Dir}}' github.com/AnatoleLucet/tess)
+c++ -std=c++20 -I "$tess/etc/include" test/layout_auto_margin_reference.cpp \
+  "$tess/etc/lib/linux_amd64/libyogacore.a" -o /tmp/cooper-auto-margin
+/tmp/cooper-auto-margin
+ard run test/layout_auto_margin_reference.ard
+```
+
+The observed output is the table above. The collection test rejects Yoga's
+extra next-line margin and checks that the next line counts its own margin once.
+
+## Child preparation and recursive visitor work in progress
+
+`children.ard` prepares flattened layout children, skips absolute items, resets
+hidden subtrees, resolves spacing, and applies the single-flex-child basis
+optimization. Three tests cover traversal, asymmetric percentage references,
+processed dimensions, and basis visitation.
+
+`visitor.ard` is a dimension-only recursive container implementation under
+review, not a production replacement or a claim of complete Yoga equivalence.
+Seven focused tests cover nested rows/columns, wrapping, bounded grow/shrink,
+cache invalidation, measurement versus committed dimensions, nonwrapping versus
+wrapped FitContent overflow, and percentage cross gaps. The last two initially
+failed (5 passed, 2 failed); translating the corresponding source paths gives
+7 passed, 0 failed. Cache invalidation starts from a clean tree and checks that
+changed content updates both leaf and parent widths from3 to7.
+
+Before production integration, finish and differentially verify the container
+source phases: cross-axis stretch and align-content, fixed-size measurement
+shortcuts, scroll-specific sizing, and owner-relative constraint references.
+Then translate positioning/absolute layout and connect pixel projection and
+the accepted Cooper intrinsic/cycle adaptations. Neither these focused tests
+nor the existing numeric differential matrix establish recursive visitor parity.
+Runtime still uses the previous solver; Tess remains a dependency.
+
+### Initial cross-axis stretch guards
+
+The second-pass child constraint construction now follows Yoga's exclusions
+for wrapping overflow and auto cross-axis margins. An eighth visitor test
+failed before this correction and passes afterward. Native Yoga independently
+confirms these heights in a10×12 row with6×2 measured children:
+
+| Scenario | Child height |
+| --- | --- |
+| Two children wrap, align-content start | 2 each |
+| One child, top auto margin and bottom1 | 2 |
+| One child, no auto margins, no wrap | 12 |
+
+Reproduce the native assertions with:
+
+```sh
+tess=$(go list -m -f '{{.Dir}}' github.com/AnatoleLucet/tess)
+c++ -std=c++20 -I "$tess/etc/include" test/layout_cross_reference.cpp \
+  "$tess/etc/lib/linux_amd64/libyogacore.a" -o /tmp/cooper-cross-reference
+/tmp/cooper-cross-reference
+ard test test/layout_visitor_test.ard --filter cross_stretch
+```
+
+This verifies the initial stretch decision only. Later per-line stretch,
+align-content remeasurement, and layout-versus-measurement visitation ordering
+remain untranslated; do not infer full cross-axis parity from these cases.

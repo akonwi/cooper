@@ -1,7 +1,9 @@
 use ard/testing
 
+use cooper/core/layout
 use cooper/core/layout/basis
 use cooper/core/layout/cache
+use cooper/core/layout/measure
 use cooper/core/layout/numeric
 use cooper/ui/style
 
@@ -101,5 +103,59 @@ test fn yoga_zero_available_space_still_selects_explicit_basis() Void!Str {
   testing::assert(
     selected and state.computed_flex_basis == 5.0,
     "Zero availability is definite, and point basis does not need definite owner size",
+  )
+}
+
+test fn yoga_basis_fallback_measures_scroll_main_axis_and_stretches_cross_axis_once() Void!Str {
+  let owner = Float32::from(40.0)
+  let margin = Float32::from(3.0)
+  let parent = measure::Axis{
+    available: Float32::from(20.0),
+    mode: cache::SizingMode::stretch_fit,
+    padding_border: Float32::from(4.0),
+    minimum: numeric::undefined(),
+    maximum: numeric::undefined(),
+  }
+  let main = basis::measurement_axis(parent, style::auto(), owner, margin, false, true, true)
+  let cross = basis::measurement_axis(parent, style::auto(), owner, margin, true, true, true)
+  try testing::assert(
+    main.mode == cache::SizingMode::max_content and numeric::is_undefined(main.available),
+    "Scrolling leaves the main axis unconstrained",
+  )
+  try testing::assert(
+    cross.mode == cache::SizingMode::stretch_fit and cross.available == 20.0,
+    "Cross-axis stretch keeps outer space including margin",
+  )
+  let definite = basis::measurement_axis(
+    parent,
+    style::percent(25.0),
+    owner,
+    margin,
+    true,
+    true,
+    true,
+  )
+  try testing::assert(
+    definite.available == 13.0,
+    "Definite cross size wins over stretching to20: 25% of40 plus margin3",
+  )
+  let child = layout::new()
+  mut calls = 0
+  child.set_measure(fn(input: measure::Input) measure::Size {
+    calls =+ 1
+    if input.width_mode != measure::Mode::undefined or input.height_mode != measure::Mode::exactly or input.height != 13.0 {
+      panic("Expected unconstrained width and exact content height13")
+    }
+    measure::Size{width: Float32::from(31.0), height: Float32::from(2.0)}
+  })
+  child.measure_leaf_basis(main, cross, margin, margin, true, 1)
+  child.measure_leaf_basis(main, cross, margin, margin, true, 1)
+  try testing::assert(
+    calls == 1 and child.measured_width == 35.0 and child.measured_height == 17.0,
+    "Insets count once; exact cross size overrides callback2; repeat reuses measurement",
+  )
+  testing::assert(
+    child.cache_state.computed_flex_basis == 35.0 and child.cache_state.computed_flex_basis_generation == 1 and child.width == 0.0 and child.dirty,
+    "Basis commits without committing layout or clearing dirty state",
   )
 }

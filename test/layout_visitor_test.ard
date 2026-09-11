@@ -1,0 +1,335 @@
+use ard/testing
+
+use cooper/core/layout
+use cooper/core/layout/cache
+use cooper/core/layout/measure
+use cooper/core/layout/numeric
+use cooper/core/layout/visitor
+use cooper/ui/style
+
+fn axis(size: Float64, mode: cache::SizingMode) measure::Axis {
+  measure::Axis{
+    available: Float32::from(size),
+    mode: mode,
+    padding_border: Float32::from(0.0),
+    minimum: numeric::undefined(),
+    maximum: numeric::undefined(),
+  }
+}
+
+fn zero() Float32 {
+  Float32::from(0.0)
+}
+
+fn fixed(width: Int, height: Int) mut layout::Node {
+  let node = layout::new()
+  node.apply(style::new(width: style::cells(width), height: style::cells(height)), 0)
+  node
+}
+
+test fn recursive_rows_and_columns_produce_nested_dimensions() Void!Str {
+  let column = layout::new()
+  column.apply(style::new(flex_direction: style::FlexDirection::column), 0)
+  column.insert(fixed(4, 2), 0)
+  column.insert(fixed(6, 3), 1)
+  let row = layout::new()
+  row.apply(style::new(flex_direction: style::FlexDirection::row, gap: style::cells(1)), 0)
+  row.insert(column, 0)
+  row.insert(fixed(2, 1), 1)
+  visitor::visit(
+    row,
+    axis(20.0, cache::SizingMode::fit_content),
+    axis(20.0, cache::SizingMode::fit_content),
+    zero(),
+    zero(),
+    1,
+    false,
+  )
+  try testing::assert(
+    column.measured_width == 6.0 and column.measured_height == 5.0,
+    "column-in-row recursively measures max width and summed height",
+  )
+  testing::assert(
+    row.measured_width == 9.0 and row.measured_height == 5.0,
+    "row includes nested basis, gap, and maximum cross extent",
+  )
+}
+
+test fn wrapping_uses_line_cross_extents_and_cross_gap() Void!Str {
+  let root = layout::new()
+  root.apply(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      gap: style::cells(1),
+    ),
+    0,
+  )
+  root.insert(fixed(4, 2), 0)
+  root.insert(fixed(4, 3), 1)
+  root.insert(fixed(4, 1), 2)
+  visitor::visit(
+    root,
+    axis(9.0, cache::SizingMode::stretch_fit),
+    axis(20.0, cache::SizingMode::fit_content),
+    zero(),
+    zero(),
+    2,
+    false,
+  )
+  testing::assert(
+    root.measured_width == 9.0 and root.measured_height == 5.0,
+    "two wrapped lines use cross maxima 3 and 1 plus one gap",
+  )
+}
+
+test fn asymmetric_grow_and_shrink_bounds_reach_nested_children() Void!Str {
+  let grow = layout::new()
+  grow.apply(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_grow: 1.0,
+      flex_shrink: 1.0,
+      max_width: style::cells(25),
+    ),
+    0,
+  )
+  grow.insert(fixed(20, 1), 0)
+  let peer = layout::new()
+  peer.apply(
+    style::new(flex_direction: style::FlexDirection::row, flex_grow: 3.0, flex_shrink: 1.0),
+    0,
+  )
+  peer.insert(fixed(20, 1), 0)
+  let root = layout::new()
+  root.apply(style::new(flex_direction: style::FlexDirection::row), 0)
+  root.insert(grow, 0)
+  root.insert(peer, 1)
+  visitor::visit(
+    root,
+    axis(80.0, cache::SizingMode::stretch_fit),
+    axis(4.0, cache::SizingMode::fit_content),
+    zero(),
+    zero(),
+    3,
+    false,
+  )
+  try testing::assert(
+    grow.measured_width == 25.0 and peer.measured_width == 55.0,
+    "maximum freezes first grow item before asymmetric second pass",
+  )
+  grow.apply(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_grow: 0.0,
+      flex_shrink: 1.0,
+      min_width: style::cells(18),
+    ),
+    0,
+  )
+  peer.apply(
+    style::new(flex_direction: style::FlexDirection::row, flex_grow: 0.0, flex_shrink: 2.0),
+    0,
+  )
+  visitor::visit(
+    root,
+    axis(30.0, cache::SizingMode::stretch_fit),
+    axis(4.0, cache::SizingMode::fit_content),
+    zero(),
+    zero(),
+    4,
+    false,
+  )
+  testing::assert(
+    grow.measured_width == 18.0 and peer.measured_width == 12.0,
+    "minimum freezes first shrink item and scaled factors allocate its peer",
+  )
+}
+
+test fn nested_cache_reuses_and_dirty_invalidation_remeasures() Void!Str {
+  mut calls = 0
+  let content = mut layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
+  let leaf = layout::new()
+  leaf.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
+    calls =+ 1
+    content.@
+  })
+  let nested = layout::new()
+  nested.insert(leaf, 0)
+  visitor::visit(
+    nested,
+    axis(10.0, cache::SizingMode::fit_content),
+    axis(10.0, cache::SizingMode::fit_content),
+    zero(),
+    zero(),
+    5,
+    true,
+  )
+  try testing::assert(
+    nested.dirty == false and leaf.dirty == false,
+    "Initial layout establishes a clean tree before invalidation",
+  )
+  let first = calls
+  visitor::visit(
+    nested,
+    axis(10.0, cache::SizingMode::fit_content),
+    axis(10.0, cache::SizingMode::fit_content),
+    zero(),
+    zero(),
+    5,
+    false,
+  )
+  try testing::assert(
+    calls == first,
+    "same generation and exact container spec reuse nested measurement cache",
+  )
+  content.width = Float32::from(7.0)
+  leaf.mark_dirty()
+  try testing::assert(
+    nested.dirty and leaf.dirty,
+    "Content invalidation propagates from a previously clean leaf",
+  )
+  visitor::visit(
+    nested,
+    axis(10.0, cache::SizingMode::fit_content),
+    axis(10.0, cache::SizingMode::fit_content),
+    zero(),
+    zero(),
+    6,
+    true,
+  )
+  testing::assert(
+    calls > first and nested.width == 7.0 and leaf.width == 7.0,
+    "Invalidated cached widths change from3 to7 throughout the tree",
+  )
+}
+
+test fn measurement_does_not_commit_geometry_or_clear_dirty() Void!Str {
+  let root = layout::new()
+  root.insert(fixed(3, 2), 0)
+  visitor::visit(
+    root,
+    axis(8.0, cache::SizingMode::stretch_fit),
+    axis(6.0, cache::SizingMode::stretch_fit),
+    zero(),
+    zero(),
+    7,
+    false,
+  )
+  testing::assert(
+    root.measured_width == 8.0 and root.measured_height == 6.0 and root.width == 0.0 and root.height == 0.0 and root.dirty,
+    "measurement records dimensions but does not commit layout geometry or clear dirty",
+  )
+}
+
+test fn fit_content_main_overflow_only_promotes_wrapped_lines() Void!Str {
+  for wrap in [style::FlexWrap::no_wrap, style::FlexWrap::wrap] {
+    let root = layout::new()
+    root.apply(style::new(flex_direction: style::FlexDirection::row, flex_wrap: wrap), 0)
+    root.insert(fixed(20, 2), 0)
+    visitor::visit(
+      root,
+      axis(10.0, cache::SizingMode::fit_content),
+      axis(8.0, cache::SizingMode::fit_content),
+      zero(),
+      zero(),
+      1,
+      false,
+    )
+    let expected = match wrap {
+      style::FlexWrap::no_wrap => 20.0,
+      _ => 10.0,
+    }
+    try testing::assert(
+      root.measured_width == Float32::from(expected),
+      "Yoga content-based nonwrapping lines overflow; wrapped overflow promotes exact allocation",
+    )
+  }
+  Result::ok(())
+}
+
+test fn percentage_cross_gap_uses_cross_axis_extent() Void!Str {
+  let root = layout::new()
+  root.apply(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      gap: style::percent(25.0),
+    ),
+    0,
+  )
+  root.insert(fixed(6, 2), 0)
+  root.insert(fixed(6, 3), 1)
+  visitor::visit(
+    root,
+    axis(10.0, cache::SizingMode::stretch_fit),
+    axis(40.0, cache::SizingMode::fit_content),
+    zero(),
+    zero(),
+    1,
+    false,
+  )
+  testing::assert(
+    root.measured_height == 15.0,
+    "Cross gap is 25% of40 =10, not 25% of main width10 =2.5",
+  )
+}
+
+test fn cross_stretch_respects_wrapped_overflow_and_auto_margins() Void!Str {
+  // Native counterpart: layout_cross_reference.cpp.
+  for scenario in [0, 1, 2] {
+    let root = layout::new()
+    let wrap = match scenario == 0 {
+      true => style::FlexWrap::wrap,
+      false => style::FlexWrap::no_wrap,
+    }
+    root.apply(
+      style::new(
+        flex_direction: style::FlexDirection::row,
+        flex_wrap: wrap,
+        align_items: style::Align::stretch,
+        align_content: style::Align::start,
+      ),
+      0,
+    )
+    let count = match scenario == 0 {
+      true => 2,
+      false => 1,
+    }
+    mut index = 0
+    while index < count {
+      let child = layout::new()
+      let margin = mut style::edges()
+      if scenario == 1 {
+        margin.top = style::auto()
+        margin.bottom = style::cells(1)
+      }
+      child.apply(style::new(width: style::cells(6), margin: margin.@), 0)
+      child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
+        layout::MeasureSize{width: Float32::from(6.0), height: Float32::from(2.0)}
+      })
+      root.insert(child, index)
+      index =+ 1
+    }
+    visitor::visit(
+      root,
+      axis(10.0, cache::SizingMode::stretch_fit),
+      axis(12.0, cache::SizingMode::stretch_fit),
+      zero(),
+      zero(),
+      1,
+      true,
+    )
+    for child in root.children {
+      let expected = match scenario == 2 {
+        true => 12.0,
+        false => 2.0,
+      }
+      try testing::assert(
+        child.height == expected,
+        "Only the nonwrapping child without auto cross margins stretches to12",
+      )
+    }
+  }
+  Result::ok(())
+}

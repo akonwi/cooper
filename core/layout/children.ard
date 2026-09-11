@@ -1,0 +1,231 @@
+use cooper/core/layout
+use cooper/core/layout/basis
+use cooper/core/layout/cache
+use cooper/core/layout/length
+use cooper/core/layout/measure
+use cooper/core/layout/numeric
+use cooper/ui/geometry
+use cooper/ui/style
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// MIT license: LICENSE.yoga. This is the child traversal and measurement phase
+// of Yoga 8ba025e computeFlexBasisForChildren. It deliberately does not recurse
+// into general containers, distribute flex space, or assign positions.
+// Intrinsic contributions (ADR 0016) and conflicting min/max normalization are
+// raw inputs at this internal boundary and remain the caller's responsibility.
+
+struct Prepared {
+  children: [mut layout::Node],
+  outer_basis: Float32,
+}
+
+fn resolved_or_zero(value: style::Length, owner_width: Float32) Float32 {
+  let resolved = length::resolve(value, owner_width)
+  match numeric::is_defined(resolved) {
+    true => resolved,
+    false => Float32::from(0.0),
+  }
+}
+
+fn zero_own_geometry(node: mut layout::Node) {
+  node.x = 0.0
+  node.y = 0.0
+  node.width = 0.0
+  node.height = 0.0
+  node.insets = layout::Insets{
+    left: 0.0,
+    top: 0.0,
+    right: 0.0,
+    bottom: 0.0,
+  }
+  node.local = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  }
+  node.content = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  }
+  node.allocation = Maybe::new<layout::Allocation>()
+}
+
+fn zero_none(node: mut layout::Node) {
+  zero_own_geometry(node)
+  node.measured_width = 0.0
+  node.measured_height = 0.0
+  node.cache_state = cache::new_state()
+  node.dirty = false
+  for child in node.children {
+    zero_none(child)
+  }
+}
+
+fn flatten(node: mut layout::Node, result: mut [mut layout::Node]) {
+  for child in node.children {
+    match child.value.display {
+      style::Display::contents => {
+        zero_own_geometry(child)
+        child.dirty = false
+        flatten(child, result)
+      },
+      _ => result.push(child),
+    }
+  }
+}
+
+fn axis(
+  available: Float32,
+  mode: cache::SizingMode,
+  padding_border: Float32,
+  minimum: style::Length,
+  maximum: style::Length,
+  owner: Float32,
+) measure::Axis {
+  measure::Axis{
+    available: available,
+    mode: mode,
+    padding_border: padding_border,
+    minimum: length::resolve(minimum, owner),
+    maximum: length::resolve(maximum, owner),
+  }
+}
+
+fn prepare(
+  parent: mut layout::Node,
+  inner_width: Float32,
+  inner_height: Float32,
+  width_mode: cache::SizingMode,
+  height_mode: cache::SizingMode,
+  generation: Int,
+  visit: fn(mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int) Void,
+) Prepared {
+  let flattened: mut [mut layout::Node] = mut []
+  flatten(parent, flattened)
+  let row = parent.value.flex_direction == style::FlexDirection::row or parent.value.flex_direction == style::FlexDirection::row_reverse
+  let main_mode = match row {
+    true => width_mode,
+    false => height_mode,
+  }
+  
+  mut single = Maybe::new<mut layout::Node>()
+  if main_mode == cache::SizingMode::stretch_fit {
+    mut valid = true
+    for child in flattened {
+      // Yoga's prepass includes hidden flexible children; the traversal below
+      // clears them. Absolute children never participate in flexibility.
+      let flexible = child.value.position != style::Position::absolute and (child.value.flex_grow != 0.0 or child.value.flex_shrink != 0.0)
+      if flexible {
+        if single.is_some() or numeric::inexact_equals(child.value.flex_grow, Float32::from(0.0)) or numeric::inexact_equals(child.value.flex_shrink, Float32::from(0.0)) {
+          valid = false
+        } else {
+          single = Maybe::new<mut layout::Node>(child)
+        }
+      }
+    }
+    if not valid {
+      single = Maybe::new<mut layout::Node>()
+    }
+  }
+  
+  let flowing: mut [mut layout::Node] = mut []
+  mut total = Float32::from(0.0)
+  for child in flattened {
+    if child.value.display == style::Display::none {
+      zero_none(child)
+    } else if child.value.position != style::Position::absolute {
+      flowing.push(child)
+      let cs = child.value
+      let margin_row = resolved_or_zero(cs.margin.left, inner_width) + resolved_or_zero(cs.margin.right, inner_width)
+      let margin_column = resolved_or_zero(cs.margin.top, inner_width) + resolved_or_zero(cs.margin.bottom, inner_width)
+      let border = Float32::from(child.border * 2)
+      let padding_row = resolved_or_zero(cs.padding.left, inner_width) + resolved_or_zero(cs.padding.right, inner_width) + border
+      let padding_column = resolved_or_zero(cs.padding.top, inner_width) + resolved_or_zero(cs.padding.bottom, inner_width) + border
+      let parent_width = axis(
+        inner_width,
+        width_mode,
+        padding_row,
+        cs.min_width,
+        cs.max_width,
+        inner_width,
+      )
+      let parent_height = axis(
+        inner_height,
+        height_mode,
+        padding_column,
+        cs.min_height,
+        cs.max_height,
+        inner_height,
+      )
+      let processed_width = length::processed_dimension(cs.width, cs.min_width, cs.max_width)
+      let processed_height = length::processed_dimension(cs.height, cs.min_height, cs.max_height)
+      let processed_main = match row {
+        true => processed_width,
+        false => processed_height,
+      }
+      let available_main = match row {
+        true => inner_width,
+        false => inner_height,
+      }
+      let owner_main = match row {
+        true => inner_width,
+        false => inner_height,
+      }
+      let padding_main = match row {
+        true => padding_row,
+        false => padding_column,
+      }
+      if single.is_some() and single.expect("single flex child") == child {
+        child.cache_state.computed_flex_basis = 0.0
+        child.cache_state.computed_flex_basis_generation = generation
+      } else if not basis::resolve_without_measurement(
+        child.cache_state,
+        cs.flex_basis,
+        processed_main,
+        available_main,
+        owner_main,
+        padding_main,
+        generation,
+      ) {
+        let align = match cs.align_self == style::Align::auto {
+          true => parent.value.align_items,
+          false => cs.align_self,
+        }
+        let scroll = parent.value.overflow == style::Overflow::scroll
+        let width = basis::measurement_axis(
+          parent_width,
+          processed_width,
+          inner_width,
+          margin_row,
+          not row,
+          scroll and row,
+          align == style::Align::stretch,
+        )
+        let height = basis::measurement_axis(
+          parent_height,
+          processed_height,
+          inner_height,
+          margin_column,
+          row,
+          scroll and not row,
+          align == style::Align::stretch,
+        )
+        visit(child, width, height, margin_row, margin_column, generation)
+        child.cache_state.computed_flex_basis = match row {
+          true => numeric::max_or_defined(child.measured_width, padding_row),
+          false => numeric::max_or_defined(child.measured_height, padding_column),
+        }
+        child.cache_state.computed_flex_basis_generation = generation
+      }
+      let main_margin = match row {
+        true => margin_row,
+        false => margin_column,
+      }
+      total = total + (child.cache_state.computed_flex_basis + main_margin)
+    }
+  }
+  Prepared{children: flowing.@, outer_basis: total}
+}

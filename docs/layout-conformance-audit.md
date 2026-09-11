@@ -30,12 +30,18 @@ and reported **2 passed, 6 failed, 1 panicked** (missing selection). That is
 worker-reported before evidence; the passing results above were independently
 rerun after integration.
 
-**Remaining ADR 0019 work:** separately owned overlays are not claimed supported.
-An open Select popup needs owner flex→contents→flex/none and destruction tests
-for visibility, focus, and cleanup. Passing the existing Select PTY test does not
-exercise those transitions. No control or Runtime overlay changes are included.
+The Select overlay follow-up is now integrated. Three additional tests cover
+open flex→contents→flex→none transitions, direct retained style application,
+popup identity, focus, former-popup hit cells, and exactly-once destruction.
+Blur cleanup previously reapplied a stale flex style, undoing a direct contents
+transition. Removing that redundant owner-style synchronization fixes the defect
+without changing popup ownership or adding Runtime hooks. The worker recorded
+15 passing/1 failing Select tests before the fix; the integrated checkout passes
+all 16. The inspected `select-contents-frames.png` shows the popup and trigger
+disappearing for contents/none, with only the closed trigger restored for flex.
+This verifies Select's existing overlay, not arbitrary future overlay mechanisms.
 
-## ADR 0020 reconciliation: verified packing cycle, decision pending
+## ADR 0020 reconciliation: approved and implemented
 
 A repeat-until-stable measurement/projection loop does not always converge if
 corrected Text heights reopen ordinary flex-line packing. This counterexample
@@ -59,16 +65,40 @@ to 3/5, leaving two cells and requiring two rows. If B is two rows, it moves
 to a second column; edges 0/2.5 project to 0/3, allowing one row. Neither
 partition is consistent with repacking from the final measured height.
 
-Proposed clarification, **not yet accepted or implemented**: select line
+The user approved the clarification: select line
 membership and horizontal allocation in the fractional contribution pass;
 freeze those decisions during projected-width measurement and vertical replay.
 Correct dependent heights/vertical positions without reforming lines or changing
 horizontal positions. Each new layout transaction starts afresh. This terminates,
 but may deliberately leave spare space or overflow in the selected lines.
-In this example, the selected two columns would remain while B shrinks to one row.
+In this example, the selected two columns remain while B shrinks to one row.
 
-Approval is required before changing the accepted contract to make that
-tradeoff explicit. The independent ADR 0019 implementation continues meanwhile.
+`core/layout.ard` now records horizontal allocation and line membership after
+relative/absolute positioning, measures at projected content widths in a vertical
+replay, then projects the final geometry. Natural-width probes do not consume
+these allocated-width records, which are discarded after each transaction.
+
+`test/layout_rounding_test.ard` contains eight passing tests. The first four
+reconciliation cases were executed failing before implementation: fractional
+width/sibling reflow, the wrap-reverse cycle, intrinsic height at allocated width,
+and absolute content insets with a fractional ancestor. Additional assertions
+cover TextArea viewport/caret placement, wide-glyph paint/hit/selection agreement,
+31/3 and reversed 5/2 edge sharing, negative half ties, nested fractional origins,
+collapsed spans, repeated layout, and resize cycles.
+
+Integrated verification after Select and reconciliation:
+
+- `ard test`: **352 passed; 0 failed; 0 panicked**.
+- Compiler and formatter checks passed for all four changed Ard files.
+- Select, Text Gallery, TextArea, and Layout Playground PTY tests passed.
+- `python3 benchmarks/run.py --iterations 1 --warmups 0` completed all four
+  workloads. This is a smoke check, not a controlled Yoga performance comparison.
+- Inspected `rounding-frames.png`, generated from actual headless Frame text:
+  `abc` occupies one row at projected width 3; shifting its fractional origin
+  produces width 2 and rows `ab/c`, moving the following `Z` down one row.
+
+Remaining conformance work includes wider intrinsic/percentage constraints,
+ADR 0017 item validation and line distribution, and ADR 0018 box baselines.
 
 ## Oracle review tracker
 

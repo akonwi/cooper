@@ -30,6 +30,17 @@ struct Insets {
   bottom: Float64,
 }
 
+// Immutable only for one reconciliation transaction. No projected width is
+// fed back into the next transaction's fractional contribution measurements.
+struct Allocation {
+  x: Float64,
+  width: Float64,
+  insets: Insets,
+  percent_width: Float64,
+  line: Int,
+  content_width: Int,
+}
+
 // Negative availability means indefinite, never a zero-sized constraint.
 // Only final projection converts fractional edges into terminal cells.
 struct Node {
@@ -44,6 +55,9 @@ struct Node {
   insets: Insets,
   local: geometry::Rect,
   content: geometry::Rect,
+  allocation: Allocation?,
+  line: Int,
+  percent_width: Float64,
 }
 
 fn new() mut Node {
@@ -52,6 +66,9 @@ fn new() mut Node {
     border: 0,
     children: [],
     measure: Maybe::new<fn(MeasureInput) MeasureSize>(),
+    allocation: Maybe::new<Allocation>(),
+    line: 0,
+    percent_width: -1.0,
     x: 0.0,
     y: 0.0,
     width: 0.0,
@@ -228,6 +245,7 @@ fn compute(
   forced_w: Float64,
   forced_h: Float64,
   mode: Int,
+  allocated: Bool,
 ) Size {
   let s = node.value
   match s.display == style::Display::none {
@@ -235,7 +253,7 @@ fn compute(
       node.clear()
       Size{width: 0.0, height: 0.0}
     },
-    false => compute_visible(node, aw, ah, rw, rh, forced_w, forced_h, mode),
+    false => compute_visible(node, aw, ah, rw, rh, forced_w, forced_h, mode, allocated),
   }
 }
 
@@ -248,20 +266,24 @@ fn compute_visible(
   forced_w: Float64,
   forced_h: Float64,
   mode: Int,
+  allocated: Bool,
 ) Size {
   let s = node.value
   let border = node.border.to_f64()
-  let pad = Insets{
+  mut pad = Insets{
     left: spacing(s.padding.left, rw) + border,
     top: spacing(s.padding.top, rw) + border,
     right: spacing(s.padding.right, rw) + border,
     bottom: spacing(s.padding.bottom, rw) + border,
   }
+  if allocated {
+    pad = node.allocation.expect("allocated insets").insets
+  }
   let horizontal = pad.left + pad.right
   let vertical = pad.top + pad.bottom
   mut nw = 0.to_f64()
-  match mode == 0 and (intrinsic(s.width) or intrinsic(s.min_width) or intrinsic(s.max_width)) {
-    true => { nw = compute(node, -1.0, -1.0, rw, rh, -1.0, -1.0, 1).width },
+  match allocated == false and mode == 0 and (intrinsic(s.width) or intrinsic(s.min_width) or intrinsic(s.max_width)) {
+    true => { nw = compute(node, -1.0, -1.0, rw, rh, -1.0, -1.0, 1, false).width },
     false => (),
   }
   mut width = forced_w
@@ -281,6 +303,9 @@ fn compute_visible(
     true => { width = bounded(width, minw, maxw, horizontal) },
     false => (),
   }
+  if allocated {
+    width = node.allocation.expect("allocated width").width
+  }
   mut height = forced_h
   match height < 0.0 and mode == 0 and (not intrinsic(s.height)) {
     true => { height = finite_length(s.height, rh) },
@@ -289,7 +314,7 @@ fn compute_visible(
   mut nh = 0.to_f64()
   match mode == 0 and (intrinsic(s.height) or intrinsic(s.min_height) or intrinsic(s.max_height)) {
     true => {
-      nh = compute(node, aw, -1.0, rw, rh, width, -1.0, 2).height
+      nh = compute(node, aw, -1.0, rw, rh, width, -1.0, 2, allocated).height
       match height < 0.0 {
         true => { height = resolve(s.height, rh, ah, nh) },
         false => (),
@@ -343,10 +368,14 @@ fn compute_visible(
   }
   match node.measure {
     measure => {
+      let measure_w = match allocated {
+        true => node.allocation.expect("allocated content width").content_width.to_f64(),
+        false => available_w,
+      }
       mut measured = measure(
         MeasureInput{
-          width: Float32::from(max(0.0, available_w)),
-          width_mode: measure_mode(available_w, width >= 0.0),
+          width: Float32::from(max(0.0, measure_w)),
+          width_mode: measure_mode(measure_w, allocated or width >= 0.0),
           height: Float32::from(max(0.0, available_h)),
           height_mode: measure_mode(available_h, height >= 0.0),
         },
@@ -355,7 +384,7 @@ fn compute_visible(
         true => { width = bounded(numbers::Widen(measured.width) + horizontal, minw, maxw, horizontal) },
         false => (),
       }
-      if height < 0.0 and width - horizontal != numbers::Widen(measured.width) {
+      if allocated == false and height < 0.0 and width - horizontal != numbers::Widen(measured.width) {
         measured = measure(
           MeasureInput{
             width: Float32::from(width - horizontal),
@@ -388,10 +417,14 @@ fn compute_visible(
       // Allocation provenance matters even when an allocated width happens to
       // equal the natural width. Natural content alone cannot resolve a cycle.
       let definite_w = forced_w >= 0.0 or finite_length(s.width, rw) >= 0.0 or s.width.kind == style::LengthKind::stretch and aw >= 0.0 or s.width.kind == style::LengthKind::fit_content and aw >= 0.0 and aw < nw
-      let percent_w = match definite_w {
+      mut percent_w = match definite_w {
         true => content_w,
         false => -1.0,
       }
+      if allocated {
+        percent_w = node.allocation.expect("allocated percentage reference").percent_width
+      }
+      node.percent_width = percent_w
       let definite_h = forced_h >= 0.0 or finite_length(s.height, rh) >= 0.0 or s.height.kind == style::LengthKind::stretch and ah >= 0.0 or s.height.kind == style::LengthKind::fit_content and ah >= 0.0 and ah < nh
       let percent_h = match definite_h {
         true => content_h,
@@ -466,7 +499,22 @@ fn compute_visible(
               false => cs.max_height,
             }
             match intrinsic(cs.flex_basis) or intrinsic(lower_length) or intrinsic(upper_length) {
-              true => { natural = compute(child, -1.0, -1.0, percent_w, percent_h, -1.0, -1.0, 1) },
+              true => {
+                natural = compute(
+                  child,
+                  -1.0,
+                  -1.0,
+                  percent_w,
+                  percent_h,
+                  -1.0,
+                  -1.0,
+                  match allocated and row == false {
+                    true => 2,
+                    false => 1,
+                  },
+                  allocated and row == false,
+                )
+              },
               false => (),
             }
             let natural_main = axis_size(natural, row)
@@ -504,7 +552,17 @@ fn compute_visible(
               },
               false => (),
             }
-            let measured = compute(child, child_aw, child_ah, percent_w, percent_h, fw, fh, 0)
+            let measured = compute(
+              child,
+              child_aw,
+              child_ah,
+              percent_w,
+              percent_h,
+              fw,
+              fh,
+              0,
+              allocated,
+            )
             let size = axis_size(measured, row)
             let child_cross = axis_size(measured, not row)
             let floor = match row {
@@ -565,7 +623,13 @@ fn compute_visible(
               true => gap,
               false => 0.0,
             }
-            match s.flex_wrap != style::FlexWrap::no_wrap and main_limit >= 0.0 and line.items.size() > 0 and line.main + extra_gap + size + before + after > main_limit {
+            let next_line = match allocated {
+              true => child.allocation.expect("allocated line").line >= lines.size(),
+              false => {
+                s.flex_wrap != style::FlexWrap::no_wrap and main_limit >= 0.0 and line.items.size() > 0 and line.main + extra_gap + size + before + after > main_limit
+              },
+            }
+            match next_line {
               true => {
                 line = mut Line{
                   items: [],
@@ -581,6 +645,7 @@ fn compute_visible(
               true => { line.main = line.main + gap },
               false => (),
             }
+            child.line = lines.size() - 1
             line.items.push(item)
             line.main = line.main + size + before + after
             line.cross = max(line.cross, child_cross + cross_before + cross_after)
@@ -591,7 +656,7 @@ fn compute_visible(
       mut used_main = 0.to_f64()
       mut used_cross = 0.to_f64()
       for current in lines {
-        match main_ref >= 0.0 {
+        match main_ref >= 0.0 and (allocated == false or row == false) {
           true => flex(current, main_ref, gap, s.overflow == style::Overflow::scroll),
           false => (),
         }
@@ -631,6 +696,7 @@ fn compute_visible(
                   false => item.main,
                 },
                 0,
+                allocated,
               )
             },
           }
@@ -689,6 +755,7 @@ fn compute_visible(
             false => forced_h,
           },
           mode,
+          allocated,
         )
       } else {
         let final_main = match row {
@@ -821,6 +888,7 @@ fn compute_visible(
                   false => item.main,
                 },
                 0,
+                allocated,
               )
             }
             let before_space = match item.auto_before {
@@ -876,6 +944,9 @@ fn compute_visible(
                 item.node.y = item.node.y + dy
               },
               false => (),
+            }
+            if allocated {
+              item.node.x = item.node.allocation.expect("allocated position").x
             }
             let after_space = match item.auto_after {
               true => auto_space,
@@ -1078,35 +1149,61 @@ impl Node {
     for child in self.children {
       child.project(x, y)
     }
+    self.allocation = Maybe::new<Allocation>()
+  }
+  
+  fn mut freeze_horizontal(px: Float64) {
+    let x = px + self.x
+    self.allocation = Maybe::new<Allocation>(
+      Allocation{
+        x: self.x,
+        width: self.width,
+        insets: self.insets,
+        percent_width: self.percent_width,
+        line: self.line,
+        content_width: rounded(x + max(self.insets.left, self.width - self.insets.right)) - rounded(x + self.insets.left),
+      },
+    )
+    for child in self.children {
+      child.freeze_horizontal(x)
+    }
   }
   
   fn mut compute(width: Int, height: Int) {
     let w = width.to_f64()
     let h = height.to_f64()
-    let _ = compute(
-      self,
-      w,
-      h,
-      w,
-      h,
-      match automatic(self.value.width) and not self.measure.is_some() {
-        true => w,
-        false => -1.0,
-      },
-      match automatic(self.value.height) and not self.measure.is_some() {
-        true => h,
-        false => -1.0,
-      },
-      0,
-    )
+    let fw = match automatic(self.value.width) and not self.measure.is_some() {
+      true => w,
+      false => -1.0,
+    }
+    let fh = match automatic(self.value.height) and not self.measure.is_some() {
+      true => h,
+      false => -1.0,
+    }
+    let _ = compute(self, w, h, w, h, fw, fh, 0, false)
     self.x = spacing(self.value.left, w)
     self.y = spacing(self.value.top, h)
     let border = self.border.to_f64()
-    self.absolute(self.width - 2.0 * border, self.height - 2.0 * border, 0.0 - border, 0.0 - border)
+    self.absolute(
+      self.width - 2.0 * border,
+      self.height - 2.0 * border,
+      0.0 - border,
+      0.0 - border,
+      false,
+    )
+    self.freeze_horizontal(0.0)
+    let _ = compute(self, w, h, w, h, fw, fh, 0, true)
+    self.absolute(
+      self.width - 2.0 * border,
+      self.height - 2.0 * border,
+      0.0 - border,
+      0.0 - border,
+      true,
+    )
     self.project(0.0, 0.0)
   }
   
-  fn mut absolute(cw: Float64, ch: Float64, ox: Float64, oy: Float64) {
+  fn mut absolute(cw: Float64, ch: Float64, ox: Float64, oy: Float64, allocated: Bool) {
     for child in self.children {
       let cs = child.value
       match cs.display != style::Display::none {
@@ -1138,6 +1235,7 @@ impl Node {
                 fw,
                 fh,
                 0,
+                allocated,
               )
               child.x = match left >= 0.0 {
                 true => left + ml - ox,
@@ -1160,8 +1258,11 @@ impl Node {
             },
             false => (),
           }
+          if allocated {
+            child.x = child.allocation.expect("absolute allocated position").x
+          }
           match cs.position == style::Position::static or cs.display == style::Display::contents {
-            true => child.absolute(cw, ch, ox + child.x, oy + child.y),
+            true => child.absolute(cw, ch, ox + child.x, oy + child.y, allocated),
             false => {
               let border = child.border.to_f64()
               child.absolute(
@@ -1169,6 +1270,7 @@ impl Node {
                 child.height - 2.0 * border,
                 0.0 - border,
                 0.0 - border,
+                allocated,
               )
             },
           }

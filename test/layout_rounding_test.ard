@@ -1,0 +1,264 @@
+use ard/testing
+
+use cooper/core/hit
+use cooper/runtime
+use cooper/testing as headless
+use cooper/ui/box
+use cooper/ui/style
+use cooper/ui/text
+use cooper/ui/text_area
+
+test fn rounding_text_area_caret_and_following_sibling_use_projected_viewport() Void!Str {
+  let app = headless::new(5, 8)
+  defer app.destroy()
+  let area = text_area::new(
+    app.context,
+    value: "ab",
+    wrap: text::TextWrap::character,
+    styles: style::new(width: style::percent(50.0), flex_shrink: 0.0),
+  )
+  let tail = text::new(app.context, content: "Z", styles: style::new(flex_shrink: 0.0))
+  app.root.add(area)
+  app.root.add(tail)
+  app.render()
+  area.focus()
+  app.render()
+  try testing::assert(
+    area.layout().local.width == 3 and area.layout().local.height == 2 and tail.layout().local.y == 2,
+    "Two-cell private viewport needs two rows including trailing caret, not three",
+  )
+  try testing::assert(
+    app.frame().cursor_x().or(-1) == 0 and app.frame().cursor_y().or(-1) == 1,
+    "Expected caret at (0,1) in the committed viewport",
+  )
+  testing::assert(
+    app.frame().cell(0, 2).expect("following sibling").grapheme == "Z",
+    "Sibling must paint below corrected control height",
+  )
+}
+
+test fn rounding_wide_text_paint_hit_and_selection_share_cells() Void!Str {
+  let app = headless::new(5, 4)
+  defer app.destroy()
+  let label = text::new(
+    app.context,
+    content: "你a",
+    wrap: text::TextWrap::character,
+    styles: style::new(width: style::percent(50.0), flex_shrink: 0.0),
+  )
+  let tail = text::new(app.context, content: "Z", styles: style::new(flex_shrink: 0.0))
+  app.root.add(label)
+  app.root.add(tail)
+  app.render()
+  try testing::assert(
+    label.layout().local.height == 1 and tail.layout().local.y == 1,
+    "Wide glyph plus ASCII fit projected width3",
+  )
+  try testing::assert(
+    app.frame().cell(0, 0).expect("wide glyph").width == 2 and app.frame().cell(2, 0).expect("ASCII").grapheme == "a",
+    "Projected width must paint both whole glyphs",
+  )
+  try testing::assert(
+    hit::test(app.root, 2, 0).expect("rightmost hit").target == label.node(),
+    "Hit must use committed text width",
+  )
+  app.drag(0, 0, 2, 0)
+  testing::assert(
+    app.selection().expect("wide selection").selected_text == "你a",
+    "Selection must include complete visible source",
+  )
+}
+
+test fn rounding_equal_shares_preserve_edges_and_reverse_identity() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let styles = style::new(flex_basis: style::cells(0), flex_grow: 1.0)
+  let a = box::new(ctx, styles: styles)
+  let b = box::new(ctx, styles: styles)
+  let c = box::new(ctx, styles: styles)
+  root.add(a)
+  root.add(b)
+  root.add(c)
+  ctx.compute_layout(root, 31, 3)
+  try testing::assert(
+    a.layout().local.width == 10 and b.layout().local.x == 10 and b.layout().local.width == 11 and c.layout().local.x == 21 and c.layout().local.width == 10,
+    "31/3 must tile 10/11/10",
+  )
+  root.remove(c)
+  ctx.compute_layout(root, 5, 3)
+  try testing::assert(
+    a.layout().local.width == 3 and b.layout().local.x == 3 and b.layout().local.width == 2,
+    "5/2 must tile 3/2",
+  )
+  root.set_style(style::new(flex_direction: style::FlexDirection::row_reverse))
+  ctx.compute_layout(root, 5, 3)
+  testing::assert(
+    a.layout().local.x == 3 and a.layout().local.width == 2 and b.layout().local.x == 0 and b.layout().local.width == 3,
+    "Reversal changes identities, not rounded edges",
+  )
+}
+
+test fn rounding_negative_ties_nested_origins_and_collapsed_spans() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx)
+  let parent = box::new(
+    ctx,
+    styles: style::new(width: style::cells(10), height: style::cells(2), left: style::percent(4.0)),
+  )
+  let child = box::new(
+    ctx,
+    styles: style::new(width: style::cells(1), height: style::cells(1), left: style::percent(4.0)),
+  )
+  root.add(parent)
+  parent.add(child)
+  ctx.compute_layout(root, 10, 10)
+  try testing::assert(
+    parent.layout().local.x == 0 and child.layout().local.x == 1 and child.layout().screen.x == 1,
+    "Round accumulated .4+.4, not each origin separately",
+  )
+  parent.set_style(style::new(width: style::cells(2), height: style::cells(2)))
+  child.set_style(
+    style::new(width: style::cells(1), height: style::cells(1), right: style::percent(25.0)),
+  )
+  ctx.compute_layout(root, 10, 10)
+  try testing::assert(child.layout().local.x == 0, "Negative half tie -.5 rounds to zero")
+  child.set_style(
+    style::new(width: style::cells(1), height: style::cells(1), right: style::percent(75.0)),
+  )
+  ctx.compute_layout(root, 10, 10)
+  try testing::assert(child.layout().local.x == -1, "Negative half tie -1.5 rounds to -1")
+  child.set_style(style::new(width: style::percent(20.0), height: style::cells(1)))
+  ctx.compute_layout(root, 10, 10)
+  testing::assert(
+    child.layout().local.width == 0,
+    "A .4-cell span may collapse without a one-cell floor",
+  )
+}
+
+test fn rounding_remeasures_projected_width_before_sibling_placement() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(
+    ctx,
+    content: "abc",
+    wrap: text::TextWrap::character,
+    styles: style::new(width: style::percent(50.0), flex_shrink: 0.0),
+  )
+  let tail = box::new(ctx, styles: style::new(width: style::cells(1), height: style::cells(1)))
+  root.add(label)
+  root.add(tail)
+  ctx.compute_layout(root, 5, 10)
+  try testing::assert(
+    label.layout().local.width == 3 and label.layout().local.height == 1 and tail.layout().local.y == 1,
+    "Expected projected width3/height1 and sibling y1; got height {label.layout().local.height}, sibling {tail.layout().local.y}",
+  )
+  label.set_style(
+    style::new(width: style::percent(50.0), left: style::percent(50.0), flex_shrink: 0.0),
+  )
+  ctx.compute_layout(root, 5, 10)
+  try testing::assert(
+    label.layout().local.x == 3 and label.layout().local.width == 2 and label.layout().local.height == 2 and tail.layout().local.y == 2,
+    "Same fractional width at a different origin must measure at two cells",
+  )
+  ctx.compute_layout(root, 6, 10)
+  try testing::assert(
+    label.layout().local.height == 1,
+    "Resize must discard previous allocated-width witness",
+  )
+  ctx.compute_layout(root, 5, 10)
+  testing::assert(label.layout().local.height == 2, "Resize cycle must not drift")
+}
+
+test fn rounding_wrap_reverse_keeps_selected_columns_during_remeasurement() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(
+    ctx,
+    styles: style::new(flex_wrap: style::FlexWrap::wrap_reverse, align_items: style::Align::start),
+  )
+  let first = box::new(
+    ctx,
+    styles: style::new(width: style::percent(50.0), height: style::cells(1), flex_shrink: 0.0),
+  )
+  let label = text::new(
+    ctx,
+    content: "abc",
+    wrap: text::TextWrap::character,
+    styles: style::new(width: style::percent(50.0), flex_shrink: 0.0),
+  )
+  root.add(first)
+  root.add(label)
+  for iteration in [1, 2, 3] {
+    ctx.compute_layout(root, 5, 2)
+    try testing::assert(
+      first.layout().local.x == 3 and first.layout().local.width == 2,
+      "First column's horizontal allocation must remain fixed",
+    )
+    try testing::assert(
+      label.layout().local.x == 0 and label.layout().local.width == 3 and label.layout().local.height == 1,
+      "Expected second column at x0 width3 height1 on iteration {iteration}; got x{label.layout().local.x} height{label.layout().local.height}",
+    )
+  }
+  Result::ok(())
+}
+
+test fn rounding_intrinsic_height_uses_allocated_width_without_changing_natural_width() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(
+    ctx,
+    content: "abc",
+    wrap: text::TextWrap::character,
+    styles: style::new(width: style::percent(50.0), height: style::max_content(), flex_shrink: 0.0),
+  )
+  root.add(label)
+  ctx.compute_layout(root, 5, 10)
+  try testing::assert(
+    label.layout().local.height == 1,
+    "Natural height must use the allocated three-cell width",
+  )
+  label.set_style(style::new(width: style::max_content(), flex_shrink: 0.0))
+  ctx.compute_layout(root, 2, 10)
+  testing::assert(
+    label.layout().local.width == 3 and label.layout().local.height == 1,
+    "Natural-width probe must not consume an earlier allocated width",
+  )
+}
+
+test fn rounding_absolute_inset_content_width_includes_fractional_ancestors() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx)
+  let parent = box::new(
+    ctx,
+    styles: style::new(width: style::cells(5), height: style::cells(6), left: style::percent(5.0)),
+  )
+  let label = text::new(
+    ctx,
+    content: "abc",
+    wrap: text::TextWrap::character,
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::percent(70.0),
+      left: style::cells(0),
+      padding: style::edges(style::percent(10.0)),
+      flex_shrink: 0.0,
+    ),
+  )
+  parent.add(label)
+  root.add(parent)
+  ctx.compute_layout(root, 10, 10)
+  // Parent x=.5, content left=1, right=3.5 -> projected content width3.
+  try testing::assert(
+    label.node().content_rect().width == 3,
+    "Expected projected content width3 including fractional insets",
+  )
+  testing::assert(
+    label.layout().local.height == 2,
+    "Expected one content row plus .5 top/bottom padding",
+  )
+}

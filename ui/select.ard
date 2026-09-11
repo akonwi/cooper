@@ -1208,7 +1208,6 @@ private fn internal_new(
       if not popup_node.is_destroyed() {
         let _ = sync_popup(popup)
       }
-      sync_owner_style(retained, model)
     }
   })
   retained.on_cleanup(fn() {

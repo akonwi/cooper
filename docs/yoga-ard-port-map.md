@@ -258,3 +258,37 @@ and formatter checks. Existing geometry and numeric comparisons still pass.
 No production geometry changed. Persistent cache storage, generations, lookup
 ordering and recursive visit integration remain next; the new predicates are
 not wired into the independent solver and do not yet reduce measurement calls.
+
+## Persistent cache state and lookup ordering stage
+
+`cache::State` translates generation/configuration/owner-direction tracking,
+computed flex basis metadata, one layout record and the searchable measurement
+prefix from `LayoutResults` and `calculateLayoutInternal`. Preparation discards
+cached records for a dirty node in a new generation, changed configuration, or
+changed owner direction. Dirty nodes may reuse measurements within the same
+generation; clean nodes may reuse across generations.
+
+Measured leaves prefer the layout record, then the oldest compatible measurement
+record. Unmeasured nodes use only the appropriate layout or measurement cache
+and require matching constraints and modes, not the more permissive measured-leaf
+compatibility rules. Storage preserves Yoga's eight-entry prefix reset, including
+the reset triggered by storing a layout miss when the measurement prefix is full.
+It is not an LRU cache. The Ard representation discards inactive entries instead
+of retaining Yoga's fixed array slots; searchable results and ordering match.
+
+Each layout Node now owns this state. Its clean-to-dirty transition clears the
+computed flex basis along the owner chain, and detach resets the child's cache
+state. The current solver still runs in full; its recursive calls do not yet
+prepare/find/store/complete cache visits. This adds storage and invalidation,
+not a cache-performance improvement or full layout-result translation.
+
+Verification: `ard test test/layout_cache_test.ard` **5 passed**;
+`ard test test/layout_state_test.ard` **4 passed**; full `ard test` **384 passed,
+0 failed, 0 panicked**. All four changed Ard files pass compiler and formatter
+checks. The existing geometry, numeric and 5,184 cache-predicate comparisons
+against pinned Yoga still pass. The new state transitions are covered by focused
+source-derived tests, not an end-to-end cached-layout differential test yet.
+
+Next is translating the recursive visit/measurement boundary and leaf paths,
+including committing measured dimensions, clearing dirty state only for layout
+visits, and keeping ADR 0020 projected-width replay out of natural measurements.

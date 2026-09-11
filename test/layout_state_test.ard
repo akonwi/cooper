@@ -1,6 +1,8 @@
 use ard/testing
 
 use cooper/core/layout
+use cooper/core/layout/cache
+use cooper/core/layout/numeric
 use cooper/core/node
 use cooper/runtime
 use cooper/ui/box
@@ -122,5 +124,36 @@ test fn retained_measure_changes_dirty_layout_and_preserve_geometry() Void!Str {
   testing::assert(
     leaf.layout().local.width == 9 and leaf.layout().local.height == 2,
     "New callback determines geometry",
+  )
+}
+
+test fn layout_dirty_invalidates_basis_and_detach_discards_cache_state() Void!Str {
+  let root = layout::new()
+  let leaf = layout::new()
+  root.insert(leaf, 0)
+  root.compute(20, 10)
+  leaf.cache_state.computed_flex_basis = Float32::from(7.0)
+  root.cache_state.computed_flex_basis = Float32::from(9.0)
+  leaf.mark_dirty()
+  try testing::assert(
+    numeric::is_undefined(leaf.cache_state.computed_flex_basis) and numeric::is_undefined(root.cache_state.computed_flex_basis),
+    "Dirty propagation clears each computed basis",
+  )
+  root.compute(20, 10)
+  leaf.cache_state.complete(12, 3, cache::Direction::ltr)
+  let entry = mut cache::Measurement{
+    available_width: Float32::from(20.0),
+    available_height: Float32::from(10.0),
+    width_mode: cache::SizingMode::fit_content,
+    height_mode: cache::SizingMode::fit_content,
+    computed_width: Float32::from(7.0),
+    computed_height: Float32::from(1.0),
+  }
+  leaf.cache_state.store(entry.@, false)
+  leaf.cache_state.store(entry.@, true)
+  root.remove(leaf)
+  testing::assert(
+    leaf.cache_state.generation == 0 and leaf.cache_state.measurements.size() == 0 and leaf.cache_state.cached_layout.computed_width == -1.0,
+    "A detached child cannot carry stale cache records into its next owner",
   )
 }

@@ -157,3 +157,128 @@ test fn cache_measurement_compatibility_accounts_for_modes_margins_and_bounds() 
     "Unrounded specs do not match",
   )
 }
+
+fn record(available: Int, computed: Int) cache::Measurement {
+  cache::Measurement{
+    available_width: Float32::from(available.to_f64()),
+    available_height: Float32::from(1.0),
+    width_mode: cache::SizingMode::fit_content,
+    height_mode: cache::SizingMode::stretch_fit,
+    computed_width: Float32::from(computed.to_f64()),
+    computed_height: Float32::from(1.0),
+  }
+}
+
+test fn cache_state_invalidates_only_when_a_new_visit_is_required() Void!Str {
+  let state = cache::new_state()
+  try testing::assert(state.prepare(true, 1, 0, cache::Direction::ltr), "Initial visit")
+  state.store(record(20, 7), false)
+  state.store(record(20, 8), true)
+  state.complete(1, 0, cache::Direction::ltr)
+  try testing::assert(
+    state.prepare(true, 1, 0, cache::Direction::ltr) == false,
+    "Dirty node can reuse measurements within its current generation",
+  )
+  try testing::assert(
+    state.measurements.size() == 1 and state.cached_layout.computed_width == 8.0,
+    "Same-generation prepare preserves both caches",
+  )
+  try testing::assert(
+    state.prepare(false, 2, 0, cache::Direction::ltr) == false,
+    "Clean node reuses across generations",
+  )
+  try testing::assert(
+    state.prepare(true, 2, 0, cache::Direction::ltr),
+    "Dirty new generation invalidates",
+  )
+  try testing::assert(
+    state.measurements.size() == 0 and state.cached_layout.computed_width == -1.0,
+    "Both caches reset",
+  )
+  state.complete(2, 0, cache::Direction::ltr)
+  state.store(record(20, 7), false)
+  try testing::assert(
+    state.prepare(false, 2, 1, cache::Direction::ltr),
+    "Config changes force a visit even in same generation",
+  )
+  state.complete(2, 1, cache::Direction::ltr)
+  state.store(record(20, 7), true)
+  try testing::assert(
+    state.prepare(false, 2, 1, cache::Direction::rtl),
+    "Owner direction changes force a visit",
+  )
+  state.computed_flex_basis = Float32::from(12.0)
+  state.computed_flex_basis_generation = 9
+  state.invalidate_basis()
+  testing::assert(
+    numeric::is_undefined(state.computed_flex_basis) and state.computed_flex_basis_generation == 9,
+    "Dirtying invalidates basis without rewriting its generation",
+  )
+}
+
+test fn cache_state_lookup_preserves_layout_and_measurement_roles() Void!Str {
+  let state = cache::new_state()
+  let zero = Float32::from(0.0)
+  state.store(record(20, 7), false)
+  state.store(record(20, 8), false)
+  try testing::assert(
+    state.find(record(20, 0), false, true, zero, zero, true).is_some() == false,
+    "Container layout cannot reuse a measurement-only result",
+  )
+  try testing::assert(
+    state.find(record(20, 0), true, true, zero, zero, true).expect("leaf measurement").computed_width == 7.0,
+    "Measured leaf can reuse oldest compatible measurement for layout",
+  )
+  state.store(record(20, 9), true)
+  try testing::assert(
+    state.find(record(20, 0), true, false, zero, zero, true).expect("layout first").computed_width == 9.0,
+    "Measured leaf prefers layout cache, even for a measurement request",
+  )
+  try testing::assert(
+    state.find(record(20, 0), false, false, zero, zero, true).expect("measurement only").computed_width == 7.0,
+    "Unmeasured measurement ignores layout cache",
+  )
+  try testing::assert(
+    state.find(record(20, 0), false, true, zero, zero, true).expect("layout only").computed_width == 9.0,
+    "Unmeasured layout uses layout cache",
+  )
+  try testing::assert(
+    state.find(record(19, 0), false, false, zero, zero, true).is_some() == false,
+    "Containers need matching specs, not leaf compatibility",
+  )
+  testing::assert(
+    state.find(record(19, 0), true, false, zero, zero, true).is_some(),
+    "Measured leaf may reuse a result under a tighter bound",
+  )
+}
+
+test fn cache_state_eighth_entry_resets_prefix_on_next_miss_not_lru() Void!Str {
+  let state = cache::new_state()
+  let zero = Float32::from(0.0)
+  for width in [1, 2, 3, 4, 5, 6, 7, 8] {
+    state.store(record(width, width), false)
+  }
+  try testing::assert(state.measurements.size() == 8, "Eight entries remain searchable")
+  try testing::assert(
+    state.find(record(1, 0), false, false, zero, zero, false).is_some(),
+    "Oldest is still present",
+  )
+  state.store(record(9, 9), false)
+  try testing::assert(state.measurements.size() == 1, "Ninth miss resets searchable prefix")
+  try testing::assert(
+    state.find(record(8, 0), false, false, zero, zero, false).is_some() == false,
+    "Previous entries are no longer searched",
+  )
+  try testing::assert(
+    state.find(record(9, 0), false, false, zero, zero, false).is_some(),
+    "New entry is retained",
+  )
+  for width in [10, 11, 12, 13, 14, 15, 16] {
+    state.store(record(width, width), false)
+  }
+  state.store(record(17, 17), true)
+  testing::assert(
+    state.measurements.size() == 0 and state.cached_layout.computed_width == 17.0,
+    "A layout-cache miss also resets a full measurement prefix",
+  )
+}

@@ -1,3 +1,4 @@
+use cooper/core/layout/cache
 use cooper/ui/geometry
 use cooper/ui/style
 use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
@@ -49,6 +50,7 @@ struct Node {
   children: [mut Node],
   owner: (mut Node)?,
   dirty: Bool,
+  cache_state: mut cache::State,
   measure: (fn(MeasureInput) MeasureSize)?,
   x: Float64,
   y: Float64,
@@ -69,6 +71,7 @@ fn new() mut Node {
     children: [],
     owner: Maybe::new<mut Node>(),
     dirty: true,
+    cache_state: cache::new_state(),
     measure: Maybe::new<fn(MeasureInput) MeasureSize>(),
     allocation: Maybe::new<Allocation>(),
     line: 0,
@@ -1143,11 +1146,11 @@ fn same_layout_style(a: style::Style, b: style::Style) Bool {
 impl Node {
   // Translated ownership/dirty propagation from Yoga 8ba025e node/Node.cpp
   // and YGNode.cpp. Copyright (c) Meta Platforms, Inc. and affiliates.
-  // MIT license: layout/LICENSE.yoga. Basis/cache invalidation joins this
-  // transition when those source structures are translated.
+  // MIT license: layout/LICENSE.yoga.
   fn mut mark_dirty() {
     if not self.dirty {
       self.dirty = true
+      self.cache_state.invalidate_basis()
       match self.owner {
         owner => owner.mark_dirty(),
         _ => (),
@@ -1198,6 +1201,7 @@ impl Node {
     self.children = retained.@
     if removed {
       child.owner = Maybe::new<mut Node>()
+      child.cache_state = cache::new_state()
       self.mark_dirty()
     }
   }

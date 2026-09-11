@@ -117,3 +117,128 @@ fn can_use_cached_measurement(
     )
   }
 }
+
+// Persistent cache fields and ordering from node/LayoutResults.h and
+// calculateLayoutInternal in algorithm/CalculateLayout.cpp (Yoga 8ba025e).
+enum Direction {
+  inherit,
+  ltr,
+  rtl,
+}
+
+struct State {
+  generation: Int,
+  config_version: Int,
+  last_owner_direction: Direction,
+  computed_flex_basis: Float32,
+  computed_flex_basis_generation: Int,
+  cached_layout: Measurement,
+  measurements: [Measurement],
+}
+
+fn new_state() mut State {
+  (mut State{
+    generation: 0,
+    config_version: 0,
+    last_owner_direction: Direction::inherit,
+    computed_flex_basis: numeric::undefined(),
+    computed_flex_basis_generation: 0,
+    cached_layout: empty(),
+    measurements: [],
+  })
+}
+
+fn same_spec(a: Measurement, b: Measurement) Bool {
+  a.width_mode == b.width_mode and a.height_mode == b.height_mode and numeric::inexact_equals(a.available_width, b.available_width) and numeric::inexact_equals(a.available_height, b.available_height)
+}
+
+impl State {
+  // Call before lookup. A true result requires a visit even if lookup finds
+  // an entry. Generation is advanced only after the visit has completed.
+  fn mut prepare(dirty: Bool, generation: Int, config_version: Int, direction: Direction) Bool {
+    let visit = dirty and self.generation != generation or self.config_version != config_version or self.last_owner_direction != direction
+    if visit {
+      self.measurements = []
+      self.cached_layout = empty()
+    }
+    visit
+  }
+  
+  fn mut invalidate_basis() {
+    self.computed_flex_basis = numeric::undefined()
+  }
+  
+  fn find(
+    request: Measurement,
+    measured: Bool,
+    perform_layout: Bool,
+    margin_row: Float32,
+    margin_column: Float32,
+    round_constraints: Bool,
+  ) Measurement? {
+    mut found = Maybe::new<Measurement>()
+    if measured {
+      if can_use_cached_measurement(
+        request.width_mode,
+        request.available_width,
+        request.height_mode,
+        request.available_height,
+        self.cached_layout,
+        margin_row,
+        margin_column,
+        round_constraints,
+      ) {
+        found = Maybe::new<Measurement>(self.cached_layout)
+      }
+      for entry in self.measurements {
+        if found.is_some() == false and can_use_cached_measurement(
+          request.width_mode,
+          request.available_width,
+          request.height_mode,
+          request.available_height,
+          entry,
+          margin_row,
+          margin_column,
+          round_constraints,
+        ) {
+          found = Maybe::new<Measurement>(entry)
+        }
+      }
+    } else if perform_layout {
+      if same_spec(request, self.cached_layout) {
+        found = Maybe::new<Measurement>(self.cached_layout)
+      }
+    } else {
+      for entry in self.measurements {
+        if found.is_some() == false and same_spec(request, entry) {
+          found = Maybe::new<Measurement>(entry)
+        }
+      }
+    }
+    found
+  }
+  
+  // Call only after recomputing a cache miss, not after a hit. Yoga resets
+  // the measurement prefix at eight even when storing a layout result.
+  fn mut store(result: Measurement, perform_layout: Bool) {
+    if self.measurements.size() == 8 {
+      self.measurements = []
+    }
+    if perform_layout {
+      self.cached_layout = result
+    } else {
+      let entries = mut List::new<Measurement>()
+      for entry in self.measurements {
+        entries.push(entry)
+      }
+      entries.push(result)
+      self.measurements = entries.@
+    }
+  }
+  
+  fn mut complete(generation: Int, config_version: Int, direction: Direction) {
+    self.generation = generation
+    self.config_version = config_version
+    self.last_owner_direction = direction
+  }
+}

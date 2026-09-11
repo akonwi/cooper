@@ -4,6 +4,61 @@ September 10, 2026. The original September 9 source-audit matrices below are
 preserved as a baseline. The integration evidence here records which gaps now
 have additional tests, without claiming complete conformance.
 
+## ADRs 0017–0018: alignment and box baselines implemented
+
+`Style.align_content` now independently distributes wrapped lines, defaulting to
+stretch. The engine preserves minimum gaps, handles single-line and negative
+free-space fallbacks, and mirrors logical line placement under wrap_reverse.
+No-wrap ignores line distribution. Item stretch still respects explicit sizes
+and min/max constraints. Alignment validity is checked when applying a Style;
+the alignment value constructor itself does not reject combinations.
+
+Row baselines use bottom border-box edges. Each line reserves maximum ascent
+(top margin + height) plus maximum bottom margin, alongside the extents of
+non-baseline items. Baseline placement uses the physical line top even under
+wrap_reverse. Column baseline falls back to cross start; cross auto margins
+override item alignment. Contents groups contribute no box baseline.
+
+Executed proof:
+
+- Initial four `test/alignment_test.ard` cases: **0 passed, 4 failed** before
+  implementing validation/distribution (the Style field alone was present so
+  these were runtime failures, not missing-API compiler failures). Now all five
+  pass. Coverage includes all 27 property/value validity boundaries, all seven
+  distribution modes across four directions and both wrap orders, unequal line
+  extents, minimum gaps, positive/zero/negative free space, single-line/no-wrap,
+  constrained auto versus explicit sizes, indefinite cross size, retained style
+  replacement, and independent arithmetic plus fresh-tree comparison.
+- Initial four `test/baseline_test.ard` cases: **1 passed, 3 failed** before
+  baseline implementation. Now all five pass. Coverage includes unequal margins,
+  zero height, independent wrapped lines, main/cross reversal, bordered/padded
+  multiline Text, fixed container independence from descendants, resize/reparent,
+  non-baseline self alignment, auto margins, contents and projected-width replay.
+- Final `ard test`: **362 passed; 0 failed; 0 panicked**.
+- All four changed Ard files passed `ard format`, `ard check`, and
+  `ard format --check`. `go test ./...` passed; retainedyoga has no Go tests.
+- All 20 PTY commands listed in AGENTS.md passed.
+- Inspected `alignment-baseline-frames.png`, rendered from actual headless cells.
+  In a 12-cell cross extent, lines of height 2/3 with gap 1 start at 0/3 for
+  start, 0/6 for stretch, and 2/7 for space_evenly. In the margin comparison,
+  baseline ends both boxes at y3; end instead ends both margin boxes at y5.
+
+### Migration notes
+
+- Replace `align_items: auto` with an explicit item alignment (default stretch).
+  `align_self: auto` remains supported and inherits `align_items`.
+- Move `space_between`, `space_around`, or `space_evenly` from item properties
+  to `align_content` when the intent is distributing wrapped lines. These values
+  now panic if applied to `align_items` or `align_self`. `align_content` rejects
+  auto/baseline; constructors still allow creating these Style values before
+  application. Existing numeric/unit constructor validation is unchanged.
+- Baseline no longer depends on recursive Yoga descendant selection. Use end
+  alignment if the intended result is aligning margin boxes rather than bottom
+  border-box edges. This contract does not promise first-text-line alignment.
+
+Remaining port work: broader ADR 0016 intrinsic/percentage constraints and basis
+conformance, controlled performance comparison, and removal of the old backend.
+
 ## ADR 0019 retained integration
 
 The engine and retained implementation now agree on boxless contents groups:
@@ -97,8 +152,8 @@ Integrated verification after Select and reconciliation:
   `abc` occupies one row at projected width 3; shifting its fractional origin
   produces width 2 and rows `ab/c`, moving the following `Z` down one row.
 
-Remaining conformance work includes wider intrinsic/percentage constraints,
-ADR 0017 item validation and line distribution, and ADR 0018 box baselines.
+The later ADR 0017/0018 evidence above builds on this checkpoint. Wider
+intrinsic/percentage constraint conformance remains outstanding.
 
 ## Oracle review tracker
 

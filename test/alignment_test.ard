@@ -1,0 +1,298 @@
+use ard/testing
+
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/style
+
+test fn alignment_values_are_validated_by_property_when_applied() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let child = box::new(ctx)
+  let values = [
+    style::Align::auto,
+    style::Align::start,
+    style::Align::end,
+    style::Align::center,
+    style::Align::stretch,
+    style::Align::baseline,
+    style::Align::space_between,
+    style::Align::space_around,
+    style::Align::space_evenly,
+  ]
+  for value, index in values {
+    // Value construction is allowed; application is the contract boundary.
+    for property in [0, 1, 2] {
+      let styles = match property {
+        0 => style::new(align_items: value),
+        1 => style::new(align_self: value),
+        _ => style::new(align_content: value),
+      }
+      let valid = match property {
+        0 => index > 0 and index < 6,
+        1 => index < 6,
+        _ => index != 0 and index != 5,
+      }
+      let outcome = unsafe {
+        child.set_style(styles)
+      }
+      try testing::assert(
+        outcome.is_ok() == valid,
+        "Alignment index {index} property {property}: expected validity {valid}",
+      )
+    }
+  }
+  Result::ok(())
+}
+
+test fn alignment_distributes_asymmetric_lines_with_gaps_in_all_directions() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let a = box::new(ctx)
+  let b = box::new(ctx)
+  parent.add(a)
+  parent.add(b)
+  let values = [
+    style::Align::start,
+    style::Align::end,
+    style::Align::center,
+    style::Align::stretch,
+    style::Align::space_between,
+    style::Align::space_around,
+    style::Align::space_evenly,
+  ]
+  // Cross extent 18, lines 2 and 3, minimum gap 1: free space 12.
+  let starts_a = [0, 12, 6, 0, 0, 3, 4]
+  let starts_b = [3, 15, 9, 9, 15, 12, 11]
+  for direction in [
+    style::FlexDirection::row,
+    style::FlexDirection::row_reverse,
+    style::FlexDirection::column,
+    style::FlexDirection::column_reverse,
+  ] {
+    let row = direction == style::FlexDirection::row or direction == style::FlexDirection::row_reverse
+    let aw = match row {
+      true => 4,
+      false => 2,
+    }
+    let ah = match row {
+      true => 2,
+      false => 4,
+    }
+    let bw = match row {
+      true => 4,
+      false => 3,
+    }
+    let bh = match row {
+      true => 3,
+      false => 4,
+    }
+    let width = match row {
+      true => 4,
+      false => 18,
+    }
+    let height = match row {
+      true => 18,
+      false => 4,
+    }
+    a.set_style(style::new(width: style::cells(aw), height: style::cells(ah), flex_shrink: 0.0))
+    b.set_style(style::new(width: style::cells(bw), height: style::cells(bh), flex_shrink: 0.0))
+    for wrap in [style::FlexWrap::wrap, style::FlexWrap::wrap_reverse] {
+      for value, index in values {
+        parent.set_style(
+          style::new(
+            flex_direction: direction,
+            flex_wrap: wrap,
+            align_content: value,
+            align_items: style::Align::start,
+            gap: style::cells(1),
+          ),
+        )
+        ctx.compute_layout(parent, width, height)
+        let start_a = starts_a.at(index).expect("start a")
+        let start_b = starts_b.at(index).expect("start b")
+        let expected_a = match wrap == style::FlexWrap::wrap_reverse {
+          true => 18 - start_a - 2,
+          false => start_a,
+        }
+        let expected_b = match wrap == style::FlexWrap::wrap_reverse {
+          true => 18 - start_b - 3,
+          false => start_b,
+        }
+        let actual_a = match row {
+          true => a.layout().local.y,
+          false => a.layout().local.x,
+        }
+        let actual_b = match row {
+          true => b.layout().local.y,
+          false => b.layout().local.x,
+        }
+        try testing::assert(
+          actual_a == expected_a and actual_b == expected_b,
+          "Distribution {index}: expected {expected_a}/{expected_b}, got {actual_a}/{actual_b}",
+        )
+      }
+    }
+  }
+  Result::ok(())
+}
+
+test fn alignment_negative_free_space_and_single_line_fallbacks() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let a = box::new(
+    ctx,
+    styles: style::new(width: style::cells(4), height: style::cells(2), flex_shrink: 0.0),
+  )
+  let b = box::new(
+    ctx,
+    styles: style::new(width: style::cells(4), height: style::cells(4), flex_shrink: 0.0),
+  )
+  parent.add(a)
+  parent.add(b)
+  let values = [
+    style::Align::start,
+    style::Align::end,
+    style::Align::center,
+    style::Align::stretch,
+    style::Align::space_between,
+    style::Align::space_around,
+    style::Align::space_evenly,
+  ]
+  let negative_a = [0, -4, -2, 0, 0, -2, -2]
+  let single_a = [0, 8, 4, 0, 0, 4, 4]
+  for value, index in values {
+    parent.set_style(
+      style::new(
+        flex_direction: style::FlexDirection::row,
+        flex_wrap: style::FlexWrap::wrap,
+        align_content: value,
+        align_items: style::Align::start,
+        gap: style::cells(2),
+      ),
+    )
+    ctx.compute_layout(parent, 4, 4)
+    let negative = negative_a.at(index).expect("negative start")
+    try testing::assert(
+      a.layout().local.y == negative and b.layout().local.y == negative + 4,
+      "Negative distribution {index} must retain minimum gap and use fallback",
+    )
+    ctx.compute_layout(parent, 4, 8)
+    try testing::assert(
+      a.layout().local.y == 0 and b.layout().local.y == 4,
+      "Zero free space adds no distribution",
+    )
+    parent.remove(b)
+    ctx.compute_layout(parent, 4, 10)
+    try testing::assert(
+      a.layout().local.y == single_a.at(index).expect("single start"),
+      "Single wrapped line distribution {index}",
+    )
+    parent.set_style(
+      style::new(
+        flex_direction: style::FlexDirection::row,
+        align_content: value,
+        align_items: style::Align::end,
+      ),
+    )
+    ctx.compute_layout(parent, 4, 10)
+    try testing::assert(a.layout().local.y == 8, "No-wrap ignores align_content but honors item alignment")
+    parent.add(b)
+  }
+  Result::ok(())
+}
+
+test fn alignment_line_stretch_only_expands_auto_items_with_constraints() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      gap: style::cells(1),
+    ),
+  )
+  let auto = box::new(
+    ctx,
+    styles: style::new(width: style::cells(2), max_height: style::cells(4), flex_shrink: 0.0),
+  )
+  let explicit = box::new(
+    ctx,
+    styles: style::new(width: style::cells(2), height: style::cells(2), flex_shrink: 0.0),
+  )
+  let next = box::new(
+    ctx,
+    styles: style::new(width: style::cells(5), height: style::cells(3), flex_shrink: 0.0),
+  )
+  parent.add(auto)
+  parent.add(explicit)
+  parent.add(next)
+  ctx.compute_layout(parent, 5, 18)
+  try testing::assert(
+    auto.layout().local.height == 4 and explicit.layout().local.height == 2 and next.layout().local.y == 9,
+    "Stretched line 8 cells, constrained auto 4, explicit 2, next line y9",
+  )
+  parent.set_style(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      align_content: style::Align::start,
+      gap: style::cells(1),
+    ),
+  )
+  ctx.compute_layout(parent, 5, 18)
+  testing::assert(
+    auto.layout().local.height == 2 and next.layout().local.y == 3,
+    "Replacing distribution resets stretched line extents",
+  )
+}
+
+test fn alignment_indefinite_cross_size_has_no_extra_space_and_matches_fresh_tree() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let a_style = style::new(width: style::cells(4), height: style::cells(2), flex_shrink: 0.0)
+  let b_style = style::new(width: style::cells(4), height: style::cells(3), flex_shrink: 0.0)
+  let a = box::new(ctx, styles: a_style)
+  let b = box::new(ctx, styles: b_style)
+  parent.add(a)
+  parent.add(b)
+  ctx.compute_layout(parent, 4, 18)
+  for alignment in [
+    style::Align::start,
+    style::Align::end,
+    style::Align::center,
+    style::Align::stretch,
+    style::Align::space_between,
+    style::Align::space_around,
+    style::Align::space_evenly,
+  ] {
+    let styles = style::new(
+      width: style::cells(4),
+      height: style::max_content(),
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      align_content: alignment,
+      gap: style::cells(1),
+    )
+    parent.set_style(styles)
+    ctx.compute_layout(parent, 4, 18)
+    try testing::assert(
+      parent.layout().local.height == 6 and a.layout().local.y == 0 and b.layout().local.y == 3,
+      "Natural cross size must not distribute ancestor's spare space",
+    )
+    let fresh = box::new(ctx, styles: styles)
+    let fresh_a = box::new(ctx, styles: a_style)
+    let fresh_b = box::new(ctx, styles: b_style)
+    fresh.add(fresh_a)
+    fresh.add(fresh_b)
+    ctx.compute_layout(fresh, 4, 18)
+    try testing::assert(
+      a.layout().local.y == fresh_a.layout().local.y and b.layout().local.y == fresh_b.layout().local.y and parent.layout().local.height == fresh.layout().local.height,
+      "Retained distribution changes must agree with fresh geometry",
+    )
+  }
+  Result::ok(())
+}

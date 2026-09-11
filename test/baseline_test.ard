@@ -1,0 +1,268 @@
+use ard/testing
+
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/style
+use cooper/ui/text
+
+test fn baseline_bottom_edges_and_margin_descent_determine_line_extent() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
+      height: style::max_content(),
+      align_items: style::Align::baseline,
+    ),
+  )
+  let a = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(2),
+      height: style::cells(1),
+      margin: style::Edges{
+        top: style::cells(1),
+        bottom: style::cells(2),
+        left: style::cells(0),
+        right: style::cells(0),
+      },
+    ),
+  )
+  let b = box::new(ctx, styles: style::new(width: style::cells(2), height: style::cells(3)))
+  let zero = box::new(ctx, styles: style::new(width: style::cells(1), height: style::cells(0)))
+  parent.add(a)
+  parent.add(b)
+  parent.add(zero)
+  ctx.compute_layout(parent, 10, 10)
+  try testing::assert(parent.layout().local.height == 5, "Line requires max ascent3 plus max descent2")
+  try testing::assert(
+    a.layout().local.y == 2 and b.layout().local.y == 0 and zero.layout().local.y == 3,
+    "Every bottom edge, including zero-height box, is at y3",
+  )
+  parent.set_style(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      height: style::cells(5),
+      align_items: style::Align::end,
+    ),
+  )
+  ctx.compute_layout(parent, 10, 10)
+  testing::assert(
+    a.layout().local.y == 2 and b.layout().local.y == 2 and zero.layout().local.y == 5,
+    "End aligns margin boxes instead, not box baselines",
+  )
+}
+
+test fn baseline_wrapped_lines_use_physical_top_even_when_reversed() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let a = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(2),
+      height: style::cells(1),
+      flex_shrink: 0.0,
+      margin: style::Edges{
+        top: style::cells(1),
+        bottom: style::cells(2),
+        left: style::cells(0),
+        right: style::cells(0),
+      },
+    ),
+  )
+  let b = box::new(
+    ctx,
+    styles: style::new(width: style::cells(2), height: style::cells(3), flex_shrink: 0.0),
+  )
+  let c = box::new(
+    ctx,
+    styles: style::new(width: style::cells(2), height: style::cells(2), flex_shrink: 0.0),
+  )
+  let d = box::new(
+    ctx,
+    styles: style::new(width: style::cells(2), height: style::cells(4), flex_shrink: 0.0),
+  )
+  parent.add(a)
+  parent.add(b)
+  parent.add(c)
+  parent.add(d)
+  for direction in [style::FlexDirection::row, style::FlexDirection::row_reverse] {
+    for wrap in [style::FlexWrap::wrap, style::FlexWrap::wrap_reverse] {
+      parent.set_style(
+        style::new(
+          flex_direction: direction,
+          flex_wrap: wrap,
+          align_items: style::Align::baseline,
+          align_content: style::Align::start,
+          gap: style::cells(1),
+        ),
+      )
+      ctx.compute_layout(parent, 5, 12)
+      let first_top = match wrap == style::FlexWrap::wrap_reverse {
+        true => 7,
+        false => 0,
+      }
+      let second_top = match wrap == style::FlexWrap::wrap_reverse {
+        true => 2,
+        false => 6,
+      }
+      try testing::assert(
+        a.layout().local.y == first_top + 2 and b.layout().local.y == first_top,
+        "First baseline uses physical top +3; reversed lines must not invert metric",
+      )
+      try testing::assert(
+        c.layout().local.y == second_top + 2 and d.layout().local.y == second_top,
+        "Second line has independent baseline +4",
+      )
+    }
+  }
+  Result::ok(())
+}
+
+test fn baseline_uses_bordered_text_and_container_boxes_not_descendants() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
+      align_items: style::Align::baseline,
+    ),
+  )
+  let label = text::new(
+    ctx,
+    content: "a\nb",
+    styles: style::new(
+      border: style::Border::single,
+      padding: style::edges(style::cells(1)),
+      flex_shrink: 0.0,
+    ),
+  )
+  let container = box::new(ctx, styles: style::new(width: style::cells(3), height: style::cells(4)))
+  let nested = box::new(ctx, styles: style::new(height: style::cells(1)))
+  let other = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(1),
+      height: style::cells(1),
+      align_self: style::Align::end,
+    ),
+  )
+  container.add(nested)
+  parent.add(label)
+  parent.add(container)
+  parent.add(other)
+  ctx.compute_layout(parent, 15, 10)
+  try testing::assert(
+    label.layout().local.height == 6 and container.layout().local.y == 2,
+    "Text baseline includes border/padding and both text rows",
+  )
+  try testing::assert(other.layout().local.y == 9, "Non-baseline self alignment is independent")
+  nested.set_style(style::new(height: style::cells(3)))
+  ctx.compute_layout(parent, 15, 10)
+  try testing::assert(
+    container.layout().local.y == 2,
+    "Changing descendant baseline cannot change fixed container baseline",
+  )
+  label.set_content("a")
+  ctx.compute_layout(parent, 15, 8)
+  try testing::assert(
+    container.layout().local.y == 1,
+    "Retained text height and resize recompute the baseline",
+  )
+  container.add(label)
+  ctx.compute_layout(parent, 15, 8)
+  testing::assert(
+    container.layout().local.y == 0,
+    "Reparented descendant no longer contributes directly to row baseline",
+  )
+}
+
+test fn baseline_columns_fall_back_to_cross_start_and_auto_margins_override() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(2),
+      height: style::cells(1),
+      margin: style::Edges{
+        left: style::cells(1),
+        right: style::cells(2),
+        top: style::cells(0),
+        bottom: style::cells(0),
+      },
+    ),
+  )
+  parent.add(child)
+  for direction in [style::FlexDirection::column, style::FlexDirection::column_reverse] {
+    for wrap in [style::FlexWrap::no_wrap, style::FlexWrap::wrap_reverse] {
+      parent.set_style(
+        style::new(flex_direction: direction, flex_wrap: wrap, align_items: style::Align::baseline),
+      )
+      ctx.compute_layout(parent, 10, 6)
+      let expected = match wrap == style::FlexWrap::wrap_reverse {
+        true => 6,
+        false => 1,
+      }
+      try testing::assert(child.layout().local.x == expected, "Column baseline is logical cross start")
+    }
+  }
+  parent.set_style(
+    style::new(flex_direction: style::FlexDirection::row, align_items: style::Align::baseline),
+  )
+  child.set_style(
+    style::new(
+      width: style::cells(2),
+      height: style::cells(1),
+      margin: style::Edges{
+        top: style::auto(),
+        bottom: style::cells(0),
+        left: style::cells(0),
+        right: style::cells(0),
+      },
+    ),
+  )
+  ctx.compute_layout(parent, 10, 6)
+  testing::assert(child.layout().local.y == 5, "Cross auto margin overrides baseline")
+}
+
+test fn baseline_contents_and_projected_text_height_share_the_final_line() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let group = box::new(
+    ctx,
+    styles: style::new(display: style::Display::contents, height: style::cells(50)),
+  )
+  let label = text::new(
+    ctx,
+    content: "abc",
+    wrap: text::TextWrap::character,
+    styles: style::new(width: style::percent(50.0), flex_shrink: 0.0),
+  )
+  let tall = box::new(
+    ctx,
+    styles: style::new(width: style::percent(50.0), height: style::cells(3), flex_shrink: 0.0),
+  )
+  group.add(label)
+  parent.add(group)
+  parent.add(tall)
+  for direction in [style::FlexDirection::row, style::FlexDirection::row_reverse] {
+    parent.set_style(style::new(flex_direction: direction, align_items: style::Align::baseline))
+    ctx.compute_layout(parent, 5, 6)
+    let expected_height = match direction == style::FlexDirection::row {
+      true => 1,
+      false => 2,
+    }
+    try testing::assert(group.layout().local.height == 0, "Contents contributes no box baseline")
+    try testing::assert(
+      label.layout().local.height == expected_height and label.layout().local.y == 3 - expected_height and tall.layout().local.y == 0,
+      "Projected text height must reconcile to the same bottom-edge baseline",
+    )
+  }
+  Result::ok(())
+}

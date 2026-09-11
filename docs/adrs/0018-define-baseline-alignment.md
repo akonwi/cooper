@@ -100,11 +100,11 @@ distinguish baseline policies.
 
 - Baselines are predictable from public geometry, without hidden child selection.
 - This intentionally differs from recursive Yoga fallback and does not promise
-  first-line text alignment. It needs explicit migration notes and may need a
-  backend adapter rather than a raw enum mapping.
+  first-line text alignment. The Ard engine implements the metric directly;
+  migration notes and executed evidence are in the layout audit.
 - Baseline remains distinct from end alignment when margins differ.
-- Acceptance establishes the contract; runtime implementation and conformance
-  tests remain pending.
+- Implemented with box, margin, wrapped-line, retained-mutation, contents, and
+  projected-text checks in `test/baseline_test.ard`.
 
 ## Related
 

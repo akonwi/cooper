@@ -662,6 +662,8 @@ fn compute_visible(
         }
         current.main = 0.0
         current.cross = 0.0
+        current.ascent = 0.0
+        mut descent = 0.to_f64()
         for item, index in current.items {
           let margins_w = match row {
             true => item.before + item.after,
@@ -707,7 +709,15 @@ fn compute_visible(
             false => (),
           }
           current.cross = max(current.cross, item.cross + item.cross_before + item.cross_after)
+          if row and item.align == style::Align::baseline and item.auto_cross_before == false and item.auto_cross_after == false {
+            current.ascent = max(
+              current.ascent,
+              spacing(item.node.value.margin.top, percent_w) + item.cross,
+            )
+            descent = max(descent, spacing(item.node.value.margin.bottom, percent_w))
+          }
         }
+        current.cross = max(current.cross, current.ascent + descent)
         used_main = max(used_main, current.main)
         used_cross = used_cross + current.cross
       }
@@ -766,11 +776,40 @@ fn compute_visible(
           true => max(0.0, height - vertical),
           false => max(0.0, width - horizontal),
         }
-        let line_extra = match s.flex_wrap == style::FlexWrap::no_wrap {
-          true => 0.0,
-          false => max(0.0, final_cross - used_cross) / lines.size().to_f64(),
-        }
+        let line_free = final_cross - used_cross
+        let line_count = lines.size().to_f64()
+        mut line_extra = 0.to_f64()
+        mut line_gap = cross_gap
         mut cross_pos = 0.to_f64()
+        if s.flex_wrap != style::FlexWrap::no_wrap {
+          match s.align_content {
+            style::Align::end => { cross_pos = line_free },
+            style::Align::center => { cross_pos = line_free / 2.0 },
+            style::Align::stretch => { line_extra = max(0.0, line_free) / line_count },
+            style::Align::space_between => {
+              if lines.size() > 1 and line_free > 0.0 {
+                line_gap = line_gap + line_free / (line_count - 1.0)
+              }
+            },
+            style::Align::space_around => {
+              if line_free > 0.0 {
+                cross_pos = line_free / (2.0 * line_count)
+                line_gap = line_gap + line_free / line_count
+              } else {
+                cross_pos = line_free / 2.0
+              }
+            },
+            style::Align::space_evenly => {
+              if line_free > 0.0 {
+                cross_pos = line_free / (line_count + 1.0)
+                line_gap = line_gap + cross_pos
+              } else {
+                cross_pos = line_free / 2.0
+              }
+            },
+            _ => (),
+          }
+        }
         for current in lines {
           let line_cross = match s.flex_wrap == style::FlexWrap::no_wrap {
             true => final_cross,
@@ -900,11 +939,18 @@ fn compute_visible(
               true => final_main - main_pos - item.main,
               false => main_pos,
             }
-            let reversed_cross = match s.flex_wrap == style::FlexWrap::wrap_reverse {
+            mut reversed_cross = match s.flex_wrap == style::FlexWrap::wrap_reverse {
               true => {
                 final_cross - cross_pos - cp - axis_size(Size{width: item.node.width, height: item.node.height}, not row)
               },
               false => cross_pos + cp,
+            }
+            if row and item.align == style::Align::baseline and item.auto_cross_before == false and item.auto_cross_after == false {
+              let physical_top = match s.flex_wrap == style::FlexWrap::wrap_reverse {
+                true => final_cross - cross_pos - line_cross,
+                false => cross_pos,
+              }
+              reversed_cross = physical_top + current.ascent - item.node.height
             }
             let item_x = match row {
               true => mp,
@@ -954,7 +1000,7 @@ fn compute_visible(
             }
             main_pos = main_pos + item.main + item.after + after_space + between
           }
-          cross_pos = cross_pos + line_cross + cross_gap
+          cross_pos = cross_pos + line_cross + line_gap
         }
         node.width = width
         node.height = height

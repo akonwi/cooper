@@ -11,20 +11,20 @@ use cooper/core/router
 use cooper/core/runtime as dispatch_runtime
 use cooper/core/selection_state
 use cooper/event
+use go:cooper/ffi/core/backend/clipboardbridge
+use go:cooper/ffi/core/backend/clock
+use go:cooper/ffi/core/backend/notificationbridge
+use go:cooper/ffi/core/backend/signalwatch
+use go:cooper/ffi/core/backend/urlopen
+use go:cooper/ffi/core/backend/vaxisbridge as bridge
 use cooper/terminal_progress
 use cooper/ui/color
 use cooper/ui/selection as public_selection
 use cooper/ui/style
-use go:github.com/akonwi/cooper/ffi/core/backend/clipboardbridge
-use go:github.com/akonwi/cooper/ffi/core/backend/clock
-use go:github.com/akonwi/cooper/ffi/core/backend/notificationbridge
-use go:github.com/akonwi/cooper/ffi/core/backend/signalwatch
-use go:github.com/akonwi/cooper/ffi/core/backend/urlopen
-use go:github.com/akonwi/cooper/ffi/core/backend/vaxisbridge as bridge
-use go:go.rockorager.dev/vaxis
 use go:math
 use go:sync
 use go:unicode
+use go:vaxis
 
 private fn vaxis_color(value: color::Color?) vaxis::Color {
   match value {

@@ -5,17 +5,17 @@ use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/event
+use go:cooper/ffi/core/backend/vaxisbridge as bridge
 use cooper/runtime
 use cooper/ui/box
 use cooper/ui/color
 use cooper/ui/geometry
 use cooper/ui/selection
 use cooper/ui/style as layout_style
-use go:github.com/akonwi/cooper/ffi/core/backend/vaxisbridge as bridge
-use go:github.com/rockorager/go-uucode as unicode
-use go:go.rockorager.dev/vaxis
 use go:math
 use go:strings
+use go:uucode as unicode
+use go:vaxis
 
 struct TextStyle {
   foreground: color::Color?,

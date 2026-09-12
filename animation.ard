@@ -1,6 +1,6 @@
 use ard/unsafe
 
-use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge
+use go:cooper/ffi/core/backend/numberbridge
 use go:math
 
 type Easing = fn(Float64) Float64
@@ -298,7 +298,7 @@ private fn evaluate_at(
           }
           valid = evaluation_valid(shared, revision, allow)
         }
-
+        
         if valid {
           let available = timeline_time - track.start
           let elapsed = match available > track.duration {
@@ -349,7 +349,7 @@ private fn evaluate_at(
       }
     }
   }
-
+  
   let calls = shared.calls
   for scheduled in calls {
     if valid and timeline_time >= scheduled.start and (not scheduled.executed) {
@@ -365,27 +365,27 @@ impl Timeline {
   fn duration() Int {
     state(self.internal).duration
   }
-
+  
   fn current_time() Int {
     state(self.internal).current_time
   }
-
+  
   fn iteration() Int {
     state(self.internal).iteration
   }
-
+  
   fn status() Status {
     state(self.internal).status
   }
-
+  
   fn is_playing() Bool {
     self.status() == Status::playing
   }
-
+  
   fn is_complete() Bool {
     self.status() == Status::completed
   }
-
+  
   fn mut add(
     duration: Int,
     update: fn(Frame),
@@ -428,7 +428,7 @@ impl Timeline {
       (shared.wake)()
     }
   }
-
+  
   fn mut call(action: fn(), at: Int?) {
     let shared = state(self.internal)
     require_available(shared)
@@ -452,7 +452,7 @@ impl Timeline {
       (shared.wake)()
     }
   }
-
+  
   fn mut play() Bool {
     let shared = state(self.internal)
     require_available(shared)
@@ -472,7 +472,7 @@ impl Timeline {
       true
     }
   }
-
+  
   fn mut pause() Bool {
     let shared = state(self.internal)
     require_available(shared)
@@ -485,7 +485,7 @@ impl Timeline {
       true
     }
   }
-
+  
   fn mut restart() Bool {
     let shared = state(self.internal)
     require_available(shared)
@@ -499,7 +499,7 @@ impl Timeline {
     (shared.wake)()
     true
   }
-
+  
   fn mut destroy() {
     let shared = state(self.internal)
     if shared.status != Status::destroyed {
@@ -512,15 +512,15 @@ impl Timeline {
       (shared.wake)()
     }
   }
-
+  
   fn mut internal_active() Bool {
     state(self.internal).status == Status::playing
   }
-
+  
   fn mut internal_destroyed() Bool {
     state(self.internal).status == Status::destroyed
   }
-
+  
   fn mut internal_tick(delta: Int, allow: fn() Bool) Bool {
     if delta < 0 {
       panic("animation frame delta must be non-negative")

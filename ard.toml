@@ -1,3 +1,7 @@
 name = "cooper"
-ard = ">= 0.39.0"
+ard = ">= 0.41.0"
 target = "go"
+
+[go.imports]
+vaxis = "go.rockorager.dev/vaxis"
+uucode = "github.com/rockorager/go-uucode"

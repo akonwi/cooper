@@ -831,9 +831,13 @@ private struct WrapSegment {
 }
 
 private fn newline(grapheme: Str) Bool {
-  let rune = try grapheme.runes().at(0) -> _ { false }
-  let kind = unicode::LineBreak(Int32::from(rune))
-  kind == unicode::LineBreakBK or kind == unicode::LineBreakCR or kind == unicode::LineBreakLF or kind == unicode::LineBreakNL
+  if grapheme.size() == 1 {
+    grapheme == "\n" or grapheme == "\r" or grapheme == "\v" or grapheme == "\f"
+  } else {
+    let rune = try grapheme.runes().at(0) -> _ { false }
+    let kind = unicode::LineBreak(Int32::from(rune))
+    kind == unicode::LineBreakBK or kind == unicode::LineBreakCR or kind == unicode::LineBreakLF or kind == unicode::LineBreakNL
+  }
 }
 
 private fn wrap_segments(content: Str, measure: fn(Str) Int) [WrapSegment] {
@@ -895,11 +899,7 @@ private fn finish(lines: mut [Line]) Layout {
 
 private fn unwrapped(content: Str, measure: fn(Str) Int) Layout {
   let lines = mut List::new<Line>()
-  // Vaxis expands every tab to eight spaces. Normalize that expansion before
-  // slicing so iterator byte offsets also address the rendered line source.
-  let source = strings::ReplaceAll(content, "\t", "        ")
-  mut start = 0
-  mut offset = 0
+  mut parts = mut List::new<Str>()
   mut width = 0
   let iterator = mut vaxis::NewCharacterIterator(content)
   mut reading = true
@@ -908,22 +908,18 @@ private fn unwrapped(content: Str, measure: fn(Str) Int) Layout {
       character => {
         let grapheme = character.Grapheme
         if newline(grapheme) {
-          push_line(
-            lines,
-            source.slice(start: start, end: offset).expect("line source range"),
-            width,
-          )
-          start = offset + grapheme.size()
+          push_line(lines, strings::Join(parts, ""), width)
+          parts = mut List::new<Str>()
           width = 0
         } else {
+          parts.push(grapheme)
           width = width + measure(grapheme)
         }
-        offset = offset + grapheme.size()
       },
       _ => { reading = false },
     }
   }
-  push_line(lines, source.slice(start: start, end: offset).expect("last line source range"), width)
+  push_line(lines, strings::Join(parts, ""), width)
   finish(lines)
 }
 
@@ -2212,6 +2208,33 @@ test fn unicode_word_wrap_uses_line_opportunities_and_intrinsic_measurement() Vo
     "Expected undefined width to measure unwrapped content",
   )
   testing::assert(finite.height == 2, "Expected finite width to activate wrapping")
+}
+
+test fn newline_preserves_ascii_controls_and_unicode_hard_breaks() Void!Str {
+  for value in ["\n", "\r", "\r\n", "\v", "\f", "\u0085", "\u2028", "\u2029"] {
+    try testing::assert(newline(value), "Every mandatory hard break is recognized")
+  }
+  for value in [
+    "",
+    " ",
+    "\t",
+    "\x00",
+    "\x1f",
+    "!",
+    "0",
+    "A",
+    "z",
+    "~",
+    "\x7f",
+    "é",
+    "你",
+    "é",
+    "🙂",
+    "\u00a0",
+  ] {
+    try testing::assert(not newline(value), "Ordinary glyphs and non-breaking controls are not hard breaks")
+  }
+  Result::ok(())
 }
 
 test fn unwrapped_preserves_unicode_and_hard_breaks() Void!Str {

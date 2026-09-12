@@ -1,0 +1,1005 @@
+use cooper/core/layout
+use cooper/core/layout/absolute
+use cooper/core/layout/cache
+use cooper/core/layout/children
+use cooper/core/layout/flex
+use cooper/core/layout/length
+use cooper/core/layout/measure
+use cooper/core/layout/numeric
+use cooper/core/layout/position
+use cooper/core/layout/redistribute
+use cooper/ui/style
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// MIT license: LICENSE.yoga. Recursive translation of Yoga 8ba025e
+// algorithm/CalculateLayout.cpp, with positioning and absolute placement in
+// sibling modules. The production entry enables Cooper's accepted intrinsic,
+// constraint and shared-edge projection policies around the translated phases.
+
+// Application-root entry. Cooper's retained Root supplies an exact terminal
+// viewport, so both outer axes are stretch-fit and contain no margins. A fresh
+// generation is used for every transaction; retained measurement caches remain
+// eligible through cache::State's compatibility checks.
+// Returns whether projected geometry was recalculated.
+fn calculate(node: mut layout::Node, width: Int, height: Int) Bool {
+  if width < 0 or height < 0 {
+    panic("layout bounds must be non-negative")
+  }
+  if node.dirty or node.transaction_width != width or node.transaction_height != height {
+    calculate_transaction(node, width, height)
+    true
+  } else {
+    false
+  }
+}
+
+fn calculate_transaction(node: mut layout::Node, width: Int, height: Int) {
+  let available_width = Float32::from(width)
+  let available_height = Float32::from(height)
+  node.intrinsic_policy = true
+  children::resolve_insets(node, available_width)
+  let padding_row = Float32::from(node.insets.left + node.insets.right)
+  let padding_column = Float32::from(node.insets.top + node.insets.bottom)
+  let generation = node.cache_state.generation + 1
+  let width_axis = measure::Axis{
+    available: match length::is_definite(node.value.width, available_width) {
+      true => length::resolve(node.value.width, available_width),
+      false => available_width,
+    },
+    mode: match node.measure.is_some() and length::is_definite(node.value.width, available_width) == false {
+      true => cache::SizingMode::fit_content,
+      false => cache::SizingMode::stretch_fit,
+    },
+    padding_border: padding_row,
+    minimum: length::resolve(node.value.min_width, available_width),
+    maximum: length::resolve(node.value.max_width, available_width),
+  }
+  let height_axis = measure::Axis{
+    available: match length::is_definite(node.value.height, available_height) {
+      true => length::resolve(node.value.height, available_height),
+      false => available_height,
+    },
+    mode: match node.measure.is_some() and length::is_definite(node.value.height, available_height) == false {
+      true => cache::SizingMode::fit_content,
+      false => cache::SizingMode::stretch_fit,
+    },
+    padding_border: padding_column,
+    minimum: length::resolve(node.value.min_height, available_height),
+    maximum: length::resolve(node.value.max_height, available_height),
+  }
+  let _ = visit(
+    node,
+    width_axis,
+    height_axis,
+    Float32::from(0.0),
+    Float32::from(0.0),
+    generation,
+    true,
+  )
+  node.x = numbers::Widen(position::relative(node, true, available_width, available_height))
+  node.y = numbers::Widen(position::relative(node, false, available_width, available_height))
+  // Freeze every horizontal edge before projected-width height replay. The
+  // second pass may recompute vertical line extents and baselines, but its
+  // horizontal results and cache/basis writes are transaction-local.
+  if node.projected_width_changes_measurement(0.0) {
+    node.freeze_horizontal(0.0)
+    node.begin_replay()
+    let _ = visit(
+      node,
+      width_axis,
+      height_axis,
+      Float32::from(0.0),
+      Float32::from(0.0),
+      generation + 1,
+      true,
+    )
+    node.finish_replay()
+  }
+  node.project(0.0, 0.0)
+  node.transaction_width = width
+  node.transaction_height = height
+}
+
+// Stretch children are measured during distribution and laid out after the
+// complete line cross extent is known (CalculateLayout.cpp steps5 and7).
+struct StretchVisit {
+  child: mut layout::Node,
+  main: measure::Axis,
+  cross: measure::Axis,
+  margin_row: Float32,
+  margin_column: Float32,
+}
+
+fn resolved_zero(value: style::Length, reference: Float32) Float32 {
+  let result = length::resolve(value, reference)
+  match numeric::is_defined(result) {
+    true => result,
+    false => Float32::from(0.0),
+  }
+}
+
+fn choose_float(condition: Bool, yes: Float32, no: Float32) Float32 {
+  match condition {
+    true => yes,
+    false => no,
+  }
+}
+
+fn choose_length(condition: Bool, yes: style::Length, no: style::Length) style::Length {
+  match condition {
+    true => yes,
+    false => no,
+  }
+}
+
+fn intrinsic_length(value: style::Length) Bool {
+  value.kind == style::LengthKind::max_content or value.kind == style::LengthKind::fit_content or value.kind == style::LengthKind::stretch
+}
+
+fn unresolved_percent(value: style::Length) style::Length {
+  match value.kind == style::LengthKind::percent {
+    true => style::undefined(),
+    false => value,
+  }
+}
+
+fn intrinsic_policy_value(value: style::Length, natural: Float32, available: Float32) Float32 {
+  match value.kind {
+    style::LengthKind::max_content => natural,
+    style::LengthKind::fit_content => {
+      match numeric::is_defined(available) {
+        true => numeric::min_or_defined(natural, available),
+        false => natural,
+      }
+    },
+    style::LengthKind::stretch => {
+      match numeric::is_defined(available) {
+        true => available,
+        false => natural,
+      }
+    },
+    _ => numeric::undefined(),
+  }
+}
+
+// Resolve maximum first and minimum second: ADR0016 deliberately makes the
+// minimum win when the two bounds conflict.
+fn intrinsic_bound(value: Float32, minimum: Float32, maximum: Float32, floor: Float32) Float32 {
+  mut result = value
+  if numeric::is_defined(maximum) and result > maximum {
+    result = maximum
+  }
+  if numeric::is_defined(minimum) and result < minimum {
+    result = minimum
+  }
+  numeric::max_or_defined(result, floor)
+}
+
+// CalculateLayout.cpp step9: fit-content scroll containers are capped by the
+// offered size instead of expanding to their overflowing contents.
+fn container_measured_size(axis: measure::Axis, content: Float32, scroll: Bool) Float32 {
+  match scroll and axis.mode == cache::SizingMode::fit_content {
+    true => {
+      numeric::max_or_defined(
+        numeric::min_or_defined(axis.available, axis.bound(content + axis.padding_border)),
+        axis.padding_border,
+      )
+    },
+    false => axis.measured_size(content),
+  }
+}
+
+fn basis_visit(
+  child: mut layout::Node,
+  width: measure::Axis,
+  height: measure::Axis,
+  margin_row: Float32,
+  margin_column: Float32,
+  generation: Int,
+) {
+  visit(child, width, height, margin_row, margin_column, generation, false)
+}
+
+fn axis_item(child: mut layout::Node, row: Bool, owner_width: Float32, owner_height: Float32) flex::Item {
+  let value = child.value
+  let owner_main = choose_float(row, owner_width, owner_height)
+  let minimum = length::resolve(choose_length(row, value.min_width, value.min_height), owner_main)
+  let maximum = length::resolve(choose_length(row, value.max_width, value.max_height), owner_main)
+  let border = Float32::from(child.border * 2)
+  let padding = match row {
+    true => {
+      resolved_zero(value.padding.left, owner_width) + resolved_zero(value.padding.right, owner_width) + border
+    },
+    false => {
+      resolved_zero(value.padding.top, owner_width) + resolved_zero(value.padding.bottom, owner_width) + border
+    },
+  }
+  let start = choose_length(row, value.margin.left, value.margin.top)
+  let end = choose_length(row, value.margin.right, value.margin.bottom)
+  flex::Item{
+    basis: child.cache_state.computed_flex_basis,
+    minimum: minimum,
+    maximum: maximum,
+    padding_border: padding,
+    margin: resolved_zero(start, owner_width) + resolved_zero(end, owner_width),
+    flex_grow: value.flex_grow,
+    flex_shrink: value.flex_shrink,
+    flexible: value.flex_grow != 0.0 or value.flex_shrink != 0.0,
+    auto_margin_start: start.kind == style::LengthKind::auto,
+    auto_margin_end: end.kind == style::LengthKind::auto,
+  }
+}
+
+fn translated_visit(
+  node: mut layout::Node,
+  width: measure::Axis,
+  height: measure::Axis,
+  margin_row: Float32,
+  margin_column: Float32,
+  generation: Int,
+  perform_layout: Bool,
+) Bool {
+  if node.children.size() == 0 {
+    node.calculate_leaf(width, height, margin_row, margin_column, generation, perform_layout)
+  } else {
+    let request = mut cache::Measurement{
+      available_width: width.available,
+      available_height: height.available,
+      width_mode: width.mode,
+      height_mode: height.mode,
+      computed_width: numeric::undefined(),
+      computed_height: numeric::undefined(),
+    }
+    let required = node.cache_state.prepare(node.dirty, generation, 0, cache::Direction::ltr)
+    let cached = node.cache_state.find(
+      request.@,
+      false,
+      perform_layout,
+      margin_row,
+      margin_column,
+      true,
+    )
+    let own_width = width.without_margin(margin_row)
+    let own_height = height.without_margin(margin_column)
+    if (not required) and cached.is_some() {
+      let result = cached.expect("cached container dimensions")
+      node.measured_width = result.computed_width
+      node.measured_height = result.computed_height
+    } else if perform_layout == false and own_width.is_fixed() and own_height.is_fixed() {
+      node.measured_width = own_width.fixed_size()
+      node.measured_height = own_height.fixed_size()
+      children::cleanup_contents(node)
+      if cached.is_some() == false {
+        request.computed_width = node.measured_width
+        request.computed_height = node.measured_height
+        node.cache_state.store(request.@, false)
+      }
+    } else {
+      let inner_width = own_width.available_inner_dimension()
+      let inner_height = own_height.available_inner_dimension()
+      let owner_width = choose_float(
+        node.intrinsic_policy and node.intrinsic_width_definite == false,
+        numeric::undefined(),
+        inner_width,
+      )
+      let prepared = children::prepare(
+        node,
+        inner_width,
+        inner_height,
+        own_width.mode,
+        own_height.mode,
+        generation,
+        basis_visit,
+      )
+      let row = node.value.flex_direction == style::FlexDirection::row or node.value.flex_direction == style::FlexDirection::row_reverse
+      mut available_main = choose_float(row, inner_width, inner_height)
+      let available_cross = choose_float(row, inner_height, inner_width)
+      mut main_mode = match row {
+        true => own_width.mode,
+        false => own_height.mode,
+      }
+      let cross_mode = match row {
+        true => own_height.mode,
+        false => own_width.mode,
+      }
+      let gap_reference = choose_float(row, owner_width, inner_height)
+      let gap = resolved_zero(node.value.gap, gap_reference)
+      let cross_gap = resolved_zero(node.value.gap, available_cross)
+      let wrap = node.value.flex_wrap != style::FlexWrap::no_wrap
+      mut total_main = prepared.outer_basis
+      if prepared.children.size() > 1 {
+        total_main = total_main + gap * Float32::from(prepared.children.size() - 1)
+      }
+      let main_overflows = main_mode != cache::SizingMode::max_content and total_main > available_main
+      if wrap and main_overflows and main_mode == cache::SizingMode::fit_content {
+        main_mode = cache::SizingMode::stretch_fit
+      }
+      let items = mut List::new<flex::Item>()
+      for child in prepared.children {
+        items.push(axis_item(child, row, owner_width, inner_height))
+      }
+      mut index = 0
+      mut natural_main = Float32::from(0.0)
+      mut natural_cross = Float32::from(0.0)
+      mut line_count = 0
+      let lines = mut List::new<[mut layout::Node]>()
+      let cross_extents = mut List::new<Float32>()
+      let main_free_spaces = mut List::new<Float32>()
+      while index < prepared.children.size() {
+        let line = match node.allocation.is_some() {
+          true => {
+            // ADR0020: replay remeasures heights within the original lines.
+            // In particular, taller column children must not form new columns.
+            let prefix = mut List::new<flex::Item>()
+            for child, child_index in prepared.children {
+              let frozen = child.allocation.expect("replay child allocation")
+              if frozen.line <= line_count {
+                prefix.push(items.at(child_index).expect("replay item"))
+              }
+            }
+            flex::collect_line(prefix.@, index, available_main, gap, false)
+          },
+          false => flex::collect_line(items.@, index, available_main, gap, wrap),
+        }
+        // Yoga canSkipFlex: an exact cross measurement does not need child
+        // dimensions, flexible-length resolution, or descendant visits.
+        let can_skip_flex = perform_layout == false and cross_mode == cache::SizingMode::stretch_fit
+        // CalculateLayout.cpp step5: non-exact lines are content-based unless
+        // a resolved minimum or maximum forces allocation against that bound.
+        mut size_based_on_content = false
+        if main_mode != cache::SizingMode::stretch_fit {
+          let minimum = choose_float(
+            row,
+            own_width.minimum - own_width.padding_border,
+            own_height.minimum - own_height.padding_border,
+          )
+          let maximum = choose_float(
+            row,
+            own_width.maximum - own_width.padding_border,
+            own_height.maximum - own_height.padding_border,
+          )
+          if numeric::is_defined(minimum) and line.size_consumed < minimum {
+            available_main = minimum
+          } else if numeric::is_defined(maximum) and line.size_consumed > maximum {
+            available_main = maximum
+          } else {
+            if line.total_flex_grow_factors == 0.0 or node.owner.is_some() == false or node.value.flex_grow == 0.0 {
+              available_main = line.size_consumed
+            }
+            size_based_on_content = true
+          }
+        }
+        mut remaining = Float32::from(0.0)
+        if size_based_on_content == false and numeric::is_defined(available_main) {
+          remaining = available_main - line.size_consumed
+        } else if line.size_consumed < 0.0 {
+          remaining = -line.size_consumed
+        }
+        let distribution = match can_skip_flex {
+          true => {
+            flex::Distribution{
+              sizes: [],
+              remaining_free_space: remaining,
+              distributed_free_space: Float32::from(0.0),
+              total_flex_grow_factors: line.total_flex_grow_factors,
+              total_flex_shrink_scaled_factors: line.total_flex_shrink_scaled_factors,
+            }
+          },
+          false => {
+            match node.intrinsic_policy {
+              true => {
+                // The policy adapter distributes from raw bases, not Yoga's
+                // already-bounded hypothetical main sizes used for line collection.
+                mut original = remaining
+                for item in line.items {
+                  original = original + (flex::bound_min_max(item, item.basis) - item.basis)
+                }
+                redistribute::distribute(line, original)
+              },
+              false => flex::distribute(line, remaining),
+            }
+          },
+        }
+        mut line_main = Float32::from(0.0)
+        mut line_cross = Float32::from(0.0)
+        mut baseline_ascent = Float32::from(0.0)
+        mut baseline_descent = Float32::from(0.0)
+        mut has_baseline = false
+        mut local = 0
+        let stretching = mut List::new<StretchVisit>()
+        let line_children = mut List::new<mut layout::Node>()
+        if can_skip_flex {
+          for skipped in line.items {
+            line_main = line_main + skipped.basis + skipped.margin
+          }
+          if line.items.size() > 1 {
+            line_main = line_main + gap * Float32::from(line.items.size() - 1)
+          }
+          line_cross = available_cross
+          mut child_index = index
+          while child_index < line.next_index {
+            line_children.push(prepared.children.at(child_index).expect("skipped line child"))
+            child_index =+ 1
+          }
+        }
+        for allocated in distribution.sizes {
+          let child = prepared.children.at(index + local).expect("line child")
+          child.line = line_count
+          line_children.push(child)
+          let value = child.value
+          let mr = resolved_zero(value.margin.left, owner_width) + resolved_zero(value.margin.right, owner_width)
+          let mc = resolved_zero(value.margin.top, owner_width) + resolved_zero(value.margin.bottom, owner_width)
+          let cross_margin = choose_float(row, mc, mr)
+          let processed_cross = length::processed_dimension(
+            choose_length(row, value.height, value.width),
+            choose_length(row, value.min_height, value.min_width),
+            choose_length(row, value.max_height, value.max_width),
+          )
+          let cross_reference_definite = choose_float(
+            row,
+            choose_float(node.intrinsic_height_definite, available_cross, numeric::undefined()),
+            choose_float(node.intrinsic_width_definite, available_cross, numeric::undefined()),
+          )
+          let resolved_cross = length::resolve(processed_cross, cross_reference_definite)
+          let definite_cross = numeric::is_defined(resolved_cross) and resolved_cross >= 0.0
+          let alignment = match value.align_self == style::Align::auto {
+            true => node.value.align_items,
+            false => value.align_self,
+          }
+          let cross_start = choose_length(row, value.margin.top, value.margin.left)
+          let cross_end = choose_length(row, value.margin.bottom, value.margin.right)
+          let cross_margins_auto = cross_start.kind == style::LengthKind::auto or cross_end.kind == style::LengthKind::auto
+          let wrapped_overflow = wrap and main_overflows
+          let stretch_cross = numeric::is_defined(available_cross) and cross_mode == cache::SizingMode::stretch_fit and wrapped_overflow == false and alignment == style::Align::stretch and cross_margins_auto == false
+          let child_cross = measure::Axis{
+            available: choose_float(definite_cross, resolved_cross + cross_margin, available_cross),
+            mode: match definite_cross {
+              true => cache::SizingMode::stretch_fit,
+              false => {
+                match stretch_cross {
+                  true => cache::SizingMode::stretch_fit,
+                  false => {
+                    match numeric::is_defined(available_cross) {
+                      true => cache::SizingMode::fit_content,
+                      false => cache::SizingMode::max_content,
+                    }
+                  },
+                }
+              },
+            },
+            padding_border: match row {
+              true => axis_item(child, false, inner_width, inner_height).padding_border,
+              false => axis_item(child, true, inner_width, inner_height).padding_border,
+            },
+            minimum: length::resolve(choose_length(row, value.min_height, value.min_width), available_cross),
+            maximum: length::resolve(choose_length(row, value.max_height, value.max_width), available_cross),
+          }
+          let child_main = measure::Axis{
+            available: allocated + choose_float(row, mr, mc),
+            mode: cache::SizingMode::stretch_fit,
+            padding_border: axis_item(child, row, inner_width, inner_height).padding_border,
+            minimum: length::resolve(
+              choose_length(row, value.min_width, value.min_height),
+              choose_float(row, owner_width, inner_height),
+            ),
+            maximum: length::resolve(
+              choose_length(row, value.max_width, value.max_height),
+              choose_float(row, owner_width, inner_height),
+            ),
+          }
+          let requires_stretch = definite_cross == false and alignment == style::Align::stretch and cross_margins_auto == false
+          let main_axis = child_main.constrain_max(choose_float(row, mr, mc))
+          let cross_axis = child_cross.constrain_max(cross_margin)
+          let layout_now = perform_layout and requires_stretch == false
+          child.intrinsic_width_allocated = row
+          child.intrinsic_height_allocated = not row
+          match row {
+            true => visit(child, main_axis, cross_axis, mr, mc, generation, layout_now),
+            false => visit(child, cross_axis, main_axis, mr, mc, generation, layout_now),
+          }
+          child.intrinsic_width_allocated = false
+          child.intrinsic_height_allocated = false
+          if requires_stretch and perform_layout {
+            stretching.push(
+              StretchVisit{
+                child: child,
+                main: child_main,
+                cross: child_cross,
+                margin_row: mr,
+                margin_column: mc,
+              },
+            )
+          }
+          let measured_cross = choose_float(row, child.measured_height, child.measured_width)
+          line_cross = numeric::max_or_defined(line_cross, measured_cross + cross_margin)
+          if row and alignment == style::Align::baseline {
+            has_baseline = true
+            baseline_ascent = numeric::max_or_defined(
+              baseline_ascent,
+              resolved_zero(value.margin.top, inner_width) + child.measured_height,
+            )
+            baseline_descent = numeric::max_or_defined(
+              baseline_descent,
+              resolved_zero(value.margin.bottom, inner_width),
+            )
+          }
+          line_main = line_main + allocated + choose_float(local > 0, gap, Float32::from(0.0)) + choose_float(row, mr, mc)
+          local =+ 1
+        }
+        if has_baseline {
+          line_cross = numeric::max_or_defined(line_cross, baseline_ascent + baseline_descent)
+        }
+        if wrap == false {
+          if cross_mode == cache::SizingMode::stretch_fit {
+            line_cross = available_cross
+          }
+          line_cross = match row {
+            true => own_height.bound(line_cross + own_height.padding_border) - own_height.padding_border,
+            false => own_width.bound(line_cross + own_width.padding_border) - own_width.padding_border,
+          }
+        }
+        for deferred in stretching {
+          let main = mut deferred.main
+          main.available = choose_float(
+            row,
+            deferred.child.measured_width + deferred.margin_row,
+            deferred.child.measured_height + deferred.margin_column,
+          )
+          let cross = mut deferred.cross
+          cross.available = line_cross
+          cross.mode = cache::SizingMode::stretch_fit
+          let bounded_main = mut main.constrain_max(
+            choose_float(row, deferred.margin_row, deferred.margin_column),
+          )
+          let bounded_cross = mut cross.constrain_max(
+            choose_float(row, deferred.margin_column, deferred.margin_row),
+          )
+          bounded_main.mode = match numeric::is_undefined(bounded_main.available) {
+            true => cache::SizingMode::max_content,
+            false => cache::SizingMode::stretch_fit,
+          }
+          bounded_cross.mode = match numeric::is_undefined(bounded_cross.available) or wrap and node.value.align_content != style::Align::stretch {
+            true => cache::SizingMode::max_content,
+            false => cache::SizingMode::stretch_fit,
+          }
+          match row {
+            true => {
+              visit(
+                deferred.child,
+                bounded_main.@,
+                bounded_cross.@,
+                deferred.margin_row,
+                deferred.margin_column,
+                generation,
+                true,
+              )
+            },
+            false => {
+              visit(
+                deferred.child,
+                bounded_cross.@,
+                bounded_main.@,
+                deferred.margin_row,
+                deferred.margin_column,
+                generation,
+                true,
+              )
+            },
+          }
+        }
+        natural_main = numeric::max_or_defined(natural_main, line_main)
+        natural_cross = natural_cross + line_cross + choose_float(line_count > 0, cross_gap, Float32::from(0.0))
+        cross_extents.push(line_cross)
+        mut positioning_free = distribution.remaining_free_space
+        if main_mode == cache::SizingMode::fit_content and positioning_free > 0.0 {
+          let minimum = choose_float(
+            row,
+            own_width.minimum - own_width.padding_border,
+            own_height.minimum - own_height.padding_border,
+          )
+          positioning_free = match numeric::is_defined(minimum) {
+            true => numeric::max_or_defined(Float32::from(0.0), minimum - (available_main - positioning_free)),
+            false => Float32::from(0.0),
+          }
+        }
+        main_free_spaces.push(positioning_free)
+        lines.push(line_children.@)
+        line_count =+ 1
+        index = line.next_index
+      }
+      // CalculateLayout.cpp step8 remeasurement. Group offsets and baseline
+      // positioning are separate from this dimension-only pass.
+      if perform_layout and wrap and line_count > 0 {
+        let own_cross = match row {
+          true => own_height,
+          false => own_width,
+        }
+        let inner_cross = own_cross.measured_size(natural_cross) - own_cross.padding_border
+        let remaining_cross = inner_cross - natural_cross
+        let extra = match remaining_cross > 0.0 and node.value.align_content == style::Align::stretch {
+          true => remaining_cross / Float32::from(line_count),
+          false => Float32::from(0.0),
+        }
+        mut lead_per_line = Float32::from(0.0)
+        if remaining_cross > 0.0 {
+          lead_per_line = match node.value.align_content {
+            style::Align::space_around => remaining_cross / Float32::from(line_count),
+            style::Align::space_evenly => remaining_cross / Float32::from(line_count + 1),
+            style::Align::space_between => {
+              match line_count > 1 {
+                true => remaining_cross / Float32::from(line_count - 1),
+                false => Float32::from(0.0),
+              }
+            },
+            _ => Float32::from(0.0),
+          }
+        }
+        for line_children in lines {
+          mut extent = Float32::from(0.0)
+          for child in line_children {
+            let item = axis_item(child, row == false, inner_width, inner_height)
+            extent = numeric::max_or_defined(
+              extent,
+              choose_float(row, child.measured_height, child.measured_width) + item.margin,
+            )
+          }
+          extent = extent + extra
+          for child in line_children {
+            let value = child.value
+            let alignment = match value.align_self == style::Align::auto {
+              true => node.value.align_items,
+              false => value.align_self,
+            }
+            let preferred = length::processed_dimension(
+              choose_length(row, value.height, value.width),
+              choose_length(row, value.min_height, value.min_width),
+              choose_length(row, value.max_height, value.max_width),
+            )
+            if alignment == style::Align::stretch and length::is_definite(preferred, available_cross) == false {
+              let wi = axis_item(child, true, inner_width, inner_height)
+              let hi = axis_item(child, false, inner_width, inner_height)
+              // Raw Yoga includes distributed inter-line space. ADR0017's
+              // intrinsic-policy adapter excludes it from child sizing.
+              let distributed_lead = choose_float(
+                node.intrinsic_policy,
+                Float32::from(0.0),
+                lead_per_line,
+              )
+              let child_width = choose_float(
+                row,
+                child.measured_width + wi.margin,
+                distributed_lead + extent,
+              )
+              // Preserve pinned Yoga's column-path cross-margin reference.
+              let child_height = choose_float(
+                row,
+                distributed_lead + extent,
+                child.measured_height + wi.margin,
+              )
+              let same = numeric::inexact_equals(child_width, child.measured_width) and numeric::inexact_equals(child_height, child.measured_height)
+              if same == false {
+                let width_axis = measure::Axis{
+                  available: child_width,
+                  mode: cache::SizingMode::stretch_fit,
+                  padding_border: wi.padding_border,
+                  minimum: wi.minimum,
+                  maximum: wi.maximum,
+                }
+                let height_axis = measure::Axis{
+                  available: child_height,
+                  mode: cache::SizingMode::stretch_fit,
+                  padding_border: hi.padding_border,
+                  minimum: hi.minimum,
+                  maximum: hi.maximum,
+                }
+                visit(child, width_axis, height_axis, wi.margin, hi.margin, generation, true)
+              }
+            }
+          }
+        }
+      }
+      let content_width = choose_float(row, natural_main, natural_cross)
+      let content_height = choose_float(row, natural_cross, natural_main)
+      let scroll = node.value.overflow == style::Overflow::scroll
+      node.measured_width = container_measured_size(own_width, content_width, scroll)
+      node.measured_height = container_measured_size(own_height, content_height, scroll)
+      if perform_layout {
+        if lines.size() > 0 {
+          let saved_parent = node.value
+          let saved_children = mut List::new<style::Style>()
+          let cyclic_width = node.intrinsic_policy and node.intrinsic_width_definite == false
+          if cyclic_width {
+            node.value.gap = unresolved_percent(node.value.gap)
+            for child in prepared.children {
+              saved_children.push(child.value)
+              child.value.margin.left = unresolved_percent(child.value.margin.left)
+              child.value.margin.right = unresolved_percent(child.value.margin.right)
+              child.value.margin.top = unresolved_percent(child.value.margin.top)
+              child.value.margin.bottom = unresolved_percent(child.value.margin.bottom)
+            }
+          }
+          position::apply(
+            node,
+            lines.@,
+            cross_extents.@,
+            main_free_spaces.@,
+            owner_width,
+            inner_height,
+            cross_mode,
+          )
+          if cyclic_width {
+            node.value = saved_parent
+            for child, index in prepared.children {
+              child.value = saved_children.at(index).expect("saved intrinsic child style")
+            }
+          }
+        }
+        if node.value.position != style::Position::static or node.owner.is_some() == false {
+          absolute::descendants(
+            node,
+            node,
+            node.measured_width - Float32::from(node.border * 2),
+            node.measured_height - Float32::from(node.border * 2),
+            own_width.mode,
+            Float32::from(0.0),
+            Float32::from(0.0),
+            generation,
+            visit,
+          )
+        }
+      }
+      if cached.is_some() == false {
+        request.computed_width = node.measured_width
+        request.computed_height = node.measured_height
+        node.cache_state.store(request.@, perform_layout)
+      }
+    }
+    if perform_layout {
+      node.width = numbers::Widen(node.measured_width)
+      node.height = numbers::Widen(node.measured_height)
+      node.dirty = false
+    }
+    node.cache_state.complete(generation, 0, cache::Direction::ltr)
+    required or cached.is_some() == false
+  }
+}
+
+fn intrinsic_visit(
+  node: mut layout::Node,
+  width: measure::Axis,
+  height: measure::Axis,
+  margin_row: Float32,
+  margin_column: Float32,
+  generation: Int,
+  perform_layout: Bool,
+) Bool {
+  let value = node.value
+  // Query through the translated recursive visitor, but bypass this node's
+  // preferred dimensions and bounds. Descendants still use this adapter.
+  let natural_width_axis = measure::Axis{
+    available: numeric::undefined(),
+    mode: cache::SizingMode::max_content,
+    padding_border: width.padding_border,
+    minimum: numeric::undefined(),
+    maximum: numeric::undefined(),
+  }
+  let natural_height_axis = measure::Axis{
+    available: numeric::undefined(),
+    mode: cache::SizingMode::max_content,
+    padding_border: height.padding_border,
+    minimum: numeric::undefined(),
+    maximum: numeric::undefined(),
+  }
+  let _ = translated_visit(
+    node,
+    natural_width_axis,
+    natural_height_axis,
+    Float32::from(0.0),
+    Float32::from(0.0),
+    generation,
+    false,
+  )
+  let natural_width = node.measured_width
+  let offered_width = width.available - margin_row
+  if node.intrinsic_width_allocated == false and node.owner.is_some() == false {
+    node.intrinsic_available_width = offered_width
+  }
+  let available_width = match node.owner.is_some() and numeric::is_defined(node.intrinsic_available_width) {
+    true => node.intrinsic_available_width,
+    false => offered_width,
+  }
+  let intrinsic_min_width = intrinsic_policy_value(value.min_width, natural_width, available_width)
+  let intrinsic_max_width = intrinsic_policy_value(value.max_width, natural_width, available_width)
+  let minimum_width = choose_float(
+    numeric::is_defined(intrinsic_min_width),
+    intrinsic_min_width,
+    width.minimum,
+  )
+  let maximum_width = choose_float(
+    numeric::is_defined(intrinsic_max_width),
+    intrinsic_max_width,
+    width.maximum,
+  )
+  let preferred_width = intrinsic_policy_value(value.width, natural_width, available_width)
+  let basis_width = match node.owner {
+    owner => intrinsic_policy_value(value.flex_basis, natural_width, available_width),
+    _ => numeric::undefined(),
+  }
+  mut selected_width = match numeric::is_defined(preferred_width) and node.intrinsic_width_allocated == false {
+    true => preferred_width,
+    false => {
+      match numeric::is_defined(basis_width) and node.owner.expect("basis owner").value.flex_direction != style::FlexDirection::column and node.owner.expect("basis owner").value.flex_direction != style::FlexDirection::column_reverse and node.intrinsic_width_allocated == false {
+        true => basis_width,
+        false => width.available - margin_row,
+      }
+    },
+  }
+  selected_width = intrinsic_bound(
+    selected_width,
+    minimum_width,
+    maximum_width,
+    width.padding_border,
+  )
+  let height_width_axis = measure::Axis{
+    available: selected_width,
+    mode: cache::SizingMode::stretch_fit,
+    padding_border: width.padding_border,
+    minimum: numeric::undefined(),
+    maximum: numeric::undefined(),
+  }
+  let _ = translated_visit(
+    node,
+    height_width_axis,
+    natural_height_axis,
+    Float32::from(0.0),
+    Float32::from(0.0),
+    generation,
+    false,
+  )
+  let natural_height = node.measured_height
+  node.intrinsic_width = natural_width
+  node.intrinsic_height = natural_height
+  let offered_height = height.available - margin_column
+  if node.intrinsic_height_allocated == false and node.owner.is_some() == false {
+    node.intrinsic_available_height = offered_height
+  }
+  let available_height = match node.owner.is_some() and numeric::is_defined(node.intrinsic_available_height) {
+    true => node.intrinsic_available_height,
+    false => offered_height,
+  }
+  let intrinsic_min_height = intrinsic_policy_value(
+    value.min_height,
+    natural_height,
+    available_height,
+  )
+  let intrinsic_max_height = intrinsic_policy_value(
+    value.max_height,
+    natural_height,
+    available_height,
+  )
+  let minimum_height = choose_float(
+    numeric::is_defined(intrinsic_min_height),
+    intrinsic_min_height,
+    height.minimum,
+  )
+  let maximum_height = choose_float(
+    numeric::is_defined(intrinsic_max_height),
+    intrinsic_max_height,
+    height.maximum,
+  )
+  let preferred_height = intrinsic_policy_value(value.height, natural_height, available_height)
+  let basis_height = match node.owner {
+    owner => intrinsic_policy_value(value.flex_basis, natural_height, available_height),
+    _ => numeric::undefined(),
+  }
+  mut selected_height = match numeric::is_defined(preferred_height) and node.intrinsic_height_allocated == false {
+    true => preferred_height,
+    false => {
+      match numeric::is_defined(basis_height) and (node.owner.expect("basis owner").value.flex_direction == style::FlexDirection::column or node.owner.expect("basis owner").value.flex_direction == style::FlexDirection::column_reverse) and node.intrinsic_height_allocated == false {
+        true => basis_height,
+        false => height.available - margin_column,
+      }
+    },
+  }
+  selected_height = intrinsic_bound(
+    selected_height,
+    minimum_height,
+    maximum_height,
+    height.padding_border,
+  )
+  let adapted_width = mut measure::Axis{
+    available: selected_width + margin_row,
+    mode: width.mode,
+    padding_border: width.padding_border,
+    minimum: minimum_width,
+    maximum: maximum_width,
+  }
+  let adapted_height = mut measure::Axis{
+    available: selected_height + margin_column,
+    mode: height.mode,
+    padding_border: height.padding_border,
+    minimum: minimum_height,
+    maximum: maximum_height,
+  }
+  if numeric::is_defined(preferred_width) and node.intrinsic_width_allocated == false {
+    adapted_width.mode = cache::SizingMode::stretch_fit
+  }
+  if numeric::is_defined(preferred_height) and node.intrinsic_height_allocated == false {
+    adapted_height.mode = cache::SizingMode::stretch_fit
+  }
+  node.intrinsic_width_definite = value.width.kind != style::LengthKind::max_content
+  node.intrinsic_height_definite = value.height.kind != style::LengthKind::max_content
+  translated_visit(
+    node,
+    adapted_width.@,
+    adapted_height.@,
+    margin_row,
+    margin_column,
+    generation,
+    perform_layout,
+  )
+}
+
+fn visit(
+  node: mut layout::Node,
+  width: measure::Axis,
+  height: measure::Axis,
+  margin_row: Float32,
+  margin_column: Float32,
+  generation: Int,
+  perform_layout: Bool,
+) Bool {
+  match node.owner {
+    owner => { node.intrinsic_policy = owner.intrinsic_policy },
+    _ => (),
+  }
+  let value = node.value
+  let replay_width = match node.allocation {
+    frozen => {
+      let projected = Float32::from(frozen.content_width) + width.padding_border
+      match numeric::inexact_equals(projected, frozen.measured_width) {
+        true => width,
+        false => {
+          measure::Axis{
+            available: projected + margin_row,
+            mode: cache::SizingMode::stretch_fit,
+            padding_border: width.padding_border,
+            minimum: width.minimum,
+            maximum: width.maximum,
+          }
+        },
+      }
+    },
+    _ => width,
+  }
+  let intrinsic = intrinsic_length(value.width) or intrinsic_length(value.min_width) or intrinsic_length(value.max_width) or intrinsic_length(value.height) or intrinsic_length(value.min_height) or intrinsic_length(value.max_height) or intrinsic_length(value.flex_basis)
+  if intrinsic == false {
+    node.intrinsic_width_definite = true
+    node.intrinsic_height_definite = true
+  }
+  match node.intrinsic_policy and intrinsic {
+    true => {
+      intrinsic_visit(
+        node,
+        replay_width,
+        height,
+        margin_row,
+        margin_column,
+        generation,
+        perform_layout,
+      )
+    },
+    false => {
+      translated_visit(
+        node,
+        replay_width,
+        height,
+        margin_row,
+        margin_column,
+        generation,
+        perform_layout,
+      )
+    },
+  }
+}

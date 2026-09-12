@@ -1,11 +1,182 @@
 use ard/testing
 
+use cooper/event
+use cooper/testing as cooper_testing
 use cooper/ui/box
 use cooper/ui/color
-use cooper/event
 use cooper/ui/style
-use cooper/testing as cooper_testing
 use cooper/ui/text
+
+test fn text_border_intrinsic_size_paint_and_reset() Void!Str {
+  let application = cooper_testing::new(9, 6)
+  let label = text::new(
+    application.context,
+    content: "abc\ndefgh",
+    styles: style::new(
+      width: style::max_content(),
+      padding: style::edges(style::cells(1)),
+      border: style::Border::single,
+    ),
+  )
+  application.root.add(label)
+  application.render()
+  try testing::assert(
+    label.layout().screen.width == 9 and label.layout().screen.height == 6,
+    "Expected intrinsic 5x2 content plus padding and border = 9x6",
+  )
+  try testing::assert(
+    application.frame().text() == "┌───────┐\n│       │\n│ abc   │\n│ defgh │\n│       │\n└───────┘",
+    "Expected bordered Text content and padding",
+  )
+  label.set_style(style::new(width: style::max_content(), padding: style::edges(style::cells(1))))
+  application.render()
+  try testing::assert(
+    label.layout().screen.width == 7 and label.layout().screen.height == 4,
+    "Expected border reset to preserve padding",
+  )
+  try testing::assert(
+    application.frame().cell(1, 1).expect("reset content").grapheme == "a" and application.frame().cell(0, 0).expect("cleared border").grapheme == " ",
+    "Expected content translated after border removal",
+  )
+  label.set_style(style::new(width: style::max_content(), border: style::Border::double))
+  application.render()
+  try testing::assert(
+    label.layout().screen.width == 7 and label.layout().screen.height == 4,
+    "Expected border added by set_style",
+  )
+  try testing::assert(
+    application.frame().cell(0, 0).expect("double border").grapheme == "╔" and application.frame().cell(1, 1).expect("double content").grapheme == "a",
+    "Expected changed border variant and content",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn text_border_translates_links_selection_and_screen_fragments() Void!Str {
+  let application = cooper_testing::new(20, 8)
+  let label = text::new(
+    application.context,
+    content: text::styled_text(
+      [
+        text::span("A "),
+        text::span("docs", link: "https://example.com/docs"),
+        text::span("你", link: "https://example.com/wide"),
+      ],
+    ),
+    wrap: text::TextWrap::none,
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(2),
+      top: style::cells(1),
+      width: style::cells(12),
+      height: style::cells(5),
+      border: style::Border::single,
+      padding: style::Edges{
+        left: style::cells(2),
+        top: style::cells(1),
+        right: style::cells(1),
+        bottom: style::cells(0),
+      },
+    ),
+  )
+  application.root.add(label)
+  application.render()
+  try testing::assert(
+    application.frame().cell(5, 3).expect("translated content").grapheme == "A",
+    "Expected screen position plus border and asymmetric padding",
+  )
+  application.mouse_move(7, 3)
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::pointer,
+    "Expected translated link cursor",
+  )
+  application.click(7, 3)
+  try testing::assert(application.opened_urls().size() == 1, "Expected translated link activation")
+  application.mouse_move(11, 3)
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::default_cursor and application.frame().cell(11, 3).expect("clipped wide glyph").grapheme == " ",
+    "Expected partial wide link clipped at content edge",
+  )
+  application.click(11, 3)
+  application.click(3, 3)
+  try testing::assert(
+    application.opened_urls().size() == 1,
+    "Expected padding and clipped links not activated",
+  )
+  application.drag(5, 3, 8, 3)
+  try testing::assert(
+    label.selected_text() == "A do" and application.selection().expect("translated selection").selected_text == "A do",
+    "Expected node-local selection and screen fragments to agree",
+  )
+  try testing::assert(
+    application.frame().cell(5, 3).expect("selection paint").style.reverse and not application.frame().cell(4, 3).expect("padding paint").style.reverse,
+    "Expected selection paint confined to translated glyphs",
+  )
+  application.clear_selection()
+  application.double_click(8, 3)
+  let reference = cooper_testing::new(7, 2)
+  let unpadded = text::new(
+    reference.context,
+    content: label.styled_content(),
+    wrap: text::TextWrap::none,
+  )
+  reference.root.add(unpadded)
+  reference.render()
+  reference.double_click(3, 0)
+  try testing::assert(
+    unpadded.selected_text() == "docs你",
+    "Expected contiguous Unicode letters to form one word across spans",
+  )
+  try testing::assert(
+    label.selected_text() == "docs你",
+    "Expected translated word expansion to preserve the unpadded source word",
+  )
+  try testing::assert(
+    application.selection().expect("visible bordered word").selected_text == "docs",
+    "Expected clipboard fragments to exclude the clipped wide glyph",
+  )
+  reference.destroy()
+  application.destroy()
+  Result::ok(())
+}
+
+test fn text_border_wrap_and_ellipsis_use_content_dimensions() Void!Str {
+  let application = cooper_testing::new(8, 5)
+  let label = text::new(
+    application.context,
+    content: "abcdef",
+    wrap: text::TextWrap::character,
+    styles: style::new(
+      width: style::cells(8),
+      height: style::cells(5),
+      padding: style::edges(style::cells(1)),
+      border: style::Border::single,
+    ),
+  )
+  application.root.add(label)
+  application.render()
+  try testing::assert(
+    application.frame().cell(2, 2).expect("wrapped start").grapheme == "a" and application.frame().cell(5, 2).expect("wrapped edge").grapheme == "d",
+    "Expected four-cell content width",
+  )
+  try testing::assert(
+    application.frame().cell(2, 3).expect("clipped second line").grapheme == " " and application.frame().cell(7, 2).expect("right border").grapheme == "│",
+    "Expected content clipped before padding and border",
+  )
+  label.set_overflow(text::TextOverflow::ellipsis)
+  application.render()
+  try testing::assert(
+    application.frame().cell(5, 2).expect("content ellipsis").grapheme == "…",
+    "Expected ellipsis inside content rect",
+  )
+  application.drag(2, 2, 5, 2)
+  try testing::assert(
+    label.selected_text() == "abc",
+    "Expected translated ellipsis selection to exclude synthetic marker",
+  )
+  application.destroy()
+  Result::ok(())
+}
 
 test fn text_defaults_to_word_wrap_and_preserves_explicit_lines() Void!Str {
   let application = cooper_testing::new(6, 4)
@@ -16,13 +187,22 @@ test fn text_defaults_to_word_wrap_and_preserves_explicit_lines() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   try testing::assert(label.wrap() == text::TextWrap::word, "Expected default word wrapping")
   try testing::assert(label.layout().screen.height == 3, "Expected wrapped and explicit lines")
-  try testing::assert(application.frame().cell(0, 0).expect("word lead").grapheme == "o", "Expected first word")
-  try testing::assert(application.frame().cell(0, 1).expect("wrapped lead").grapheme == "t", "Expected second wrapped word")
-  try testing::assert(application.frame().cell(0, 2).expect("wide lead").grapheme == "🙂", "Expected explicit wide line")
-
+  try testing::assert(
+    application.frame().cell(0, 0).expect("word lead").grapheme == "o",
+    "Expected first word",
+  )
+  try testing::assert(
+    application.frame().cell(0, 1).expect("wrapped lead").grapheme == "t",
+    "Expected second wrapped word",
+  )
+  try testing::assert(
+    application.frame().cell(0, 2).expect("wide lead").grapheme == "🙂",
+    "Expected explicit wide line",
+  )
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected wrapped Text cleanup")
 }
@@ -34,7 +214,11 @@ test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!St
     content: text::styled_text(
       [
         text::span("Hi", style: text::span_style(bold: true)),
-        text::span("你好", style: text::span_style(foreground: color::rgb(20, 180, 220)), link: "https://example.com/cjk"),
+        text::span(
+          "你好",
+          style: text::span_style(foreground: color::rgb(20, 180, 220)),
+          link: "https://example.com/cjk",
+        ),
         text::span("🙂"),
         text::span("world", style: text::span_style(underline: true), link: "https://example.com/world"),
       ],
@@ -43,16 +227,37 @@ test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!St
   )
   application.root.add(label)
   application.render()
-
+  
   try testing::assert(label.layout().screen.height == 3, "Expected mixed Unicode line opportunities")
-  try testing::assert(application.frame().cell(0, 0).expect("Latin line lead").grapheme == "H", "Expected short Latin prefix retained")
-  try testing::assert(application.frame().cell(2, 0).expect("first CJK glyph").grapheme == "你", "Expected CJK break opportunities")
-  try testing::assert(application.frame().cell(4, 0).expect("second CJK glyph").style.foreground.expect("CJK style").green == Uint8::from(180), "Expected styles across Unicode wrapping")
-  try testing::assert(application.frame().cell(2, 0).expect("linked CJK glyph").hyperlink.or("") == "https://example.com/cjk", "Expected CJK hyperlink metadata")
-  try testing::assert(application.frame().cell(0, 1).expect("emoji line").grapheme == "🙂", "Expected complete emoji grapheme")
-  try testing::assert(application.frame().cell(0, 2).expect("Latin word line").grapheme == "w" and application.frame().cell(4, 2).expect("Latin word end").style.underline, "Expected fitting Latin word not split")
-  try testing::assert(application.frame().cell(4, 2).expect("linked Latin word end").hyperlink.or("") == "https://example.com/world", "Expected hyperlink through wrapping")
-
+  try testing::assert(
+    application.frame().cell(0, 0).expect("Latin line lead").grapheme == "H",
+    "Expected short Latin prefix retained",
+  )
+  try testing::assert(
+    application.frame().cell(2, 0).expect("first CJK glyph").grapheme == "你",
+    "Expected CJK break opportunities",
+  )
+  try testing::assert(
+    application.frame().cell(4, 0).expect("second CJK glyph").style.foreground.expect("CJK style").green == Uint8::from(180),
+    "Expected styles across Unicode wrapping",
+  )
+  try testing::assert(
+    application.frame().cell(2, 0).expect("linked CJK glyph").hyperlink.or("") == "https://example.com/cjk",
+    "Expected CJK hyperlink metadata",
+  )
+  try testing::assert(
+    application.frame().cell(0, 1).expect("emoji line").grapheme == "🙂",
+    "Expected complete emoji grapheme",
+  )
+  try testing::assert(
+    application.frame().cell(0, 2).expect("Latin word line").grapheme == "w" and application.frame().cell(4, 2).expect("Latin word end").style.underline,
+    "Expected fitting Latin word not split",
+  )
+  try testing::assert(
+    application.frame().cell(4, 2).expect("linked Latin word end").hyperlink.or("") == "https://example.com/world",
+    "Expected hyperlink through wrapping",
+  )
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected Unicode wrapped Text cleanup")
 }
@@ -74,15 +279,27 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
   )
   application.root.add(label)
   application.render()
-
-  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected default cursor before pointer input")
+  
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::default_cursor,
+    "Expected default cursor before pointer input",
+  )
   application.mouse_move(2, 0)
-  try testing::assert(application.mouse_cursor() == event::MouseCursor::pointer, "Expected pointer cursor over linked cell")
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::pointer,
+    "Expected pointer cursor over linked cell",
+  )
   application.mouse_move(0, 0)
-  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected default cursor over unlinked text")
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::default_cursor,
+    "Expected default cursor over unlinked text",
+  )
   application.mouse_move(8, 0)
-  try testing::assert(application.mouse_cursor() == event::MouseCursor::pointer, "Expected pointer cursor over linked wide continuation")
-
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::pointer,
+    "Expected pointer cursor over linked wide continuation",
+  )
+  
   mut events = 0
   mut activated = ""
   let dispose = label.on_link(fn(received: mut text::LinkEvent) {
@@ -96,7 +313,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
   let dispose_later = label.on_link(fn(received: mut text::LinkEvent) {
     later_observed_prevention = received.is_default_prevented()
   })
-
+  
   application.click(2, 0)
   try testing::assert(
     events == 1 and activated == "https://example.com/docs",
@@ -106,7 +323,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
     application.opened_urls().size() == 1 and application.opened_urls().at(0).or("") == "https://example.com/docs",
     "Expected plain click to use the default link opener",
   )
-
+  
   application.click(3, 0)
   try testing::assert(
     events == 2 and later_observed_prevention and application.opened_urls().size() == 1,
@@ -120,7 +337,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
     events == 2 and application.opened_urls().size() == 2 and application.opened_urls().at(1).or("") == "https://example.com/wide",
     "Expected wide continuation click and idempotent listener disposal",
   )
-
+  
   application.click(
     2,
     0,
@@ -136,9 +353,12 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
     application.opened_urls().size() == 2,
     "Expected modified clicks and selection drags not to open links",
   )
-
+  
   application.destroy()
-  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected cursor state reset after teardown")
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::default_cursor,
+    "Expected cursor state reset after teardown",
+  )
   testing::assert(label.node_ref.is_destroyed(), "Expected clickable link cleanup")
 }
 
@@ -156,7 +376,7 @@ test fn ancestor_prevention_and_route_invalidation_cancel_link_activation() Void
   parent.add(label)
   application.root.add(parent)
   application.render()
-
+  
   let stop_parent_default = parent.on_mouse(fn(received: mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::up {
       received.prevent_default()
@@ -168,7 +388,7 @@ test fn ancestor_prevention_and_route_invalidation_cancel_link_activation() Void
     "Expected ancestor prevent_default before deferred link activation",
   )
   stop_parent_default()
-
+  
   let invalidate_down = label.on_mouse(fn(received: mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       parent.set_style(style::new(display: style::Display::none))
@@ -183,7 +403,7 @@ test fn ancestor_prevention_and_route_invalidation_cancel_link_activation() Void
     "Expected invalidated down route not to preserve an armed link",
   )
   invalidate_down()
-
+  
   application.click(1, 0)
   try testing::assert(
     application.opened_urls().size() == 1,
@@ -205,16 +425,19 @@ test fn completely_clipped_wide_link_is_not_activatable() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   try testing::assert(
     application.frame().cell(3, 0).expect("cleared partial wide link").grapheme == " ",
     "Expected partial wide link not painted",
   )
   application.mouse_move(3, 0)
-  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected no pointer cursor for partial wide link")
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::default_cursor,
+    "Expected no pointer cursor for partial wide link",
+  )
   application.click(3, 0)
   try testing::assert(application.opened_urls().size() == 0, "Expected partial wide link not activated")
-
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected clipped link cleanup")
 }
@@ -228,16 +451,25 @@ test fn link_cursor_reconciles_after_content_changes_without_pointer_motion() Vo
   )
   application.root.add(label)
   application.render()
-
+  
   application.mouse_move(1, 0)
-  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected unlinked Text default cursor")
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::default_cursor,
+    "Expected unlinked Text default cursor",
+  )
   label.set_content(text::styled_text([text::span("docs", link: "https://example.com/docs")]))
   application.render()
-  try testing::assert(application.mouse_cursor() == event::MouseCursor::pointer, "Expected stationary pointer reconciled after link appears")
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::pointer,
+    "Expected stationary pointer reconciled after link appears",
+  )
   label.set_content("docs")
   application.render()
-  try testing::assert(application.mouse_cursor() == event::MouseCursor::default_cursor, "Expected stationary pointer reconciled after link disappears")
-
+  try testing::assert(
+    application.mouse_cursor() == event::MouseCursor::default_cursor,
+    "Expected stationary pointer reconciled after link disappears",
+  )
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected link cursor reconciliation cleanup")
 }
@@ -251,7 +483,7 @@ test fn double_clicking_link_opens_once_then_selects_word() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   application.click(1, 0)
   application.mouse_down(1, 0)
   application.advance_time(600)
@@ -264,7 +496,7 @@ test fn double_clicking_link_opens_once_then_selects_word() Void!Str {
     label.selected_text() == "docs",
     "Expected second press to preserve word selection behavior",
   )
-
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected double-click link cleanup")
 }
@@ -279,7 +511,7 @@ test fn non_selectable_link_double_click_still_activates_once() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   application.double_click(1, 0)
   try testing::assert(
     application.opened_urls().size() == 1,
@@ -289,7 +521,7 @@ test fn non_selectable_link_double_click_still_activates_once() Void!Str {
     not label.selection().is_some(),
     "Expected non-selectable linked Text to remain unselected",
   )
-
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected non-selectable link cleanup")
 }
@@ -305,7 +537,7 @@ test fn intervening_press_breaks_link_activation_dedupe() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   application.click(0, 0)
   application.click(1, 0)
   application.click(0, 0)
@@ -319,7 +551,7 @@ test fn intervening_press_breaks_link_activation_dedupe() Void!Str {
     application.opened_urls().size() == 3,
     "Expected scroll to break link double-click dedupe",
   )
-
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected intervening link click cleanup")
 }
@@ -334,7 +566,7 @@ test fn changed_url_at_same_cell_is_a_new_activation() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   application.click(0, 0)
   label.set_content(text::styled_text([text::span("x", link: "https://example.com/b")]))
   application.render()
@@ -343,7 +575,7 @@ test fn changed_url_at_same_cell_is_a_new_activation() Void!Str {
     application.opened_urls().size() == 2 and application.opened_urls().at(1).or("") == "https://example.com/b",
     "Expected changed URL not deduplicated at the same cell",
   )
-
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected changed URL cleanup")
 }
@@ -363,7 +595,7 @@ test fn link_dedupe_uses_screen_position_when_text_moves() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   application.click(1, 0)
   label.set_style(
     style::new(
@@ -379,7 +611,7 @@ test fn link_dedupe_uses_screen_position_when_text_moves() Void!Str {
     application.opened_urls().size() == 1 and label.selected_text() == "docs",
     "Expected moved Text to share pointer double-click identity at the same screen cell",
   )
-
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected moved link click cleanup")
 }
@@ -390,9 +622,21 @@ test fn horizontal_ellipsis_replaces_complete_glyph_and_clamps_selection() Void!
     application.context,
     content: text::styled_text(
       [
-        text::span("abc", style: text::span_style(foreground: color::rgb(180, 20, 30)), link: "https://example.com/abc"),
-        text::span("你", style: text::span_style(foreground: color::rgb(20, 180, 30), italic: true), link: "https://example.com/wide"),
-        text::span("z", style: text::span_style(foreground: color::rgb(20, 30, 180)), link: "https://example.com/z"),
+        text::span(
+          "abc",
+          style: text::span_style(foreground: color::rgb(180, 20, 30)),
+          link: "https://example.com/abc",
+        ),
+        text::span(
+          "你",
+          style: text::span_style(foreground: color::rgb(20, 180, 30), italic: true),
+          link: "https://example.com/wide",
+        ),
+        text::span(
+          "z",
+          style: text::span_style(foreground: color::rgb(20, 30, 180)),
+          link: "https://example.com/z",
+        ),
       ],
     ),
     wrap: text::TextWrap::none,
@@ -401,22 +645,40 @@ test fn horizontal_ellipsis_replaces_complete_glyph_and_clamps_selection() Void!
   )
   application.root.add(label)
   application.render()
-
+  
   let marker = application.frame().cell(3, 0).expect("horizontal ellipsis")
-  try testing::assert(label.overflow() == text::TextOverflow::ellipsis and label.content() == "abc你z", "Expected configured ellipsis without source mutation")
-  try testing::assert(marker.grapheme == "…" and (not marker.style.italic) and marker.style.foreground.expect("ellipsis inherited style").red == Uint8::from(180), "Expected ellipsis style immediately before final omitted source")
+  try testing::assert(
+    label.overflow() == text::TextOverflow::ellipsis and label.content() == "abc你z",
+    "Expected configured ellipsis without source mutation",
+  )
+  try testing::assert(
+    marker.grapheme == "…" and (not marker.style.italic) and marker.style.foreground.expect("ellipsis inherited style").red == Uint8::from(180),
+    "Expected ellipsis style immediately before final omitted source",
+  )
   try testing::assert(marker.hyperlink.is_none(), "Expected synthetic ellipsis without hyperlink")
-  try testing::assert(application.frame().cell(4, 0).expect("cleared wide continuation").grapheme == " ", "Expected no partial wide glyph")
-
+  try testing::assert(
+    application.frame().cell(4, 0).expect("cleared wide continuation").grapheme == " ",
+    "Expected no partial wide glyph",
+  )
+  
   application.drag(3, 0, 0, 0)
-  try testing::assert(label.selected_text() == "abc" and application.selection().expect("ellipsis-clamped selection").selected_text == "abc", "Expected ellipsis endpoint clamped to visible source")
-  try testing::assert(not application.frame().cell(3, 0).expect("unselected ellipsis").style.reverse, "Expected synthetic ellipsis not selected")
-
+  try testing::assert(
+    label.selected_text() == "abc" and application.selection().expect("ellipsis-clamped selection").selected_text == "abc",
+    "Expected ellipsis endpoint clamped to visible source",
+  )
+  try testing::assert(
+    not application.frame().cell(3, 0).expect("unselected ellipsis").style.reverse,
+    "Expected synthetic ellipsis not selected",
+  )
+  
   label.set_overflow(text::TextOverflow::clip)
   application.render()
   try testing::assert(label.overflow() == text::TextOverflow::clip, "Expected overflow setter")
-  try testing::assert(application.frame().cell(3, 0).expect("restored clipped wide glyph").grapheme == "你" and application.frame().cell(4, 0).expect("restored wide link continuation").hyperlink.or("") == "https://example.com/wide", "Expected clip mode to restore complete linked wide glyph")
-
+  try testing::assert(
+    application.frame().cell(3, 0).expect("restored clipped wide glyph").grapheme == "你" and application.frame().cell(4, 0).expect("restored wide link continuation").hyperlink.or("") == "https://example.com/wide",
+    "Expected clip mode to restore complete linked wide glyph",
+  )
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected horizontal ellipsis cleanup")
 }
@@ -428,7 +690,11 @@ test fn vertical_ellipsis_uses_last_visible_row_and_preceding_style() Void!Str {
     content: text::styled_text(
       [
         text::span("one "),
-        text::span("two ", style: text::span_style(foreground: color::rgb(40, 150, 210), italic: true), link: "https://example.com/two"),
+        text::span(
+          "two ",
+          style: text::span_style(foreground: color::rgb(40, 150, 210), italic: true),
+          link: "https://example.com/two",
+        ),
         text::span("three", style: text::span_style(bold: true)),
       ],
     ),
@@ -437,12 +703,18 @@ test fn vertical_ellipsis_uses_last_visible_row_and_preceding_style() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   let marker = application.frame().cell(4, 1).expect("vertical ellipsis")
-  try testing::assert(application.frame().cell(0, 0).expect("first visible line").grapheme == "o" and application.frame().cell(0, 1).expect("last visible line").grapheme == "t", "Expected visible wrapped prefix")
-  try testing::assert(marker.grapheme == "…" and marker.style.italic and marker.style.foreground.expect("vertical marker style").blue == Uint8::from(210), "Expected marker after last visible source")
+  try testing::assert(
+    application.frame().cell(0, 0).expect("first visible line").grapheme == "o" and application.frame().cell(0, 1).expect("last visible line").grapheme == "t",
+    "Expected visible wrapped prefix",
+  )
+  try testing::assert(
+    marker.grapheme == "…" and marker.style.italic and marker.style.foreground.expect("vertical marker style").blue == Uint8::from(210),
+    "Expected marker after last visible source",
+  )
   try testing::assert(marker.hyperlink.is_none(), "Expected vertical ellipsis to clear source hyperlink")
-
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected vertical ellipsis cleanup")
 }
@@ -458,16 +730,22 @@ test fn ellipsis_without_visible_source_is_synthetic_and_not_selectable() Void!S
   )
   application.root.add(label)
   application.render()
-
+  
   let marker = application.frame().cell(0, 0).expect("source-free ellipsis")
-  try testing::assert(marker.grapheme == "…" and marker.style.bold, "Expected Text-level marker style without fitting source")
+  try testing::assert(
+    marker.grapheme == "…" and marker.style.bold,
+    "Expected Text-level marker style without fitting source",
+  )
   application.click(0, 0)
   let copied = match application.selection() {
     selected => selected.selected_text,
     _ => "",
   }
-  try testing::assert((not label.selection().is_some()) and copied.is_empty(), "Expected source-free synthetic marker not selectable")
-
+  try testing::assert(
+    (not label.selection().is_some()) and copied.is_empty(),
+    "Expected source-free synthetic marker not selectable",
+  )
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected source-free ellipsis cleanup")
 }
@@ -481,7 +759,13 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
       style: text::span_style(foreground: color::rgb(220, 20, 30), underline: true),
     ),
   )
-  spans.push(text::span(" plain", style: text::span_style(bold: false, hidden: true), link: "https://example.com"))
+  spans.push(
+    text::span(
+      " plain",
+      style: text::span_style(bold: false, hidden: true),
+      link: "https://example.com",
+    ),
+  )
   let content = text::styled_text(spans.@)
   spans.set(0, text::span("changed"))
   let label = text::new(
@@ -492,35 +776,62 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   let emphasized = application.frame().cell(0, 0).expect("styled span cell").style
   let linked_cell = application.frame().cell(4, 0).expect("inherited span cell")
   let inherited = linked_cell.style
   try testing::assert(label.content() == "RED plain", "Expected flattened rich content")
-  try testing::assert(emphasized.foreground.expect("span foreground").red == Uint8::from(220), "Expected span foreground override")
-  try testing::assert(emphasized.bold and emphasized.italic and emphasized.underline and (not emphasized.hidden), "Expected Text-level attributes inherited by span")
-  try testing::assert((not inherited.bold) and inherited.italic and inherited.hidden, "Expected explicit false and hidden span overrides")
-  try testing::assert(inherited.background.expect("common background").blue == Uint8::from(6), "Expected common color inheritance through span")
-  try testing::assert(linked_cell.hyperlink.or("") == "https://example.com", "Expected linked span cell metadata")
-
+  try testing::assert(
+    emphasized.foreground.expect("span foreground").red == Uint8::from(220),
+    "Expected span foreground override",
+  )
+  try testing::assert(
+    emphasized.bold and emphasized.italic and emphasized.underline and (not emphasized.hidden),
+    "Expected Text-level attributes inherited by span",
+  )
+  try testing::assert(
+    (not inherited.bold) and inherited.italic and inherited.hidden,
+    "Expected explicit false and hidden span overrides",
+  )
+  try testing::assert(
+    inherited.background.expect("common background").blue == Uint8::from(6),
+    "Expected common color inheritance through span",
+  )
+  try testing::assert(
+    linked_cell.hyperlink.or("") == "https://example.com",
+    "Expected linked span cell metadata",
+  )
+  
   let snapshot = label.styled_content()
-  try testing::assert(snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("first snapshot span").text == "RED", "Expected helper and Text ingress snapshots")
-  try testing::assert(snapshot.spans.at(1).expect("linked snapshot span").link.or("") == "https://example.com", "Expected exact link snapshot")
+  try testing::assert(
+    snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("first snapshot span").text == "RED",
+    "Expected helper and Text ingress snapshots",
+  )
+  try testing::assert(
+    snapshot.spans.at(1).expect("linked snapshot span").link.or("") == "https://example.com",
+    "Expected exact link snapshot",
+  )
   let returned_spans = mut snapshot.spans
   returned_spans.set(0, text::span("getter mutation"))
   try testing::assert(label.content() == "RED plain", "Expected getter snapshot isolated from Text")
-
+  
   let direct_spans = mut List::new<text::Span>()
   direct_spans.push(text::span("direct"))
   label.set_content(text::StyledText{spans: direct_spans.@})
   direct_spans.set(0, text::span("caller mutation"))
   try testing::assert(label.content() == "direct", "Expected direct StyledText ingress snapshot")
-
+  
   label.set_content("plain")
   application.render()
-  try testing::assert(label.content() == "plain" and label.styled_content().spans.size() == 1, "Expected plain union setter to create one span")
-  try testing::assert(application.frame().cell(0, 0).expect("plain replacement cell").hyperlink.is_none(), "Expected plain replacement to clear hyperlink")
-
+  try testing::assert(
+    label.content() == "plain" and label.styled_content().spans.size() == 1,
+    "Expected plain union setter to create one span",
+  )
+  try testing::assert(
+    application.frame().cell(0, 0).expect("plain replacement cell").hyperlink.is_none(),
+    "Expected plain replacement to clear hyperlink",
+  )
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected styled Text cleanup")
 }
@@ -531,21 +842,38 @@ test fn styled_text_uses_first_scalar_style_for_cross_span_grapheme() Void!Str {
     application.context,
     content: text::styled_text(
       [
-        text::span("e", style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true), link: "https://example.com/first"),
-        text::span("́", style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true), link: "https://example.com/second"),
+        text::span(
+          "e",
+          style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true),
+          link: "https://example.com/first",
+        ),
+        text::span(
+          "́",
+          style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true),
+          link: "https://example.com/second",
+        ),
       ],
     ),
     styles: style::new(width: style::cells(1), height: style::cells(1)),
   )
   application.root.add(label)
   application.render()
-
+  
   let painted = application.frame().cell(0, 0).expect("cross-span grapheme")
   try testing::assert(painted.grapheme == "é", "Expected one cross-span grapheme")
-  try testing::assert(painted.style.foreground.expect("first scalar foreground").red == Uint8::from(200), "Expected first scalar color")
-  try testing::assert(painted.style.bold and (not painted.style.italic), "Expected complete first scalar style")
-  try testing::assert(painted.hyperlink.or("") == "https://example.com/first", "Expected first scalar hyperlink for cross-span grapheme")
-
+  try testing::assert(
+    painted.style.foreground.expect("first scalar foreground").red == Uint8::from(200),
+    "Expected first scalar color",
+  )
+  try testing::assert(
+    painted.style.bold and not painted.style.italic,
+    "Expected complete first scalar style",
+  )
+  try testing::assert(
+    painted.hyperlink.or("") == "https://example.com/first",
+    "Expected first scalar hyperlink for cross-span grapheme",
+  )
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected cross-span Text cleanup")
 }
@@ -560,11 +888,17 @@ test fn text_character_wrap_never_splits_a_grapheme() Void!Str {
   )
   application.root.add(label)
   application.render()
-
+  
   try testing::assert(label.layout().screen.height == 2, "Expected character wrap height")
-  try testing::assert(application.frame().cell(1, 0).expect("first line end").grapheme == "b", "Expected first line")
-  try testing::assert(application.frame().cell(0, 1).expect("second line lead").grapheme == "🙂", "Expected intact grapheme")
-
+  try testing::assert(
+    application.frame().cell(1, 0).expect("first line end").grapheme == "b",
+    "Expected first line",
+  )
+  try testing::assert(
+    application.frame().cell(0, 1).expect("second line lead").grapheme == "🙂",
+    "Expected intact grapheme",
+  )
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected character Text cleanup")
 }
@@ -599,12 +933,18 @@ test fn common_colors_follow_tree_inheritance_not_sibling_paint_order() Void!Str
   parent.add(front)
   application.root.add(parent)
   application.render()
-
+  
   let painted = application.frame().cell(0, 0).expect("overlapping Text")
   try testing::assert(painted.grapheme == "b", "Expected later sibling paint")
-  try testing::assert(not painted.style.foreground.is_some(), "Expected no foreground leakage between siblings")
-  try testing::assert(not painted.style.background.is_some(), "Expected no background leakage between siblings")
-
+  try testing::assert(
+    not painted.style.foreground.is_some(),
+    "Expected no foreground leakage between siblings",
+  )
+  try testing::assert(
+    not painted.style.background.is_some(),
+    "Expected no background leakage between siblings",
+  )
+  
   application.destroy()
   testing::assert(front.node_ref.is_destroyed(), "Expected overlapping Text cleanup")
 }
@@ -634,12 +974,18 @@ test fn common_colors_inherit_through_visible_overflow() Void!Str {
   parent.add(child)
   application.root.add(parent)
   application.render()
-
+  
   let painted = application.frame().cell(1, 0).expect("overflowing Text")
   try testing::assert(painted.grapheme == "x", "Expected visible overflow paint")
-  try testing::assert(painted.style.foreground.expect("inherited foreground").blue == Uint8::from(9), "Expected foreground inheritance outside parent bounds")
-  try testing::assert(painted.style.background.expect("inherited background").blue == Uint8::from(12), "Expected background inheritance outside parent bounds")
-
+  try testing::assert(
+    painted.style.foreground.expect("inherited foreground").blue == Uint8::from(9),
+    "Expected foreground inheritance outside parent bounds",
+  )
+  try testing::assert(
+    painted.style.background.expect("inherited background").blue == Uint8::from(12),
+    "Expected background inheritance outside parent bounds",
+  )
+  
   application.destroy()
   testing::assert(child.node_ref.is_destroyed(), "Expected overflowing Text cleanup")
 }
@@ -665,17 +1011,29 @@ test fn text_exposes_styles_content_wrapping_and_common_api() Void!Str {
     ),
   )
   application.render()
-
+  
   try testing::assert(label.content() == "new", "Expected Text content getter")
   try testing::assert(label.wrap() == text::TextWrap::character, "Expected Text wrap getter")
   try testing::assert(label.text_style().bold, "Expected TextStyle getter")
-  try testing::assert(label.style().width.kind == style::LengthKind::cells, "Expected common style getter")
-  try testing::assert(label.style().foreground.expect("common foreground").green == Uint8::from(30), "Expected color in common Style")
+  try testing::assert(
+    label.style().width.kind == style::LengthKind::cells,
+    "Expected common style getter",
+  )
+  try testing::assert(
+    label.style().foreground.expect("common foreground").green == Uint8::from(30),
+    "Expected color in common Style",
+  )
   let painted = application.frame().cell(0, 0).expect("styled Text cell")
   try testing::assert(painted.style.bold, "Expected bold Text paint")
-  try testing::assert(painted.style.foreground.expect("Text foreground override").red == Uint8::from(200), "Expected TextStyle to override common foreground")
-  try testing::assert(painted.style.background.expect("common background").blue == Uint8::from(70), "Expected inherited common background")
-
+  try testing::assert(
+    painted.style.foreground.expect("Text foreground override").red == Uint8::from(200),
+    "Expected TextStyle to override common foreground",
+  )
+  try testing::assert(
+    painted.style.background.expect("common background").blue == Uint8::from(70),
+    "Expected inherited common background",
+  )
+  
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected styled Text cleanup")
 }

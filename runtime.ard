@@ -180,8 +180,13 @@ private fn mouse_event(mouse: vaxis::Mouse) mut event::MouseEvent {
 
 private fn default_width(text: Str) Int {
   mut width = 0
-  for character in vaxis::Characters(text) {
-    width = width + character.Width
+  let iterator = mut vaxis::NewCharacterIterator(text)
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      character => { width = width + character.Width },
+      _ => { reading = false },
+    }
   }
   width
 }
@@ -1536,7 +1541,7 @@ impl State {
             y,
             vaxis::Cell{
               Character: vaxis::Character{Grapheme: cell.grapheme, Width: cell.width},
-              Style: vaxis_style(cell.style),
+              Style: vaxis_style(cell.style.@),
             },
           )
         }

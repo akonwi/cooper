@@ -1,0 +1,206 @@
+use cooper/core/layout/cache
+use cooper/core/layout/numeric
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// MIT license: LICENSE.yoga. Yoga 8ba025e CalculateLayout.cpp:
+// measureNodeWithMeasureFunc, measureNodeWithoutChildren; BoundAxis.h.
+// Axis values are resolved border-box constraints. Keyword and percentage
+// resolution belongs to the caller, before entering these leaf paths.
+
+enum Mode {
+  undefined,
+  exactly,
+  at_most,
+}
+
+struct Input {
+  width: Float32,
+  width_mode: Mode,
+  height: Float32,
+  height_mode: Mode,
+}
+
+struct Size {
+  width: Float32,
+  height: Float32,
+}
+
+struct Axis {
+  available: Float32,
+  mode: cache::SizingMode,
+  padding_border: Float32,
+  minimum: Float32,
+  maximum: Float32,
+}
+
+fn callback_mode(mode: cache::SizingMode) Mode {
+  match mode {
+    cache::SizingMode::max_content => Mode::undefined,
+    cache::SizingMode::fit_content => Mode::at_most,
+    cache::SizingMode::stretch_fit => Mode::exactly,
+  }
+}
+
+impl Axis {
+  // CalculateLayout.cpp: isFixedSize / measureNodeWithFixedSize. The caller
+  // removes margins and requires both axes to be fixed before taking this path.
+  fn is_fixed() Bool {
+    self.mode == cache::SizingMode::stretch_fit or self.mode == cache::SizingMode::fit_content and numeric::is_defined(self.available) and self.available <= 0.0
+  }
+  
+  fn fixed_size() Float32 {
+    let size = match numeric::is_undefined(self.available) or self.mode == cache::SizingMode::fit_content and self.available < 0.0 {
+      true => Float32::from(0.0),
+      false => self.available,
+    }
+    self.bound(size)
+  }
+  
+  // CalculateLayout.cpp: constrainMaxSizeForMode. Available size includes
+  // margins here; maximum is an already-resolved border-box constraint.
+  fn constrain_max(margin: Float32) Axis {
+    let result = mut self
+    let maximum = self.maximum + margin
+    match self.mode {
+      cache::SizingMode::max_content => {
+        if numeric::is_defined(maximum) {
+          result.mode = cache::SizingMode::fit_content
+          result.available = maximum
+        }
+      },
+      _ => {
+        let below_maximum = self.available < maximum
+        if numeric::is_defined(maximum) and below_maximum == false {
+          result.available = maximum
+        }
+      },
+    }
+    result.@
+  }
+  
+  // CalculateLayout.cpp: calculateAvailableInnerDimension. Unlike callback
+  // inner_size, this uses resolved min/max and does not always floor at zero.
+  // Available space has already had margins removed by the caller.
+  fn available_inner_dimension() Float32 {
+    mut available = self.available - self.padding_border
+    if numeric::is_defined(available) {
+      let minimum = match numeric::is_undefined(self.minimum) {
+        true => Float32::from(0.0),
+        false => self.minimum - self.padding_border,
+      }
+      let maximum = match numeric::is_undefined(self.maximum) {
+        true => Float32::from(340282346638528859811704183484516925440.0),
+        false => self.maximum - self.padding_border,
+      }
+      available = numeric::max_or_defined(numeric::min_or_defined(available, maximum), minimum)
+    }
+    available
+  }
+  
+  fn without_margin(margin: Float32) Axis {
+    Axis{
+      available: self.available - margin,
+      mode: self.mode,
+      padding_border: self.padding_border,
+      minimum: self.minimum,
+      maximum: self.maximum,
+    }
+  }
+  
+  fn bound(value: Float32) Float32 {
+    // Pinned Yoga checks maximum first and returns immediately. Cooper's
+    // minimum-wins ADR policy must normalize conflicting bounds upstream.
+    mut bounded = value
+    if self.maximum >= 0.0 and value > self.maximum {
+      bounded = self.maximum
+    } else if self.minimum >= 0.0 and value < self.minimum {
+      bounded = self.minimum
+    }
+    numeric::max_or_defined(bounded, self.padding_border)
+  }
+  
+  fn available_size() Float32 {
+    match self.mode == cache::SizingMode::max_content {
+      true => numeric::undefined(),
+      false => self.available,
+    }
+  }
+  
+  fn inner_size() Float32 {
+    let available = self.available_size()
+    match numeric::is_undefined(available) {
+      true => available,
+      false => numeric::max_or_defined(Float32::from(0.0), available - self.padding_border),
+    }
+  }
+  
+  fn measured_size(content: Float32) Float32 {
+    let size = match self.mode == cache::SizingMode::stretch_fit {
+      true => self.available_size(),
+      false => content + self.padding_border,
+    }
+    self.bound(size)
+  }
+}
+
+fn with_callback(width: Axis, height: Axis, measure: fn(Input) Size) Size {
+  if width.mode == cache::SizingMode::stretch_fit and height.mode == cache::SizingMode::stretch_fit {
+    Size{width: width.bound(width.available), height: height.bound(height.available)}
+  } else {
+    let result = measure(
+      Input{
+        width: width.inner_size(),
+        width_mode: callback_mode(width.mode),
+        height: height.inner_size(),
+        height_mode: callback_mode(height.mode),
+      },
+    )
+    Size{width: width.measured_size(result.width), height: height.measured_size(result.height)}
+  }
+}
+
+// ADR0016: if width bounds change the measured content width, height must be
+// measured at that final width before caching the result. Raw Yoga stays above.
+fn with_callback_policy(width: Axis, height: Axis, measure: fn(Input) Size) Size {
+  if width.mode == cache::SizingMode::stretch_fit and height.mode == cache::SizingMode::stretch_fit {
+    with_callback(width, height, measure)
+  } else {
+    let measured = measure(
+      Input{
+        width: width.inner_size(),
+        width_mode: callback_mode(width.mode),
+        height: height.inner_size(),
+        height_mode: callback_mode(height.mode),
+      },
+    )
+    let final_width = width.measured_size(measured.width)
+    let initial_width = match width.mode == cache::SizingMode::stretch_fit {
+      true => width.inner_size(),
+      false => measured.width,
+    }
+    mut final_height = measured.height
+    if height.mode != cache::SizingMode::stretch_fit and final_width - width.padding_border != initial_width {
+      final_height = measure(
+        Input{
+          width: numeric::max_or_defined(Float32::from(0.0), final_width - width.padding_border),
+          width_mode: Mode::exactly,
+          height: height.inner_size(),
+          height_mode: callback_mode(height.mode),
+        },
+      ).height
+    }
+    Size{width: final_width, height: height.measured_size(final_height)}
+  }
+}
+
+fn without_children(width: Axis, height: Axis) Size {
+  let w = match width.mode == cache::SizingMode::stretch_fit {
+    true => width.available,
+    false => width.padding_border,
+  }
+  let h = match height.mode == cache::SizingMode::stretch_fit {
+    true => height.available,
+    false => height.padding_border,
+  }
+  Size{width: width.bound(w), height: height.bound(h)}
+}

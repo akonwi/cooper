@@ -19,32 +19,30 @@ fn main() {
     ctx,
     content: "TEXTAREA — Tab focus · Ctrl+Enter submit · Ctrl+C quit",
     selectable: false,
+    styles: ui::style(flex_shrink: 0.0),
   )
   let frame = ui::box(
     ctx,
     title: "EDITOR",
-    styles: ui::style(
-      border: ui::Border::single,
-      width: ui::cells(42),
-      height: ui::cells(7),
-      flex_shrink: 0.0,
-    ),
+    styles: ui::style(border: ui::Border::single, width: ui::cells(42), height: ui::cells(7)),
   )
   let area = ui::text_area(
     ctx,
     placeholder: "Write multiple lines…",
-    styles: ui::style(
-      width: ui::percent(100.0),
-      height: ui::percent(100.0),
-    ),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
   )
-  let status = ui::text(ctx, content: "status: ready", selectable: false)
+  let status = ui::text(
+    ctx,
+    content: "status: ready",
+    selectable: false,
+    styles: ui::style(flex_shrink: 0.0),
+  )
   frame.add(area)
   root.add(title)
   root.add(frame)
   root.add(status)
   application.root.add(root)
-
+  
   let _ = area.on_input(fn(value: Str) {
     status.set_content("value: {strings::ReplaceAll(value, "\n", "↵")}")
   })
@@ -61,6 +59,6 @@ fn main() {
       status.set_content("status: focused")
     }
   })
-
+  
   application.run().expect("run TextArea fixture")
 }

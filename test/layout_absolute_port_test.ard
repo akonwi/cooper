@@ -1,0 +1,180 @@
+use ard/testing
+
+use cooper/core/layout
+use cooper/core/layout/absolute
+use cooper/core/layout/cache
+use cooper/core/layout/measure
+use cooper/ui/style
+
+fn commit(
+  node: mut layout::Node,
+  width: measure::Axis,
+  height: measure::Axis,
+  mr: Float32,
+  mc: Float32,
+  generation: Int,
+  perform: Bool,
+) Bool {
+  node.measured_width = match width.mode == cache::SizingMode::stretch_fit {
+    true => width.available - mr,
+    false => Float32::from(7.0),
+  }
+  node.measured_height = match height.mode == cache::SizingMode::stretch_fit {
+    true => height.available - mc,
+    false => Float32::from(5.0),
+  }
+  true
+}
+
+test fn opposite_insets_size_and_place_border_box_with_asymmetric_margins() Void!Str {
+  let root = layout::new()
+  root.border = 2
+  // The public contract receives the 80x40 padding box after subtracting the
+  // asymmetric-independent two border edges from this 84x44 border box.
+  root.measured_width = Float32::from(84.0)
+  root.measured_height = Float32::from(44.0)
+  let child = layout::new()
+  child.value = style::new(
+    position: style::Position::absolute,
+    left: style::cells(5),
+    right: style::cells(9),
+    top: style::cells(3),
+    bottom: style::cells(7),
+    margin: style::Edges{
+      left: style::cells(1),
+      top: style::cells(2),
+      right: style::cells(4),
+      bottom: style::cells(1),
+    },
+  )
+  root.children = [child]
+  try testing::assert(
+    absolute::descendants(
+      root,
+      root,
+      Float32::from(80.0),
+      Float32::from(40.0),
+      cache::SizingMode::stretch_fit,
+      Float32::from(0.0),
+      Float32::from(0.0),
+      1,
+      commit,
+    ),
+    "absolute layout reports committed work",
+  )
+  testing::assert(
+    child.x == 8.0 and child.y == 7.0 and child.width == 61.0 and child.height == 27.0,
+    "opposite insets derive border-box dimensions and leading positions",
+  )
+}
+
+test fn static_and_contents_are_flattened_but_relative_owns_its_descendants() Void!Str {
+  let root = layout::new()
+  let static_parent = layout::new()
+  static_parent.value.position = style::Position::static
+  static_parent.x = 11.0
+  let contents = layout::new()
+  contents.value.display = style::Display::contents
+  contents.value.position = style::Position::absolute
+  contents.y = 6.0
+  let owned = layout::new()
+  owned.value = style::new(
+    position: style::Position::absolute,
+    right: style::cells(4),
+    bottom: style::cells(3),
+  )
+  contents.children = [owned]
+  static_parent.children = [contents]
+  let relative = layout::new()
+  let nested = layout::new()
+  nested.value = style::new(
+    position: style::Position::absolute,
+    left: style::cells(1),
+    top: style::cells(1),
+  )
+  relative.children = [nested]
+  root.children = [static_parent, relative]
+  absolute::descendants(
+    root,
+    root,
+    Float32::from(50.0),
+    Float32::from(30.0),
+    cache::SizingMode::stretch_fit,
+    Float32::from(0.0),
+    Float32::from(0.0),
+    1,
+    commit,
+  )
+  try testing::assert(
+    owned.x == 28.0 and owned.y == 16.0 and owned.width == 7.0 and owned.height == 5.0,
+    "measured child uses opposite insets relative to containing block and offsets through flattened ancestors",
+  )
+  testing::assert(
+    nested.width == 0.0 and nested.height == 0.0,
+    "relative descendant establishes independent ownership",
+  )
+}
+
+test fn fallback_uses_nearest_box_padding_and_reverse_main_start() Void!Str {
+  let root = layout::new()
+  root.measured_width = 70.0
+  root.measured_height = 30.0
+  root.value = style::new(
+    flex_direction: style::FlexDirection::row_reverse,
+    padding: style::Edges{
+      left: style::cells(3),
+      top: style::cells(2),
+      right: style::cells(9),
+      bottom: style::cells(4),
+    },
+  )
+  let contents = layout::new()
+  contents.value.display = style::Display::contents
+  let child = layout::new()
+  child.value.position = style::Position::absolute
+  contents.children = [child]
+  root.children = [contents]
+  absolute::descendants(
+    root,
+    root,
+    Float32::from(70.0),
+    Float32::from(30.0),
+    cache::SizingMode::stretch_fit,
+    Float32::from(0.0),
+    Float32::from(0.0),
+    1,
+    commit,
+  )
+  try testing::assert(
+    child.x == 54.0 and child.y == 2.0,
+    "contents retain nearest box and row-reverse starts at physical right padding",
+  )
+  testing::assert(
+    child.insets.left == 0.0 and child.insets.top == 0.0 and child.insets.right == 0.0,
+    "positions never overwrite content insets",
+  )
+}
+
+test fn undefined_column_width_is_measured_fit_content_then_laid_out_exactly() Void!Str {
+  let root = layout::new()
+  root.measured_width = 40.0
+  root.measured_height = 20.0
+  let child = layout::new()
+  child.value.position = style::Position::absolute
+  root.children = [child]
+  absolute::descendants(
+    root,
+    root,
+    Float32::from(40.0),
+    Float32::from(20.0),
+    cache::SizingMode::stretch_fit,
+    Float32::from(0.0),
+    Float32::from(0.0),
+    1,
+    commit,
+  )
+  testing::assert(
+    child.width == 7.0 and child.height == 5.0,
+    "fit-content measurement precedes final exact layout",
+  )
+}

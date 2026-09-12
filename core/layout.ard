@@ -1,0 +1,399 @@
+use cooper/core/layout/cache
+use cooper/core/layout/measure as measurement
+use cooper/core/layout/numeric
+use cooper/ui/geometry
+use cooper/ui/style
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
+
+type MeasureMode = measurement::Mode
+type MeasureInput = measurement::Input
+type MeasureSize = measurement::Size
+
+struct Insets {
+  left: Float64,
+  top: Float64,
+  right: Float64,
+  bottom: Float64,
+}
+
+// Immutable only for one reconciliation transaction. No projected width is
+// fed back into the next transaction's fractional contribution measurements.
+struct Allocation {
+  x: Float64,
+  width: Float64,
+  insets: Insets,
+  percent_width: Float64,
+  line: Int,
+  content_width: Int,
+  measured_width: Float32,
+  intrinsic_width: Float32,
+  cache_state: mut cache::State,
+  dirty: Bool,
+}
+
+// Undefined Float32 availability is NaN, distinct from a zero-sized constraint.
+// Only final projection converts fractional edges into terminal cells.
+struct Node {
+  value: style::Style,
+  border: Int,
+  children: [mut Node],
+  owner: (mut Node)?,
+  dirty: Bool,
+  cache_state: mut cache::State,
+  measure: (fn(MeasureInput) MeasureSize)?,
+  measured_width: Float32,
+  measured_height: Float32,
+  x: Float64,
+  y: Float64,
+  width: Float64,
+  height: Float64,
+  insets: Insets,
+  local: geometry::Rect,
+  content: geometry::Rect,
+  allocation: Allocation?,
+  line: Int,
+  percent_width: Float64,
+  // Production-only ADR0016 adapter state. Raw translated-engine tests leave
+  // this false so their Yoga reference arithmetic remains observable.
+  intrinsic_policy: Bool,
+  intrinsic_width: Float32,
+  intrinsic_height: Float32,
+  intrinsic_width_allocated: Bool,
+  intrinsic_height_allocated: Bool,
+  intrinsic_width_definite: Bool,
+  intrinsic_height_definite: Bool,
+  intrinsic_available_width: Float32,
+  intrinsic_available_height: Float32,
+  transaction_width: Int,
+  transaction_height: Int,
+}
+
+fn new() mut Node {
+  (mut Node{
+    value: style::new(),
+    border: 0,
+    children: [],
+    owner: Maybe::new<mut Node>(),
+    dirty: true,
+    cache_state: cache::new_state(),
+    measure: Maybe::new<fn(MeasureInput) MeasureSize>(),
+    measured_width: numeric::undefined(),
+    measured_height: numeric::undefined(),
+    allocation: Maybe::new<Allocation>(),
+    line: 0,
+    percent_width: -1.0,
+    intrinsic_policy: false,
+    intrinsic_width: numeric::undefined(),
+    intrinsic_height: numeric::undefined(),
+    intrinsic_width_allocated: false,
+    intrinsic_height_allocated: false,
+    intrinsic_width_definite: true,
+    intrinsic_height_definite: true,
+    intrinsic_available_width: numeric::undefined(),
+    intrinsic_available_height: numeric::undefined(),
+    transaction_width: -1,
+    transaction_height: -1,
+    x: 0.0,
+    y: 0.0,
+    width: 0.0,
+    height: 0.0,
+    insets: Insets{
+      left: 0.0,
+      top: 0.0,
+      right: 0.0,
+      bottom: 0.0,
+    },
+    local: geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    },
+    content: geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    },
+  })
+}
+
+fn max(a: Float64, b: Float64) Float64 {
+  match a > b {
+    true => a,
+    false => b,
+  }
+}
+fn rounded(value: Float64) Int {
+  let shifted = value + 0.5
+  let truncated = shifted.to_int()
+  match truncated.to_f64() > shifted {
+    true => truncated - 1,
+    false => truncated,
+  }
+}
+// Yoga's change-aware style setters compare layout values, not paint data.
+// Cooper supplies resolved border thickness separately from border appearance.
+fn same_length(a: style::Length, b: style::Length) Bool {
+  a.kind == b.kind and a.value == b.value
+}
+
+fn same_edges(a: style::Edges, b: style::Edges) Bool {
+  same_length(a.top, b.top) and same_length(a.right, b.right) and same_length(a.bottom, b.bottom) and same_length(a.left, b.left)
+}
+
+fn same_layout_style(a: style::Style, b: style::Style) Bool {
+  let flow = a.display == b.display and a.position == b.position and a.overflow == b.overflow and a.flex_direction == b.flex_direction and a.flex_wrap == b.flex_wrap
+  let flex = same_length(a.flex_basis, b.flex_basis) and a.flex_grow == b.flex_grow and a.flex_shrink == b.flex_shrink
+  let alignment = a.align_items == b.align_items and a.align_self == b.align_self and a.align_content == b.align_content and a.justify_content == b.justify_content
+  let dimensions = same_length(a.width, b.width) and same_length(a.height, b.height) and same_length(a.min_width, b.min_width) and same_length(a.min_height, b.min_height) and same_length(a.max_width, b.max_width) and same_length(a.max_height, b.max_height)
+  let offsets = same_length(a.top, b.top) and same_length(a.right, b.right) and same_length(a.bottom, b.bottom) and same_length(a.left, b.left)
+  let spacing = same_edges(a.padding, b.padding) and same_edges(a.margin, b.margin) and same_length(a.gap, b.gap)
+  flow and flex and alignment and dimensions and offsets and spacing
+}
+
+impl Node {
+  // Translated ownership/dirty propagation from Yoga 8ba025e node/Node.cpp
+  // and YGNode.cpp. Copyright (c) Meta Platforms, Inc. and affiliates.
+  // MIT license: layout/LICENSE.yoga.
+  fn mut mark_dirty() {
+    if not self.dirty {
+      self.dirty = true
+      self.cache_state.invalidate_basis()
+      match self.owner {
+        owner => owner.mark_dirty(),
+        _ => (),
+      }
+    }
+  }
+  
+  fn mut set_measure(measure: fn(MeasureInput) MeasureSize) {
+    self.measure = Maybe::new<fn(MeasureInput) MeasureSize>(measure)
+    self.mark_dirty()
+  }
+  
+  // Leaf portion of Yoga calculateLayoutInternal. Axis availability here
+  // includes margins; the leaf kernel receives border-box space instead.
+  // Caller resolves lengths/bounds/insets before the visit.
+  fn mut calculate_leaf(
+    width: measurement::Axis,
+    height: measurement::Axis,
+    margin_row: Float32,
+    margin_column: Float32,
+    generation: Int,
+    perform_layout: Bool,
+  ) Bool {
+    if self.children.size() != 0 {
+      panic("calculate_leaf requires a leaf node")
+    }
+    let request = mut cache::Measurement{
+      available_width: width.available,
+      available_height: height.available,
+      width_mode: width.mode,
+      height_mode: height.mode,
+      computed_width: numeric::undefined(),
+      computed_height: numeric::undefined(),
+    }
+    // Cooper's existing backend configuration is fixed: LTR, scale one.
+    let visit = self.cache_state.prepare(self.dirty, generation, 0, cache::Direction::ltr)
+    let cached = self.cache_state.find(
+      request.@,
+      self.measure.is_some(),
+      perform_layout,
+      margin_row,
+      margin_column,
+      true,
+    )
+    if (not visit) and cached.is_some() {
+      let result = cached.expect("cached leaf measurement")
+      self.measured_width = result.computed_width
+      self.measured_height = result.computed_height
+    } else {
+      let inner_width = width.without_margin(margin_row)
+      let inner_height = height.without_margin(margin_column)
+      let result = match self.measure {
+        measure => {
+          match self.intrinsic_policy {
+            true => measurement::with_callback_policy(inner_width, inner_height, measure),
+            false => measurement::with_callback(inner_width, inner_height, measure),
+          }
+        },
+        _ => measurement::without_children(inner_width, inner_height),
+      }
+      self.measured_width = result.width
+      self.measured_height = result.height
+      if cached.is_some() == false {
+        request.computed_width = result.width
+        request.computed_height = result.height
+        self.cache_state.store(request.@, perform_layout)
+      }
+    }
+    if perform_layout {
+      self.width = numbers::Widen(self.measured_width)
+      self.height = numbers::Widen(self.measured_height)
+      self.dirty = false
+    }
+    self.cache_state.complete(generation, 0, cache::Direction::ltr)
+    visit or cached.is_some() == false
+  }
+  
+  // computeFlexBasisForChild's measurement branch, for leaf children only.
+  // Caller constructs both axes with basis::measurement_axis. Containers will
+  // use the general recursive visitor once translated, not calculate_leaf.
+  fn mut measure_leaf_basis(
+    width: measurement::Axis,
+    height: measurement::Axis,
+    margin_row: Float32,
+    margin_column: Float32,
+    row: Bool,
+    generation: Int,
+  ) {
+    self.calculate_leaf(width, height, margin_row, margin_column, generation, false)
+    self.cache_state.computed_flex_basis = match row {
+      true => numeric::max_or_defined(self.measured_width, width.padding_border),
+      false => numeric::max_or_defined(self.measured_height, height.padding_border),
+    }
+    self.cache_state.computed_flex_basis_generation = generation
+  }
+  
+  fn mut apply(value: style::Style, border: Int) {
+    if self.border != border or not same_layout_style(self.value, value) {
+      self.mark_dirty()
+    }
+    self.value = value
+    self.border = border
+  }
+  
+  fn mut insert(child: mut Node, index: Int) {
+    let next = mut List::new<mut Node>()
+    for existing, current in self.children {
+      match current == index {
+        true => next.push(child),
+        false => (),
+      }
+      next.push(existing)
+    }
+    match index == self.children.size() {
+      true => next.push(child),
+      false => (),
+    }
+    self.children = next.@
+    child.owner = Maybe::new<mut Node>(self)
+    self.mark_dirty()
+  }
+  
+  fn mut remove(child: mut Node) {
+    mut removed = false
+    let retained = mut List::new<mut Node>()
+    for existing in self.children {
+      match existing != child {
+        true => retained.push(existing),
+        false => { removed = true },
+      }
+    }
+    self.children = retained.@
+    if removed {
+      child.owner = Maybe::new<mut Node>()
+      child.cache_state = cache::new_state()
+      self.mark_dirty()
+    }
+  }
+  
+  fn mut project(px: Float64, py: Float64) {
+    if self.value.display == style::Display::contents or self.value.display == style::Display::none {
+      self.x = 0.0
+      self.y = 0.0
+      self.width = 0.0
+      self.height = 0.0
+      self.insets = Insets{
+        left: 0.0,
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+      }
+    }
+    let x = px + self.x
+    let y = py + self.y
+    let left = rounded(x)
+    let top = rounded(y)
+    self.local = geometry::Rect{
+      x: left - rounded(px),
+      y: top - rounded(py),
+      width: rounded(x + self.width) - left,
+      height: rounded(y + self.height) - top,
+    }
+    self.content = geometry::Rect{
+      x: rounded(x + self.insets.left) - left,
+      y: rounded(y + self.insets.top) - top,
+      width: rounded(x + max(self.insets.left, self.width - self.insets.right)) - rounded(x + self.insets.left),
+      height: rounded(y + max(self.insets.top, self.height - self.insets.bottom)) - rounded(y + self.insets.top),
+    }
+    for child in self.children {
+      child.project(x, y)
+    }
+    self.allocation = Maybe::new<Allocation>()
+  }
+  
+  fn mut freeze_horizontal(px: Float64) {
+    let x = px + self.x
+    self.allocation = Maybe::new<Allocation>(
+      Allocation{
+        x: self.x,
+        width: self.width,
+        insets: self.insets,
+        percent_width: self.percent_width,
+        line: self.line,
+        content_width: rounded(x + max(self.insets.left, self.width - self.insets.right)) - rounded(x + self.insets.left),
+        measured_width: self.measured_width,
+        intrinsic_width: self.intrinsic_width,
+        cache_state: mut self.cache_state.@,
+        dirty: self.dirty,
+      },
+    )
+    for child in self.children {
+      child.freeze_horizontal(x)
+    }
+  }
+  
+  // ADR0020 replay is deliberately a throw-away measurement transaction.
+  // Empty caches force callbacks to observe the projected content width; the
+  // natural transaction (including its fractional basis) is restored below.
+  fn projected_width_changes_measurement(px: Float64) Bool {
+    let x = px + self.x
+    let content_width = rounded(x + max(self.insets.left, self.width - self.insets.right)) - rounded(x + self.insets.left)
+    mut changed = self.measure.is_some() and max(0.0, self.width - self.insets.left - self.insets.right) != content_width.to_f64()
+    for child in self.children {
+      changed = child.projected_width_changes_measurement(x) or changed
+    }
+    changed
+  }
+  
+  fn mut begin_replay() {
+    self.cache_state = cache::new_state()
+    self.dirty = true
+    for child in self.children {
+      child.begin_replay()
+    }
+  }
+  
+  fn mut finish_replay() {
+    match self.allocation {
+      // Display-contents cleanup intentionally has no box allocation.
+      frozen => {
+        self.x = frozen.x
+        self.width = frozen.width
+        self.insets = frozen.insets
+        self.percent_width = frozen.percent_width
+        self.line = frozen.line
+        self.measured_width = frozen.measured_width
+        self.intrinsic_width = frozen.intrinsic_width
+        self.cache_state = frozen.cache_state
+        self.dirty = frozen.dirty
+      },
+      _ => (),
+    }
+    for child in self.children {
+      child.finish_replay()
+    }
+  }
+}

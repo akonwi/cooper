@@ -1,0 +1,238 @@
+use ard/testing
+
+use cooper/core/layout
+use cooper/core/layout/cache
+use cooper/core/layout/measure
+use cooper/core/layout/numeric
+use cooper/core/node
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/style
+
+test fn fixed_leaf_sizes_do_not_measure_content_but_intrinsic_queries_still_do() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx)
+  let leaf = box::new(ctx, styles: style::new(width: style::cells(8), height: style::cells(2)))
+  mut calls = 0
+  leaf.node().set_measure(fn(input: node::MeasureInput) node::MeasureSize {
+    calls =+ 1
+    node::MeasureSize{width: 5.0, height: 1.0}
+  })
+  root.add(leaf)
+  ctx.compute_layout(root, 20, 10)
+  ctx.compute_layout(root, 20, 10)
+  ctx.compute_layout(root, 30, 10)
+  try testing::assert(
+    calls == 0,
+    "Fixed width/height should not query unused content size; got {calls} calls",
+  )
+  try testing::assert(
+    leaf.layout().local.width == 8 and leaf.layout().local.height == 2,
+    "Definite geometry is preserved",
+  )
+  leaf.set_style(
+    style::new(width: style::cells(8), height: style::cells(2), max_width: style::max_content()),
+  )
+  ctx.compute_layout(root, 30, 10)
+  try testing::assert(
+    calls > 0 and leaf.layout().local.width == 5,
+    "Intrinsic bounds still need natural measurement",
+  )
+  calls = 0
+  leaf.set_style(style::new(width: style::cells(8)))
+  ctx.compute_layout(root, 30, 10)
+  testing::assert(
+    calls > 0 and leaf.layout().local.height == 1,
+    "Auto height still measures at allocated width",
+  )
+}
+
+fn axis(mode: cache::SizingMode, available: Int, padding: Int) measure::Axis {
+  measure::Axis{
+    available: Float32::from(available.to_f64()),
+    mode: mode,
+    padding_border: Float32::from(padding.to_f64()),
+    minimum: numeric::undefined(),
+    maximum: numeric::undefined(),
+  }
+}
+
+test fn yoga_leaf_measurement_modes_use_content_space_and_bound_border_box_results() Void!Str {
+  let modes = [
+    cache::SizingMode::max_content,
+    cache::SizingMode::fit_content,
+    cache::SizingMode::stretch_fit,
+  ]
+  for wm in modes {
+    for hm in modes {
+      let seen = mut measure::Input{
+        width: Float32::from(-1.0),
+        height: Float32::from(-1.0),
+        width_mode: measure::Mode::undefined,
+        height_mode: measure::Mode::undefined,
+      }
+      mut calls = 0
+      let size = measure::with_callback(
+        axis(wm, 14, 4),
+        axis(hm, 10, 3),
+        fn(input: measure::Input) measure::Size {
+          calls =+ 1
+          seen.width = input.width
+          seen.height = input.height
+          seen.width_mode = input.width_mode
+          seen.height_mode = input.height_mode
+          measure::Size{width: Float32::from(7.0), height: Float32::from(2.0)}
+        },
+      )
+      let expected_width = match wm == cache::SizingMode::stretch_fit {
+        true => Float32::from(14.0),
+        false => Float32::from(11.0),
+      }
+      let expected_height = match hm == cache::SizingMode::stretch_fit {
+        true => Float32::from(10.0),
+        false => Float32::from(5.0),
+      }
+      try testing::assert(
+        size.width == expected_width and size.height == expected_height,
+        "Insets count once; exact axes ignore callback result",
+      )
+      if wm == cache::SizingMode::stretch_fit and hm == cache::SizingMode::stretch_fit {
+        try testing::assert(calls == 0, "Both exact axes skip callback")
+      } else {
+        try testing::assert(calls == 1, "One measure callback")
+        let width_ok = match wm {
+          cache::SizingMode::max_content => {
+            numeric::is_undefined(seen.width) and seen.width_mode == measure::Mode::undefined
+          },
+          cache::SizingMode::fit_content => seen.width == 10.0 and seen.width_mode == measure::Mode::at_most,
+          cache::SizingMode::stretch_fit => seen.width == 10.0 and seen.width_mode == measure::Mode::exactly,
+        }
+        let height_ok = match hm {
+          cache::SizingMode::max_content => {
+            numeric::is_undefined(seen.height) and seen.height_mode == measure::Mode::undefined
+          },
+          cache::SizingMode::fit_content => seen.height == 7.0 and seen.height_mode == measure::Mode::at_most,
+          cache::SizingMode::stretch_fit => seen.height == 7.0 and seen.height_mode == measure::Mode::exactly,
+        }
+        try testing::assert(width_ok and height_ok, "Callback receives content sizes and corresponding modes")
+      }
+    }
+  }
+  let width = mut axis(cache::SizingMode::stretch_fit, 2, 4)
+  width.maximum = Float32::from(1.0)
+  let size = measure::without_children(width.@, axis(cache::SizingMode::max_content, 10, 3))
+  try testing::assert(
+    size.width == 4.0 and size.height == 3.0,
+    "Empty leaf preserves inset floor even above maximum",
+  )
+  let bounded_width = mut axis(cache::SizingMode::fit_content, 14, 4)
+  bounded_width.maximum = Float32::from(9.0)
+  let bounded_height = mut axis(cache::SizingMode::fit_content, 10, 3)
+  bounded_height.minimum = Float32::from(8.0)
+  let bounded = measure::with_callback(
+    bounded_width.@,
+    bounded_height.@,
+    fn(input: measure::Input) measure::Size {
+      measure::Size{width: Float32::from(7.0), height: Float32::from(2.0)}
+    },
+  )
+  testing::assert(
+    bounded.width == 9.0 and bounded.height == 8.0,
+    "Bounds apply after insets: natural 11x5 becomes 9x8",
+  )
+}
+
+test fn yoga_leaf_visits_reuse_bounded_results_and_only_layout_commits_dimensions() Void!Str {
+  let leaf = layout::new()
+  let content = mut measure::Size{width: Float32::from(7.0), height: Float32::from(2.0)}
+  mut calls = 0
+  leaf.set_measure(fn(input: measure::Input) measure::Size {
+    calls =+ 1
+    content.@
+  })
+  let w = axis(cache::SizingMode::fit_content, 20, 4)
+  let h = axis(cache::SizingMode::max_content, 10, 3)
+  let two = Float32::from(2.0)
+  let zero = Float32::from(0.0)
+  try testing::assert(leaf.calculate_leaf(w, h, two, zero, 1, false), "First measurement visits")
+  try testing::assert(
+    calls == 1 and leaf.measured_width == 11.0 and leaf.measured_height == 5.0,
+    "Cache contains border box, not raw 7x2 content",
+  )
+  try testing::assert(
+    leaf.width == 0.0 and leaf.dirty,
+    "Measurement does not commit layout or clear dirty state",
+  )
+  try testing::assert(
+    leaf.calculate_leaf(w, h, two, zero, 1, false) == false,
+    "Same-generation measurement reuses",
+  )
+  try testing::assert(
+    leaf.calculate_leaf(w, h, two, zero, 1, true) == false,
+    "Leaf layout reuses measurement",
+  )
+  try testing::assert(
+    calls == 1 and leaf.width == 11.0 and leaf.height == 5.0 and leaf.dirty == false,
+    "Layout commits dimensions and clears dirty",
+  )
+  try testing::assert(
+    leaf.calculate_leaf(w, h, two, zero, 2, true) == false and calls == 1,
+    "Clean next generation makes no callbacks",
+  )
+  content.width = Float32::from(13.0)
+  leaf.mark_dirty()
+  try testing::assert(leaf.calculate_leaf(w, h, two, zero, 3, true), "Dirty next generation recomputes")
+  testing::assert(
+    calls == 2 and leaf.width == 17.0 and leaf.height == 5.0,
+    "Changed content replaces cached border box",
+  )
+}
+
+test fn yoga_axis_constraints_preserve_mode_margins_and_inner_bound_order() Void!Str {
+  let width = mut axis(cache::SizingMode::max_content, 40, 4)
+  width.maximum = Float32::from(13.0)
+  let constrained = width.constrain_max(Float32::from(3.0))
+  try testing::assert(
+    constrained.mode == cache::SizingMode::fit_content and constrained.available == 16.0,
+    "A maximum changes max-content to fit-content and includes margins",
+  )
+  try testing::assert(
+    width.mode == cache::SizingMode::max_content and width.available == 40.0,
+    "Constraint calculation does not mutate the caller's axis",
+  )
+  width.mode = cache::SizingMode::stretch_fit
+  width.available = Float32::from(11.0)
+  let smaller = width.constrain_max(Float32::from(3.0))
+  try testing::assert(
+    smaller.available == 11.0 and smaller.mode == cache::SizingMode::stretch_fit,
+    "A smaller exact allocation is preserved, not expanded to max",
+  )
+  width.available = numeric::undefined()
+  try testing::assert(
+    width.constrain_max(Float32::from(3.0)).available == 16.0,
+    "A defined maximum replaces undefined available size even in exact mode",
+  )
+  try testing::assert(
+    numeric::is_undefined(width.available_inner_dimension()),
+    "Inner bounds do not manufacture definite space from undefined availability",
+  )
+  width.available = Float32::from(2.0)
+  width.minimum = Float32::from(0.0)
+  try testing::assert(
+    width.available_inner_dimension() == -2.0 and width.inner_size() == 0.0,
+    "Container inner bounds differ from the nonnegative callback content size",
+  )
+  width.available = Float32::from(40.0)
+  width.minimum = Float32::from(19.0)
+  try testing::assert(
+    width.available_inner_dimension() == 15.0,
+    "Inner maximum applies first, then minimum wins: max13/min19 minus inset4 gives15",
+  )
+  width.minimum = numeric::undefined()
+  let outer = width.constrain_max(Float32::from(3.0))
+  testing::assert(
+    outer.without_margin(Float32::from(3.0)).available_inner_dimension() == 9.0,
+    "Outer16 minus margin3 minus inset4 produces9; each is subtracted once",
+  )
+}

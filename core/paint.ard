@@ -50,16 +50,24 @@ struct Cell {
   style: CellStyle,
 }
 
-private fn blank_cell(foreground: color::Color?, background: color::Color?) Cell {
-  Cell{
+// Internal style references are immutable snapshots, shared by a paint run.
+// Public cell reads copy the style back into ordinary value data.
+struct StoredCell {
+  grapheme: Str,
+  width: Int,
+  style: mut CellStyle,
+}
+
+private fn blank_cell(foreground: color::Color?, background: color::Color?) StoredCell {
+  StoredCell{
     grapheme: " ",
     width: 1,
-    style: style(foreground: foreground, background: background),
+    style: mut style(foreground: foreground, background: background),
   }
 }
 
-private fn continuation(style: CellStyle) Cell {
-  Cell{
+private fn continuation(style: mut CellStyle) StoredCell {
+  StoredCell{
     grapheme: "",
     width: 0,
     style: style,
@@ -74,7 +82,7 @@ struct Cursor {
 struct Buffer {
   width: Int,
   height: Int,
-  cells: [Cell],
+  cells: [StoredCell],
   cursor: Cursor?,
 }
 
@@ -82,10 +90,11 @@ fn new_buffer(width: Int, height: Int) mut Buffer {
   if width < 0 or height < 0 {
     panic("retained paint buffer dimensions must be non-negative")
   }
-  let cells = mut List::new<Cell>()
+  let cells = mut List::new<StoredCell>()
+  let blank = blank_cell()
   mut index = 0
   while index < width * height {
-    cells.push(blank_cell())
+    cells.push(blank)
     index =+ 1
   }
   (mut Buffer{
@@ -104,33 +113,40 @@ impl Buffer {
       Maybe::new<Int>()
     }
   }
-
+  
   fn cell_at(x: Int, y: Int) Cell? {
     let index = try self.index(x, y) -> _ { Maybe::new<Cell>() }
-    self.cells.at(index)
+    let stored = try self.cells.at(index) -> _ { Maybe::new<Cell>() }
+    Maybe::new<Cell>(
+      Cell{
+        grapheme: stored.grapheme,
+        width: stored.width,
+        style: stored.style.@,
+      },
+    )
   }
-
-  private fn mut put(x: Int, y: Int, cell: Cell) {
+  
+  private fn mut put(x: Int, y: Int, cell: StoredCell) {
     match self.index(x, y) {
       index => self.cells.set(index, cell),
       _ => (),
     }
   }
-
+  
   private fn foreground_at(x: Int, y: Int) color::Color? {
     match self.cell_at(x, y) {
       cell => cell.style.foreground,
       _ => Maybe::new<color::Color>(),
     }
   }
-
+  
   private fn background_at(x: Int, y: Int) color::Color? {
     match self.cell_at(x, y) {
       cell => cell.style.background,
       _ => Maybe::new<color::Color>(),
     }
   }
-
+  
   private fn mut clear_span_at(x: Int, y: Int) {
     let existing = try self.cell_at(x, y) -> _ { () }
     mut start = x
@@ -152,7 +168,7 @@ impl Buffer {
         scanning =- 1
       }
     }
-
+    
     let lead = try self.cell_at(start, y) -> _ { () }
     mut span = lead.width
     if span < 1 {
@@ -177,17 +193,32 @@ impl Buffer {
       part =+ 1
     }
   }
-
-  private fn mut write_grapheme(x: Int, y: Int, grapheme: Str, width: Int, style: CellStyle) {
+  
+  private fn mut write_grapheme(x: Int, y: Int, grapheme: Str, width: Int, style: mut CellStyle) {
+    match self.cursor {
+      cursor => {
+        if cursor.y == y and cursor.x >= x and cursor.x < x + width {
+          self.cursor = Maybe::new<Cursor>()
+        }
+      },
+      _ => (),
+    }
     mut part = 0
     while part < width {
-      self.clear_span_at(x + part, y)
+      match self.cell_at(x + part, y) {
+        existing => {
+          if existing.width != 1 {
+            self.clear_span_at(x + part, y)
+          }
+        },
+        _ => (),
+      }
       part =+ 1
     }
     self.put(
       x,
       y,
-      Cell{
+      StoredCell{
         grapheme: grapheme,
         width: width,
         style: style,
@@ -199,12 +230,13 @@ impl Buffer {
       part =+ 1
     }
   }
-
+  
   fn mut clear() {
     self.cursor = Maybe::new<Cursor>()
+    let blank = blank_cell()
     mut index = 0
     while index < self.cells.size() {
-      self.cells.set(index, blank_cell())
+      self.cells.set(index, blank)
       index =+ 1
     }
   }
@@ -229,27 +261,22 @@ impl Context {
     }
     painted.@
   }
-
+  
   fn mut fill(text_style: CellStyle?) {
     let applied_style = text_style.or(style())
+    let snapshot = mut self.inherited_colors(applied_style)
     let visible = geometry::intersect(self.bounds, self.clip)
     mut target_y = visible.y
     while target_y < visible.y + visible.height {
       mut target_x = visible.x
       while target_x < visible.x + visible.width {
-        self.buffer.write_grapheme(
-          target_x,
-          target_y,
-          " ",
-          1,
-          self.inherited_colors(applied_style),
-        )
+        self.buffer.write_grapheme(target_x, target_y, " ", 1, snapshot)
         target_x =+ 1
       }
       target_y =+ 1
     }
   }
-
+  
   fn mut show_cursor(x: Int, y: Int) {
     let target_x = self.bounds.x + x
     let target_y = self.bounds.y + y
@@ -257,7 +284,7 @@ impl Context {
       self.buffer.cursor = Maybe::new<Cursor>(Cursor{x: target_x, y: target_y})
     }
   }
-
+  
   fn mut write(x: Int, y: Int, text: Str, text_style: CellStyle?) {
     self.write_measured(
       x,
@@ -273,9 +300,10 @@ impl Context {
       text_style: text_style,
     )
   }
-
+  
   fn mut write_overlay(x: Int, y: Int, text: Str, text_style: CellStyle?) {
     let applied_style = text_style.or(style())
+    let snapshot = mut self.inherited_colors(applied_style)
     let target_y = self.bounds.y + y
     mut target_x = self.bounds.x + x
     for character in vaxis::Characters(text) {
@@ -289,51 +317,63 @@ impl Context {
         part =+ 1
       }
       if visible {
-        self.buffer.write_grapheme(
-          target_x,
-          target_y,
-          character.Grapheme,
-          width,
-          self.inherited_colors(applied_style),
-        )
+        self.buffer.write_grapheme(target_x, target_y, character.Grapheme, width, snapshot)
       }
       target_x = target_x + width
     }
   }
-
-  fn mut write_measured(x: Int, y: Int, text: Str, measure_width: fn(Str) Int, text_style: CellStyle?) {
+  
+  fn mut write_measured(
+    x: Int,
+    y: Int,
+    text: Str,
+    measure_width: fn(Str) Int,
+    text_style: CellStyle?,
+    line_break: (fn(Str) Bool)?,
+  ) {
     let applied_style = text_style.or(style())
-    let target_y = self.bounds.y + y
+    let snapshot = mut self.inherited_colors(applied_style)
+    mut target_y = self.bounds.y + y
     mut target_x = self.bounds.x + x
-    for character in vaxis::Characters(text) {
-      let width = measure_width(character.Grapheme)
-      mut visible = width > 0
-      mut part = 0
-      while part < width {
-        if not geometry::contains(self.clip, target_x + part, target_y) {
-          visible = false
-        }
-        part =+ 1
-      }
-
-      if visible {
-        self.buffer.write_grapheme(
-          target_x,
-          target_y,
-          character.Grapheme,
-          width,
-          self.inherited_colors(applied_style),
-        )
-      } else {
-        part = 0
-        while part < width {
-          if geometry::contains(self.clip, target_x + part, target_y) {
-            self.buffer.clear_span_at(target_x + part, target_y)
+    let iterator = mut vaxis::NewCharacterIterator(text)
+    mut reading = true
+    while reading {
+      match iterator.Next() {
+        character => {
+          let breaks = match line_break {
+            classify => classify(character.Grapheme),
+            _ => false,
           }
-          part =+ 1
-        }
+          if breaks {
+            target_x = self.bounds.x + x
+            target_y =+ 1
+          } else {
+            let width = measure_width(character.Grapheme)
+            mut visible = width > 0
+            mut part = 0
+            while part < width {
+              if not geometry::contains(self.clip, target_x + part, target_y) {
+                visible = false
+              }
+              part =+ 1
+            }
+            
+            if visible {
+              self.buffer.write_grapheme(target_x, target_y, character.Grapheme, width, snapshot)
+            } else {
+              part = 0
+              while part < width {
+                if geometry::contains(self.clip, target_x + part, target_y) {
+                  self.buffer.clear_span_at(target_x + part, target_y)
+                }
+                part =+ 1
+              }
+            }
+            target_x = target_x + width
+          }
+        },
+        _ => { reading = false },
       }
-      target_x = target_x + width
     }
   }
 }

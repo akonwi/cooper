@@ -1,0 +1,358 @@
+use cooper/core/layout
+use cooper/core/layout/cache
+use cooper/core/layout/length
+use cooper/core/layout/numeric
+use cooper/ui/style
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// This source code is licensed under the MIT license found in LICENSE.yoga.
+// LTR, border-box translation of Yoga 8ba025e CalculateLayout.cpp's
+// justifyMainAxis, cross-axis item alignment, step 8 multiline alignment, and
+// reverse-axis physical positioning. ADR0017 keeps recorded line extents
+// separate from item remeasurement. ADR0018 replaces Yoga's recursive baseline
+// with Cooper's explicit bottom-border-box adapter below.
+
+fn zero(value: style::Length, reference: Float32) Float32 {
+  let result = length::resolve(value, reference)
+  match numeric::is_defined(result) {
+    true => result,
+    false => Float32::from(0.0),
+  }
+}
+
+fn dimension(node: mut layout::Node, row: Bool) Float32 {
+  match row {
+    true => node.measured_width,
+    false => node.measured_height,
+  }
+}
+
+fn inset_start(parent: mut layout::Node, row: Bool, reverse: Bool) Float32 {
+  let value = match row {
+    true => {
+      match reverse {
+        true => parent.insets.right,
+        false => parent.insets.left,
+      }
+    },
+    false => {
+      match reverse {
+        true => parent.insets.bottom,
+        false => parent.insets.top,
+      }
+    },
+  }
+  Float32::from(value)
+}
+
+fn margin_start(node: mut layout::Node, row: Bool, reverse: Bool, owner_width: Float32) Float32 {
+  let value = match row {
+    true => {
+      match reverse {
+        true => node.value.margin.right,
+        false => node.value.margin.left,
+      }
+    },
+    false => {
+      match reverse {
+        true => node.value.margin.bottom,
+        false => node.value.margin.top,
+      }
+    },
+  }
+  zero(value, owner_width)
+}
+
+fn margin_end(node: mut layout::Node, row: Bool, reverse: Bool, owner_width: Float32) Float32 {
+  margin_start(node, row, not reverse, owner_width)
+}
+
+fn auto_start(node: mut layout::Node, row: Bool, reverse: Bool) Bool {
+  let value = match row {
+    true => {
+      match reverse {
+        true => node.value.margin.right,
+        false => node.value.margin.left,
+      }
+    },
+    false => {
+      match reverse {
+        true => node.value.margin.bottom,
+        false => node.value.margin.top,
+      }
+    },
+  }
+  value.kind == style::LengthKind::auto
+}
+
+fn physical(logical: Float32, size: Float32, parent_size: Float32, reverse: Bool) Float32 {
+  match reverse {
+    true => parent_size - logical - size,
+    false => logical,
+  }
+}
+
+fn relative(node: mut layout::Node, horizontal: Bool, owner_width: Float32, owner_height: Float32) Float32 {
+  if node.value.position == style::Position::static {
+    Float32::from(0.0)
+  } else {
+    let reference = match horizontal {
+      true => owner_width,
+      false => owner_height,
+    }
+    let leading = length::resolve(
+      match horizontal {
+        true => node.value.left,
+        false => node.value.top,
+      },
+      reference,
+    )
+    if numeric::is_defined(leading) {
+      leading
+    } else {
+      let trailing = length::resolve(
+        match horizontal {
+          true => node.value.right,
+          false => node.value.bottom,
+        },
+        reference,
+      )
+      match numeric::is_defined(trailing) {
+        true => 0.0 - trailing,
+        false => Float32::from(0.0),
+      }
+    }
+  }
+}
+
+// Caller contract: children are flattened, in-flow, already dimensioned and
+// stretch-remeasured. `lines` preserves source order. Each parallel extent is
+// the line's natural margin-box/baseline cross extent before align-content;
+// each remaining value is the final post-flex free main space (including the
+// source FitContent correction). Parent measured dimensions and content insets
+// are committed border-box values. No entry may be omitted from the parallel
+// arrays. This phase mutates x/y only and never sizes, measures, or recurses.
+fn apply(
+  parent: mut layout::Node,
+  lines: [[mut layout::Node]],
+  natural_cross_extents: [Float32],
+  remaining_main_space: [Float32],
+  owner_width: Float32,
+  owner_height: Float32,
+  cross_mode: cache::SizingMode,
+) {
+  if lines.size() != natural_cross_extents.size() or lines.size() != remaining_main_space.size() {
+    panic("position lines require parallel cross extents and main free space")
+  }
+  if lines.size() == 0 {
+    panic("position requires at least one recorded line")
+  }
+  let row = parent.value.flex_direction == style::FlexDirection::row or parent.value.flex_direction == style::FlexDirection::row_reverse
+  let main_reverse = parent.value.flex_direction == style::FlexDirection::row_reverse or parent.value.flex_direction == style::FlexDirection::column_reverse
+  let cross_reverse = parent.value.flex_wrap == style::FlexWrap::wrap_reverse
+  let parent_main = match row {
+    true => parent.measured_width,
+    false => parent.measured_height,
+  }
+  let parent_cross = match row {
+    true => parent.measured_height,
+    false => parent.measured_width,
+  }
+  let inner_main = parent_main - inset_start(parent, row, false) - inset_start(parent, row, true)
+  let inner_cross = parent_cross - inset_start(parent, not row, false) - inset_start(parent, not row, true)
+  let gap = zero(parent.value.gap, inner_cross)
+  mut total_cross = Float32::from(0.0)
+  for extent, index in natural_cross_extents {
+    total_cross = total_cross + extent
+    if index > 0 {
+      total_cross = total_cross + gap
+    }
+  }
+  mut cross_free = match cross_mode == cache::SizingMode::max_content {
+    true => Float32::from(0.0),
+    false => inner_cross - total_cross,
+  }
+  let wrapping = parent.value.flex_wrap != style::FlexWrap::no_wrap
+  if not wrapping {
+    cross_free = Float32::from(0.0)
+  }
+  let content_align = match cross_free < 0.0 and (parent.value.align_content == style::Align::space_around or parent.value.align_content == style::Align::space_evenly) {
+    true => style::Align::center,
+    false => {
+      match cross_free < 0.0 and (parent.value.align_content == style::Align::space_between or parent.value.align_content == style::Align::stretch) {
+        true => style::Align::start,
+        false => parent.value.align_content,
+      }
+    },
+  }
+  mut cross_lead = Float32::from(0.0)
+  mut between_lines = gap
+  mut extra_line = Float32::from(0.0)
+  if wrapping {
+    match content_align {
+      style::Align::end => { cross_lead = cross_free },
+      style::Align::center => { cross_lead = cross_free / Float32::from(2.0) },
+      style::Align::stretch => { extra_line = cross_free / Float32::from(lines.size()) },
+      style::Align::space_between => {
+        if lines.size() > 1 {
+          between_lines = between_lines + cross_free / Float32::from(lines.size() - 1)
+        }
+      },
+      style::Align::space_around => {
+        cross_lead = cross_free / Float32::from(2 * lines.size())
+        between_lines = between_lines + cross_free / Float32::from(lines.size())
+      },
+      style::Align::space_evenly => {
+        cross_lead = cross_free / Float32::from(lines.size() + 1)
+        between_lines = between_lines + cross_free / Float32::from(lines.size() + 1)
+      },
+      _ => (),
+    }
+  }
+  mut line_cursor = inset_start(parent, not row, cross_reverse) + cross_lead
+  for line, line_index in lines {
+    let line_extent = match wrapping {
+      true => natural_cross_extents.at(line_index).expect("line extent") + extra_line,
+      false => inner_cross,
+    }
+    let free = remaining_main_space.at(line_index).expect("line main free space")
+    mut auto_count = 0
+    for child in line {
+      if auto_start(child, row, main_reverse) {
+        auto_count =+ 1
+      }
+      if auto_start(child, row, not main_reverse) {
+        auto_count =+ 1
+      }
+    }
+    let justify = match free < 0.0 and parent.value.justify_content == style::Justify::space_between {
+      true => style::Justify::start,
+      false => {
+        match free < 0.0 and (parent.value.justify_content == style::Justify::space_around or parent.value.justify_content == style::Justify::space_evenly) {
+          true => style::Justify::center,
+          false => parent.value.justify_content,
+        }
+      },
+    }
+    mut main_lead = Float32::from(0.0)
+    mut between = zero(parent.value.gap, inner_main)
+    if auto_count == 0 {
+      match justify {
+        style::Justify::end => { main_lead = free },
+        style::Justify::center => { main_lead = free / Float32::from(2.0) },
+        style::Justify::space_between => {
+          if line.size() > 1 {
+            between = between + free / Float32::from(line.size() - 1)
+          }
+        },
+        style::Justify::space_around => {
+          main_lead = free / Float32::from(2 * line.size())
+          between = between + free / Float32::from(line.size())
+        },
+        style::Justify::space_evenly => {
+          main_lead = free / Float32::from(line.size() + 1)
+          between = between + main_lead
+        },
+        _ => (),
+      }
+    }
+    let auto_share = match auto_count > 0 and free > 0.0 {
+      true => free / Float32::from(auto_count),
+      false => Float32::from(0.0),
+    }
+    mut main_cursor = inset_start(parent, row, main_reverse) + main_lead
+    mut max_baseline = Float32::from(0.0)
+    for child in line {
+      let alignment = match child.value.align_self == style::Align::auto {
+        true => parent.value.align_items,
+        false => child.value.align_self,
+      }
+      if row and alignment == style::Align::baseline {
+        // ADR0018 adapter: ascent is top margin plus the border-box height.
+        max_baseline = numeric::max_or_defined(
+          max_baseline,
+          zero(child.value.margin.top, owner_width) + child.measured_height,
+        )
+      }
+    }
+    for child, child_index in line {
+      if auto_start(child, row, main_reverse) {
+        main_cursor = main_cursor + auto_share
+      }
+      main_cursor = main_cursor + margin_start(child, row, main_reverse, owner_width)
+      let main_position = physical(main_cursor, dimension(child, row), parent_main, main_reverse)
+      main_cursor = main_cursor + dimension(child, row) + margin_end(child, row, main_reverse, owner_width)
+      if auto_start(child, row, not main_reverse) {
+        main_cursor = main_cursor + auto_share
+      }
+      if child_index + 1 < line.size() {
+        main_cursor = main_cursor + between
+      }
+      
+      let alignment = match child.value.align_self == style::Align::auto {
+        true => parent.value.align_items,
+        false => child.value.align_self,
+      }
+      let cross_size = dimension(child, not row)
+      let cross_start_margin = margin_start(child, not row, cross_reverse, owner_width)
+      let cross_end_margin = margin_end(child, not row, cross_reverse, owner_width)
+      let auto_cross_start = auto_start(child, not row, cross_reverse)
+      let auto_cross_end = auto_start(child, not row, not cross_reverse)
+      let margin_free = line_extent - cross_size - cross_start_margin - cross_end_margin
+      mut cross_offset = cross_start_margin
+      if auto_cross_start or auto_cross_end {
+        let positive_free = numeric::max_or_defined(Float32::from(0.0), margin_free)
+        if auto_cross_start and auto_cross_end {
+          cross_offset = positive_free / Float32::from(2.0)
+        } else if auto_cross_start {
+          cross_offset = positive_free
+        }
+      } else {
+        match alignment {
+          style::Align::end => { cross_offset = line_extent - cross_size - cross_end_margin },
+          style::Align::center => {
+            cross_offset = (line_extent - cross_size - cross_start_margin - cross_end_margin) / Float32::from(2.0) + cross_start_margin
+          },
+          style::Align::baseline => {
+            if row {
+              // Baselines always advance from physical top, even when lines wrap-reverse.
+              let physical_line_top = physical(
+                line_cursor,
+                line_extent,
+                parent_cross,
+                cross_reverse,
+              )
+              cross_offset = physical_line_top + max_baseline - child.measured_height
+            }
+          },
+          _ => (),
+        }
+      }
+      mut cross_position = physical(
+        line_cursor + cross_offset,
+        cross_size,
+        parent_cross,
+        cross_reverse,
+      )
+      if alignment == style::Align::baseline and row {
+        cross_position = cross_offset
+      }
+      let x = match row {
+        true => main_position,
+        false => cross_position,
+      }
+      let y = match row {
+        true => cross_position,
+        false => main_position,
+      }
+      child.x = numbers::Widen(x + relative(child, true, owner_width, owner_height))
+      child.y = numbers::Widen(y + relative(child, false, owner_width, owner_height))
+    }
+    line_cursor = line_cursor + line_extent
+    if line_index + 1 < lines.size() {
+      line_cursor = line_cursor + between_lines
+    }
+  }
+}

@@ -1,0 +1,244 @@
+use cooper/core/layout/numeric
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// MIT license: LICENSE.yoga. Translated from Yoga 8ba025e algorithm/Cache.cpp,
+// node/CachedMeasurement.h and PixelGrid.cpp's scale-one, unforced rounding.
+// This is cache constraint comparison, not Cooper's ADR 0020 cell projection.
+
+enum SizingMode {
+  max_content,
+  fit_content,
+  stretch_fit,
+}
+
+struct Measurement {
+  available_width: Float32,
+  available_height: Float32,
+  width_mode: SizingMode,
+  height_mode: SizingMode,
+  computed_width: Float32,
+  computed_height: Float32,
+}
+
+fn empty() Measurement {
+  Measurement{
+    available_width: Float32::from(-1.0),
+    available_height: Float32::from(-1.0),
+    width_mode: SizingMode::max_content,
+    height_mode: SizingMode::max_content,
+    computed_width: Float32::from(-1.0),
+    computed_height: Float32::from(-1.0),
+  }
+}
+
+fn rounded_constraint(value: Float32) Float32 {
+  // NaN and infinity produce undefined in Yoga's pixel-grid calculation.
+  if value - value != 0.0 {
+    numeric::undefined()
+  } else if value >= 8388608.0 or value <= -8388608.0 {
+    // All Float32 values at this magnitude are integral. Avoid Int overflow.
+    value
+  } else {
+    let wide = numbers::Widen(value)
+    mut whole = wide.to_int().to_f64()
+    mut fraction = wide - whole
+    if fraction < 0.0 {
+      fraction =+ 1.0
+      whole =- 1.0
+    }
+    // Yoga's near-half tolerance belongs to cache compatibility only.
+    let near_half = fraction > 0.4999 and fraction < 0.5001
+    if fraction < 0.0001 {
+      Float32::from(whole)
+    } else if fraction > 0.9999 or fraction > 0.5 or near_half {
+      Float32::from(whole + 1.0)
+    } else {
+      Float32::from(whole)
+    }
+  }
+}
+
+fn compatible_axis(
+  mode: SizingMode,
+  available: Float32,
+  last_mode: SizingMode,
+  last_available: Float32,
+  computed: Float32,
+  margin: Float32,
+  round_constraints: Bool,
+) Bool {
+  let effective = match round_constraints {
+    true => rounded_constraint(available),
+    false => available,
+  }
+  let last_effective = match round_constraints {
+    true => rounded_constraint(last_available),
+    false => last_available,
+  }
+  let same_spec = mode == last_mode and numeric::inexact_equals(effective, last_effective)
+  let size = available - margin
+  let exact_match = mode == SizingMode::stretch_fit and numeric::inexact_equals(size, computed)
+  let fits = size >= computed or numeric::inexact_equals(size, computed)
+  let unconstrained_fits = mode == SizingMode::fit_content and last_mode == SizingMode::max_content and fits
+  let stricter_fits = mode == SizingMode::fit_content and last_mode == SizingMode::fit_content and numeric::is_defined(last_available) and numeric::is_defined(size) and numeric::is_defined(computed) and last_available > size and fits
+  same_spec or exact_match or unconstrained_fits or stricter_fits
+}
+
+fn can_use_cached_measurement(
+  width_mode: SizingMode,
+  available_width: Float32,
+  height_mode: SizingMode,
+  available_height: Float32,
+  previous: Measurement,
+  margin_row: Float32,
+  margin_column: Float32,
+  round_constraints: Bool,
+) Bool {
+  if numeric::is_defined(previous.computed_width) and previous.computed_width < 0.0 or numeric::is_defined(previous.computed_height) and previous.computed_height < 0.0 {
+    false
+  } else {
+    compatible_axis(
+      width_mode,
+      available_width,
+      previous.width_mode,
+      previous.available_width,
+      previous.computed_width,
+      margin_row,
+      round_constraints,
+    ) and compatible_axis(
+      height_mode,
+      available_height,
+      previous.height_mode,
+      previous.available_height,
+      previous.computed_height,
+      margin_column,
+      round_constraints,
+    )
+  }
+}
+
+// Persistent cache fields and ordering from node/LayoutResults.h and
+// calculateLayoutInternal in algorithm/CalculateLayout.cpp (Yoga 8ba025e).
+enum Direction {
+  inherit,
+  ltr,
+  rtl,
+}
+
+struct State {
+  generation: Int,
+  config_version: Int,
+  last_owner_direction: Direction,
+  computed_flex_basis: Float32,
+  computed_flex_basis_generation: Int,
+  cached_layout: Measurement,
+  measurements: [Measurement],
+}
+
+fn new_state() mut State {
+  (mut State{
+    generation: 0,
+    config_version: 0,
+    last_owner_direction: Direction::inherit,
+    computed_flex_basis: numeric::undefined(),
+    computed_flex_basis_generation: 0,
+    cached_layout: empty(),
+    measurements: [],
+  })
+}
+
+fn same_spec(a: Measurement, b: Measurement) Bool {
+  a.width_mode == b.width_mode and a.height_mode == b.height_mode and numeric::inexact_equals(a.available_width, b.available_width) and numeric::inexact_equals(a.available_height, b.available_height)
+}
+
+impl State {
+  // Call before lookup. A true result requires a visit even if lookup finds
+  // an entry. Generation is advanced only after the visit has completed.
+  fn mut prepare(dirty: Bool, generation: Int, config_version: Int, direction: Direction) Bool {
+    let visit = dirty and self.generation != generation or self.config_version != config_version or self.last_owner_direction != direction
+    if visit {
+      self.measurements = []
+      self.cached_layout = empty()
+    }
+    visit
+  }
+  
+  fn mut invalidate_basis() {
+    self.computed_flex_basis = numeric::undefined()
+  }
+  
+  fn find(
+    request: Measurement,
+    measured: Bool,
+    perform_layout: Bool,
+    margin_row: Float32,
+    margin_column: Float32,
+    round_constraints: Bool,
+  ) Measurement? {
+    mut found = Maybe::new<Measurement>()
+    if measured {
+      if can_use_cached_measurement(
+        request.width_mode,
+        request.available_width,
+        request.height_mode,
+        request.available_height,
+        self.cached_layout,
+        margin_row,
+        margin_column,
+        round_constraints,
+      ) {
+        found = Maybe::new<Measurement>(self.cached_layout)
+      }
+      for entry in self.measurements {
+        if found.is_some() == false and can_use_cached_measurement(
+          request.width_mode,
+          request.available_width,
+          request.height_mode,
+          request.available_height,
+          entry,
+          margin_row,
+          margin_column,
+          round_constraints,
+        ) {
+          found = Maybe::new<Measurement>(entry)
+        }
+      }
+    } else if perform_layout {
+      if same_spec(request, self.cached_layout) {
+        found = Maybe::new<Measurement>(self.cached_layout)
+      }
+    } else {
+      for entry in self.measurements {
+        if found.is_some() == false and same_spec(request, entry) {
+          found = Maybe::new<Measurement>(entry)
+        }
+      }
+    }
+    found
+  }
+  
+  // Call only after recomputing a cache miss, not after a hit. Yoga resets
+  // the measurement prefix at eight even when storing a layout result.
+  fn mut store(result: Measurement, perform_layout: Bool) {
+    if self.measurements.size() == 8 {
+      self.measurements = []
+    }
+    if perform_layout {
+      self.cached_layout = result
+    } else {
+      let entries = mut List::new<Measurement>()
+      for entry in self.measurements {
+        entries.push(entry)
+      }
+      entries.push(result)
+      self.measurements = entries.@
+    }
+  }
+  
+  fn mut complete(generation: Int, config_version: Int, direction: Direction) {
+    self.generation = generation
+    self.config_version = config_version
+    self.last_owner_direction = direction
+  }
+}

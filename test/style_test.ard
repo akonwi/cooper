@@ -1038,6 +1038,429 @@ test fn resized_percent_child_crosses_minimum_and_maximum_without_stale_freeze()
   Result::ok(())
 }
 
+// ADR 0016 contract tests. These expectations are independent of Yoga output;
+// failures identify backend gaps, not alternate supported sizing semantics.
+test fn intrinsic_contract_max_content_overflows_narrow_parent() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(
+    ctx,
+    content: "abc defgh",
+    styles: style::new(width: style::max_content(), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  ctx.compute_layout(parent, 5, 12)
+  rect(label.layout().local, 0, 0, 9, 1)
+}
+
+test fn intrinsic_contract_fit_content_bounds_without_min_content_floor() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(
+    ctx,
+    content: "abcdefgh",
+    styles: style::new(width: style::fit_content(), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  // A single long word must wrap rather than impose a CSS min-content floor.
+  ctx.compute_layout(parent, 3, 12)
+  try rect(label.layout().local, 0, 0, 3, 3)
+  ctx.compute_layout(parent, 8, 12)
+  try rect(label.layout().local, 0, 0, 8, 1)
+  ctx.compute_layout(parent, 20, 12)
+  rect(label.layout().local, 0, 0, 8, 1)
+}
+
+test fn intrinsic_contract_stretch_fills_available_width_minus_margins() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(align_items: style::Align::start, padding: style::edges(style::cells(1))),
+  )
+  let label = text::new(
+    ctx,
+    content: "abc",
+    styles: style::new(
+      width: style::stretch(),
+      margin: style::edges(style::cells(2)),
+      flex_shrink: 0.0,
+    ),
+  )
+  parent.add(label)
+  ctx.compute_layout(parent, 20, 12)
+  // 20 minus two padding cells and four margin cells, independent of content.
+  rect(label.layout().local, 3, 3, 14, 1)
+}
+
+test fn intrinsic_contract_maximum_remeasures_height_and_following_sibling() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(
+    ctx,
+    content: "abc defgh",
+    styles: style::new(width: style::max_content(), max_width: style::cells(5), flex_shrink: 0.0),
+  )
+  let tail = box::new(ctx, styles: style::new(width: style::cells(2), height: style::cells(1)))
+  parent.add(label)
+  parent.add(tail)
+  ctx.compute_layout(parent, 20, 12)
+  try rect(label.layout().local, 0, 0, 5, 2)
+  try rect(tail.layout().local, 0, 2, 2, 1)
+  label.set_style(style::new(width: style::max_content(), flex_shrink: 0.0))
+  ctx.compute_layout(parent, 20, 12)
+  try rect(label.layout().local, 0, 0, 9, 1)
+  rect(tail.layout().local, 0, 1, 2, 1)
+}
+
+test fn intrinsic_contract_height_preserves_finite_width_wrapping() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let label = text::new(
+    ctx,
+    content: "abc defgh",
+    styles: style::new(width: style::cells(5), height: style::max_content(), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  ctx.compute_layout(parent, 20, 1)
+  // Intrinsic height may overflow height 1, but must still wrap at width 5.
+  rect(label.layout().local, 0, 0, 5, 2)
+}
+
+test fn intrinsic_contract_explicit_lines_use_widest_line() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(
+    ctx,
+    content: "abc\ndefgh",
+    styles: style::new(width: style::max_content(), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  ctx.compute_layout(parent, 20, 12)
+  rect(label.layout().local, 0, 0, 5, 2)
+}
+
+test fn intrinsic_contract_explicit_width_is_not_alignment_stretch() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let label = text::new(
+    ctx,
+    content: "abc defgh",
+    styles: style::new(width: style::max_content(), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  ctx.compute_layout(parent, 20, 12)
+  rect(label.layout().local, 0, 0, 9, 1)
+}
+
+test fn intrinsic_contract_explicit_lines_and_insets_count_once() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(
+    ctx,
+    content: "abc\ndefgh",
+    styles: style::new(
+      width: style::max_content(),
+      padding: style::edges(style::cells(1)),
+      border: style::Border::single,
+      flex_shrink: 0.0,
+    ),
+  )
+  parent.add(label)
+  ctx.compute_layout(parent, 20, 12)
+  // Widest explicit line 5, two rows, plus four cells of insets per axis.
+  rect(label.layout().local, 0, 0, 9, 6)
+}
+
+test fn intrinsic_contract_minimum_wins_conflicting_maximum_on_both_axes() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(8),
+      height: style::cells(9),
+      min_width: style::cells(7),
+      max_width: style::cells(4),
+      min_height: style::cells(6),
+      max_height: style::cells(3),
+      flex_shrink: 0.0,
+    ),
+  )
+  parent.add(child)
+  ctx.compute_layout(parent, 20, 12)
+  rect(child.layout().local, 0, 0, 7, 6)
+}
+
+test fn intrinsic_contract_insets_floor_exceeds_explicit_size_and_maximum() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      width: style::cells(1),
+      height: style::cells(0),
+      max_width: style::cells(2),
+      max_height: style::cells(1),
+      padding: style::edges(style::cells(1)),
+      border: style::Border::single,
+      flex_shrink: 0.0,
+    ),
+  )
+  parent.add(child)
+  ctx.compute_layout(parent, 20, 12)
+  rect(child.layout().local, 0, 0, 4, 4)
+}
+
+test fn intrinsic_contract_max_content_minimum_prevents_shrink() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(flex_direction: style::FlexDirection::row, align_items: style::Align::start),
+  )
+  let label = text::new(
+    ctx,
+    content: "abc defgh",
+    styles: style::new(width: style::cells(3), min_width: style::max_content()),
+  )
+  parent.add(label)
+  ctx.compute_layout(parent, 5, 12)
+  rect(label.layout().local, 0, 0, 9, 1)
+}
+
+test fn intrinsic_contract_max_content_bound_limits_explicit_width() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(
+    ctx,
+    content: "abc defgh",
+    styles: style::new(width: style::cells(20), max_width: style::max_content(), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  ctx.compute_layout(parent, 30, 12)
+  rect(label.layout().local, 0, 0, 9, 1)
+}
+
+test fn intrinsic_contract_basis_overrides_conflicting_preferred_width() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(flex_direction: style::FlexDirection::row, align_items: style::Align::start),
+  )
+  let label = text::new(
+    ctx,
+    content: "abc defgh",
+    styles: style::new(width: style::cells(3), flex_basis: style::max_content(), flex_shrink: 0.0),
+  )
+  let tail = box::new(ctx, styles: style::new(width: style::cells(2), height: style::cells(1)))
+  parent.add(label)
+  parent.add(tail)
+  ctx.compute_layout(parent, 20, 12)
+  try rect(label.layout().local, 0, 0, 9, 1)
+  rect(tail.layout().local, 9, 0, 2, 1)
+}
+
+test fn intrinsic_contract_container_natural_width_ignores_soft_wrap_and_out_of_flow() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let row = box::new(
+    ctx,
+    styles: style::new(
+      width: style::max_content(),
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      align_items: style::Align::start,
+      gap: style::cells(1),
+      flex_shrink: 0.0,
+    ),
+  )
+  let first = box::new(
+    ctx,
+    styles: style::new(width: style::cells(3), height: style::cells(1), flex_shrink: 0.0),
+  )
+  let second = box::new(
+    ctx,
+    styles: style::new(width: style::cells(5), height: style::cells(2), flex_shrink: 0.0),
+  )
+  row.add(first)
+  row.add(second)
+  row.add(
+    box::new(
+      ctx,
+      styles: style::new(
+        position: style::Position::absolute,
+        width: style::cells(40),
+        height: style::cells(20),
+      ),
+    ),
+  )
+  row.add(
+    box::new(
+      ctx,
+      styles: style::new(
+        display: style::Display::none,
+        width: style::cells(50),
+        height: style::cells(30),
+      ),
+    ),
+  )
+  parent.add(row)
+  ctx.compute_layout(parent, 5, 12)
+  try rect(row.layout().local, 0, 0, 9, 2)
+  try rect(first.layout().local, 0, 0, 3, 1)
+  rect(second.layout().local, 4, 0, 5, 2)
+}
+
+test fn intrinsic_contract_indefinite_percent_does_not_feed_back_parent_content_size() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      width: style::max_content(),
+      align_items: style::Align::start,
+      flex_shrink: 0.0,
+    ),
+  )
+  let label = text::new(
+    ctx,
+    content: "abcd",
+    styles: style::new(width: style::percent(50.0), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  root.add(parent)
+  ctx.compute_layout(root, 40, 12)
+  // The intrinsic parent's queried width is indefinite: 50% behaves as auto.
+  // Its resulting width 4 must not feed back and turn the label into width 2.
+  try rect(parent.layout().local, 0, 0, 4, 1)
+  try rect(label.layout().local, 0, 0, 4, 1)
+  ctx.compute_layout(root, 40, 12)
+  try rect(label.layout().local, 0, 0, 4, 1)
+  parent.set_style(style::new(width: style::cells(12), align_items: style::Align::start))
+  ctx.compute_layout(root, 40, 12)
+  rect(label.layout().local, 0, 0, 6, 1)
+}
+
+test fn intrinsic_contract_stretch_resolves_percent_even_when_natural_size_matches() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let parent = box::new(
+    ctx,
+    styles: style::new(width: style::stretch(), align_items: style::Align::start),
+  )
+  let label = text::new(
+    ctx,
+    content: "abcd",
+    styles: style::new(width: style::percent(50.0), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  root.add(parent)
+  // Natural width and the independently available stretch width are both 4.
+  // Stretch still supplies a definite reference: the child gets 2, not 4.
+  ctx.compute_layout(root, 4, 12)
+  try rect(parent.layout().local, 0, 0, 4, 2)
+  try rect(label.layout().local, 0, 0, 2, 2)
+  ctx.compute_layout(root, 6, 12)
+  try rect(label.layout().local, 0, 0, 3, 2)
+  ctx.compute_layout(root, 4, 12)
+  rect(label.layout().local, 0, 0, 2, 2)
+}
+
+test fn absolute_default_origin_counts_parent_border_once() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(border: style::Border::single, padding: style::edges(style::cells(2))),
+  )
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(3),
+      height: style::cells(1),
+    ),
+  )
+  parent.add(child)
+  ctx.compute_layout(parent, 20, 10)
+  try rect(child.layout().local, 3, 3, 3, 1)
+  // Explicit zero offsets use the padding-box origin, unlike auto offsets.
+  child.set_style(
+    style::new(
+      position: style::Position::absolute,
+      width: style::cells(3),
+      height: style::cells(1),
+      left: style::cells(0),
+      top: style::cells(0),
+    ),
+  )
+  ctx.compute_layout(parent, 20, 10)
+  rect(child.layout().local, 1, 1, 3, 1)
+}
+
+test fn cell_projection_uses_shared_edges_for_text_and_boxes() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx)
+  let styles = style::new(
+    width: style::percent(70.0),
+    left: style::percent(10.0),
+    height: style::cells(4),
+    flex_shrink: 0.0,
+  )
+  let label = text::new(ctx, content: "Text wraps cleanly across terminal.", styles: styles)
+  let unmeasured = box::new(ctx, styles: styles)
+  parent.add(label)
+  parent.add(unmeasured)
+  ctx.compute_layout(parent, 16, 12)
+  // Ideal left 1.6 and right 12.8 project to 2 and 13: width 11.
+  // Ceil(width) would incorrectly grant measured Text a twelfth cell.
+  try rect(label.layout().local, 2, 0, 11, 4)
+  rect(unmeasured.layout().local, 2, 4, 11, 4)
+}
+
+test fn cell_projection_can_collapse_shrunk_text_like_an_unmeasured_box() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(gap: style::cells(1), padding: style::edges(style::cells(1))),
+  )
+  let title = text::new(ctx, content: "a\nb")
+  let editor = box::new(ctx, styles: style::new(height: style::cells(7), flex_shrink: 0.0))
+  let status = text::new(ctx, content: "status")
+  parent.add(title)
+  parent.add(editor)
+  parent.add(status)
+  ctx.compute_layout(parent, 50, 12)
+  // Inner height 10 minus gaps 2 and fixed editor 7 leaves 1 for Text
+  // bases 2 and 1. Their allocated heights are 2/3 and 1/3.
+  // Status edges 10 2/3 and 11 both round to 11. No special Text floor.
+  try rect(title.layout().local, 1, 1, 48, 1)
+  try rect(editor.layout().local, 1, 3, 48, 7)
+  try rect(status.layout().local, 1, 11, 48, 0)
+  let unmeasured = box::new(ctx, styles: style::new(height: style::cells(1)))
+  parent.remove(status)
+  parent.add(unmeasured)
+  ctx.compute_layout(parent, 50, 12)
+  rect(unmeasured.layout().local, 1, 11, 48, 0)
+}
+
 test fn negative_free_space_justification_keeps_unshrunk_sizes() Void!Str {
   let ctx = runtime::new_detached()
   let parent = box::new(

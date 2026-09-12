@@ -1,0 +1,44 @@
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/style
+use go:fmt
+
+// Accepted Cooper adaptation: auto margins belong only to their own line.
+// The paired native fixture documents the deliberate pinned-Yoga difference.
+fn main() {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(
+    ctx,
+    styles: style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      align_content: style::Align::start,
+    ),
+  )
+  for i in [0, 1] {
+    let child = box::new(
+      ctx,
+      styles: style::new(
+        width: style::cells(6),
+        height: style::cells(1),
+        flex_shrink: 0.0,
+        margin: style::Edges{
+          left: style::auto(),
+          right: style::cells(0),
+          top: style::cells(0),
+          bottom: style::cells(0),
+        },
+      ),
+    )
+    root.add(child)
+  }
+  ctx.compute_layout(root, 10, 2)
+  for child, i in root.node().children {
+    let rect = child.layout().local
+    if rect.x != 4 or rect.y != i or rect.width != 6 {
+      panic("Each line must distribute all four spare cells to its own auto margin")
+    }
+    fmt::Printf("child%d x=%d y=%d width=%d\n", i, rect.x, rect.y, rect.width)
+  }
+}

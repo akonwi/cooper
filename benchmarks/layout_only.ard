@@ -1,0 +1,80 @@
+use cooper/core/node
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/style
+use go:fmt
+use go:time
+
+fn main() {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  for automatic in [false, true] {
+    let root = box::new(ctx)
+    let children = mut List::new<mut box::Box>()
+    let height = match automatic {
+      true => style::auto(),
+      false => style::cells(1),
+    }
+    mut calls = 0
+    mut index = 0
+    while index < 64 {
+      let leaf = box::new(
+        ctx,
+        styles: style::new(width: style::cells(80), height: height, flex_shrink: 0.0),
+      )
+      leaf.node().set_measure(fn(input: node::MeasureInput) node::MeasureSize {
+        calls =+ 1
+        node::MeasureSize{width: 5.0, height: 1.0}
+      })
+      root.add(leaf)
+      children.push(leaf)
+      index =+ 1
+    }
+    ctx.compute_layout(root, 80, 64)
+    calls = 0
+    let started = time::Now()
+    index = 0
+    while index < 1000 {
+      ctx.compute_layout(root, 80, 64)
+      index =+ 1
+    }
+    let unchanged = time::Since(started).Microseconds()
+    let unchanged_calls = calls
+    calls = 0
+    let target = children.at(32).expect("middle leaf")
+    let updates_started = time::Now()
+    index = 0
+    while index < 1000 {
+      let offset = index % 2
+      target.set_style(
+        style::new(width: style::cells(40 + offset), height: height, flex_shrink: 0.0),
+      )
+      ctx.compute_layout(root, 80, 64)
+      index =+ 1
+    }
+    let updates = time::Since(updates_started).Microseconds()
+    let update_calls = calls
+    calls = 0
+    let resize_started = time::Now()
+    index = 0
+    while index < 1000 {
+      let offset = index % 2
+      ctx.compute_layout(root, 80 + offset, 64)
+      index =+ 1
+    }
+    let resize = time::Since(resize_started).Microseconds()
+    if target.layout().local.width != 41 or target.layout().local.height != 1 {
+      panic("layout-only geometry differs")
+    }
+    fmt::Printf(
+      "auto=%t unchanged_us=%d update_us=%d resize_us=%d unchanged_calls=%d update_calls=%d resize_calls=%d observed=41x1\n",
+      automatic,
+      unchanged,
+      updates,
+      resize,
+      unchanged_calls,
+      update_calls,
+      calls,
+    )
+  }
+}

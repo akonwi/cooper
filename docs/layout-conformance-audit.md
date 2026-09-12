@@ -4,6 +4,359 @@ September 10, 2026. The original September 9 source-audit matrices below are
 preserved as a baseline. The integration evidence here records which gaps now
 have additional tests, without claiming complete conformance.
 
+## Contract review and performance checkpoint
+
+The read-only contract review found implementations for all five accepted ADRs,
+but identified additional interaction-level evidence gaps. Three new passing
+tests now cover vertical shared-edge/negative-tie rounding, per-item baseline
+alignment in expanded/reversed lines (and end alignment inside stretched lines),
+and an open Select popup remaining focused/portaled while its ancestor becomes
+contents. These extend `layout_rounding_test`, `baseline_test`, and `select_test`.
+
+Remaining focused evidence gaps, not demonstrated implementation defects:
+
+- Intrinsic zero availability versus indefinite availability, including insets.
+- Dirty intrinsic container width cycles and explicit intrinsic Input/TextArea
+  placeholder/caret/gutter cases, beyond existing automatic measurement tests.
+- Negative free-space distribution combined with column/wrap_reverse.
+- Contents groups carrying otherwise influential margins/flex factors/self
+  alignment compared with manual flattening.
+- Fractional projected text/box edges under nonzero scrolling, including hit
+  testing and selection at those edges.
+
+The [performance comparison](./layout-performance-comparison.md) records both
+render and layout-only evidence against the original Yoga checkpoint. It led
+to a narrow optimization: fixed-size measured leaves no longer invoke a
+callback whose return cannot affect geometry. The regression in
+`test/layout_measurement_test.ard` failed with six callbacks across three layouts
+before the change, and passes with zero afterward; intrinsic bounds and auto
+height still measure correctly.
+
+`ard test`: **372 passed, 0 failed, 0 panicked**. All six changed/new Ard files
+passed compiler and formatter checks, including the layout-only benchmark.
+`go test ./...` passed. Text Gallery, TextArea, Input Lab and Select PTYs passed.
+Both nine-sample render comparisons passed their reported-observation checks.
+The new Python comparison runner was exercised end-to-end and compiled with
+`python3 -m py_compile benchmarks/compare.py`.
+
+**Backend removal remains deferred.** The candidate measures all 64 auto-height
+leaves three times on every unchanged layout in the isolated benchmark, whereas
+Yoga reuses them. The implementation direction is now a source-traceable
+[Yoga-to-Ard port](./yoga-ard-port-map.md), including Yoga's invalidation and
+cache pipeline, rather than further independent solver design. Preserve the
+tests and accepted ADRs, recording their intentional differences from pinned
+Yoga explicitly. Do not turn this audit's remaining cases into claims of
+complete conformance or use cheap measurement callbacks as rich-text timing.
+
+## ADR 0016 follow-up: intrinsic axes and margin-adjusted bounds
+
+Six new tests in `test/intrinsic_axes_test.ard` cover column intrinsic basis,
+height bounds, all three intrinsic basis policies on both axes with margins,
+percentage descendants after flex allocation and resize, intrinsic min/max
+constraints with margins, and nested natural row/column extents with contents,
+insets, gaps, reverse direction and excluded absolute/hidden children.
+
+Two executed failures exposed engine defects:
+
+1. **Column basis queried natural width instead of natural height.** In a 6×2
+   wrapping column, `abcdef` at width 3 and max-content basis ultimately had
+   height 2, but its following sibling remained at (0,2), outside that column.
+   Initial packing had used an unwrapped one-row basis. The height probe now
+   respects resolved width and width constraints before packing; the sibling
+   is at (3,0). This also passes for max-content/fit-content/stretch/auto width
+   constrained by max-width 3. Horizontal reconciliation stays frozen under
+   ADR 0020; the fix corrects the initial contribution rather than repacking.
+2. **Flex bounds did not exclude margins from available space.** A stretch
+   minimum in a 20-cell row with margins 2/3 produced width 20 instead of 15.
+   Bounds now use the same margin-adjusted availability as flex basis. Both
+   min/max, both axes, and all three intrinsic keywords pass the added matrix.
+
+Proof: the initial three tests ran **2 passed, 1 failed** before the column fix.
+The later constraint test failed with `expected 15, got 20` before the margin
+fix. All **6 tests pass** now; full `ard test` is **368 passed, 0 failed,
+0 panicked**. Compiler and formatter checks pass for both changed Ard files.
+Layout Playground, Text Gallery, TextArea, Scroll Form, Horizontal Scroll and
+Select PTY checks pass. Inspected `intrinsic-axis-fixes.png`, generated from
+actual headless Frame cells: `abcZ/def` and 15-column text wrapping with margins.
+
+This extends the earlier ADR 0016 cases in `test/style_test.ard` and OR-4's
+indefinite-percentage regressions. A final contract/evidence pass and controlled
+performance comparison still precede removal of the unused Yoga backend.
+
+## ADRs 0017–0018: alignment and box baselines implemented
+
+`Style.align_content` now independently distributes wrapped lines, defaulting to
+stretch. The engine preserves minimum gaps, handles single-line and negative
+free-space fallbacks, and mirrors logical line placement under wrap_reverse.
+No-wrap ignores line distribution. Item stretch still respects explicit sizes
+and min/max constraints. Alignment validity is checked when applying a Style;
+the alignment value constructor itself does not reject combinations.
+
+Row baselines use bottom border-box edges. Each line reserves maximum ascent
+(top margin + height) plus maximum bottom margin, alongside the extents of
+non-baseline items. Baseline placement uses the physical line top even under
+wrap_reverse. Column baseline falls back to cross start; cross auto margins
+override item alignment. Contents groups contribute no box baseline.
+
+Executed proof:
+
+- Initial four `test/alignment_test.ard` cases: **0 passed, 4 failed** before
+  implementing validation/distribution (the Style field alone was present so
+  these were runtime failures, not missing-API compiler failures). Now all five
+  pass. Coverage includes all 27 property/value validity boundaries, all seven
+  distribution modes across four directions and both wrap orders, unequal line
+  extents, minimum gaps, positive/zero/negative free space, single-line/no-wrap,
+  constrained auto versus explicit sizes, indefinite cross size, retained style
+  replacement, and independent arithmetic plus fresh-tree comparison.
+- Initial four `test/baseline_test.ard` cases: **1 passed, 3 failed** before
+  baseline implementation. Now all five pass. Coverage includes unequal margins,
+  zero height, independent wrapped lines, main/cross reversal, bordered/padded
+  multiline Text, fixed container independence from descendants, resize/reparent,
+  non-baseline self alignment, auto margins, contents and projected-width replay.
+- Final `ard test`: **362 passed; 0 failed; 0 panicked**.
+- All four changed Ard files passed `ard format`, `ard check`, and
+  `ard format --check`. `go test ./...` passed; retainedyoga has no Go tests.
+- All 20 PTY commands listed in AGENTS.md passed.
+- Inspected `alignment-baseline-frames.png`, rendered from actual headless cells.
+  In a 12-cell cross extent, lines of height 2/3 with gap 1 start at 0/3 for
+  start, 0/6 for stretch, and 2/7 for space_evenly. In the margin comparison,
+  baseline ends both boxes at y3; end instead ends both margin boxes at y5.
+
+### Migration notes
+
+- Replace `align_items: auto` with an explicit item alignment (default stretch).
+  `align_self: auto` remains supported and inherits `align_items`.
+- Move `space_between`, `space_around`, or `space_evenly` from item properties
+  to `align_content` when the intent is distributing wrapped lines. These values
+  now panic if applied to `align_items` or `align_self`. `align_content` rejects
+  auto/baseline; constructors still allow creating these Style values before
+  application. Existing numeric/unit constructor validation is unchanged.
+- Baseline no longer depends on recursive Yoga descendant selection. Use end
+  alignment if the intended result is aligning margin boxes rather than bottom
+  border-box edges. This contract does not promise first-text-line alignment.
+
+Remaining port work: broader ADR 0016 intrinsic/percentage constraints and basis
+conformance, controlled performance comparison, and removal of the old backend.
+
+## ADR 0019 retained integration
+
+The engine and retained implementation now agree on boxless contents groups:
+empty local/content anchors, flattened layout/stacking/hit children, retained
+color inheritance and event-listener ancestry, suppressed owner paint/default
+interaction/cursor/focus/selection/scroll, and exactly-once ancestor translation.
+Focus/reveal and effective scroll-parent styles skip contents. Transitions,
+reparenting, reorder, detach, and explicit recursive destruction preserve the
+existing ownership/lifecycle contracts.
+
+Integrated verification:
+
+- `ard test test/display_contents_test.ard`: **9 passed; 0 failed; 0 panicked**.
+- `ard test`: **341 passed; 0 failed; 0 panicked**.
+- Compiler and formatter checks passed for all six changed Ard files.
+- Interaction Lab, Text Gallery, horizontal scrolling, terminal focus, and
+  Select PTY checks passed in the combined checkout.
+- Inspected `display-contents-frames.png`, visualized from actual headless cells:
+  viewport (4,2), size 7×3 stays fixed; scroll (2,1) changes visible rows from
+  `0123456/abcdefg/ABCDEFG` to `cdefghi/CDEFGHI/mnopqrs`.
+
+The worker also ran the nine tests against the original downloaded checkpoint
+and reported **2 passed, 6 failed, 1 panicked** (missing selection). That is
+worker-reported before evidence; the passing results above were independently
+rerun after integration.
+
+The Select overlay follow-up is now integrated. Three additional tests cover
+open flex→contents→flex→none transitions, direct retained style application,
+popup identity, focus, former-popup hit cells, and exactly-once destruction.
+Blur cleanup previously reapplied a stale flex style, undoing a direct contents
+transition. Removing that redundant owner-style synchronization fixes the defect
+without changing popup ownership or adding Runtime hooks. The worker recorded
+15 passing/1 failing Select tests before the fix; the integrated checkout passes
+all 16. The inspected `select-contents-frames.png` shows the popup and trigger
+disappearing for contents/none, with only the closed trigger restored for flex.
+This verifies Select's existing overlay, not arbitrary future overlay mechanisms.
+
+## ADR 0020 reconciliation: approved and implemented
+
+A repeat-until-stable measurement/projection loop does not always converge if
+corrected Text heights reopen ordinary flex-line packing. This counterexample
+was verified with the current compiler and a temporary executable probe:
+
+- Parent: 5×2, column, wrap_reverse, align_items start.
+- A: empty box, width 50%, height 1; grow/shrink zero.
+- B: character-wrapped Text `abc`, width 50%, automatic height; grow/shrink zero.
+- No insets, margins, gaps, or offsets. Each ideal child width is 2.5.
+
+The probe supplied each possible height for B, laid out the parent, then
+independently measured the same Text at its projected width:
+
+```text
+assumed_height=1 x=3 width=2 required_height=2
+assumed_height=2 x=0 width=3 required_height=1
+```
+
+If B is one row, both children pack into one column. Its edges 2.5/5 project
+to 3/5, leaving two cells and requiring two rows. If B is two rows, it moves
+to a second column; edges 0/2.5 project to 0/3, allowing one row. Neither
+partition is consistent with repacking from the final measured height.
+
+The user approved the clarification: select line
+membership and horizontal allocation in the fractional contribution pass;
+freeze those decisions during projected-width measurement and vertical replay.
+Correct dependent heights/vertical positions without reforming lines or changing
+horizontal positions. Each new layout transaction starts afresh. This terminates,
+but may deliberately leave spare space or overflow in the selected lines.
+In this example, the selected two columns remain while B shrinks to one row.
+
+`core/layout.ard` now records horizontal allocation and line membership after
+relative/absolute positioning, measures at projected content widths in a vertical
+replay, then projects the final geometry. Natural-width probes do not consume
+these allocated-width records, which are discarded after each transaction.
+
+`test/layout_rounding_test.ard` contains eight passing tests. The first four
+reconciliation cases were executed failing before implementation: fractional
+width/sibling reflow, the wrap-reverse cycle, intrinsic height at allocated width,
+and absolute content insets with a fractional ancestor. Additional assertions
+cover TextArea viewport/caret placement, wide-glyph paint/hit/selection agreement,
+31/3 and reversed 5/2 edge sharing, negative half ties, nested fractional origins,
+collapsed spans, repeated layout, and resize cycles.
+
+Integrated verification after Select and reconciliation:
+
+- `ard test`: **352 passed; 0 failed; 0 panicked**.
+- Compiler and formatter checks passed for all four changed Ard files.
+- Select, Text Gallery, TextArea, and Layout Playground PTY tests passed.
+- `python3 benchmarks/run.py --iterations 1 --warmups 0` completed all four
+  workloads. This is a smoke check, not a controlled Yoga performance comparison.
+- Inspected `rounding-frames.png`, generated from actual headless Frame text:
+  `abc` occupies one row at projected width 3; shifting its fractional origin
+  produces width 2 and rows `ab/c`, moving the following `Z` down one row.
+
+The later ADR 0017/0018 evidence above builds on this checkpoint. Wider
+intrinsic/percentage constraint conformance remains outstanding.
+
+## Oracle review tracker
+
+Review of the initial Ard replacement against checkpoint
+`650013dc9525c504b42089cb5c30ddd54e3c5ff0`. Findings were initially derived
+from source/arithmetic, not executed reproductions. Stable IDs below distinguish
+these defects from the separately deferred ADR work. Each fix will record an
+executed failing regression and its passing result below.
+
+| ID | Priority | Defect | Status |
+| --- | --- | --- | --- |
+| OR-1 | P1 | Finite main-axis measurement truncates scrollable Text overflow on both axes. | Fixed; 3 regressions pass |
+| OR-2 | P1 | Bounds change widths without recomputing dependent measurement or child allocation; a losing maximum also constrains measurement. | Fixed; 2 regressions pass |
+| OR-3 | P1 | Flex freezes all clamped targets, leaving distributable free space unused with mixed min/max constraints. | Fixed; regression passes |
+| OR-4 | P2 | Percentage-reference definiteness is bypassed for heights, bounds, basis, and spacing. | Reported cases fixed; 2 regressions pass |
+| OR-5 | P2 | Absolute positioning ignores margins in placement and opposing-edge allocation. | Fixed; regression passes |
+| OR-6 | P2 | Reverse main/cross placement confuses physical leading/trailing margins, including auto margins. | Fixed; regression passes |
+| OR-7 | P2 | Early cross-axis stretch defeats auto-margin alignment of naturally sized children. | Fixed; regression passes |
+
+### Reproduce the proof for each finding
+
+Tests live in [test/layout_regression_test.ard](../test/layout_regression_test.ard).
+Run `ard test --filter or1_`, substituting `or2_` through `or7_` for the other
+findings, or run the whole file. The before column records actual failed runs
+before each corresponding fix, not predictions copied from the review.
+Assertions after the first failure were only exercised by the passing run.
+
+| ID | Executed failure before fix | Passing assertions after fix |
+| --- | --- | --- |
+| OR-1 | Four Text rows measured as 2; eight columns measured as 3. Both tests failed. | Full extents 4/8; maximum scroll offsets 2/5. Additional integration test renders `a/b`, scrolls two rows, then renders `c/d`. |
+| OR-2 | Minimum-width Text retained height 2 instead of 1; six-cell container retained children 4+4. Both tests failed. | Text height 1 and following sibling y=1; losing maximum does not constrain measurement; container children tile 3+3. |
+| OR-3 | Mixed grow constraints produced 60/20 instead of 70/20. | Allocation 70/20 consumes all 90 cells. Fractional grow with a frozen sibling produces 25/10, without repeatedly adding the first child's share. |
+| OR-4 | Intrinsic parent resolved percentage child height to 2 instead of 4; unresolved width bounds/basis/spacing produced child width 1 and sibling x=6 instead of 4/4. | Child height stays 4 until explicit parent height 10 resolves it to 5. Intrinsic row remains width 6, child width 4, sibling x=4 across repeated layout. |
+| OR-5 | Leading margins were ignored: position (0,0) instead of (2,1). | Leading position (2,1), trailing position (13,6), opposing-edge allocation 11×3 at (3,2). |
+| OR-6 | Row-reverse position x=15 instead of x=13. | Unequal physical margins work in row_reverse, column_reverse, wrap_reverse; right auto margin pushes the child to x=1. |
+| OR-7 | Auto-margin Text stretched to height 7 at y=0. | Natural height 1 at y=3 in a row; natural width 1 at projected x=5 in a column. |
+
+The fixes remove the scroll main-axis measurement cap, settle bounded sizes
+before dependent layout, freeze flex items by net constraint violation, use
+definite percentage references consistently on both axes, account for absolute
+margins, map margins to effective reversed axes, and suppress early stretch when
+cross-axis auto margins take precedence. Bound-driven container relayout fixes
+at least one previously unsettled axis per pass; it does not iterate projected
+fractional widths.
+
+Final combined verification after these fixes:
+
+- `ard test test/layout_regression_test.ard`: **11 passed; 0 failed; 0 panicked**.
+- `ard test`: **332 passed; 0 failed; 0 panicked** (321 before this review).
+- `ard check` and `ard format --check` passed for both changed Ard files.
+- `go test ./...` and all 20 PTY entry points in `AGENTS.md` passed.
+- `python3 benchmarks/run.py --iterations 1 --warmups 0` completed all cases;
+  this is a smoke check, not evidence of performance parity.
+
+These regressions address the review's concrete failures. They do not establish
+full percentage/intrinsic conformance, fractional measurement reconciliation,
+absolute auto-margin distribution, or the other deferred ADR features below.
+Visual validation also inspected `oracle-layout-fixes.png`, a visualization of
+actual headless Frame cells for scrolling and auto-margin alignment. Its outlines
+mark frame extents; they are not application borders or native terminal styling.
+
+## Initial Ard replacement: current evidence and remaining work
+
+`core/node.ard` now computes layout through `core/layout.ard`, not the Go Yoga
+adapter. Ard owns sizing, flex allocation, positioning, and cell projection.
+The numeric bridge only widens Float32 values because the current Ard API lacks
+that conversion. The unused Yoga adapter and dependency remain in the repository
+for now; this is an implementation milestone, not a completed backend retirement.
+
+All nine failures in the historical ADR 0016 table below now pass, including the
+assertions previously unreachable after each first failure. `max_content` Text
+`abc defgh` in a five-cell parent is 9×1, and bordered/padded multiline Text is
+9×6. Text uses the Node's committed local content rectangle for wrapping, paint,
+clipping, links, cursor placement, and selection. Its border resets with Style.
+
+Additional regressions distinguish independently allocated stretch width from
+an equal natural width, measured/unmeasured edge rounding, zero-height text
+after flex shrinking, and auto versus explicit absolute offsets inside borders.
+These are targeted cases, not complete acceptance coverage for ADR 0020.
+
+Two PTY expectations needed deliberate migration away from Yoga's text-specific
+rounding. The gallery's character sample has 11 cells instead of 12; its test
+checks the new split and preserves complete-source assertions for both ordinary
+and long-token samples. In the 50×12 TextArea fixture, fixed editor height left
+the status only 1/3 of a row, whose edges both project to row 11. The fixture now
+lets the editor shrink and makes title/status nonshrinking. The headless test
+`cell_projection_can_collapse_shrunk_text_like_an_unmeasured_box` preserves the
+zero-height rule instead of adding an implicit one-cell Text minimum.
+
+Verification:
+
+- `ard test`: **321 passed; 0 failed; 0 panicked**, including all 299 checkpoint
+  tests, 16 intrinsic-contract tests, three Text border tests, two projection
+  tests, and one absolute-default-origin test.
+- `ard format`, `ard check`, and `ard format --check` passed for all seven changed
+  Ard files, including the new engine and the TextArea fixture.
+- `go test ./...`: all seven tested packages passed; retainedyoga has no tests.
+- All 20 PTY entry points listed in `AGENTS.md` passed. Layout/Select checks were
+  rerun after the final absolute-default-origin correction.
+- `python3 benchmarks/run.py --iterations 3 --warmups 1` completed every case.
+  This was a smoke run concurrent with PTY tests, not a comparative performance
+  claim. Dirty-layout caching and a controlled old/new comparison remain pending.
+- Inspected `text-border-states.png` (headless Frame visualization) and
+  `text-area-layout.png` (captured PTY text, empty and edited states). These are
+  cell-content visualizations, not native terminal color/cursor screenshots.
+
+**The port is not yet fully conformant to the accepted ADRs.** Remaining work:
+
+- ADR 0016: broaden intrinsic constraints/basis, percentage bounds and spacing,
+  and independently definite versus content-derived allocation coverage on both
+  axes. Passing the 16 cases does not establish all combinations.
+- ADR 0017: add `align_content`, property-specific validation, and wrapped-line
+  distribution tests. Current wrapped lines only use stretch distribution.
+- ADR 0018: implement and test bottom-border-edge baseline groups with margins;
+  the initial engine does not implement that baseline policy.
+- ADR 0019: complete boxless retained geometry, paint/stacking, hit/focus,
+  scrolling, inheritance, and transitions. Layout flattening alone is insufficient.
+- ADR 0020: reconcile width-dependent measurement with projected cell width
+  before committing dependent heights. Edge projection is implemented, but the
+  full measurement/projection convergence contract is not.
+
+The sections below retain the earlier Yoga baseline and initial failing-test
+evidence; their counts are historical, not the current test result.
+
 ## Integrated conformance baseline
 
 Integrated 32 additional tests from the test sub-thread: 24 Style tests, five
@@ -48,6 +401,49 @@ Verification in the combined checkout:
 These results establish a passing current-backend baseline. The accepted ADRs
 remain the specification for subsequent contract tests and the Ard replacement;
 passing this suite alone does not establish conformance to all five decisions.
+
+## ADR 0016 executable contract cases
+
+After the passing checkpoint, 15 `intrinsic_contract_*` tests were added to
+`test/style_test.ard`. Expected rectangles come from ADR 0016, not backend
+snapshots. They run in the ordinary suite without skips or expected-failure
+wrappers. Each test destroys its detached Runtime even when an assertion fails.
+
+Full `ard test`: **305 passed; 9 failed; 0 panicked**. All 299 baseline tests
+still pass; six new contract tests pass and nine expose current implementation
+gaps. `ard format`, `ard check`, and `ard format --check` pass for the changed
+test file. Run just this group with `ard test --filter intrinsic_contract`.
+
+| Failing case (test suffix) | Required width×height | Observed width×height |
+| --- | --- | --- |
+| `max_content_overflows_narrow_parent` | 9×1 | 5×2 |
+| `stretch_fills_available_width_minus_margins` | 14×1 at (3,3) | 3×1 at (3,3) |
+| `height_preserves_finite_width_wrapping` | 5×2 | 5×1 |
+| `explicit_width_is_not_alignment_stretch` | 9×1 | 20×1 |
+| `explicit_lines_and_insets_count_once` | 9×6 | 7×4 |
+| `max_content_minimum_prevents_shrink` | 9×1 | 3×4 |
+| `max_content_bound_limits_explicit_width` | 9×1 | 20×1 |
+| `basis_overrides_conflicting_preferred_width` | 9×1 | 3×4 |
+| `container_natural_width_ignores_soft_wrap_and_out_of_flow` | 9×2 | 5×4 |
+
+Passing cases cover fit-content below/equal/above natural width with a long word
+(no CSS min-content floor); max-width remeasurement and reset moving a following
+sibling; widest explicit line; minimum-over-maximum precedence on both axes;
+physical inset floors; and an indefinite percentage that stays content-sized
+until an independently definite parent width becomes available.
+
+The Text inset failure is not solely a Yoga keyword issue: `Node` stores border
+width separately from Style, and `Box` calls `set_border_width` while `Text`
+does not. The plain explicit-lines case passes. The accepted Text border-box
+example therefore requires Cooper integration work as well as sizing changes.
+
+Assertions following the first failure in the basis and container tests are not
+reached; their sibling/child coordinates are requirements, not verified evidence.
+This is initial ADR 0016 coverage, not full conformance: remaining combinations
+include fit/stretch intrinsic constraints and basis, indefinite percentage bounds
+and spacing, Unicode/zero-size keyword cases, and broader retained mutations.
+ADRs 0017–0020 also require their own contract tests. No solver or runtime behavior
+was changed in this test-only step, and no fallback was blessed to keep it green.
 
 ## Cooper defines the contract
 

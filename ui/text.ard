@@ -1,12 +1,13 @@
 use ard/testing
 use ard/unsafe
 
-use cooper/ui/color
-use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/event
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/color
 use cooper/ui/geometry
 use cooper/ui/selection
 use cooper/ui/style as layout_style
@@ -97,7 +98,7 @@ struct LinkEvent {
 }
 
 private fn new_link_event(url: Str) mut LinkEvent {
-  (mut LinkEvent{url: url, internal_state: (mut LinkEventState{default_prevented: false})})
+  (mut LinkEvent{url: url, internal_state: mut LinkEventState{default_prevented: false}})
 }
 
 private fn link_event_state(value: Any) mut LinkEventState {
@@ -108,7 +109,7 @@ impl LinkEvent {
   fn mut prevent_default() {
     link_event_state(self.internal_state).default_prevented = true
   }
-
+  
   fn is_default_prevented() Bool {
     link_event_state(self.internal_state).default_prevented
   }
@@ -160,7 +161,12 @@ private fn new_link_state(open_url: fn(Str) Void!Error) Any {
     armed_click_epoch: 0,
     next_listener_id: 1,
     listeners: [],
-    paint_clip: geometry::Rect{x: 0, y: 0, width: 0, height: 0},
+    paint_clip: geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    },
     link_hits: [],
     last_url: Maybe::new<Str>(),
     last_press_at_ms: 0,
@@ -243,7 +249,11 @@ private fn validate_link(value: Str?) {
 
 fn span(text: Str, style: SpanStyle?, link: Str?) Span {
   validate_link(link)
-  Span{text: text, style: style.or(span_style()), link: link}
+  Span{
+    text: text,
+    style: style.or(span_style()),
+    link: link,
+  }
 }
 
 private fn copy_spans(spans: [Span]) [Span] {
@@ -308,7 +318,7 @@ private fn same_color(left: color::Color?, right: color::Color?) Bool {
     false => {
       let left_color = try left -> _ { false }
       let right_color = try right -> _ { false }
-
+      
       left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue and left_color.index == right_color.index and left_color.terminal_default == right_color.terminal_default
     },
   }
@@ -426,11 +436,7 @@ private fn resolve_span_style(base: TextStyle, configured: SpanStyle) TextStyle 
   resolved.@
 }
 
-private fn styled_runs(
-  content: StyledText,
-  base: TextStyle,
-  selection_patch: fn(mut TextStyle),
-) [StyleRun] {
+private fn styled_runs(content: StyledText, base: TextStyle, selection_patch: fn(mut TextStyle)) [StyleRun] {
   let runs = mut List::new<StyleRun>()
   mut offset = 0
   for value in content.spans {
@@ -686,7 +692,7 @@ private fn visual_glyphs(content: Str, layout: Layout, runs: [StyleRun], measure
         displayed => {
           let value = line.text.slice(start: displayed.Start, end: displayed.End).or("")
           mut matched = Maybe::new<SourceGlyph>()
-          while source_index < source.size() and (not matched.is_some()) {
+          while source_index < source.size() and not matched.is_some() {
             let candidate = source.at(source_index).expect("source glyph mapping")
             source_index =+ 1
             if (not candidate.newline) and candidate.text == value {
@@ -750,7 +756,11 @@ private fn visual_view(
   let visual = visual_glyphs(content, layout, runs, measure)
   let truncated = ellipsis_active(layout, width, height, overflow)
   if not truncated {
-    VisualView{glyphs: visual, ellipsis: Maybe::new<EllipsisGlyph>(), truncated: false}
+    VisualView{
+      glyphs: visual,
+      ellipsis: Maybe::new<EllipsisGlyph>(),
+      truncated: false,
+    }
   } else {
     let kept = mut List::new<VisualGlyph>()
     mut omitted = false
@@ -766,10 +776,14 @@ private fn visual_view(
         }
       }
     }
-
+    
     let marker_width = measure("…")
     if width < marker_width or height < 1 or marker_width < 1 {
-      VisualView{glyphs: kept.@, ellipsis: Maybe::new<EllipsisGlyph>(), truncated: true}
+      VisualView{
+        glyphs: kept.@,
+        ellipsis: Maybe::new<EllipsisGlyph>(),
+        truncated: true,
+      }
     } else {
       mut marker_y = omitted_y
       if marker_y < 0 or marker_y >= height {
@@ -797,7 +811,12 @@ private fn visual_view(
       VisualView{
         glyphs: fitting.@,
         ellipsis: Maybe::new<EllipsisGlyph>(
-          EllipsisGlyph{x: marker_x, y: marker_y, width: marker_width, style: marker_style},
+          EllipsisGlyph{
+            x: marker_x,
+            y: marker_y,
+            width: marker_width,
+            style: marker_style,
+          },
         ),
         truncated: true,
       }
@@ -812,9 +831,13 @@ private struct WrapSegment {
 }
 
 private fn newline(grapheme: Str) Bool {
-  let rune = try grapheme.runes().at(0) -> _ { false }
-  let kind = unicode::LineBreak(Int32::from(rune))
-  kind == unicode::LineBreakBK or kind == unicode::LineBreakCR or kind == unicode::LineBreakLF or kind == unicode::LineBreakNL
+  if grapheme.size() == 1 {
+    grapheme == "\n" or grapheme == "\r" or grapheme == "\v" or grapheme == "\f"
+  } else {
+    let rune = try grapheme.runes().at(0) -> _ { false }
+    let kind = unicode::LineBreak(Int32::from(rune))
+    kind == unicode::LineBreakBK or kind == unicode::LineBreakCR or kind == unicode::LineBreakLF or kind == unicode::LineBreakNL
+  }
 }
 
 private fn wrap_segments(content: Str, measure: fn(Str) Int) [WrapSegment] {
@@ -824,7 +847,10 @@ private fn wrap_segments(content: Str, measure: fn(Str) Int) [WrapSegment] {
   while reading {
     match iterator.Next() {
       segment => {
-        let source = content.slice(start: segment.Start, end: segment.End).expect("Unicode line segment source")
+        let source = content.slice(
+          start: segment.Start,
+          end: segment.End,
+        ).expect("Unicode line segment source")
         let parts = mut List::new<Str>()
         mut width = 0
         mut hard_break = false
@@ -873,20 +899,27 @@ private fn finish(lines: mut [Line]) Layout {
 
 private fn unwrapped(content: Str, measure: fn(Str) Int) Layout {
   let lines = mut List::new<Line>()
-  mut current = ""
+  mut parts = mut List::new<Str>()
   mut width = 0
-  for character in vaxis::Characters(content) {
-    let grapheme = character.Grapheme
-    if newline(grapheme) {
-      push_line(lines, current, width)
-      current = ""
-      width = 0
-    } else {
-      current = "{current}{grapheme}"
-      width = width + measure(grapheme)
+  let iterator = mut vaxis::NewCharacterIterator(content)
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      character => {
+        let grapheme = character.Grapheme
+        if newline(grapheme) {
+          push_line(lines, strings::Join(parts, ""), width)
+          parts = mut List::new<Str>()
+          width = 0
+        } else {
+          parts.push(grapheme)
+          width = width + measure(grapheme)
+        }
+      },
+      _ => { reading = false },
     }
   }
-  push_line(lines, current, width)
+  push_line(lines, strings::Join(parts, ""), width)
   finish(lines)
 }
 
@@ -1000,7 +1033,7 @@ private fn measured_text(
 }
 
 private fn point_before(left_x: Int, left_y: Int, right_x: Int, right_y: Int) Bool {
-  left_y < right_y or (left_y == right_y and left_x <= right_x)
+  left_y < right_y or left_y == right_y and left_x <= right_x
 }
 
 private fn constrained(value: Float32, available: Float32, mode: node::MeasureMode) Float32 {
@@ -1114,7 +1147,7 @@ fn new(
   styles: layout_style::Style?,
   text_style: TextStyle?,
   selectable: Bool?,
-  selection_style: (fn(mut TextStyle))?,
+  selection_style: fn(mut TextStyle)?,
   overflow: TextOverflow?,
 ) mut Text {
   let snapshot = snapshot_content(content)
@@ -1134,10 +1167,17 @@ fn new(
     selected_text_value: "",
     selected_glyphs: [],
     source_revision: 1,
-    width_measurer: fn(value: Str) Int { ctx.measure_text(value) },
-    link_state: new_link_state(fn(url: Str) Void!Error { ctx.open_url(url) }),
+    width_measurer: fn(value: Str) Int {
+      ctx.measure_text(value)
+    },
+    link_state: new_link_state(fn(url: Str) Void!Error {
+      ctx.open_url(url)
+    }),
   }
   retained.bind(text)
+  if retained.style().border != layout_style::Border::none {
+    retained.set_border_width(1)
+  }
   let link_storage = text.link_state
   retained.on_cleanup(fn() {
     reset_link_state(link_storage)
@@ -1175,11 +1215,26 @@ impl node::Renderable for Text {
   fn node() mut node::Node {
     self.node_ref
   }
-
+  
   fn mount(ctx: node::MountContext) {}
-
+  
   fn paint(ctx: mut paint::Context) {
-    let visible = geometry::intersect(ctx.bounds, ctx.clip)
+    box::paint_border(ctx, self.node_ref.style())
+    let content = self.node_ref.content_rect()
+    let content_bounds = geometry::Rect{
+      x: ctx.bounds.x + content.x,
+      y: ctx.bounds.y + content.y,
+      width: content.width,
+      height: content.height,
+    }
+    let visible = geometry::intersect(content_bounds, ctx.clip)
+    let content_ctx = mut paint::Context{
+      buffer: ctx.buffer,
+      bounds: ctx.bounds,
+      clip: visible,
+      foreground: ctx.foreground,
+      background: ctx.background,
+    }
     let local_clip = geometry::Rect{
       x: visible.x - ctx.bounds.x,
       y: visible.y - ctx.bounds.y,
@@ -1189,84 +1244,75 @@ impl node::Renderable for Text {
     let link_data = link_state(self.link_state)
     link_data.paint_clip = local_clip
     link_data.link_hits = []
-    let measured = layout_text(
-      self.content,
-      self.wrap_mode,
-      self.node_ref.layout().screen.width,
-      self.width_measurer,
-    )
-    let runs = cached_style_runs(self.style_cache)
-    let truncated = ellipsis_active(
-      measured,
-      self.node_ref.layout().screen.width,
-      self.node_ref.layout().screen.height,
-      self.overflow_mode,
-    )
-    let has_links = style_runs_have_links(runs)
-    if runs.size() <= 1 and (not truncated) {
-      if has_links {
-        let link_view = visual_view(
+    if visible.width > 0 and visible.height > 0 {
+      let runs = cached_style_runs(self.style_cache)
+      let has_links = style_runs_have_links(runs)
+      // Unwrapped, uniform text needs no line widths or source mapping to paint.
+      // Stream it once; tabs retain the normalization/resegmentation path below.
+      if self.wrap_mode == TextWrap::none and self.overflow_mode == TextOverflow::clip and runs.size() <= 1 and (not has_links) and (not self.content.contains("\t")) {
+        let applied = match runs.at(0) {
+          run => run.style,
+          _ => self.text_style,
+        }
+        content_ctx.write_measured(
+          content.x,
+          content.y,
           self.content,
-          measured,
-          runs,
-          self.node_ref.layout().screen.width,
-          self.node_ref.layout().screen.height,
-          self.overflow_mode,
-          self.text_style,
           self.width_measurer,
+          text_style: cell_style(applied),
+          line_break: newline,
         )
-        self.cache_link_hits(link_view.glyphs, runs, local_clip)
+      } else {
+        let measured = layout_text(self.content, self.wrap_mode, content.width, self.width_measurer)
+        let truncated = ellipsis_active(measured, content.width, content.height, self.overflow_mode)
+        if runs.size() <= 1 and not truncated {
+          if has_links {
+            let link_view = self.current_view(measured: measured)
+            self.cache_link_hits(link_view.glyphs, runs, local_clip)
+          }
+          mut hyperlink = Maybe::new<Str>()
+          let applied = match runs.at(0) {
+            run => {
+              hyperlink = run.link
+              run.style
+            },
+            _ => self.text_style,
+          }
+          for line, y in measured.lines {
+            content_ctx.write_measured(
+              content.x,
+              content.y + y,
+              line.text,
+              self.width_measurer,
+              text_style: cell_style(applied, hyperlink: hyperlink),
+            )
+          }
+        } else {
+          let view = self.current_view(measured: measured)
+          if has_links {
+            self.cache_link_hits(view.glyphs, runs, local_clip)
+          }
+          paint_visual_glyphs(content_ctx, view.glyphs, runs, self.width_measurer)
+          match view.ellipsis {
+            marker => {
+              content_ctx.write_measured(
+                marker.x,
+                marker.y,
+                "…",
+                self.width_measurer,
+                text_style: cell_style(marker.style),
+              )
+            },
+            _ => (),
+          }
+        }
       }
-      mut hyperlink = Maybe::new<Str>()
-      let applied = match runs.at(0) {
-        run => {
-          hyperlink = run.link
-          run.style
-        },
-        _ => self.text_style,
+      if self.selected_glyphs.size() > 0 {
+        paint_selected_glyphs(content_ctx, self.selected_glyphs, self.width_measurer)
       }
-      for line, y in measured.lines {
-        ctx.write_measured(
-          0,
-          y,
-          line.text,
-          self.width_measurer,
-          text_style: cell_style(applied, hyperlink: hyperlink),
-        )
-      }
-    } else {
-      let view = visual_view(
-        self.content,
-        measured,
-        runs,
-        self.node_ref.layout().screen.width,
-        self.node_ref.layout().screen.height,
-        self.overflow_mode,
-        self.text_style,
-        self.width_measurer,
-      )
-      if has_links {
-        self.cache_link_hits(view.glyphs, runs, local_clip)
-      }
-      paint_visual_glyphs(ctx, view.glyphs, runs, self.width_measurer)
-      match view.ellipsis {
-        marker => {
-          ctx.write_measured(
-            marker.x,
-            marker.y,
-            "…",
-            self.width_measurer,
-            text_style: cell_style(marker.style),
-          )
-        },
-        _ => (),
-      }
-    }
-    if self.selected_glyphs.size() > 0 {
-      paint_selected_glyphs(ctx, self.selected_glyphs, self.width_measurer)
     }
   }
-
+  
   fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
     event_delivery::Disposition::ignored
   }
@@ -1281,7 +1327,16 @@ impl Text {
         let run = runs.at(glyph.style_index).expect("cached linked glyph style run")
         if not run.style.hidden {
           match run.link {
-            url => hits.push(LinkHit{x: glyph.x, y: glyph.y, width: glyph.width, url: url}),
+            url => {
+              hits.push(
+                LinkHit{
+                  x: glyph.x,
+                  y: glyph.y,
+                  width: glyph.width,
+                  url: url,
+                },
+              )
+            },
             _ => (),
           }
         }
@@ -1289,7 +1344,7 @@ impl Text {
     }
     link_state(self.link_state).link_hits = hits.@
   }
-
+  
   private fn cached_link_at(local_x: Int, local_y: Int) Str? {
     mut link = Maybe::new<Str>()
     for hit in link_state(self.link_state).link_hits {
@@ -1299,7 +1354,7 @@ impl Text {
     }
     link
   }
-
+  
   private fn link_at(local_x: Int, local_y: Int) Str? {
     let runs = cached_style_runs(self.style_cache)
     let clip = link_state(self.link_state).paint_clip
@@ -1315,7 +1370,7 @@ impl Text {
     }
     link
   }
-
+  
   private fn emit_link(url: Str) {
     let state = link_state(self.link_state)
     let activated = new_link_event(url)
@@ -1327,7 +1382,7 @@ impl Text {
       let _ = state.open_url(url)
     }
   }
-
+  
   private fn activate_link_once(
     url: Str,
     press_at_ms: Int64,
@@ -1355,7 +1410,7 @@ impl Text {
       self.emit_link(url)
     }
   }
-
+  
   private fn observe_link_pointer(received: mut event::MouseEvent) {
     let state = link_state(self.link_state)
     let unmodified = (not received.modifiers.shift) and (not received.modifiers.ctrl) and (not received.modifiers.alt) and (not received.modifiers.super)
@@ -1441,40 +1496,64 @@ impl Text {
       }
     }
   }
-
-  private fn current_view() VisualView {
-    let measured = layout_text(
+  
+  private fn current_view(measured: Layout?) VisualView {
+    let content = self.node_ref.content_rect()
+    let layout = match measured {
+      value => value,
+      _ => layout_text(self.content, self.wrap_mode, content.width, self.width_measurer),
+    }
+    let view = visual_view(
       self.content,
-      self.wrap_mode,
-      self.node_ref.layout().screen.width,
-      self.width_measurer,
-    )
-    visual_view(
-      self.content,
-      measured,
+      layout,
       cached_style_runs(self.style_cache),
-      self.node_ref.layout().screen.width,
-      self.node_ref.layout().screen.height,
+      content.width,
+      content.height,
       self.overflow_mode,
       self.text_style,
       self.width_measurer,
     )
+    let translated = mut List::new<VisualGlyph>()
+    for glyph in view.glyphs {
+      let moved = mut glyph
+      moved.x = glyph.x + content.x
+      moved.y = glyph.y + content.y
+      translated.push(moved.@)
+    }
+    let marker = match view.ellipsis {
+      glyph => {
+        Maybe::new<EllipsisGlyph>(
+          EllipsisGlyph{
+            x: glyph.x + content.x,
+            y: glyph.y + content.y,
+            width: glyph.width,
+            style: glyph.style,
+          },
+        )
+      },
+      _ => Maybe::new<EllipsisGlyph>(),
+    }
+    VisualView{
+      glyphs: translated.@,
+      ellipsis: marker,
+      truncated: view.truncated,
+    }
   }
-
+  
   private fn full_visual_content() [VisualGlyph] {
     let measured = layout_text(
       self.content,
       self.wrap_mode,
-      self.node_ref.layout().screen.width,
+      self.node_ref.content_rect().width,
       self.width_measurer,
     )
     visual_glyphs(self.content, measured, cached_style_runs(self.style_cache), self.width_measurer)
   }
-
+  
   private fn visual_content() [VisualGlyph] {
     self.current_view().glyphs
   }
-
+  
   private fn clamped_point(view: VisualView) geometry::Point {
     mut point = geometry::Point{x: 0, y: 0}
     mut found = false
@@ -1492,7 +1571,7 @@ impl Text {
     }
     point
   }
-
+  
   private fn expansion_from_source(value: SourceRange) node::SelectionExpansion? {
     mut range_started = false
     mut range_start = 0
@@ -1548,13 +1627,8 @@ impl Text {
       )
     }
   }
-
-  private fn lock_expansion(
-    anchor_x: Int,
-    anchor_y: Int,
-    focus_x: Int,
-    focus_y: Int,
-  ) node::SelectionExpansion? {
+  
+  private fn lock_expansion(anchor_x: Int, anchor_y: Int, focus_x: Int, focus_y: Int) node::SelectionExpansion? {
     mut start_x = anchor_x
     mut start_y = anchor_y
     mut end_x = focus_x
@@ -1577,7 +1651,7 @@ impl Text {
     mut source_end = 0
     for glyph in self.visual_content() {
       let glyph_end = glyph.x + glyph.width
-      let selected = (glyph.y > start_y or (glyph.y == start_y and glyph_end > start_x)) and (glyph.y < end_y or (glyph.y == end_y and glyph.x <= end_x))
+      let selected = (glyph.y > start_y or glyph.y == start_y and glyph_end > start_x) and (glyph.y < end_y or glyph.y == end_y and glyph.x <= end_x)
       if selected {
         if not source_started {
           source_started = true
@@ -1613,7 +1687,7 @@ impl Text {
       Maybe::new<node::SelectionExpansion>()
     }
   }
-
+  
   private fn word_expansion(local_x: Int, local_y: Int) node::SelectionExpansion? {
     let view = self.current_view()
     mut source_start = -1
@@ -1646,7 +1720,7 @@ impl Text {
       }
     }
   }
-
+  
   private fn resolve_expansion(
     logical_range: node::SelectionRange,
     source_range: node::SelectionRange,
@@ -1693,14 +1767,14 @@ impl Text {
       )
     }
   }
-
+  
   private fn mut clear_local_selection() node::SelectionResult {
     self.selected_range = Maybe::new<selection::Range>()
     self.selected_text_value = ""
     self.selected_glyphs = []
     node::empty_selection_result()
   }
-
+  
   private fn selection_accepts(local_x: Int, local_y: Int) Bool {
     let view = self.current_view()
     mut accepted = false
@@ -1722,13 +1796,13 @@ impl Text {
         _ => (),
       }
     }
-    accepted
+    accepted and geometry::contains(self.node_ref.content_rect(), local_x, local_y)
   }
-
+  
   private fn mut apply_local_selection(value: node::LocalSelection?) node::SelectionResult {
     let local = try value -> _ { self.clear_local_selection() }
     let has_logical_range = local.logical_range.is_some()
-    if (not local.is_active) or ((not has_logical_range) and local.anchor_x == local.focus_x and local.anchor_y == local.focus_y) {
+    if (not local.is_active) or (not has_logical_range) and local.anchor_x == local.focus_x and local.anchor_y == local.focus_y {
       self.clear_local_selection()
     } else {
       mut start_x = local.anchor_x
@@ -1751,19 +1825,29 @@ impl Text {
       mut started = false
       mut all_selected_visible = true
       let screen = self.node_ref.layout().screen
+      let clip = geometry::intersect(local.clip, self.node_ref.content_rect())
       let runs = cached_style_runs(self.style_cache)
       for glyph in view.glyphs {
         let glyph_end = glyph.x + glyph.width
-        let clip_end = local.clip.x + local.clip.width
-        let visible = glyph.y >= local.clip.y and glyph.y < local.clip.y + local.clip.height and glyph.x >= local.clip.x and glyph_end <= clip_end
-        let coordinate_selected = (glyph.y > start_y or (glyph.y == start_y and glyph_end > start_x)) and (glyph.y < end_y or (glyph.y == end_y and glyph.x <= end_x))
+        let clip_end = clip.x + clip.width
+        let visible = glyph.y >= clip.y and glyph.y < clip.y + clip.height and glyph.x >= clip.x and glyph_end <= clip_end
+        let coordinate_selected = (glyph.y > start_y or glyph.y == start_y and glyph_end > start_x) and (glyph.y < end_y or glyph.y == end_y and glyph.x <= end_x)
         let selected_by_range = match local.logical_range {
           range => glyph.offset_end > range.start and glyph.offset_start < range.end,
           _ => coordinate_selected,
         }
         if selected_by_range {
           let selected_run = runs.at(glyph.style_index).expect("selected glyph style run")
-          selected.push(SelectedGlyph{text: glyph.text, x: glyph.x, y: glyph.y, width: glyph.width, style: selected_run.selected_style, link: selected_run.link})
+          selected.push(
+            SelectedGlyph{
+              text: glyph.text,
+              x: glyph.x,
+              y: glyph.y,
+              width: glyph.width,
+              style: selected_run.selected_style,
+              link: selected_run.link,
+            },
+          )
           if not visible {
             all_selected_visible = false
           }
@@ -1789,7 +1873,9 @@ impl Text {
       if not started {
         self.clear_local_selection()
       } else {
-        self.selected_range = Maybe::new<selection::Range>(selection::Range{start: start_offset, end: end_offset})
+        self.selected_range = Maybe::new<selection::Range>(
+          selection::Range{start: start_offset, end: end_offset},
+        )
         mut selected_source = self.content.slice(start: first_source, end: last_source).or("")
         if not view.truncated {
           match local.source_range {
@@ -1813,7 +1899,7 @@ impl Text {
       }
     }
   }
-
+  
   private fn mut enable_selection() {
     self.node_ref.set_selection_callbacks(
       fn(local_x: Int, local_y: Int) Bool {
@@ -1822,26 +1908,32 @@ impl Text {
       fn(value: node::LocalSelection?) node::SelectionResult {
         self.apply_local_selection(value)
       },
-      Maybe::new<fn(Int, Int, Int, Int) node::SelectionExpansion?>(fn(anchor_x: Int, anchor_y: Int, focus_x: Int, focus_y: Int) node::SelectionExpansion? {
-        self.lock_expansion(anchor_x, anchor_y, focus_x, focus_y)
-      }),
-      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(fn(local_x: Int, local_y: Int) node::SelectionExpansion? {
-        self.word_expansion(local_x, local_y)
-      }),
-      Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(fn(logical_range: node::SelectionRange, source_range: node::SelectionRange, source_revision: Int) node::SelectionExpansion? {
-        self.resolve_expansion(logical_range, source_range, source_revision)
-      }),
+      Maybe::new<fn(Int, Int, Int, Int) node::SelectionExpansion?>(
+        fn(anchor_x: Int, anchor_y: Int, focus_x: Int, focus_y: Int) node::SelectionExpansion? {
+          self.lock_expansion(anchor_x, anchor_y, focus_x, focus_y)
+        },
+      ),
+      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(
+        fn(local_x: Int, local_y: Int) node::SelectionExpansion? {
+          self.word_expansion(local_x, local_y)
+        },
+      ),
+      Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(
+        fn(logical_range: node::SelectionRange, source_range: node::SelectionRange, source_revision: Int) node::SelectionExpansion? {
+          self.resolve_expansion(logical_range, source_range, source_revision)
+        },
+      ),
     )
   }
-
+  
   fn content() Str {
     self.content
   }
-
+  
   fn styled_content() StyledText {
     styled_text(self.styled_value.spans)
   }
-
+  
   fn mut set_content(content: TextContent) {
     self.node_ref.require_live()
     let snapshot = snapshot_content(content)
@@ -1852,7 +1944,9 @@ impl Text {
       }
       self.content = snapshot.content
       self.styled_value = snapshot.styled
-      self.style_cache = new_style_cache(styled_runs(snapshot.styled, self.text_style, self.selection_patch))
+      self.style_cache = new_style_cache(
+        styled_runs(snapshot.styled, self.text_style, self.selection_patch),
+      )
       if source_changed {
         self.source_revision =+ 1
         self.node_ref.mark_measure_dirty()
@@ -1861,11 +1955,11 @@ impl Text {
       }
     }
   }
-
+  
   fn wrap() TextWrap {
     self.wrap_mode
   }
-
+  
   fn mut set_wrap(value: TextWrap) {
     self.node_ref.require_live()
     if self.wrap_mode != value {
@@ -1873,11 +1967,11 @@ impl Text {
       self.node_ref.mark_measure_dirty()
     }
   }
-
+  
   fn overflow() TextOverflow {
     self.overflow_mode
   }
-
+  
   fn mut set_overflow(value: TextOverflow) {
     self.node_ref.require_live()
     if self.overflow_mode != value {
@@ -1885,39 +1979,39 @@ impl Text {
       self.node_ref.mark_measure_dirty()
     }
   }
-
+  
   fn text_style() TextStyle {
     self.text_style
   }
-
+  
   fn selectable() Bool {
     self.node_ref.is_selectable()
   }
-
+  
   fn mut set_selectable(value: Bool) {
     self.node_ref.require_live()
-    if value and (not self.node_ref.is_selectable()) {
+    if value and not self.node_ref.is_selectable() {
       self.enable_selection()
     } else if (not value) and self.node_ref.is_selectable() {
       self.node_ref.clear_selection_callbacks()
     }
   }
-
+  
   fn selection() selection::Range? {
     self.selected_range
   }
-
+  
   fn selected_text() Str {
     self.selected_text_value
   }
-
+  
   fn mut set_selection_style(patch: fn(mut TextStyle)) {
     self.node_ref.require_live()
     self.selection_patch = patch
     self.style_cache = new_style_cache(styled_runs(self.styled_value, self.text_style, patch))
     self.node_ref.request_redraw()
   }
-
+  
   fn mut set_text_style(next: TextStyle) {
     self.node_ref.require_live()
     if not same_text_style(self.text_style, next) {
@@ -1926,19 +2020,24 @@ impl Text {
       self.node_ref.request_redraw()
     }
   }
-
+  
   fn style() layout_style::Style {
     self.node_ref.style()
   }
-
+  
   fn mut set_style(next: layout_style::Style) {
     self.node_ref.apply_style(next)
+    mut width = 1
+    if next.border == layout_style::Border::none {
+      width = 0
+    }
+    self.node_ref.set_border_width(width)
   }
-
+  
   fn layout() geometry::Geometry {
     self.node_ref.layout()
   }
-
+  
   fn mut on_link(handler: fn(mut LinkEvent)) fn() {
     self.node_ref.require_live()
     let state = link_state(self.link_state)
@@ -1948,9 +2047,11 @@ impl Text {
     let id = state.next_listener_id
     state.next_listener_id =+ 1
     state.listeners.push(LinkListener{id: id, handler: handler})
-    fn() { self.remove_link_listener(id) }
+    fn() {
+      self.remove_link_listener(id)
+    }
   }
-
+  
   private fn remove_link_listener(id: Int) {
     let state = link_state(self.link_state)
     let retained = mut List::new<LinkListener>()
@@ -1961,11 +2062,11 @@ impl Text {
     }
     state.listeners = retained.@
   }
-
+  
   fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
-
+  
   fn mut destroy(recursive: Bool?) {
     self.node_ref.destroy(recursive)
   }
@@ -1983,6 +2084,222 @@ private fn wide_ellipsis_width(value: Str) Int {
   }
 }
 
+test fn clipped_text_skips_measurement_but_clears_links_and_keeps_selection() Void!Str {
+  let calls = mut List::new<Str>()
+  let ctx = runtime::new_detached(width_measurer: fn(value: Str) Int {
+    calls.push(value)
+    test_width(value)
+  })
+  let label = new(
+    ctx,
+    content: styled_text([span("docs", link: "https://example.com")]),
+    styles: layout_style::new(
+      width: layout_style::cells(6),
+      height: layout_style::cells(3),
+      border: layout_style::Border::single,
+    ),
+  )
+  ctx.compute_layout(label, 6, 3)
+  let bounds = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 6,
+    height: 3,
+  }
+  let _ = label.apply_local_selection(
+    Maybe::new<node::LocalSelection>(
+      node::LocalSelection{
+        anchor_x: 1,
+        anchor_y: 1,
+        focus_x: 2,
+        focus_y: 1,
+        logical_range: node::SelectionRange{start: 0, end: 1},
+        clip: bounds,
+        is_active: true,
+        prefer_source_text: false,
+        is_dragging: false,
+        allow_edge_pan: false,
+        generation: 0,
+        version: 0,
+      },
+    ),
+  )
+  try testing::assert(label.selected_text() == "d", "Selection is established before clipping")
+  for clip in [
+    geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 3,
+    },
+    geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 6,
+      height: 1,
+    },
+  ] {
+    let visible = mut paint::Context{
+      buffer: paint::new_buffer(6, 3),
+      bounds: bounds,
+      clip: bounds,
+    }
+    label.paint(visible)
+    try testing::assert(label.cached_link_at(1, 1).is_some(), "Visible linked text establishes hit data")
+    let before = calls.size()
+    let clipped = mut paint::Context{
+      buffer: paint::new_buffer(6, 3),
+      bounds: bounds,
+      clip: clip,
+    }
+    label.paint(clipped)
+    try testing::assert(
+      calls.size() == before,
+      "Zero content width or height performs no text or selection measurement",
+    )
+    try testing::assert(
+      label.cached_link_at(1, 1).is_none() and label.link_at(1, 1).is_none(),
+      "Clipped repaint invalidates both cached and recomputed link hits",
+    )
+    try testing::assert(
+      clipped.buffer.cell_at(0, 0).expect("visible border").grapheme == "┌",
+      "Border painting is not skipped when only the content is clipped",
+    )
+    try testing::assert(label.selected_text() == "d", "Clipping does not discard logical selection")
+    label.paint(visible)
+    try testing::assert(
+      visible.buffer.cell_at(1, 1).expect("restored selection").style.reverse and label.cached_link_at(1, 1).is_some(),
+      "Revealed text restores selected painting and link hits",
+    )
+  }
+  label.destroy()
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn unwrapped_paint_streams_once_and_preserves_normalized_cells() Void!Str {
+  let calls = mut List::new<Str>()
+  let measure = fn(value: Str) Int {
+    calls.push(value)
+    match value {
+      "a" => 2,
+      "你" => 3,
+      _ => test_width(value),
+    }
+  }
+  let ctx = runtime::new_detached(width_measurer: measure)
+  for value in ["a你é\r\nb\n\nq", "a\v你\f🙂\rZ", "a\t́\r\nx\t"] {
+    let label = new(ctx, content: value, wrap: TextWrap::none, text_style: style(bold: true))
+    ctx.compute_layout(label, 8, 5)
+    let bounds = geometry::Rect{
+      x: 2,
+      y: 1,
+      width: 8,
+      height: 5,
+    }
+    let clip = geometry::Rect{
+      x: 3,
+      y: 1,
+      width: 4,
+      height: 4,
+    }
+    let actual = mut paint::Context{
+      buffer: paint::new_buffer(12, 7),
+      bounds: bounds,
+      clip: clip,
+    }
+    let expected = mut paint::Context{
+      buffer: paint::new_buffer(12, 7),
+      bounds: bounds,
+      clip: clip,
+    }
+    let before = calls.size()
+    label.paint(actual)
+    if not value.contains("\t") {
+      mut first_calls = 0
+      for seen, index in calls {
+        if index >= before and seen == "a" {
+          first_calls =+ 1
+        }
+      }
+      try testing::assert(
+        first_calls == 1,
+        "Unwrapped painting measures a glyph once, not once for layout and again for painting",
+      )
+    }
+    // The previous line-layout/resegmentation path remains the reference for
+    // tabs, mandatory breaks, custom widths and partial wide-span clearing.
+    for line, y in unwrapped(value, measure).lines {
+      expected.write_measured(0, y, line.text, measure, text_style: cell_style(style(bold: true)))
+    }
+    for y in 0..6 {
+      for x in 0..11 {
+        let a = actual.buffer.cell_at(x, y).expect("actual cell")
+        let e = expected.buffer.cell_at(x, y).expect("reference cell")
+        try testing::assert(
+          a.grapheme == e.grapheme and a.width == e.width and a.style.bold == e.style.bold,
+          "Streaming and normalized reference cells agree at {x},{y}",
+        )
+      }
+    }
+    try testing::assert(
+      actual.buffer.cell_at(3, 1).expect("clipped a").grapheme == " ",
+      "A partial custom-width glyph is cleared, not painted",
+    )
+    label.destroy()
+  }
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn text_paint_reuses_layout_for_links_styles_and_ellipsis() Void!Str {
+  for content in [
+    styled_text([span("ab", link: "https://example.com")]),
+    styled_text([span("a", style: span_style(bold: true)), span("b")]),
+    styled_text([span("abcdef")]),
+  ] {
+    let calls = mut List::new<Str>()
+    let ctx = runtime::new_detached(width_measurer: fn(value: Str) Int {
+      if value == "a" {
+        calls.push(value)
+      }
+      test_width(value)
+    })
+    let label = new(
+      ctx,
+      content: content,
+      wrap: TextWrap::none,
+      overflow: TextOverflow::ellipsis,
+      styles: layout_style::new(width: layout_style::cells(4), height: layout_style::cells(1)),
+    )
+    ctx.compute_layout(label, 4, 1)
+    let before = calls.size()
+    let bounds = geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 4,
+      height: 1,
+    }
+    let surface = mut paint::Context{
+      buffer: paint::new_buffer(4, 1),
+      bounds: bounds,
+      clip: bounds,
+    }
+    label.paint(surface)
+    try testing::assert(
+      calls.size() - before == 3,
+      "The first glyph is measured for layout, source mapping, and painting, but not a second layout",
+    )
+    try testing::assert(
+      surface.buffer.cell_at(0, 0).expect("first glyph").grapheme == "a",
+      "The reused layout paints the expected glyph",
+    )
+    label.destroy()
+    ctx.destroy_detached()
+  }
+  Result::ok(())
+}
+
 test fn text_destruction_releases_link_listeners() Void!Str {
   let ctx = runtime::new_detached()
   let label = new(ctx, content: styled_text([span("docs", link: "https://example.com")]))
@@ -1992,7 +2309,10 @@ test fn text_destruction_releases_link_listeners() Void!Str {
   let state = link_state(label.link_state)
   try testing::assert(state.listeners.size() == 1, "Expected registered link listener")
   label.destroy()
-  try testing::assert(state.listeners.size() == 0 and state.armed_link.is_none(), "Expected Text destruction to release link state")
+  try testing::assert(
+    state.listeners.size() == 0 and state.armed_link.is_none(),
+    "Expected Text destruction to release link state",
+  )
   dispose()
   ctx.destroy_detached()
   testing::assert(ctx.is_destroyed(), "Expected link listener lifecycle cleanup")
@@ -2002,10 +2322,25 @@ test fn ellipsis_that_cannot_fit_paints_no_partial_marker() Void!Str {
   let content = styled_text([span("abc")])
   let base = style()
   let runs = styled_runs(content, base, default_selection_style)
-  let view = visual_view("abc", unwrapped("abc", wide_ellipsis_width), runs, 1, 1, TextOverflow::ellipsis, base, wide_ellipsis_width)
-  try testing::assert(view.truncated and view.ellipsis.is_none(), "Expected no marker when ellipsis width exceeds Text width")
-  try testing::assert(view.glyphs.size() == 1 and view.glyphs.at(0).expect("narrow retained glyph").text == "a", "Expected fitting source retained without partial marker")
-
+  let view = visual_view(
+    "abc",
+    unwrapped("abc", wide_ellipsis_width),
+    runs,
+    1,
+    1,
+    TextOverflow::ellipsis,
+    base,
+    wide_ellipsis_width,
+  )
+  try testing::assert(
+    view.truncated and view.ellipsis.is_none(),
+    "Expected no marker when ellipsis width exceeds Text width",
+  )
+  try testing::assert(
+    view.glyphs.size() == 1 and view.glyphs.at(0).expect("narrow retained glyph").text == "a",
+    "Expected fitting source retained without partial marker",
+  )
+  
   let marker_base = style(bold: true)
   let styled = styled_text(
     [
@@ -2014,62 +2349,209 @@ test fn ellipsis_that_cannot_fit_paints_no_partial_marker() Void!Str {
     ],
   )
   let resolved_runs = styled_runs(styled, marker_base, default_selection_style)
-  let marker_only = visual_view("ab", unwrapped("ab", test_width), resolved_runs, 1, 1, TextOverflow::ellipsis, marker_base, test_width)
+  let marker_only = visual_view(
+    "ab",
+    unwrapped("ab", test_width),
+    resolved_runs,
+    1,
+    1,
+    TextOverflow::ellipsis,
+    marker_base,
+    test_width,
+  )
   let marker = marker_only.ellipsis.expect("single-cell ellipsis")
-  testing::assert(marker_only.glyphs.size() == 0 and marker.style.bold and marker.style.foreground.is_none(), "Expected Text-level marker style when reservation omits every source glyph")
+  testing::assert(
+    marker_only.glyphs.size() == 0 and marker.style.bold and marker.style.foreground.is_none(),
+    "Expected Text-level marker style when reservation omits every source glyph",
+  )
 }
 
 test fn unicode_word_wrap_uses_line_opportunities_and_intrinsic_measurement() Void!Str {
   let cjk = word_wrapped("你好世界", 4, test_width)
-  try testing::assert(cjk.height == 2 and cjk.lines.at(0).expect("first CJK line").text == "你好" and cjk.lines.at(1).expect("second CJK line").text == "世界", "Expected CJK line opportunities")
-
+  try testing::assert(
+    cjk.height == 2 and cjk.lines.at(0).expect("first CJK line").text == "你好" and cjk.lines.at(1).expect("second CJK line").text == "世界",
+    "Expected CJK line opportunities",
+  )
+  
   let mixed = word_wrapped("Hi你好🙂world", 6, test_width)
-  try testing::assert(mixed.height == 3 and mixed.lines.at(0).expect("mixed prefix").text == "Hi你好" and mixed.lines.at(1).expect("mixed emoji").text == "🙂" and mixed.lines.at(2).expect("mixed Latin").text == "world", "Expected mixed scripts without splitting fitting Latin words")
-
+  try testing::assert(
+    mixed.height == 3 and mixed.lines.at(0).expect("mixed prefix").text == "Hi你好" and mixed.lines.at(1).expect("mixed emoji").text == "🙂" and mixed.lines.at(2).expect("mixed Latin").text == "world",
+    "Expected mixed scripts without splitting fitting Latin words",
+  )
+  
   let punctuated = word_wrapped("hello!world", 6, test_width)
-  try testing::assert(punctuated.height == 2 and punctuated.lines.at(0).expect("punctuation break").text == "hello!", "Expected Unicode punctuation opportunity")
+  try testing::assert(
+    punctuated.height == 2 and punctuated.lines.at(0).expect("punctuation break").text == "hello!",
+    "Expected Unicode punctuation opportunity",
+  )
   let hyphenated = word_wrapped("alpha-beta", 6, test_width)
-  try testing::assert(hyphenated.height == 2 and hyphenated.lines.at(0).expect("hyphen break").text == "alpha-", "Expected Unicode hyphen opportunity")
+  try testing::assert(
+    hyphenated.height == 2 and hyphenated.lines.at(0).expect("hyphen break").text == "alpha-",
+    "Expected Unicode hyphen opportunity",
+  )
   let unbreakable = word_wrapped("abcdefgh", 3, test_width)
-  try testing::assert(unbreakable.height == 3 and unbreakable.lines.at(1).expect("fallback middle").text == "def", "Expected grapheme fallback for long runs")
-
+  try testing::assert(
+    unbreakable.height == 3 and unbreakable.lines.at(1).expect("fallback middle").text == "def",
+    "Expected grapheme fallback for long runs",
+  )
+  
   let spaced = word_wrapped("one two", 4, test_width)
-  try testing::assert(spaced.lines.at(0).expect("spaced first line").text == "one " and spaced.lines.at(1).expect("spaced second line").text == "two", "Expected soft-break whitespace preserved")
+  try testing::assert(
+    spaced.lines.at(0).expect("spaced first line").text == "one " and spaced.lines.at(1).expect("spaced second line").text == "two",
+    "Expected soft-break whitespace preserved",
+  )
   let tight_spaces = word_wrapped("one two", 3, test_width)
-  try testing::assert(tight_spaces.height == 3 and tight_spaces.lines.at(1).expect("preserved whitespace line").text == " ", "Expected oversized segment fallback to preserve whitespace")
+  try testing::assert(
+    tight_spaces.height == 3 and tight_spaces.lines.at(1).expect("preserved whitespace line").text == " ",
+    "Expected oversized segment fallback to preserve whitespace",
+  )
   for line in tight_spaces.lines {
     try testing::assert(line.width <= 3, "Expected finite word-wrapped line width")
   }
   let explicit = word_wrapped("a\n\nb", 10, test_width)
-  try testing::assert(explicit.height == 3 and explicit.lines.at(1).expect("empty explicit line").text == "", "Expected explicit empty lines")
+  try testing::assert(
+    explicit.height == 3 and explicit.lines.at(1).expect("empty explicit line").text == "",
+    "Expected explicit empty lines",
+  )
   let unicode_breaks = word_wrapped("a\u2028\u2029b", 10, test_width)
-  try testing::assert(unicode_breaks.height == 3 and unicode_breaks.lines.at(1).expect("Unicode empty line").text == "", "Expected Unicode mandatory line breaks")
-
+  try testing::assert(
+    unicode_breaks.height == 3 and unicode_breaks.lines.at(1).expect("Unicode empty line").text == "",
+    "Expected Unicode mandatory line breaks",
+  )
+  
   let no_wrap = layout_text("one two", TextWrap::none, 3, test_width)
-  try testing::assert(no_wrap.width == 7 and no_wrap.height == 1, "Expected explicit no-wrap mode to remain available")
-
+  try testing::assert(
+    no_wrap.width == 7 and no_wrap.height == 1,
+    "Expected explicit no-wrap mode to remain available",
+  )
+  
   let intrinsic_width: Int = 1
   let finite_width: Int = 4
-  let intrinsic = measured_text("one two", TextWrap::word, Float32::from(intrinsic_width), node::MeasureMode::undefined, test_width)
-  let finite = measured_text("one two", TextWrap::word, Float32::from(finite_width), node::MeasureMode::at_most, test_width)
-  try testing::assert(intrinsic.width == 7 and intrinsic.height == 1, "Expected undefined width to measure unwrapped content")
+  let intrinsic = measured_text(
+    "one two",
+    TextWrap::word,
+    Float32::from(intrinsic_width),
+    node::MeasureMode::undefined,
+    test_width,
+  )
+  let finite = measured_text(
+    "one two",
+    TextWrap::word,
+    Float32::from(finite_width),
+    node::MeasureMode::at_most,
+    test_width,
+  )
+  try testing::assert(
+    intrinsic.width == 7 and intrinsic.height == 1,
+    "Expected undefined width to measure unwrapped content",
+  )
   testing::assert(finite.height == 2, "Expected finite width to activate wrapping")
+}
+
+test fn newline_preserves_ascii_controls_and_unicode_hard_breaks() Void!Str {
+  for value in ["\n", "\r", "\r\n", "\v", "\f", "\u0085", "\u2028", "\u2029"] {
+    try testing::assert(newline(value), "Every mandatory hard break is recognized")
+  }
+  for value in [
+    "",
+    " ",
+    "\t",
+    "\x00",
+    "\x1f",
+    "!",
+    "0",
+    "A",
+    "z",
+    "~",
+    "\x7f",
+    "é",
+    "你",
+    "é",
+    "🙂",
+    "\u00a0",
+  ] {
+    try testing::assert(not newline(value), "Ordinary glyphs and non-breaking controls are not hard breaks")
+  }
+  Result::ok(())
+}
+
+test fn unwrapped_preserves_unicode_and_hard_breaks() Void!Str {
+  let measured = unwrapped("\n你é\r\n🙂\n\n", test_width)
+  try testing::assert(
+    measured.width == 3 and measured.height == 5,
+    "Expected Unicode cell widths and trailing empty lines",
+  )
+  let expected = ["", "你é", "🙂", "", ""]
+  for line, index in measured.lines {
+    try testing::assert(
+      line.text == expected.at(index).expect("expected line"),
+      "Expected exact source graphemes without hard breaks",
+    )
+  }
+  let empty = unwrapped("", test_width)
+  testing::assert(
+    empty.width == 0 and empty.height == 1 and empty.lines.at(0).expect("empty line").text == "",
+    "Empty content remains one empty line",
+  )
+}
+
+test fn unwrapped_tab_expansion_preserves_original_grapheme_measurements() Void!Str {
+  let calls = mut List::new<Str>()
+  let measured = unwrapped("你\t́\r\nx\t", fn(grapheme: Str) Int {
+    calls.push(grapheme)
+    // Deliberately non-additive: resegmenting the expanded source would join
+    // the combining mark to the final space and change both calls and widths.
+    match grapheme {
+      " " => 2,
+      "́" => 3,
+      _ => 1,
+    }
+  })
+  try testing::assert(
+    calls.size() == 19 and calls.at(9).expect("standalone mark") == "́",
+    "Measure the original Vaxis stream, not resegmented expanded text",
+  )
+  try testing::assert(
+    measured.width == 20 and measured.height == 2 and measured.lines.at(1).expect("last line").width == 17,
+    "Preserve custom widths for expanded tabs and trailing lines",
+  )
+  testing::assert(
+    measured.lines.at(0).expect("first line").text == "你        ́" and measured.lines.at(1).expect("second line").text == "x        ",
+    "Slices preserve expanded tabs beside multibyte source and CRLF",
+  )
 }
 
 test fn styled_text_helpers_snapshot_and_resolve_tristate_styles() Void!Str {
   let spans = mut List::new<Span>()
   spans.push(span(""))
-  spans.push(span("value", style: span_style(bold: false, hidden: true), link: "https://example.com"))
+  spans.push(
+    span("value", style: span_style(bold: false, hidden: true), link: "https://example.com"),
+  )
   let snapshot = styled_text(spans.@)
   spans.set(1, span("changed"))
-
-  try testing::assert(snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("empty span snapshot").text == "", "Expected empty span preserved")
-  try testing::assert(snapshot.spans.at(1).expect("copied span").text == "value", "Expected defensive span list copy")
-  let resolved = resolve_span_style(style(bold: true, italic: true), snapshot.spans.at(1).expect("resolved span").style)
-  try testing::assert((not resolved.bold) and resolved.italic and resolved.hidden, "Expected nullable span attributes to inherit or explicitly disable")
+  
+  try testing::assert(
+    snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("empty span snapshot").text == "",
+    "Expected empty span preserved",
+  )
+  try testing::assert(
+    snapshot.spans.at(1).expect("copied span").text == "value",
+    "Expected defensive span list copy",
+  )
+  let resolved = resolve_span_style(
+    style(bold: true, italic: true),
+    snapshot.spans.at(1).expect("resolved span").style,
+  )
+  try testing::assert(
+    (not resolved.bold) and resolved.italic and resolved.hidden,
+    "Expected nullable span attributes to inherit or explicitly disable",
+  )
   let empty_link = span("plain", link: "")
   let empty_runs = styled_runs(styled_text([empty_link]), style(), default_selection_style)
-  try testing::assert(empty_link.link.is_some() and empty_runs.at(0).expect("empty hyperlink run").link.is_none(), "Expected empty link preserved as value data without terminal annotation")
+  try testing::assert(
+    empty_link.link.is_some() and empty_runs.at(0).expect("empty hyperlink run").link.is_none(),
+    "Expected empty link preserved as value data without terminal annotation",
+  )
   try testing::assert(valid_link("https://example.com/path"), "Expected ordinary Unicode link data")
   testing::assert(not valid_link("bad\nlink"), "Expected terminal control rejection")
 }
@@ -2077,21 +2559,39 @@ test fn styled_text_helpers_snapshot_and_resolve_tristate_styles() Void!Str {
 test fn word_ranges_group_editor_oriented_unicode_classes() Void!Str {
   let contraction = "don't stop"
   let contraction_range = word_source_range(contraction, 2).expect("contraction word range")
-  try testing::assert(contraction.slice(start: contraction_range.start, end: contraction_range.end).or("") == "don't", "Expected internal apostrophe to join a word")
-
+  try testing::assert(
+    contraction.slice(start: contraction_range.start, end: contraction_range.end).or("") == "don't",
+    "Expected internal apostrophe to join a word",
+  )
+  
   let whitespace_range = word_source_range(contraction, 5).expect("whitespace word range")
-  try testing::assert(contraction.slice(start: whitespace_range.start, end: whitespace_range.end).or("") == " ", "Expected contiguous whitespace run")
-
+  try testing::assert(
+    contraction.slice(start: whitespace_range.start, end: whitespace_range.end).or("") == " ",
+    "Expected contiguous whitespace run",
+  )
+  
   let punctuation = "go...now"
   let punctuation_range = word_source_range(punctuation, 3).expect("punctuation word range")
-  try testing::assert(punctuation.slice(start: punctuation_range.start, end: punctuation_range.end).or("") == "...", "Expected contiguous punctuation run")
-
+  try testing::assert(
+    punctuation.slice(start: punctuation_range.start, end: punctuation_range.end).or("") == "...",
+    "Expected contiguous punctuation run",
+  )
+  
   let symbols = "a🙂🙂b"
   let symbol_range = word_source_range(symbols, 1).expect("symbol word range")
-  try testing::assert(symbols.slice(start: symbol_range.start, end: symbol_range.end).or("") == "🙂🙂", "Expected contiguous symbol run")
-
+  try testing::assert(
+    symbols.slice(start: symbol_range.start, end: symbol_range.end).or("") == "🙂🙂",
+    "Expected contiguous symbol run",
+  )
+  
   let unicode_word = "你好_one"
   let unicode_range = word_source_range(unicode_word, 0).expect("Unicode word range")
-  try testing::assert(unicode_word.slice(start: unicode_range.start, end: unicode_range.end).or("") == unicode_word, "Expected letters and connector punctuation to share a run")
-  testing::assert(not word_source_range("a\nb", 1).is_some(), "Expected explicit newline to reject word expansion")
+  try testing::assert(
+    unicode_word.slice(start: unicode_range.start, end: unicode_range.end).or("") == unicode_word,
+    "Expected letters and connector punctuation to share a run",
+  )
+  testing::assert(
+    not word_source_range("a\nb", 1).is_some(),
+    "Expected explicit newline to reject word expansion",
+  )
 }

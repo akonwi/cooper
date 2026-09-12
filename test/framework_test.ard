@@ -1546,6 +1546,63 @@ test fn scroll_overflow_reparent_changes_effective_shrink_not_public_style() Voi
   Result::ok(())
 }
 
+test fn unchanged_geometry_preserves_scroll_and_refreshes_clamps_and_detached_roots() Void!Str {
+  let ctx = runtime::new_detached()
+  let root = box::new(ctx)
+  let scroller = box::new(
+    ctx,
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(4),
+      top: style::cells(3),
+      width: style::cells(6),
+      height: style::cells(4),
+      overflow: style::Overflow::scroll,
+    ),
+  )
+  let leaf = box::new(ctx, styles: fixed(12, 8))
+  scroller.add(leaf)
+  root.add(scroller)
+  ctx.compute_layout(root, 20, 10)
+  let _ = scroller.node().set_scroll_x(3)
+  let _ = scroller.node().set_scroll_y(2)
+  try layout_rect(leaf.layout().screen, 1, 1, 12, 8)
+  ctx.compute_layout(root, 20, 10)
+  try layout_rect(leaf.layout().screen, 1, 1, 12, 8)
+  let found = hit::test(root, 4, 3).expect("scrolled hit")
+  try testing::assert(
+    found.target == leaf.node() and found.local_x == 3 and found.local_y == 2,
+    "Unchanged compute preserves translated hit coordinates",
+  )
+  leaf.set_style(fixed(8, 5))
+  ctx.compute_layout(root, 20, 10)
+  try layout_rect(leaf.layout().screen, 2, 2, 8, 5)
+  try testing::assert(
+    scroller.node().scroll_x() == 2 and scroller.node().scroll_y() == 1,
+    "A changed transaction reclamps both scroll axes",
+  )
+  leaf.set_style(fixed(12, 8))
+  ctx.compute_layout(root, 20, 10)
+  try layout_rect(leaf.layout().screen, 1, 1, 12, 8)
+  
+  // A previously laid-out root can be attached, translated, then detached
+  // without changing its own cached transaction dimensions.
+  let detached = box::new(ctx, styles: fixed(3, 2))
+  let nested = box::new(ctx, styles: fixed(1, 1))
+  detached.add(nested)
+  ctx.compute_layout(detached, 3, 2)
+  leaf.add(detached)
+  ctx.compute_layout(root, 20, 10)
+  try layout_rect(nested.layout().screen, 1, 1, 1, 1)
+  let _ = leaf.remove(detached)
+  ctx.compute_layout(detached, 3, 2)
+  try layout_rect(nested.layout().screen, 0, 0, 1, 1)
+  ctx.compute_layout(detached, 3, 2)
+  try layout_rect(nested.layout().screen, 0, 0, 1, 1)
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
 test fn complete_style_reset_and_paint_only_updates_match_fresh_flow_geometry() Void!Str {
   let ctx = runtime::new_detached()
   let parent = box::new(

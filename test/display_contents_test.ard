@@ -1,0 +1,511 @@
+use ard/testing
+
+use cooper/core/event_delivery
+use cooper/core/hit
+use cooper/core/node
+use cooper/core/paint
+use cooper/event
+use cooper/runtime
+use cooper/testing as headless
+use cooper/ui/box
+use cooper/ui/color
+use cooper/ui/geometry
+use cooper/ui/style
+use cooper/ui/text
+
+private fn rect(actual: geometry::Rect, x: Int, y: Int, width: Int, height: Int) Void!Str {
+  testing::assert(
+    actual.x == x and actual.y == y and actual.width == width and actual.height == height,
+    "Expected ({x},{y},{width},{height}), got ({actual.x},{actual.y},{actual.width},{actual.height})",
+  )
+}
+
+private fn absolute(z: Int) style::Style {
+  style::new(
+    position: style::Position::absolute,
+    left: style::cells(0),
+    top: style::cells(0),
+    width: style::cells(3),
+    height: style::cells(1),
+    z_index: z,
+  )
+}
+
+private struct Probe {
+  retained: mut node::Node,
+  paints: mut [Int],
+  events: Int,
+}
+
+private fn probe(ctx: mut runtime::Runtime) mut Probe {
+  let retained = ctx.create_node(style::new())
+  let owner = mut Probe{
+    retained: retained,
+    paints: mut [],
+    events: 0,
+  }
+  retained.bind(owner)
+  owner
+}
+
+impl node::Renderable for Probe {
+  fn node() mut node::Node {
+    self.retained
+  }
+  
+  fn mount(ctx: node::MountContext) {}
+  
+  fn paint(ctx: mut paint::Context) {
+    self.paints.push(1)
+    ctx.show_cursor(0, 0)
+  }
+  
+  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    self.events =+ 1
+    event_delivery::Disposition::ignored
+  }
+}
+
+test fn contents_flattens_stacking_but_preserves_inherited_colors() Void!Str {
+  let app = headless::new(8, 3)
+  defer app.destroy()
+  let group = box::new(
+    app.context,
+    styles: style::new(
+      display: style::Display::contents,
+      overflow: style::Overflow::hidden,
+      z_index: 99,
+      foreground: color::rgb(17, 31, 59),
+      background: color::rgb(71, 89, 101),
+    ),
+  )
+  let nested = box::new(
+    app.context,
+    styles: style::new(display: style::Display::contents, foreground: color::rgb(103, 107, 109)),
+  )
+  let back = text::new(app.context, content: "AAA", styles: absolute(0))
+  let front = text::new(app.context, content: "CCC", styles: absolute(2))
+  let middle = text::new(app.context, content: "BBB", styles: absolute(1))
+  group.add(back)
+  nested.add(front)
+  group.add(nested)
+  app.root.add(group)
+  app.root.add(middle)
+  app.render()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("front").grapheme == "C",
+    "Descendant z-index must cross group boundaries",
+  )
+  try testing::assert(
+    hit::test(app.root, 0, 0).expect("hit").target == front.node(),
+    "Hit order must match flattened paint",
+  )
+  let painted = app.frame().cell(0, 0).expect("colors").style
+  try testing::assert(
+    painted.foreground.expect("foreground").red == 103 and painted.background.expect("background").blue == 101,
+    "Nested contents must inherit both colors",
+  )
+  try testing::assert(
+    not app.frame().cell(7, 2).expect("empty").style.background.is_some(),
+    "Contents background must not fill its own box",
+  )
+  front.set_style(absolute(1))
+  app.render()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("tie").grapheme == "B",
+    "Equal z-index must preserve effective tree order",
+  )
+  middle.set_style(absolute(-1))
+  app.render()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("restacked").grapheme == "C",
+    "Descendant z changes must invalidate ancestor stacking cache",
+  )
+  testing::assert(
+    front.node().parent.expect("retained parent") == nested.node(),
+    "Flattening must not reparent",
+  )
+}
+
+test fn contents_anchor_and_descendants_translate_once_through_scroll() Void!Str {
+  let app = headless::new(20, 12)
+  defer app.destroy()
+  let viewport = box::new(
+    app.context,
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(4),
+      top: style::cells(2),
+      width: style::cells(7),
+      height: style::cells(3),
+      overflow: style::Overflow::scroll,
+    ),
+  )
+  let group = box::new(
+    app.context,
+    styles: style::new(
+      display: style::Display::contents,
+      overflow: style::Overflow::scroll,
+      padding: style::edges(style::cells(9)),
+    ),
+  )
+  let nested = box::new(app.context, styles: style::new(display: style::Display::contents))
+  let label = text::new(
+    app.context,
+    content: "0123456789\nabcdefghij\nABCDEFGHIJ\nklmnopqrst\nKLMNOPQRST",
+    styles: style::new(width: style::cells(10), height: style::cells(5)),
+  )
+  nested.add(label)
+  group.add(nested)
+  viewport.add(group)
+  app.root.add(viewport)
+  app.render()
+  try rect(group.layout().local, 0, 0, 0, 0)
+  try rect(label.layout().local, 0, 0, 10, 5)
+  try testing::assert(
+    viewport.node().set_scroll_x(2) and viewport.node().set_scroll_y(1),
+    "Flattened children determine both scroll extents",
+  )
+  app.render()
+  try rect(group.layout().screen, 2, 1, 0, 0)
+  try rect(nested.layout().screen, 2, 1, 0, 0)
+  try rect(label.layout().screen, 2, 1, 10, 5)
+  try testing::assert(
+    app.frame().cell(4, 2).expect("scrolled source").grapheme == "c",
+    "Ancestor translation must occur exactly once",
+  )
+  try testing::assert(
+    hit::test(app.root, 4, 2).expect("scrolled hit").target == label.node(),
+    "Contents overflow must not clip hits",
+  )
+  try testing::assert(
+    not group.node().set_scroll_x(3) and not group.node().set_scroll_y(2),
+    "Contents cannot scroll",
+  )
+  testing::assert(
+    group.node().requested_scroll_x() == 0 and group.node().requested_scroll_y() == 0,
+    "Contents cannot retain requested scroll",
+  )
+}
+
+test fn contents_suppresses_owner_callbacks_but_retains_bubbling() Void!Str {
+  let app = headless::new(8, 2)
+  defer app.destroy()
+  let group = probe(app.context)
+  group.node().apply_style(style::new(display: style::Display::contents))
+  group.node().set_mouse_cursor_resolver(fn(x: Int, y: Int) event::MouseCursor {
+    event::MouseCursor::pointer
+  })
+  let label = text::new(app.context, content: "Hello")
+  group.node().add(label.node())
+  app.root.add(group)
+  mut bubbles = 0
+  let _ = group.node().on_mouse(fn(received: mut event::MouseEvent) {
+    bubbles =+ 1
+  })
+  app.render()
+  app.mouse_down(1, 0)
+  app.mouse_up(1, 0)
+  try testing::assert(bubbles > 0, "Retained contents listeners must receive bubbled events")
+  try testing::assert(
+    group.paints.size() == 0 and group.events == 0,
+    "Boxless owner paint and default interaction callbacks must be suppressed",
+  )
+  try testing::assert(not app.frame().cursor_x().is_some(), "Contents cannot place a cursor")
+  testing::assert(
+    app.mouse_cursor() == event::MouseCursor::default_cursor,
+    "Contents cursor resolver must be skipped during ancestor lookup",
+  )
+}
+
+test fn contents_focus_and_scroll_transitions_preserve_descendant_identity() Void!Str {
+  let app = headless::new(8, 4)
+  defer app.destroy()
+  let group = box::new(
+    app.context,
+    styles: style::new(
+      width: style::cells(5),
+      height: style::cells(2),
+      overflow: style::Overflow::scroll,
+    ),
+  )
+  let child = box::new(
+    app.context,
+    styles: style::new(width: style::cells(9), height: style::cells(6)),
+  )
+  group.node().set_focusable(true)
+  child.node().set_focusable(true)
+  group.add(child)
+  app.root.add(group)
+  app.render()
+  let id = group.node().id
+  mut blurred = 0
+  let _ = group.node().on_blur(fn() {
+    blurred =+ 1
+  })
+  try testing::assert(group.node().focus(), "Initial box focus")
+  try testing::assert(group.node().set_scroll_y(2), "Initial box scroll")
+  group.set_style(style::new(display: style::Display::contents, overflow: style::Overflow::scroll))
+  try testing::assert(
+    not group.node().is_focused() and blurred == 1 and (not group.node().focus()),
+    "Entering contents must blur only itself and reject refocus",
+  )
+  try testing::assert(
+    group.node().scroll_y() == 0 and group.node().requested_scroll_y() == 0,
+    "Entering contents resets scroll",
+  )
+  app.render()
+  try testing::assert(child.node().focus(), "Descendant remains focusable")
+  group.set_style(style::new())
+  group.set_style(style::new(display: style::Display::contents))
+  app.render()
+  try testing::assert(child.node().is_focused(), "Contents transition preserves descendant focus")
+  try testing::assert(
+    group.node().id == id and child.node().parent.expect("parent") == group.node(),
+    "Transitions preserve identity and ownership",
+  )
+  group.set_style(style::new(display: style::Display::none))
+  try testing::assert(not child.node().is_focused(), "None still suppresses descendant focus")
+  group.set_style(style::new())
+  app.render()
+  testing::assert(group.node().scroll_y() == 0, "Returning to flex cannot resurrect scroll")
+}
+
+test fn contents_selection_passes_through_hidden_overflow() Void!Str {
+  let app = headless::new(10, 2)
+  defer app.destroy()
+  let group = box::new(
+    app.context,
+    styles: style::new(display: style::Display::contents, overflow: style::Overflow::hidden),
+  )
+  let label = text::new(app.context, content: "abcdef")
+  group.add(label)
+  app.root.add(group)
+  app.drag(1, 0, 4, 0)
+  try testing::assert(
+    app.selection().expect("selection").selected_text == "bcde",
+    "Selection must pass through boxless clip",
+  )
+  label.set_style(style::new(display: style::Display::contents))
+  app.render()
+  try testing::assert(
+    not label.node().is_selectable() and not label.node().start_selection(0, 0),
+    "Contents leaf cannot contribute selection cells",
+  )
+  testing::assert(
+    not app.selection().is_some(),
+    "Selection clears when selected owner becomes contents",
+  )
+}
+
+test fn contents_reorder_detach_destroy_preserves_retained_ownership() Void!Str {
+  let app = headless::new(6, 2)
+  defer app.destroy()
+  let group = box::new(app.context, styles: style::new(display: style::Display::contents))
+  let first = text::new(app.context, content: "AAA", styles: absolute(0))
+  let second = text::new(app.context, content: "BBB", styles: absolute(0))
+  group.add(first)
+  group.add(second)
+  app.root.add(group)
+  app.render()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("before reorder").grapheme == "B",
+    "Initial effective order",
+  )
+  group.node().add(first.node(), index: 1)
+  app.render()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("after reorder").grapheme == "A",
+    "Nested reorder invalidates flattened stacking",
+  )
+  try testing::assert(group.remove(first), "Detach child")
+  app.render()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("after detach").grapheme == "B",
+    "Detached child disappears",
+  )
+  group.node().destroy(recursive: true)
+  try testing::assert(
+    second.node().is_destroyed() and not first.node().is_destroyed(),
+    "Destroy follows retained ownership",
+  )
+  first.node().destroy()
+  testing::assert(first.node().is_destroyed(), "Detached node retains independent lifetime")
+}
+
+test fn contents_transition_resets_stale_box_geometry() Void!Str {
+  let app = headless::new(20, 12)
+  defer app.destroy()
+  let parent = box::new(
+    app.context,
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(4),
+      top: style::cells(2),
+      width: style::cells(10),
+      height: style::cells(7),
+    ),
+  )
+  let group = box::new(
+    app.context,
+    styles: style::new(
+      position: style::Position::relative,
+      left: style::cells(3),
+      top: style::cells(1),
+      width: style::cells(6),
+      height: style::cells(4),
+    ),
+  )
+  let child = text::new(
+    app.context,
+    content: "XY",
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(3),
+      top: style::cells(2),
+      width: style::cells(2),
+      height: style::cells(1),
+    ),
+  )
+  group.add(child)
+  parent.add(group)
+  app.root.add(parent)
+  app.render()
+  try rect(group.layout().screen, 7, 3, 6, 4)
+  group.set_style(
+    style::new(
+      display: style::Display::contents,
+      position: style::Position::absolute,
+      left: style::cells(9),
+      top: style::cells(8),
+      width: style::cells(6),
+      height: style::cells(4),
+    ),
+  )
+  app.render()
+  try rect(group.layout().local, 0, 0, 0, 0)
+  try rect(group.layout().screen, 4, 2, 0, 0)
+  try rect(group.node().content_rect(), 0, 0, 0, 0)
+  try rect(child.layout().local, 3, 2, 2, 1)
+  try rect(child.layout().screen, 7, 4, 2, 1)
+  testing::assert(
+    app.frame().cell(7, 4).expect("absolute child").grapheme == "X",
+    "Absolute containing block must skip contents",
+  )
+}
+
+test fn contents_matches_manual_flattening_and_reveal_skips_group() Void!Str {
+  let grouped = headless::new(12, 3)
+  defer grouped.destroy()
+  let flat = headless::new(12, 3)
+  defer flat.destroy()
+  let row_style = style::new(
+    flex_direction: style::FlexDirection::row,
+    gap: style::cells(2),
+    overflow: style::Overflow::scroll,
+  )
+  let row = box::new(grouped.context, styles: row_style)
+  let flat_row = box::new(flat.context, styles: row_style)
+  let group = box::new(
+    grouped.context,
+    styles: style::new(display: style::Display::contents, overflow: style::Overflow::scroll),
+  )
+  let nested = box::new(grouped.context, styles: style::new(display: style::Display::contents))
+  let hidden = text::new(
+    grouped.context,
+    content: "HIDDEN",
+    styles: style::new(display: style::Display::none),
+  )
+  let child_style = style::new(width: style::cells(5), height: style::cells(1))
+  let a = text::new(grouped.context, content: "ABCDE", styles: child_style)
+  let b = text::new(grouped.context, content: "FGHIJ", styles: child_style)
+  let c = text::new(grouped.context, content: "KLMNO", styles: child_style)
+  let flat_a = text::new(flat.context, content: "ABCDE", styles: child_style)
+  let flat_b = text::new(flat.context, content: "FGHIJ", styles: child_style)
+  let flat_c = text::new(flat.context, content: "KLMNO", styles: child_style)
+  row.add(a)
+  group.add(hidden)
+  nested.add(b)
+  group.add(nested)
+  group.add(c)
+  row.add(group)
+  flat_row.add(flat_a)
+  flat_row.add(flat_b)
+  flat_row.add(flat_c)
+  grouped.root.add(row)
+  flat.root.add(flat_row)
+  grouped.render()
+  flat.render()
+  try testing::assert(
+    grouped.frame().text() == flat.frame().text(),
+    "Grouped and manually flattened frames must match",
+  )
+  try rect(b.layout().local, 7, 0, 5, 1)
+  try rect(c.layout().local, 14, 0, 5, 1)
+  try rect(flat_b.layout().local, 7, 0, 5, 1)
+  try rect(flat_c.layout().local, 14, 0, 5, 1)
+  c.node().set_focusable(true)
+  try testing::assert(c.node().focus(), "Focus offscreen descendant")
+  grouped.render()
+  try testing::assert(row.node().scroll_x() == 7, "Reveal must scroll nearest box viewport")
+  try testing::assert(
+    group.node().scroll_x() == 0 and group.node().requested_scroll_x() == 0,
+    "Reveal must skip empty contents anchor",
+  )
+  testing::assert(
+    grouped.frame().cell(7, 0).expect("revealed child").grapheme == "K",
+    "Reveal should make descendant visible",
+  )
+}
+
+test fn contents_reparent_refreshes_effective_scroll_parent() Void!Str {
+  let app = headless::new(12, 4)
+  defer app.destroy()
+  let scrolling = box::new(
+    app.context,
+    styles: style::new(
+      width: style::cells(4),
+      height: style::cells(1),
+      flex_direction: style::FlexDirection::row,
+      overflow: style::Overflow::scroll,
+    ),
+  )
+  let normal = box::new(
+    app.context,
+    styles: style::new(
+      width: style::cells(4),
+      height: style::cells(1),
+      flex_direction: style::FlexDirection::row,
+    ),
+  )
+  let group = box::new(app.context, styles: style::new(display: style::Display::contents))
+  let child = box::new(
+    app.context,
+    styles: style::new(width: style::cells(8), height: style::cells(1)),
+  )
+  group.add(child)
+  scrolling.add(group)
+  app.root.add(scrolling)
+  app.root.add(normal)
+  app.render()
+  try testing::assert(child.layout().local.width == 8, "Scroll parent suppresses shrink through contents")
+  normal.add(group)
+  app.render()
+  try testing::assert(
+    child.layout().local.width == 4,
+    "Reparenting refreshes flattened descendant shrink policy",
+  )
+  normal.set_style(
+    style::new(
+      width: style::cells(4),
+      height: style::cells(1),
+      flex_direction: style::FlexDirection::row,
+      overflow: style::Overflow::scroll,
+    ),
+  )
+  app.render()
+  testing::assert(
+    child.layout().local.width == 8,
+    "Changing ancestor overflow refreshes contents descendants",
+  )
+}

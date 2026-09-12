@@ -151,6 +151,7 @@ struct Style {
   flex_shrink: Float32,
   align_items: Align,
   align_self: Align,
+  align_content: Align,
   justify_content: Justify,
   width: Length,
   height: Length,
@@ -225,7 +226,7 @@ private fn validate_edges(value: Edges, name: Str, allow_auto: Bool) {
   validate_spacing(value.left, "{name}.left", allow_auto)
 }
 
-fn internal_validate(value: Style) {
+private fn validate_values(value: Style) {
   validate_dimension(value.width, "width")
   validate_dimension(value.height, "height")
   validate_constraint(value.min_width, "min_width")
@@ -248,6 +249,30 @@ fn internal_validate(value: Style) {
   }
 }
 
+fn internal_validate(value: Style) {
+  validate_values(value)
+  match value.align_items {
+    Align::start => (),
+    Align::end => (),
+    Align::center => (),
+    Align::stretch => (),
+    Align::baseline => (),
+    _ => panic("align_items accepts start, end, center, stretch, or baseline"),
+  }
+  match value.align_self {
+    Align::auto => (),
+    Align::start => (),
+    Align::end => (),
+    Align::center => (),
+    Align::stretch => (),
+    Align::baseline => (),
+    _ => panic("align_self does not accept line distribution values"),
+  }
+  if value.align_content == Align::auto or value.align_content == Align::baseline {
+    panic("align_content does not accept auto or baseline")
+  }
+}
+
 fn new(
   foreground: color::Color?,
   background: color::Color?,
@@ -263,6 +288,7 @@ fn new(
   flex_shrink: Float64?,
   align_items: Align?,
   align_self: Align?,
+  align_content: Align?,
   justify_content: Justify?,
   width: Length?,
   height: Length?,
@@ -294,6 +320,7 @@ fn new(
     flex_shrink: Float32::from(flex_shrink.or(1.0)),
     align_items: align_items.or(Align::stretch),
     align_self: align_self.or(Align::auto),
+    align_content: align_content.or(Align::stretch),
     justify_content: justify_content.or(Justify::start),
     width: width.or(undefined()),
     height: height.or(undefined()),
@@ -310,6 +337,6 @@ fn new(
     gap: gap.or(undefined()),
     z_index: z_index.or(0),
   }
-  internal_validate(value)
+  validate_values(value)
   value
 }

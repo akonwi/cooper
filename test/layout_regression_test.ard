@@ -1,0 +1,336 @@
+use ard/testing
+
+use cooper/runtime
+use cooper/testing as cooper_testing
+use cooper/ui/box
+use cooper/ui/style
+use cooper/ui/text
+
+test fn or1_scrolled_frame_paints_previously_clipped_source() Void!Str {
+  let app = cooper_testing::new(4, 2)
+  defer app.destroy()
+  let viewport = box::new(app.context, styles: style::new(overflow: style::Overflow::scroll))
+  let label = text::new(app.context, content: "a\nb\nc\nd")
+  viewport.add(label)
+  app.root.add(viewport)
+  app.render()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("top cell").grapheme == "a",
+    "Expected first source row",
+  )
+  try testing::assert(viewport.node().scroll_by(2), "Expected scroll movement")
+  app.render()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("scrolled top").grapheme == "c",
+    "Expected third source row after scrolling",
+  )
+  testing::assert(
+    app.frame().cell(0, 1).expect("scrolled bottom").grapheme == "d",
+    "Expected fourth source row after scrolling",
+  )
+}
+
+test fn or7_auto_cross_margins_prevent_early_stretch() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let label = text::new(
+    ctx,
+    content: "x",
+    styles: style::new(width: style::cells(1), margin: style::edges(style::auto())),
+  )
+  root.add(label)
+  ctx.compute_layout(root, 10, 7)
+  try testing::assert(
+    label.layout().local.height == 1 and label.layout().local.y == 3,
+    "Expected natural height 1 centered at y=3, got {label.layout().local.height} at {label.layout().local.y}",
+  )
+  root.set_style(style::new(flex_direction: style::FlexDirection::column))
+  label.set_style(style::new(height: style::cells(1), margin: style::edges(style::auto())))
+  ctx.compute_layout(root, 10, 7)
+  testing::assert(
+    label.layout().local.width == 1 and label.layout().local.x == 5,
+    "Expected natural width 1 centered on projected edges",
+  )
+}
+
+test fn or6_reverse_preserves_physical_and_auto_margins() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row_reverse))
+  let margins = style::Edges{
+    left: style::cells(1),
+    right: style::cells(3),
+    top: style::cells(1),
+    bottom: style::cells(3),
+  }
+  let child = box::new(
+    ctx,
+    styles: style::new(width: style::cells(4), height: style::cells(4), margin: margins),
+  )
+  root.add(child)
+  ctx.compute_layout(root, 20, 20)
+  try testing::assert(child.layout().local.x == 13, "Expected x=13, got {child.layout().local.x}")
+  root.set_style(style::new(flex_direction: style::FlexDirection::column_reverse))
+  ctx.compute_layout(root, 20, 20)
+  try testing::assert(child.layout().local.y == 13, "Expected y=13 for column reverse")
+  root.set_style(
+    style::new(flex_direction: style::FlexDirection::row, flex_wrap: style::FlexWrap::wrap_reverse),
+  )
+  ctx.compute_layout(root, 20, 20)
+  try testing::assert(
+    child.layout().local.y == 13,
+    "Wrap reverse must place physical bottom margin at cross start",
+  )
+  root.set_style(style::new(flex_direction: style::FlexDirection::row_reverse))
+  let auto_margin = style::Edges{
+    left: style::cells(1),
+    right: style::auto(),
+    top: style::cells(0),
+    bottom: style::cells(0),
+  }
+  child.set_style(style::new(width: style::cells(4), height: style::cells(4), margin: auto_margin))
+  ctx.compute_layout(root, 20, 20)
+  testing::assert(
+    child.layout().local.x == 1,
+    "Physical right auto margin must push toward the left",
+  )
+}
+
+test fn or5_absolute_margins_affect_edges_and_available_size() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx)
+  let margins = style::Edges{
+    left: style::cells(2),
+    right: style::cells(4),
+    top: style::cells(1),
+    bottom: style::cells(3),
+  }
+  let child = box::new(
+    ctx,
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(3),
+      height: style::cells(1),
+      left: style::cells(0),
+      top: style::cells(0),
+      margin: margins,
+    ),
+  )
+  root.add(child)
+  ctx.compute_layout(root, 20, 10)
+  try testing::assert(
+    child.layout().local.x == 2 and child.layout().local.y == 1,
+    "Expected leading margins (2,1), got ({child.layout().local.x},{child.layout().local.y})",
+  )
+  child.set_style(
+    style::new(
+      position: style::Position::absolute,
+      width: style::cells(3),
+      height: style::cells(1),
+      right: style::cells(0),
+      bottom: style::cells(0),
+      margin: margins,
+    ),
+  )
+  ctx.compute_layout(root, 20, 10)
+  try testing::assert(
+    child.layout().local.x == 13 and child.layout().local.y == 6,
+    "Expected trailing margins at (13,6)",
+  )
+  child.set_style(
+    style::new(
+      position: style::Position::absolute,
+      left: style::cells(1),
+      right: style::cells(2),
+      top: style::cells(1),
+      bottom: style::cells(2),
+      margin: margins,
+    ),
+  )
+  ctx.compute_layout(root, 20, 10)
+  testing::assert(
+    child.layout().local.x == 3 and child.layout().local.y == 2 and child.layout().local.width == 11 and child.layout().local.height == 3,
+    "Opposing offsets must subtract margins from allocation",
+  )
+}
+
+test fn or4_intrinsic_height_does_not_resolve_descendant_percent() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let parent = box::new(
+    ctx,
+    styles: style::new(width: style::cells(4), height: style::max_content(), flex_shrink: 0.0),
+  )
+  let label = text::new(
+    ctx,
+    content: "a\nb\nc\nd",
+    styles: style::new(height: style::percent(50.0), flex_shrink: 0.0),
+  )
+  parent.add(label)
+  root.add(parent)
+  ctx.compute_layout(root, 20, 12)
+  try testing::assert(
+    label.layout().local.height == 4,
+    "Expected unresolved percentage height 4, got {label.layout().local.height}",
+  )
+  parent.set_style(style::new(width: style::cells(4), height: style::cells(10)))
+  ctx.compute_layout(root, 20, 12)
+  testing::assert(label.layout().local.height == 5, "Definite height must resolve 50% to 5")
+}
+
+test fn or4_intrinsic_width_does_not_resolve_bounds_basis_or_spacing() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let row = box::new(
+    ctx,
+    styles: style::new(
+      width: style::max_content(),
+      flex_direction: style::FlexDirection::row,
+      gap: style::percent(25.0),
+    ),
+  )
+  let label = text::new(
+    ctx,
+    content: "abcd",
+    styles: style::new(
+      max_width: style::percent(50.0),
+      flex_basis: style::percent(25.0),
+      margin: style::edges(style::percent(25.0)),
+      flex_shrink: 0.0,
+    ),
+  )
+  let tail = box::new(
+    ctx,
+    styles: style::new(width: style::cells(2), height: style::cells(1), flex_shrink: 0.0),
+  )
+  row.add(label)
+  row.add(tail)
+  root.add(row)
+  ctx.compute_layout(root, 40, 12)
+  try testing::assert(
+    row.layout().local.width == 6 and label.layout().local.width == 4 and tail.layout().local.x == 4,
+    "Expected intrinsic width 6 with 4+2 and unresolved spacing; got {row.layout().local.width}, {label.layout().local.width}, x={tail.layout().local.x}",
+  )
+  ctx.compute_layout(root, 40, 12)
+  testing::assert(
+    label.layout().local.width == 4 and tail.layout().local.x == 4,
+    "Repeated layout must not feed back intrinsic size",
+  )
+}
+
+test fn or3_mixed_bounds_redistribute_remaining_growth() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let row = box::new(ctx, styles: style::new(flex_direction: style::FlexDirection::row))
+  let first = box::new(
+    ctx,
+    styles: style::new(flex_basis: style::cells(0), flex_grow: 1.0, min_width: style::cells(60)),
+  )
+  let second = box::new(
+    ctx,
+    styles: style::new(flex_basis: style::cells(0), flex_grow: 1.0, max_width: style::cells(20)),
+  )
+  row.add(first)
+  row.add(second)
+  ctx.compute_layout(row, 90, 2)
+  try testing::assert(
+    first.layout().local.width == 70 and second.layout().local.width == 20,
+    "Expected 70/20, got {first.layout().local.width}/{second.layout().local.width}",
+  )
+  first.set_style(style::new(flex_basis: style::cells(0), flex_grow: 0.25))
+  second.set_style(
+    style::new(flex_basis: style::cells(0), flex_grow: 0.5, max_width: style::cells(10)),
+  )
+  ctx.compute_layout(row, 100, 2)
+  testing::assert(
+    first.layout().local.width == 25 and second.layout().local.width == 10,
+    "Fractional grow must claim 25, not repeat its share after freezing",
+  )
+}
+
+test fn or2_minimum_width_remeasures_height_and_sibling() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let label = text::new(
+    ctx,
+    content: "abcdef",
+    wrap: text::TextWrap::character,
+    styles: style::new(min_width: style::cells(6), flex_shrink: 0.0),
+  )
+  let tail = box::new(ctx, styles: style::new(width: style::cells(1), height: style::cells(1)))
+  parent.add(label)
+  parent.add(tail)
+  ctx.compute_layout(parent, 3, 10)
+  try testing::assert(
+    label.layout().local.height == 1,
+    "Expected one row at width 6, got {label.layout().local.height}",
+  )
+  try testing::assert(tail.layout().local.y == 1, "Expected sibling at row 1")
+  label.set_style(
+    style::new(width: style::cells(3), min_width: style::cells(6), max_width: style::cells(2)),
+  )
+  ctx.compute_layout(parent, 3, 10)
+  testing::assert(
+    label.layout().local.width == 6 and label.layout().local.height == 1,
+    "Losing maximum must not constrain measurement",
+  )
+}
+
+test fn or2_bounded_auto_container_reallocates_children() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
+  let row = box::new(
+    ctx,
+    styles: style::new(flex_direction: style::FlexDirection::row, max_width: style::cells(6)),
+  )
+  let first = box::new(ctx, styles: style::new(width: style::cells(4), height: style::cells(1)))
+  let second = box::new(ctx, styles: style::new(width: style::cells(4), height: style::cells(1)))
+  row.add(first)
+  row.add(second)
+  root.add(row)
+  ctx.compute_layout(root, 20, 10)
+  testing::assert(
+    row.layout().local.width == 6 and first.layout().local.width == 3 and second.layout().local.x == 3 and second.layout().local.width == 3,
+    "Expected width 6 tiled by 3+3; got {first.layout().local.width}+{second.layout().local.width}",
+  )
+}
+
+test fn or1_vertical_scroll_preserves_measured_overflow() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(ctx, styles: style::new(overflow: style::Overflow::scroll))
+  let label = text::new(ctx, content: "a\nb\nc\nd")
+  parent.add(label)
+  ctx.compute_layout(parent, 4, 2)
+  try testing::assert(
+    label.layout().local.height == 4,
+    "Expected four measured rows, got {label.layout().local.height}",
+  )
+  testing::assert(parent.node().max_scroll_y() == 2, "Expected two scrollable rows")
+}
+
+test fn or1_horizontal_scroll_preserves_measured_overflow() Void!Str {
+  let ctx = runtime::new_detached()
+  defer ctx.destroy_detached()
+  let parent = box::new(
+    ctx,
+    styles: style::new(
+      overflow: style::Overflow::scroll,
+      flex_direction: style::FlexDirection::row,
+    ),
+  )
+  let label = text::new(ctx, content: "abcdefgh", wrap: text::TextWrap::none)
+  parent.add(label)
+  ctx.compute_layout(parent, 3, 2)
+  try testing::assert(
+    label.layout().local.width == 8,
+    "Expected eight measured columns, got {label.layout().local.width}",
+  )
+  testing::assert(parent.node().max_scroll_x() == 5, "Expected five scrollable columns")
+}

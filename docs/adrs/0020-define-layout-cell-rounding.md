@@ -72,6 +72,31 @@ grant the leaf extra width or permit it to overwrite its sibling. An
 implementation must converge without emitting an intermediate inconsistent
 frame; designing that measurement/layout reconciliation is implementation work.
 
+### Freeze horizontal allocation during reconciliation
+
+Select flex-line membership, fractional horizontal sizes, insets, and physical
+horizontal positions in the contribution layout. Finish horizontal relative and
+absolute positioning, then derive measured leaves' projected content widths
+from those absolute edges. Freeze these decisions for the rest of this layout
+transaction.
+
+Remeasure at the allocated cell widths and resolve dependent heights, vertical
+flex allocation, and vertical positions within the selected lines. Do not reform
+lines or revise horizontal allocations in response to the corrected heights.
+Spare space or overflow may remain in a selected line. Each new layout starts
+afresh from styles, content, and available space; previous projected geometry is
+never the next transaction's fractional input. Natural-width probes do not use
+allocated-width measurements.
+
+This rule is necessary because repacking can have no fixed point. In a 5×2
+column/wrap_reverse container, put a one-row Box followed by character-wrapped
+Text `abc`, both width 50% with grow/shrink zero. If Text is one row, both items
+fit in one column: its edges 2.5/5 project to width 2, requiring two text rows.
+If Text is two rows, it moves to a second column: edges 0/2.5 project to width 3,
+requiring only one row. Repacking would alternate forever. Under this rule the
+contribution pass selects two columns; they remain selected when the Text's
+corrected height becomes one row.
+
 ```diagram
 Text "abc", wrapping enabled, allocated cell width 2
 ┌──┐

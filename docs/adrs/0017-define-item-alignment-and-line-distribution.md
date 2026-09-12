@@ -104,10 +104,10 @@ Compare retained style changes with independently calculated fresh layouts.
 
 - Line distribution becomes publicly controllable rather than a backend default.
 - This decision adds one Style field and rejects ambiguous existing combinations;
-  implementation requires migration notes and validation tests.
+  migration notes and executed validation evidence are in the layout audit.
 - Item, line, and main-axis distribution have separate responsibilities.
-- Acceptance establishes the contract; runtime implementation and conformance
-  tests remain pending.
+- Implemented in the Ard layout engine, with arithmetic and retained-transition
+  checks in `test/alignment_test.ard`. Baseline checks are tracked by ADR 0018.
 
 ## Related
 

@@ -1,0 +1,74 @@
+use cooper/core/layout/cache
+use cooper/core/layout/length
+use cooper/core/layout/measure
+use cooper/core/layout/numeric
+use cooper/ui/style
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// MIT license: LICENSE.yoga. Yoga 8ba025e computeFlexBasisForChild's
+// explicit-basis and definite main-dimension branches. Cooper uses border-box
+// sizing and disables the experimental WebFlexBasis generation policy.
+// False means the caller must run the child measurement fallback; it does not
+// mean a previously cached basis is usable. Intrinsic policy remains upstream.
+fn resolve_without_measurement(
+  state: mut cache::State,
+  basis: style::Length,
+  processed_main: style::Length,
+  available_main: Float32,
+  owner_main: Float32,
+  padding_border: Float32,
+  generation: Int,
+) Bool {
+  let resolved_basis = length::resolve(basis, owner_main)
+  mut selected = true
+  if numeric::is_defined(resolved_basis) and numeric::is_defined(available_main) {
+    if numeric::is_undefined(state.computed_flex_basis) {
+      state.computed_flex_basis = numeric::max_or_defined(resolved_basis, padding_border)
+    }
+  } else if length::is_definite(processed_main, owner_main) {
+    state.computed_flex_basis = numeric::max_or_defined(
+      length::resolve(processed_main, owner_main),
+      padding_border,
+    )
+  } else {
+    selected = false
+  }
+  if selected {
+    state.computed_flex_basis_generation = generation
+  }
+  selected
+}
+
+// Axis-independent translation of the measurement fallback's constraint
+// construction. Parent availability/mode are supplied in axis; min/max/insets
+// are the child's resolved constraints. Cooper has no aspect-ratio style.
+fn measurement_axis(
+  axis: measure::Axis,
+  preferred: style::Length,
+  owner: Float32,
+  margin: Float32,
+  cross: Bool,
+  scroll: Bool,
+  stretch: Bool,
+) measure::Axis {
+  let available = axis.available
+  let mode = axis.mode
+  let result = mut axis
+  result.available = numeric::undefined()
+  result.mode = cache::SizingMode::max_content
+  let definite = length::is_definite(preferred, owner)
+  if definite {
+    result.available = length::resolve(preferred, owner) + margin
+    result.mode = cache::SizingMode::stretch_fit
+  } else {
+    if (cross or scroll == false) and numeric::is_defined(available) {
+      result.available = available
+      result.mode = cache::SizingMode::fit_content
+    }
+    if cross and stretch and numeric::is_defined(available) and mode == cache::SizingMode::stretch_fit {
+      result.available = available
+      result.mode = cache::SizingMode::stretch_fit
+    }
+  }
+  result.constrain_max(margin)
+}

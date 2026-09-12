@@ -1,0 +1,88 @@
+use ard/testing
+
+use cooper/core/layout/flex
+use cooper/core/layout/redistribute
+
+fn f(value: Float64) Float32 {
+  Float32::from(value)
+}
+
+fn item(basis: Float64, minimum: Float64, maximum: Float64, grow: Float64, shrink: Float64) flex::Item {
+  flex::Item{
+    basis: f(basis),
+    minimum: f(minimum),
+    maximum: f(maximum),
+    padding_border: f(0.0),
+    margin: f(0.0),
+    flex_grow: f(grow),
+    flex_shrink: f(shrink),
+    flexible: true,
+    auto_margin_start: false,
+    auto_margin_end: false,
+  }
+}
+
+fn sizes_are(result: flex::Distribution, first: Float64, second: Float64) Bool {
+  result.sizes.size() == 2 and result.sizes.at(0).expect("first size") == f(first) and result.sizes.at(1).expect("second size") == f(second)
+}
+
+test fn asymmetric_mixed_bounds_repeat_redistribution_to_accepted_70_20() Void!Str {
+  let line = flex::collect_line(
+    [item(0.0, 60.0, -1.0, 1.0, 1.0), item(0.0, -1.0, 20.0, 1.0, 1.0)],
+    0,
+    f(90.0),
+    f(0.0),
+    false,
+  )
+  let result = redistribute::distribute(line, f(90.0))
+  try testing::assert(sizes_are(result, 70.0, 20.0), "accepted iterative policy must produce 70/20")
+  testing::assert(result.remaining_free_space == 0.0, "growth must consume all free space")
+}
+
+test fn shrink_constraints_freeze_and_redistribute_scaled_basis_space() Void!Str {
+  let line = flex::collect_line(
+    [item(80.0, 70.0, -1.0, 0.0, 1.0), item(40.0, -1.0, -1.0, 0.0, 1.0)],
+    0,
+    f(90.0),
+    f(0.0),
+    false,
+  )
+  let result = redistribute::distribute(line, f(-30.0))
+  testing::assert(
+    sizes_are(result, 70.0, 20.0) and result.remaining_free_space == 0.0,
+    "scaled shrink must redistribute after the minimum freezes",
+  )
+}
+
+test fn fractional_factors_claim_only_their_original_free_space_fraction() Void!Str {
+  let line = flex::collect_line(
+    [item(0.0, -1.0, -1.0, 0.25, 1.0), item(0.0, -1.0, 10.0, 0.5, 1.0)],
+    0,
+    f(100.0),
+    f(0.0),
+    false,
+  )
+  let result = redistribute::distribute(line, f(100.0))
+  testing::assert(
+    sizes_are(result, 25.0, 10.0) and result.remaining_free_space == 65.0,
+    "low factors must leave unclaimed space after a constrained peer freezes",
+  )
+}
+
+test fn zero_basis_factors_preserve_fixed_child_and_account_for_margins_and_gap() Void!Str {
+  let fixed = mut item(0.0, 4.0, -1.0, 0.0, 0.0)
+  fixed.flexible = false
+  fixed.padding_border = f(3.0)
+  fixed.margin = f(2.0)
+  let flexible = mut item(0.0, -1.0, -1.0, 1.0, 1.0)
+  flexible.margin = f(3.0)
+  let line = flex::collect_line([fixed.@, flexible.@], 0, f(20.0), f(2.0), false)
+  // Remaining free space is based on raw flex bases; margins and the one gap
+  // consume seven of the twenty available cells.
+  let free = f(13.0)
+  let result = redistribute::distribute(line, free)
+  testing::assert(
+    sizes_are(result, 4.0, 9.0) and result.remaining_free_space == 0.0,
+    "fixed bounds plus 5 margin and 2 gap must leave 9 flexible cells",
+  )
+}

@@ -591,3 +591,209 @@ test fn open_select_popup_tracks_parent_layout_and_height_resize() Void!Str {
     "Flipped menu remains clickable",
   )
 }
+
+test fn select_contents_closes_portal_and_restores_only_the_trigger() Void!Str {
+  let application = cooper_testing::new(16, 6)
+  defer application.destroy()
+  let visible = style::new(width: style::cells(12))
+  let control = select_control::new(
+    application.context,
+    choices(2),
+    config: select_control::config(show_descriptions: false),
+    appearance: select_control::appearance(marker: "* "),
+    styles: visible,
+  )
+  let popup = control.node_ref.children.at(0).expect("owned popup")
+  let popup_id = popup.id
+  mut blurred = 0
+  let _ = control.on_blur(fn() {
+    blurred =+ 1
+  })
+  application.root.add(control)
+  application.render()
+  try testing::assert(control.open(), "Open flex Select")
+  application.render()
+  try testing::assert(
+    application.frame().cell(0, 1).expect("menu").grapheme == "*",
+    "Open popup is visible",
+  )
+  try testing::assert(
+    popup.parent.expect("portal parent") == application.root.node(),
+    "Open popup is portaled",
+  )
+  control.set_style(style::new(display: style::Display::contents))
+  application.render()
+  try testing::assert(
+    not control.is_open() and not control.is_focused() and blurred == 1,
+    "Contents closes popup and blurs owner once",
+  )
+  try testing::assert(
+    popup.parent.expect("closed parent") == control.node_ref and popup.style().display == style::Display::none,
+    "Closed popup returns to owner, hidden",
+  )
+  try testing::assert(
+    application.frame().cell(0, 0).expect("trigger").grapheme == " " and application.frame().cell(0, 1).expect("popup").grapheme == " ",
+    "Neither contents trigger nor popup paints",
+  )
+  try testing::assert(not control.open() and not control.focus(), "Contents cannot reopen or focus")
+  application.click(2, 2)
+  try testing::assert(
+    not control.selected_index().is_some(),
+    "Former popup cells cannot select an option",
+  )
+  control.set_style(visible)
+  application.render()
+  try testing::assert(
+    not control.is_open() and not control.is_focused(),
+    "Returning to flex does not reopen or restore focus",
+  )
+  try testing::assert(
+    application.frame().cell(0, 1).expect("closed menu").grapheme == " ",
+    "Returning to flex keeps popup hidden",
+  )
+  try testing::assert(control.open(), "Explicit reopen after flex transition")
+  application.render()
+  try testing::assert(
+    popup.id == popup_id and application.frame().cell(0, 1).expect("reopened").grapheme == "*",
+    "Reopen reuses popup identity",
+  )
+  control.set_style(style::new(display: style::Display::none))
+  application.render()
+  try testing::assert(
+    not control.is_open() and not control.is_focused() and blurred == 2,
+    "None also closes popup and clears focus",
+  )
+  try testing::assert(
+    application.frame().cell(0, 1).expect("hidden menu").grapheme == " ",
+    "None leaves no portaled menu",
+  )
+  control.set_style(style::new(display: style::Display::contents))
+  control.set_style(visible)
+  testing::assert(
+    not control.is_open() and popup.parent.expect("retained popup") == control.node_ref,
+    "None/contents/flex transitions preserve closed ownership",
+  )
+}
+
+test fn select_node_contents_transition_is_not_undone_by_blur_cleanup() Void!Str {
+  let application = cooper_testing::new(16, 6)
+  defer application.destroy()
+  let control = select_control::new(
+    application.context,
+    choices(2),
+    config: select_control::config(show_descriptions: false),
+    appearance: select_control::appearance(marker: "* "),
+    styles: style::new(width: style::cells(12)),
+  )
+  let popup = control.node_ref.children.at(0).expect("popup")
+  application.root.add(control)
+  application.render()
+  try testing::assert(control.open(), "Initially open")
+  application.render()
+  control.node_ref.apply_style(style::new(display: style::Display::contents))
+  application.render()
+  try testing::assert(
+    control.node_ref.style().display == style::Display::contents,
+    "Blur cleanup must not overwrite the retained contents style",
+  )
+  try testing::assert(
+    not control.is_open() and not control.is_focused() and not control.open(),
+    "Direct retained transition closes and prevents reopening",
+  )
+  try testing::assert(
+    popup.parent.expect("owned popup") == control.node_ref and popup.style().display == style::Display::none,
+    "Popup is hidden and owned after retained transition",
+  )
+  testing::assert(
+    application.frame().cell(0, 0).expect("trigger").grapheme == " " and application.frame().cell(0, 1).expect("menu").grapheme == " ",
+    "Retained contents suppresses both trigger and popup",
+  )
+}
+
+test fn select_contents_and_open_destruction_clean_up_portal_once() Void!Str {
+  for contents in [false, true] {
+    let application = cooper_testing::new(16, 6)
+    defer application.destroy()
+    let control = select_control::new(
+      application.context,
+      choices(2),
+      config: select_control::config(show_descriptions: false),
+      styles: style::new(width: style::cells(12)),
+    )
+    let popup = control.node_ref.children.at(0).expect("popup")
+    let bar = popup.children.at(0).expect("popup scrollbar")
+    mut popup_cleanups = 0
+    mut bar_cleanups = 0
+    popup.on_cleanup(fn() {
+      popup_cleanups =+ 1
+    })
+    bar.on_cleanup(fn() {
+      bar_cleanups =+ 1
+    })
+    application.root.add(control)
+    application.render()
+    try testing::assert(control.open(), "Open before destruction")
+    if contents {
+      control.set_style(style::new(display: style::Display::contents))
+    }
+    control.destroy()
+    control.destroy()
+    application.render()
+    try testing::assert(
+      control.node_ref.is_destroyed() and popup.is_destroyed() and bar.is_destroyed(),
+      "Destroy cleans up owner and separately portaled popup subtree",
+    )
+    try testing::assert(popup_cleanups == 1 and bar_cleanups == 1, "Cleanup callbacks run once")
+    try testing::assert(
+      application.root.node().children.size() == 0,
+      "No portal remains in root retained children",
+    )
+    try testing::assert(
+      not control.node_ref.is_focused() and not popup.parent.is_some(),
+      "No focus or popup attachment survives",
+    )
+    try testing::assert(
+      application.frame().cell(0, 1).expect("destroyed menu").grapheme == " ",
+      "Destroyed popup is absent from frame",
+    )
+  }
+  Result::ok(())
+}
+
+test fn select_popup_tracks_trigger_when_only_ancestor_becomes_contents() Void!Str {
+  let application = cooper_testing::new(20, 8)
+  defer application.destroy()
+  let group = box::new(
+    application.context,
+    styles: style::new(padding: style::edges(style::cells(2))),
+  )
+  let control = select_control::new(
+    application.context,
+    choices(2),
+    styles: style::new(width: style::cells(12)),
+  )
+  let popup = control.node_ref.children.at(0).expect("owned popup")
+  group.add(control)
+  application.root.add(group)
+  application.render()
+  try testing::assert(control.open(), "Open grouped Select")
+  application.render()
+  try testing::assert(
+    control.layout().screen.x == 2 and popup.layout().screen.x == 2,
+    "Initial padding offsets trigger and popup",
+  )
+  group.set_style(style::new(display: style::Display::contents))
+  application.render()
+  try testing::assert(
+    control.is_open() and control.is_focused(),
+    "Ancestor contents preserves boxed descendant's focus and open state",
+  )
+  try testing::assert(
+    control.layout().screen.x == 0 and popup.layout().screen.x == 0 and popup.layout().screen.y == 1,
+    "Portaled popup follows flattened trigger",
+  )
+  testing::assert(
+    popup.parent.expect("portal parent") == application.root.node(),
+    "Popup stays portaled rather than joining the flattened flow",
+  )
+}

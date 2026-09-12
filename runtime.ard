@@ -1541,7 +1541,7 @@ impl State {
             y,
             vaxis::Cell{
               Character: vaxis::Character{Grapheme: cell.grapheme, Width: cell.width},
-              Style: vaxis_style(cell.style),
+              Style: vaxis_style(cell.style.@),
             },
           )
         }

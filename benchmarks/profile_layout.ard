@@ -1,0 +1,114 @@
+use cooper/runtime
+use cooper/testing as headless
+use cooper/ui/box
+use cooper/ui/scroll_box
+use cooper/ui/style
+use cooper/ui/text
+
+// Setup and correctness checks are outside the timed/profiled operation loop.
+// The same source is compiled against each checkout, using public APIs only.
+struct Workload {
+  run: fn(),
+  verify: fn(),
+  close: fn(),
+}
+
+fn prepare(phase: Str) Workload {
+  if phase == "layout_update" or phase == "layout_unchanged" {
+    let ctx = runtime::new_detached()
+    let root = box::new(ctx)
+    let rows = mut List::new<mut text::Text>()
+    for index in 0..64 {
+      let row = text::new(
+        ctx,
+        content: "row {index}",
+        styles: style::new(width: style::cells(80), height: style::cells(1), flex_shrink: 0.0),
+      )
+      root.add(row)
+      rows.push(row)
+    }
+    ctx.compute_layout(root, 80, 64)
+    let target = rows.at(12).expect("target row")
+    mut iteration = 0
+    Workload{
+      run: fn() {
+        if phase == "layout_update" {
+          target.set_content("row 12 changed {iteration % 2}")
+          iteration =+ 1
+        }
+        ctx.compute_layout(root, 80, 64)
+      },
+      verify: fn() {
+        if target.layout().local.y != 12 or target.layout().local.width != 80 or target.layout().local.height != 1 {
+          panic("layout profile geometry mismatch")
+        }
+      },
+      close: fn() {
+        ctx.destroy_detached()
+      },
+    }
+  } else {
+    if phase != "render_update" and phase != "render_unchanged" {
+      panic("unknown profiling phase")
+    }
+    let app = headless::new(80, 24)
+    let content = box::new(app.context, styles: style::new(width: style::cells(80)))
+    content.add(
+      box::new(app.context, styles: style::new(height: style::cells(5000), flex_shrink: 0.0)),
+    )
+    let rows = mut List::new<mut text::Text>()
+    for index in 0..64 {
+      let row = text::new(
+        app.context,
+        content: "row {5000 + index}",
+        styles: style::new(width: style::cells(80), height: style::cells(1), flex_shrink: 0.0),
+      )
+      content.add(row)
+      rows.push(row)
+    }
+    content.add(
+      box::new(app.context, styles: style::new(height: style::cells(4936), flex_shrink: 0.0)),
+    )
+    let view = scroll_box::new(
+      app.context,
+      styles: style::new(width: style::percent(100.0), height: style::percent(100.0)),
+    )
+    view.add(content)
+    app.root.add(view)
+    app.render()
+    let _ = view.scroll_to(5000)
+    app.render()
+    let target = rows.at(12).expect("visible row")
+    mut iteration = 0
+    Workload{
+      run: fn() {
+        if phase == "render_update" {
+          target.set_content("row 5012 changed {iteration % 2}")
+          iteration =+ 1
+        }
+        app.render()
+      },
+      verify: fn() {
+        let frame = app.frame()
+        if view.layout().screen.width != 80 or view.layout().screen.height != 24 or frame.cell(0, 0).expect("first row").grapheme != "r" or frame.cell(0, 12).expect("updated row").grapheme != "r" {
+          panic("render profile frame mismatch")
+        }
+        if phase == "render_update" and frame.cell(9, 12).expect("changed text").grapheme != "c" {
+          panic("updated row was not painted")
+        }
+      },
+      close: fn() {
+        app.destroy()
+      },
+    }
+  }
+}
+
+fn main() {
+  for phase in ["layout_update", "layout_unchanged", "render_update", "render_unchanged"] {
+    let sample = prepare(phase)
+    sample.run()
+    sample.verify()
+    sample.close()
+  }
+}

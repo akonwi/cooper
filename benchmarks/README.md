@@ -12,7 +12,7 @@ the nearest-rank tail value as `max` instead.
 
 ## Workloads
 
-- `retained_layout.ard`: 1,001 persistent Tess/Yoga-backed retained nodes.
+- `retained_layout.ard`: 1,001 persistent retained nodes.
 - `retained_virtual_list.ard`: 10,000 logical string rows represented by a
   reusable 64-row retained window, two spacers, content, and viewport (68
   retained nodes total).
@@ -21,8 +21,8 @@ the nearest-rank tail value as `max` instead.
 - `retained_interaction.ard`: 100 fully overlapping z-index siblings under
   10,000 pointer moves plus 100 selections through 200 retained Text controls.
 
-A future Ard-native Yoga backend should use these same retained workloads for a
-backend-only comparison.
+The same workloads compile against main's Tess backend and the Ard port.
+Legacy `backend=tess_*` output labels identify workloads, not the active solver.
 
 The virtual-list benchmark measures the supported TestApp surface: initial
 render, a jump to row 5,000, one visible-row update, 100 one-row window shifts,
@@ -38,3 +38,44 @@ leaf, so traversal work cannot be optimized away or silently terminate early.
 The interaction benchmark reports stacking-aware hit traversal and global
 selection reconciliation separately. It verifies that every pointer event
 reaches the highest z-index sibling and that selection produces non-empty text.
+
+## Main-branch baseline and profiling
+
+See [the recorded baseline](../docs/layout-profiling-baseline.md) for revisions,
+measurements, profile findings and limitations. No production instrumentation is
+required. Use a separate checkout and run these commands sequentially, without
+other benchmarks or builds competing for CPU:
+
+```sh
+git fetch origin
+git worktree add --detach /tmp/cooper-profile-main origin/main
+python3 benchmarks/profile.py /tmp/cooper-profile-main . \
+  --samples 25 --operations 1000 --profile-seconds 5 \
+  --output /tmp/cooper-profiles
+python3 benchmarks/compare.py /tmp/cooper-profile-main . \
+  --samples 25 --warmups 3 --output /tmp/cooper-retained.json
+git worktree remove /tmp/cooper-profile-main
+```
+
+`profile.py` copies its Ard fixture into the baseline only if absent, removes
+that copy afterward, and refuses to overwrite different source. It replaces
+only generated `main.go` with a Go profiling driver while building each binary,
+then restores that generated file. Do not run another Ard build in either
+checkout concurrently. The generated Go directory is compiler-version-specific.
+
+Four isolated workloads distinguish layout-only from full headless rendering,
+each with unchanged content or an alternating single-row content update.
+Layout uses 64 fixed-size Text rows; render uses a scrolled 64-row window in
+10,000 logical rows. Setup, ten warmup operations, forced GC and correctness
+checks are outside each timed batch. Three process warmups precede the measured
+samples, whose branch order alternates. Reported p95 is the percentile of batch
+averages, **not individual-frame p95**.
+
+CPU and sampled allocation profiles run separately after all timing samples.
+`results.json` records revisions, source hashes, raw samples, medians and p95.
+`*.cpu`, `*.before`, `*.after` and text reports preserve CPU and allocation
+evidence. Allocation deltas from `runtime.MemStats` measure Go heap traffic,
+not peak/live memory or Yoga's C++ allocations. Sampled before/after profiles
+also contain small profiling-writer allocations; exclude those when diagnosing
+framework costs. CPU percentages include background GC and are not additive
+when cumulative call stacks overlap.

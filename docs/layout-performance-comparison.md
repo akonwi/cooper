@@ -5,6 +5,10 @@ mixed; this is not a performance-parity claim. The original measurements below
 describe the independent solver that has since been removed. Final translated
 engine results are recorded at the end of this document.
 
+For the subsequent controlled comparison against fetched `origin/main`, CPU
+profiles, allocation measurements and versioned raw samples, see the
+[profiling baseline](./layout-profiling-baseline.md).
+
 ## Method
 
 Compared the original Yoga checkpoint

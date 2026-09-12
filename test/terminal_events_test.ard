@@ -1,0 +1,181 @@
+use ard/async
+use ard/testing
+
+use cooper/core/terminal_events
+use cooper/event
+use go:strings
+use go:vaxis
+
+private fn pasted(text: Str) vaxis::Key {
+  vaxis::Key{Text: text, EventType: vaxis::EventPaste}
+}
+
+test fn terminal_hyperlinks_reject_controls_and_malformed_utf8() Void!Str {
+  for value in ["", "https://example.com?q=你好", "file:///tmp/report", "replacement�"] {
+    try testing::assert(terminal_events::valid_hyperlink(value), "Expected valid link: {value}")
+  }
+  for value in ["line\nbreak", "escape\x1b\\", "bell\a", "delete\x7f", "c1\u009c"] {
+    try testing::assert(not terminal_events::valid_hyperlink(value), "Expected control rejection")
+  }
+  let malformed = mut strings::Builder{}
+  malformed.WriteByte(Byte::from(156))
+  testing::assert(
+    not terminal_events::valid_hyperlink(malformed.String()),
+    "Expected malformed UTF-8 rejection",
+  )
+}
+
+test fn terminal_key_translation_returns_cooper_events() Void!Str {
+  let converted = terminal_events::key(
+    vaxis::Key{
+      Keycode: Int32::from(vaxis::KeyEnter),
+      Text: "\r",
+      Modifiers: vaxis::ModShift + vaxis::ModCtrl,
+      EventType: vaxis::EventRepeat,
+    },
+  )
+  try testing::assert(converted.name == "return", "Expected normalized return name")
+  try testing::assert(converted.event_type == event::KeyEventType::repeat, "Expected repeat event")
+  try testing::assert(converted.modifiers.shift and converted.modifiers.ctrl, "Expected modifiers")
+  let original = vaxis::Key{
+    Keycode: Int32::from('A'),
+    Text: "A",
+    Modifiers: vaxis::ModAlt + vaxis::ModSuper,
+    EventType: vaxis::EventRelease,
+  }
+  let normalized = terminal_events::key(original)
+  try testing::assert(
+    normalized.name == "a" and normalized.text == "A",
+    "Expected normalized name but original text",
+  )
+  try testing::assert(
+    normalized.event_type == event::KeyEventType::release and normalized.modifiers.alt and normalized.modifiers.super,
+    "Name normalization must preserve event metadata",
+  )
+  try testing::assert(
+    original.EventType == vaxis::EventRelease and original.Modifiers == vaxis::ModAlt + vaxis::ModSuper,
+    "Conversion must not mutate Vaxis input",
+  )
+  Result::ok(())
+}
+
+test fn terminal_paste_buffer_aggregates_and_resets() Void!Str {
+  let buffer = terminal_events::paste_buffer()
+  buffer.start()
+  buffer.append_key(pasted("one"))
+  buffer.append_key(
+    vaxis::Key{
+      Keycode: Int32::from('j'),
+      Modifiers: vaxis::ModCtrl,
+      EventType: vaxis::EventPaste,
+    },
+  )
+  buffer.append_key(pasted("two"))
+  let result = buffer.finish()
+  try testing::assert(result.active and result.value == "one\ntwo", "Expected aggregated paste")
+  try testing::assert(not buffer.finish().active, "Expected finish to reset paste state")
+  try testing::assert(not buffer.append_key(pasted("ignored")), "Inactive append must be rejected")
+  buffer.start()
+  buffer.append_key(pasted("discarded"))
+  buffer.start()
+  buffer.append_key(pasted("fresh"))
+  try testing::assert(buffer.finish().value == "fresh", "Repeated start must discard prior data")
+  buffer.start()
+  buffer.append_key(pasted("reset"))
+  buffer.reset()
+  buffer.reset()
+  let reset = buffer.finish()
+  try testing::assert(not reset.active and reset.value == "", "Reset must discard data and deactivate")
+  Result::ok(())
+}
+
+test fn terminal_paste_text_preserves_newlines_and_tabs() Void!Str {
+  try testing::assert(terminal_events::paste_text(pasted("界")) == "界", "Expected printable text")
+  try testing::assert(
+    terminal_events::paste_text(vaxis::Key{Keycode: Int32::from(vaxis::KeyEnter)}) == "\r",
+    "Expected carriage return",
+  )
+  try testing::assert(
+    terminal_events::paste_text(vaxis::Key{Keycode: Int32::from(vaxis::KeyTab)}) == "\t",
+    "Expected tab",
+  )
+  try testing::assert(
+    terminal_events::paste_text(vaxis::Key{Keycode: Int32::from(vaxis::KeySpace)}) == " ",
+    "Expected space",
+  )
+  testing::assert(
+    terminal_events::paste_text(vaxis::Key{Keycode: Int32::from('j')}) == "",
+    "Bare j without text is not a line feed",
+  )
+}
+
+test fn terminal_paste_buffer_serializes_concurrent_appends() Void!Str {
+  let buffer = terminal_events::paste_buffer()
+  buffer.start()
+  let done = Chan::new<Bool>(32)
+  for _ in 0..31 {
+    async::start(fn() {
+      buffer.append_key(pasted("x"))
+      done.send(true)
+    })
+  }
+  for _ in 0..31 {
+    done.receiver().recv()
+  }
+  let result = buffer.finish()
+  try testing::assert(
+    result.active and result.value.size() == 32,
+    "Expected 32 serialized bytes, received {result.value.size()}: {result.value}",
+  )
+  Result::ok(())
+}
+
+test fn terminal_mouse_translation_returns_cooper_events() Void!Str {
+  let converted = terminal_events::mouse(
+    vaxis::Mouse{
+      Button: vaxis::MouseWheelLeft,
+      Col: 4,
+      Row: 7,
+      Modifiers: vaxis::ModAlt,
+    },
+  )
+  try testing::assert(converted.event_type == event::MouseEventType::scroll, "Expected scroll event")
+  try testing::assert(
+    converted.scroll_x == -1 and converted.x == 4 and converted.y == 7,
+    "Expected mouse values",
+  )
+  try testing::assert(converted.modifiers.alt, "Expected mouse modifier")
+  let moved = terminal_events::mouse(
+    vaxis::Mouse{Button: vaxis::MouseNoButton, EventType: vaxis::EventMotion},
+  )
+  let dragged = terminal_events::mouse(
+    vaxis::Mouse{Button: vaxis::MouseRightButton, EventType: vaxis::EventMotion},
+  )
+  let released = terminal_events::mouse(
+    vaxis::Mouse{Button: vaxis::MouseMiddleButton, EventType: vaxis::EventRelease},
+  )
+  try testing::assert(
+    moved.event_type == event::MouseEventType::move and moved.button == event::MouseButton::none,
+    "Unpressed motion is a move",
+  )
+  try testing::assert(
+    dragged.event_type == event::MouseEventType::drag and dragged.button == event::MouseButton::right,
+    "Pressed motion is a drag",
+  )
+  try testing::assert(
+    released.event_type == event::MouseEventType::up and released.button == event::MouseButton::middle,
+    "Release preserves button",
+  )
+  let down = terminal_events::mouse(
+    vaxis::Mouse{Button: vaxis::MouseWheelDown, EventType: vaxis::EventRelease},
+  )
+  let up = terminal_events::mouse(vaxis::Mouse{Button: vaxis::MouseWheelUp})
+  let right = terminal_events::mouse(vaxis::Mouse{Button: vaxis::MouseWheelRight})
+  try testing::assert(
+    down.event_type == event::MouseEventType::scroll and down.scroll_y == 1 and down.scroll_x == 0,
+    "Wheel direction takes priority over release",
+  )
+  try testing::assert(up.scroll_y == -1 and up.scroll_x == 0, "Wheel up sign")
+  try testing::assert(right.scroll_x == 1 and right.scroll_y == 0, "Wheel right sign")
+  Result::ok(())
+}

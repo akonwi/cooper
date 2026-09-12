@@ -76,9 +76,9 @@ transition or returns false after it.
 
 ### Backend selection
 
-Keep protocol details beneath `ffi/core/backend/notificationbridge/`. The
-initial bridge uses Vaxis's own output path and supports only protocols Vaxis can
-emit safely:
+Keep protocol selection and sanitization in `notification.ard` behind the
+internal backend. Runtime supplies terminal identity, environment lookup, and
+Vaxis's output path. Support only protocols Vaxis can emit safely:
 
 - OSC 777 for detected Ghostty, WezTerm, Warp, hterm/Blink, Contour,
   VTE/rxvt-derived terminals, and Windows Terminal;
@@ -87,7 +87,7 @@ emit safely:
   tmux, GNU Screen, and Zellij sessions that require passthrough Cooper cannot
   request through Vaxis.
 
-Terminal identity is stronger than environment hints. The bridge may use
+Terminal identity is stronger than environment hints. The backend may use
 Vaxis's terminal ID, `TERM_PROGRAM`, `TERM`, `TERM_FEATURES`, and `WT_SESSION`.
 These environment overrides are supported for operational diagnosis:
 
@@ -100,7 +100,7 @@ Forcing OSC 99 records an unsupported route until Vaxis exposes that protocol.
 Multiplexer safety remains authoritative over a forced OSC 9 or OSC 777 because
 Vaxis cannot wrap notification output for those sessions.
 
-The bridge replaces malformed UTF-8, C0/C1 controls, DEL, and semicolons with
+The backend replaces malformed UTF-8, C0/C1 controls, DEL, and semicolons with
 spaces so title and message cannot terminate or add protocol fields. OSC 9
 combines a nonempty title and message as `title: message`. ConEmu is excluded
 because its overloaded OSC 9 command forms make untrusted payloads unsafe.
@@ -125,7 +125,7 @@ struct Notification {
 ```
 
 Snapshots remain readable after TestApp destruction. Rejected requests are not
-recorded. Go boundary tests validate protocol selection and wire sanitization;
+recorded. Ard policy tests validate protocol selection and wire sanitization;
 PTY coverage validates live OSC output, disabled behavior, suspension, and
 clean teardown.
 

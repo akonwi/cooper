@@ -1,6 +1,7 @@
 use ard/async
 use ard/unsafe
 
+use go:context
 use cooper/animation
 use cooper/clipboard
 use cooper/core/focus
@@ -10,19 +11,20 @@ use cooper/core/pointer
 use cooper/core/router
 use cooper/core/runtime as dispatch_runtime
 use cooper/core/selection_state
+use cooper/core/terminal_events
 use cooper/event
-use go:cooper/ffi/core/backend/clipboardbridge
-use go:cooper/ffi/core/backend/clock
-use go:cooper/ffi/core/backend/notificationbridge
-use go:cooper/ffi/core/backend/signalwatch
-use go:cooper/ffi/core/backend/urlopen
-use go:cooper/ffi/core/backend/vaxisbridge as bridge
+use go:cooper/ffi/numberbridge as numbers
+use go:cooper/ffi/signalwatch
+use go:cooper/ffi/urlopen
+use cooper/notification
 use cooper/terminal_progress
 use cooper/ui/color
 use cooper/ui/selection as public_selection
 use cooper/ui/style
 use go:math
+use go:os
 use go:sync
+use go:time
 use go:unicode
 use go:vaxis
 
@@ -64,16 +66,6 @@ private fn vaxis_mouse_shape(cursor: event::MouseCursor) vaxis::MouseShape {
   }
 }
 
-private fn terminal_progress_code(state: terminal_progress::State) Int {
-  match state {
-    terminal_progress::State::remove => 0,
-    terminal_progress::State::normal => 1,
-    terminal_progress::State::error => 2,
-    terminal_progress::State::indeterminate => 3,
-    terminal_progress::State::paused => 4,
-  }
-}
-
 private fn vaxis_attributes(style: paint::CellStyle) vaxis::AttributeMask {
   mut attributes = vaxis::AttributeMask::from(0)
   if style.bold {
@@ -112,70 +104,6 @@ private fn vaxis_style(style: paint::CellStyle) vaxis::Style {
     UnderlineStyle: underline,
     Attribute: vaxis_attributes(style),
   }
-}
-
-private fn key_event_type(code: Int) event::KeyEventType {
-  match code {
-    1 => event::KeyEventType::repeat,
-    2 => event::KeyEventType::release,
-    _ => event::KeyEventType::press,
-  }
-}
-
-private fn key_event(key: vaxis::Key) mut event::KeyEvent {
-  let converted = bridge::Key(key)
-  event::key(
-    converted.Name,
-    converted.Text,
-    key_event_type(converted.EventType),
-    event::Modifiers{
-      shift: converted.Shift,
-      ctrl: converted.Ctrl,
-      alt: converted.Alt,
-      super: converted.Super,
-    },
-  )
-}
-
-private fn mouse_event_type(code: Int) event::MouseEventType {
-  match code {
-    1 => event::MouseEventType::up,
-    2 => event::MouseEventType::move,
-    3 => event::MouseEventType::drag,
-    4 => event::MouseEventType::drag_end,
-    5 => event::MouseEventType::drop,
-    6 => event::MouseEventType::over,
-    7 => event::MouseEventType::out,
-    8 => event::MouseEventType::scroll,
-    _ => event::MouseEventType::down,
-  }
-}
-
-private fn mouse_button(code: Int) event::MouseButton {
-  match code {
-    1 => event::MouseButton::left,
-    2 => event::MouseButton::middle,
-    3 => event::MouseButton::right,
-    _ => event::MouseButton::none,
-  }
-}
-
-private fn mouse_event(mouse: vaxis::Mouse) mut event::MouseEvent {
-  let converted = bridge::Mouse(mouse)
-  event::mouse(
-    mouse_event_type(converted.EventType),
-    mouse_button(converted.Button),
-    converted.X,
-    converted.Y,
-    event::Modifiers{
-      shift: converted.Shift,
-      ctrl: converted.Ctrl,
-      alt: converted.Alt,
-      super: converted.Super,
-    },
-    scroll_x: converted.ScrollX,
-    scroll_y: converted.ScrollY,
-  )
 }
 
 private fn default_width(text: Str) Int {
@@ -322,13 +250,14 @@ private struct State {
   headless: Bool,
   detached: Bool,
   test_now_ms: Int64,
+  clock_started: time::Time,
   headless_width: Int,
   headless_height: Int,
   last_frame: mut paint::Buffer,
   next_listener_id: Int,
   key_listeners: [KeyListener],
   paste_listeners: [PasteListener],
-  live_paste_buffer: mut bridge::PasteBuffer,
+  live_paste_buffer: mut terminal_events::PasteBuffer,
   terminal_focus_state: event::TerminalFocus?,
   terminal_focus_listeners: [TerminalFocusListener],
   selection_listeners: [SelectionListener],
@@ -459,13 +388,14 @@ private fn state(
     headless: headless,
     detached: detached,
     test_now_ms: 0,
+    clock_started: time::Now(),
     headless_width: width,
     headless_height: height,
     last_frame: paint::new_buffer(width, height),
     next_listener_id: 1,
     key_listeners: [],
     paste_listeners: [],
-    live_paste_buffer: bridge::NewPasteBuffer(),
+    live_paste_buffer: terminal_events::paste_buffer(),
     terminal_focus_state: Maybe::new<event::TerminalFocus>(),
     terminal_focus_listeners: [],
     selection_listeners: [],
@@ -480,36 +410,35 @@ private fn new_live_state(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Boo
   let watcher = signalwatch::New()
   match vaxis::New(vaxis::Options{DisableMouse: not use_mouse, NoSignals: true}) {
     ok(terminal) => {
-      let backend = clipboardbridge::New(terminal)
-      let clipboard = clipboard::internal_new(
-        fn() Str!Error {
-          backend.Read()
+      let clipboard = clipboard::internal_terminal(
+        fn(ctx: context::Context) Str!Error {
+          terminal.ClipboardPop(ctx)
         },
         fn(value: Str) {
-          backend.Write(value)
-        },
-        fn() {
-          backend.Suspend()
-        },
-        fn() {
-          backend.Resume()
-        },
-        fn() {
-          backend.Cancel()
+          terminal.ClipboardPush(value)
         },
       )
-      let notification_backend = notificationbridge::New(terminal)
+      let notification_backend = notification::internal_backend(
+        fn() Str {
+          terminal.TerminalID()
+        },
+        fn(name: Str) Str {
+          os::Getenv(name)
+        },
+        fn(title: Str, body: Str) {
+          terminal.Notify(title, body)
+        },
+      )
       let created = state(
         Maybe::new<mut vaxis::Vaxis>(terminal),
         clipboard,
         fn(message: Str, title: Str?) Bool {
-          notification_backend.Notify(message, title.or(""))
+          notification_backend.notify(message, title.or(""))
         },
         fn(progress_state: terminal_progress::State, percent: Int?) Bool {
-          notification_backend.SetProgress(
-            terminal_progress_code(progress_state),
-            percent.or(0),
-            percent.is_some(),
+          notification_backend.set_progress(
+            terminal_progress::internal_code(progress_state),
+            percent,
           )
         },
         fn(value: Str) {
@@ -724,7 +653,7 @@ impl State {
     if self.headless {
       self.test_now_ms
     } else {
-      clock::Milliseconds()
+      time::Since(self.clock_started).Milliseconds()
     }
   }
   
@@ -822,7 +751,9 @@ impl State {
       }
       let wake = self.animation_frame_wake
       async::start(fn() {
-        clock::SleepMilliseconds(delay)
+        if delay > 0 {
+          time::Sleep(time::Duration::from(delay) * time::Millisecond)
+        }
         select {
           wake.send(true) => (),
           _ => (),
@@ -856,7 +787,7 @@ impl State {
       if self.animation_clock_initialized {
         let elapsed = now - self.animation_last_ms
         if elapsed > 0 {
-          delta = clock::IntFromInt64(elapsed).expect("animation frame delta exceeds Int range")
+          delta = numbers::IntFromInt64(elapsed).expect("animation frame delta exceeds Int range")
         }
       }
       self.animation_clock_initialized = true
@@ -1380,7 +1311,7 @@ impl State {
       self.updates.stop()
       self.key_listeners = []
       self.paste_listeners = []
-      self.live_paste_buffer.Reset()
+      self.live_paste_buffer.reset()
       self.terminal_focus_listeners = []
       self.selection_listeners = []
       self.pointer.clear()
@@ -2072,7 +2003,7 @@ impl State {
             }
             self.lifecycle.Unlock()
             if committed {
-              self.live_paste_buffer.Reset()
+              self.live_paste_buffer.reset()
             }
             if not committed {
               outcome = Result::err(Error::new("application was destroyed while suspending"))
@@ -2370,11 +2301,11 @@ impl State {
                               self.paint_live(root)
                             }
                           },
-                          vaxis::PasteStartEvent(_) => self.live_paste_buffer.Start(),
+                          vaxis::PasteStartEvent(_) => self.live_paste_buffer.start(),
                           vaxis::PasteEndEvent(_) => {
-                            let pasted = self.live_paste_buffer.Finish()
-                            if pasted.Active {
-                              let converted = event::paste(pasted.Value)
+                            let pasted = self.live_paste_buffer.finish()
+                            if pasted.active {
+                              let converted = event::paste(pasted.value)
                               let outcome = self.route_live_paste(root, converted)
                               self.apply_outcome(outcome)
                               if outcome.redraw or self.take_redraw_request() {
@@ -2386,7 +2317,7 @@ impl State {
                             }
                           },
                           vaxis::Mouse(mouse) => {
-                            let converted = mouse_event(mouse)
+                            let converted = terminal_events::mouse(mouse)
                             let outcome = self.pointer.process(
                               root,
                               converted,
@@ -2406,8 +2337,8 @@ impl State {
                           },
                           vaxis::Key(key) => {
                             if key.EventType == vaxis::EventPaste {
-                              if not self.live_paste_buffer.AppendKey(key) {
-                                let converted = event::paste(bridge::PasteText(key))
+                              if not self.live_paste_buffer.append_key(key) {
+                                let converted = event::paste(terminal_events::paste_text(key))
                                 let outcome = self.route_live_paste(root, converted)
                                 self.apply_outcome(outcome)
                                 if outcome.redraw or self.take_redraw_request() {
@@ -2418,7 +2349,7 @@ impl State {
                                 }
                               }
                             } else {
-                              let converted = key_event(key)
+                              let converted = terminal_events::key(key)
                               self.emit_key(converted)
                               self.focused.reconcile(root)
                               if self.exit_on_ctrl_c and converted.event_type != event::KeyEventType::release and converted.matches("c", ctrl: true) and (not converted.is_default_prevented()) and (not converted.is_propagation_stopped()) {

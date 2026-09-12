@@ -2,7 +2,7 @@ use cooper/core/layout
 use cooper/core/layout/cache
 use cooper/core/layout/length
 use cooper/core/layout/numeric
-use go:cooper/ffi/core/backend/numberbridge as numbers
+use go:cooper/ffi/numberbridge as numbers
 use cooper/ui/style
 
 // Copyright (c) Meta Platforms, Inc. and affiliates.

@@ -1,4 +1,264 @@
+use go:strings
+use go:sync
+
 struct Notification {
   message: Str,
   title: Str?,
+}
+
+private enum Protocol {
+  none,
+  osc9,
+  osc777,
+  osc99,
+}
+
+// Internal terminal policy; applications use Runtime notification/progress APIs.
+struct Backend {
+  notify: fn(Str, Str) Bool,
+  set_progress: fn(Int, Int?) Bool,
+}
+
+private struct Policy {
+  mutex: mut sync::Mutex,
+  protocol: Protocol,
+  progress_supported: Bool,
+  emit: fn(Str, Str),
+}
+
+private fn disabled(value: Str) Bool {
+  match strings::ToLower(strings::TrimSpace(value)) {
+    "0" => true,
+    "false" => true,
+    "off" => true,
+    _ => false,
+  }
+}
+
+private fn in_multiplexer(terminal_id: Str, getenv: fn(Str) Str) Bool {
+  let identifier = strings::ToLower(strings::TrimSpace(terminal_id))
+  let term = strings::ToLower(getenv("TERM"))
+  identifier.starts_with("tmux") or identifier.starts_with("screen") or identifier.starts_with("zellij") or getenv("TMUX") != "" or getenv("STY") != "" or getenv("ZELLIJ") != "" or getenv("ZELLIJ_SESSION_NAME") != "" or getenv("ZELLIJ_PANE_ID") != "" or term.starts_with("tmux") or term.starts_with("screen")
+}
+
+private fn detect_protocol(value: Str) Protocol {
+  let identifier = strings::ToLower(value)
+  if identifier == "" {
+    Protocol::none
+  } else if identifier.contains("kitty") or identifier.contains("foot") {
+    Protocol::osc99
+  } else if identifier.contains("ghostty") or identifier.contains("wezterm") or identifier.contains("warp") or identifier.contains("hterm") or identifier.contains("blink") or identifier.contains("contour") or identifier.contains("vte") or identifier.contains("gnome") or identifier.contains("tilix") or identifier.contains("terminator") or identifier.contains("xfce") or identifier.contains("urxvt") or identifier.contains("rxvt") or identifier.contains("windows terminal") or identifier.contains("windows_terminal") {
+    Protocol::osc777
+  } else if identifier.contains("iterm") or identifier.contains("apple_terminal") or identifier.contains("terminal.app") {
+    Protocol::osc9
+  } else {
+    Protocol::none
+  }
+}
+
+private fn term_features_has_notification(features: Str) Bool {
+  mut code = ""
+  mut found = false
+  for character in features {
+    if character >= 'A' and character <= 'Z' {
+      if code == "No" {
+        found = true
+      }
+      code = "{character}"
+    } else if character >= 'a' and character <= 'z' and code != "" {
+      code = "{code}{character}"
+    } else {
+      if code == "No" {
+        found = true
+      }
+      code = ""
+    }
+  }
+  found or code == "No"
+}
+
+private fn select_protocol(terminal_id: Str, getenv: fn(Str) Str) Protocol {
+  if disabled(getenv("COOPER_NOTIFICATIONS")) or in_multiplexer(terminal_id, getenv) {
+    Protocol::none
+  } else {
+    let forced = match strings::ToLower(strings::TrimSpace(getenv("COOPER_NOTIFICATION_PROTOCOL"))) {
+      "osc9" => Maybe::new<Protocol>(Protocol::osc9),
+      "osc777" => Maybe::new<Protocol>(Protocol::osc777),
+      "osc99" => Maybe::new<Protocol>(Protocol::osc99),
+      "none" => Maybe::new<Protocol>(Protocol::none),
+      "0" => Maybe::new<Protocol>(Protocol::none),
+      "false" => Maybe::new<Protocol>(Protocol::none),
+      "off" => Maybe::new<Protocol>(Protocol::none),
+      _ => Maybe::new<Protocol>(),
+    }
+    match forced {
+      protocol => protocol,
+      _ => {
+        let identified = detect_protocol(terminal_id)
+        let program = detect_protocol(getenv("TERM_PROGRAM"))
+        if identified != Protocol::none {
+          identified
+        } else if term_features_has_notification(getenv("TERM_FEATURES")) {
+          Protocol::osc9
+        } else if program != Protocol::none {
+          program
+        } else if getenv("WT_SESSION") != "" {
+          Protocol::osc777
+        } else {
+          detect_protocol(getenv("TERM"))
+        }
+      },
+    }
+  }
+}
+
+private fn supports_progress(terminal_id: Str, getenv: fn(Str) Str) Bool {
+  let setting = getenv("COOPER_TERMINAL_PROGRESS")
+  if disabled(setting) or in_multiplexer(terminal_id, getenv) {
+    false
+  } else {
+    match strings::ToLower(strings::TrimSpace(setting)) {
+      "1" => true,
+      "true" => true,
+      "on" => true,
+      _ => {
+        let identifier = strings::ToLower(strings::TrimSpace(terminal_id))
+        if identifier != "" {
+          identifier.starts_with("ghostty")
+        } else {
+          strings::ToLower(strings::TrimSpace(getenv("TERM_PROGRAM"))) == "ghostty" or strings::ToLower(getenv("TERM")).contains("ghostty")
+        }
+      },
+    }
+  }
+}
+
+private fn sanitize(value: Str) Str {
+  let bytes = value.bytes()
+  mut byte_index = 0
+  let output = mut strings::Builder{}
+  for character in value {
+    let code = character.to_int()
+    mut malformed = false
+    mut width = 1
+    if code > 65535 {
+      width = 4
+    } else if code > 2047 {
+      width = 3
+    } else if code > 127 {
+      width = 2
+    }
+    if code == 65533 {
+      let valid_replacement = byte_index + 2 < bytes.size() and bytes.at(byte_index).expect("current byte").to_int() == 239 and bytes.at(byte_index + 1).expect("replacement byte").to_int() == 191 and bytes.at(byte_index + 2).expect("replacement byte").to_int() == 189
+      if not valid_replacement {
+        malformed = true
+        width = 1
+      }
+    }
+    if malformed or code < 32 or code >= 127 and code <= 159 or character == ';' {
+      output.WriteByte(Byte::from(32))
+      ()
+    } else {
+      output.WriteRune(Int32::from(character))
+      ()
+    }
+    byte_index = byte_index + width
+  }
+  output.String()
+}
+
+fn internal_backend(terminal_id: fn() Str, getenv: fn(Str) Str, emit: fn(Str, Str)) mut Backend {
+  let id = terminal_id()
+  let mutex = mut sync::Mutex{}
+  let policy = mut Policy{
+    mutex: mutex,
+    protocol: select_protocol(id, getenv),
+    progress_supported: supports_progress(id, getenv),
+    emit: emit,
+  }
+  (mut Backend{
+    notify: fn(message: Str, title: Str) Bool {
+      policy.notify(message, title)
+    },
+    set_progress: fn(state: Int, percent: Int?) Bool {
+      policy.set_progress(state, percent)
+    },
+  })
+}
+
+impl Policy {
+  fn mut notify(message: Str, title: Str) Bool {
+    self.mutex.Lock()
+    defer self.mutex.Unlock()
+    let clean_message = sanitize(message)
+    let clean_title = sanitize(title)
+    let accepted = match self.protocol {
+      Protocol::osc9 => {
+        mut body = clean_message
+        if clean_title != "" {
+          body = "{clean_title}: {clean_message}"
+        }
+        self.emit("", body)
+        true
+      },
+      Protocol::osc777 => {
+        if clean_title == "" {
+          mut heading = clean_message
+          if heading == "" {
+            heading = " "
+          }
+          self.emit(heading, "")
+        } else {
+          self.emit(clean_title, clean_message)
+        }
+        true
+      },
+      _ => false,
+    }
+    accepted
+  }
+  
+  fn mut set_progress(state: Int, percent: Int?) Bool {
+    self.mutex.Lock()
+    defer self.mutex.Unlock()
+    mut valid = self.progress_supported
+    match percent {
+      value => { valid = valid and value >= 0 and value <= 100 },
+      _ => (),
+    }
+    mut payload = ""
+    match state {
+      0 => {
+        valid = valid and not percent.is_some()
+        payload = "4;0"
+      },
+      1 => {
+        match percent {
+          value => { payload = "4;1;{value}" },
+          _ => { valid = false },
+        }
+      },
+      2 => {
+        match percent {
+          value => { payload = "4;2;{value}" },
+          _ => { payload = "4;2" },
+        }
+      },
+      3 => {
+        valid = valid and not percent.is_some()
+        payload = "4;3"
+      },
+      4 => {
+        match percent {
+          value => { payload = "4;4;{value}" },
+          _ => { payload = "4;4" },
+        }
+      },
+      _ => { valid = false },
+    }
+    if valid {
+      self.emit("", payload)
+    }
+    valid
+  }
 }

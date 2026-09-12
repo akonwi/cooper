@@ -1,0 +1,460 @@
+use ard/testing
+
+use cooper/notification
+use go:strings
+
+private struct Call {
+  title: Str,
+  body: Str,
+}
+
+private struct Log {
+  calls: [Call],
+}
+
+private struct EnvironmentCase {
+  id: Str,
+  term_program: Str,
+  term: Str,
+  wt_session: Str,
+  setting: Str,
+  expected: Bool,
+}
+
+private fn empty_environment(_: Str) Str {
+  ""
+}
+
+test fn notification_protocols_format_and_sanitize_payloads() Void!Str {
+  let log = mut Log{calls: []}
+  let backend = notification::internal_backend(
+    fn() Str {
+      "ghostty 1.2.3"
+    },
+    empty_environment,
+    fn(title: Str, body: Str) {
+      log.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(backend.notify("build;done\nnow\x1b", "Cooper; CI"), "expected OSC 777")
+  try testing::assert(backend.notify("finished", ""), "expected titleless OSC 777")
+  let first = log.calls.at(0).expect("first call")
+  let second = log.calls.at(1).expect("second call")
+  try testing::assert(
+    first.title == "Cooper  CI" and first.body == "build done now ",
+    "expected sanitized fields",
+  )
+  testing::assert(
+    second.title == "finished" and second.body == "",
+    "expected forced OSC 777 titleless form",
+  )
+}
+
+test fn notification_sanitization_distinguishes_malformed_bytes_from_replacement_runes() Void!Str {
+  let log = mut Log{calls: []}
+  let backend = notification::internal_backend(
+    fn() Str {
+      "iTerm2"
+    },
+    empty_environment,
+    fn(title: Str, body: Str) {
+      log.calls.push(Call{title: title, body: body})
+    },
+  )
+  let malformed = mut strings::Builder{}
+  malformed.WriteString("bad")
+  malformed.WriteByte(Byte::from(255))
+  malformed.WriteString("�")
+  try testing::assert(backend.notify(malformed.String(), ""), "expected OSC 9")
+  testing::assert(
+    log.calls.at(0).expect("call").body == "bad �",
+    "malformed byte must become a space while genuine U+FFFD is preserved",
+  )
+}
+
+test fn empty_notification_fields_preserve_original_protocol_forms() Void!Str {
+  let log = mut Log{calls: []}
+  let osc777 = notification::internal_backend(
+    fn() Str {
+      "WezTerm"
+    },
+    empty_environment,
+    fn(title: Str, body: Str) {
+      log.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(osc777.notify("", ""), "expected OSC 777")
+  let osc9 = notification::internal_backend(
+    fn() Str {
+      "iTerm2"
+    },
+    empty_environment,
+    fn(title: Str, body: Str) {
+      log.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(osc9.notify("", ""), "expected OSC 9")
+  try testing::assert(log.calls.at(0).expect("osc777").title == " ", "OSC 777 needs nonempty title")
+  testing::assert(log.calls.at(1).expect("osc9").body == "", "OSC 9 keeps an empty body")
+}
+
+test fn term_features_codes_and_protocol_precedence_are_preserved() Void!Str {
+  for feature in ["CwNo", "NoCw", "No1Cw"] {
+    let backend = notification::internal_backend(
+      fn() Str {
+        ""
+      },
+      fn(name: Str) Str {
+        if name == "TERM_FEATURES" {
+          feature
+        } else {
+          ""
+        }
+      },
+      fn(_: Str, _: Str) {},
+    )
+    try testing::assert(backend.notify("message", ""), "TERM_FEATURES {feature} must select OSC 9")
+  }
+  let false_positive = notification::internal_backend(
+    fn() Str {
+      ""
+    },
+    fn(name: Str) Str {
+      if name == "TERM_FEATURES" {
+        "Noo"
+      } else {
+        ""
+      }
+    },
+    fn(_: Str, _: Str) {},
+  )
+  try testing::assert(not false_positive.notify("message", ""), "Noo is not the No capability")
+  
+  let identity_wins = mut Log{calls: []}
+  let identified = notification::internal_backend(
+    fn() Str {
+      "ghostty"
+    },
+    fn(name: Str) Str {
+      if name == "TERM_FEATURES" {
+        "No"
+      } else if name == "TERM_PROGRAM" {
+        "iTerm2"
+      } else {
+        ""
+      }
+    },
+    fn(title: Str, body: Str) {
+      identity_wins.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(identified.notify("message", ""), "terminal identity must be selected")
+  try testing::assert(
+    identity_wins.calls.at(0).expect("identity").title == "message",
+    "identity precedes features",
+  )
+  
+  let features_win = mut Log{calls: []}
+  let featured = notification::internal_backend(
+    fn() Str {
+      ""
+    },
+    fn(name: Str) Str {
+      if name == "TERM_FEATURES" {
+        "No"
+      } else if name == "TERM_PROGRAM" {
+        "ghostty"
+      } else {
+        ""
+      }
+    },
+    fn(title: Str, body: Str) {
+      features_win.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(featured.notify("message", ""), "features must be selected")
+  testing::assert(
+    features_win.calls.at(0).expect("features").body == "message",
+    "features precede TERM_PROGRAM",
+  )
+}
+
+test fn osc9_combines_title_and_unsupported_protocols_do_not_emit() Void!Str {
+  let log = mut Log{calls: []}
+  let osc9 = notification::internal_backend(
+    fn() Str {
+      "iTerm2 3.5"
+    },
+    empty_environment,
+    fn(title: Str, body: Str) {
+      log.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(osc9.notify("tests;passed\u009d", "Cooper"), "expected OSC 9")
+  try testing::assert(
+    log.calls.at(0).expect("call").body == "Cooper: tests passed ",
+    "expected combined OSC 9 body",
+  )
+  
+  let unsupported = notification::internal_backend(
+    fn() Str {
+      "kitty 0.40"
+    },
+    empty_environment,
+    fn(title: Str, body: Str) {
+      log.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(not unsupported.notify("ignored", ""), "OSC 99 remains unsupported")
+  testing::assert(log.calls.size() == 1, "unsupported request must not emit")
+}
+
+test fn environment_precedence_and_multiplexer_guards_are_preserved() Void!Str {
+  let log = mut Log{calls: []}
+  let forced = notification::internal_backend(
+    fn() Str {
+      "ghostty"
+    },
+    fn(name: Str) Str {
+      if name == "COOPER_NOTIFICATION_PROTOCOL" {
+        "OSC9"
+      } else {
+        ""
+      }
+    },
+    fn(title: Str, body: Str) {
+      log.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(forced.notify("done", "Cooper"), "forced OSC 9 should win")
+  try testing::assert(
+    log.calls.at(0).expect("forced call").body == "Cooper: done",
+    "expected forced format",
+  )
+  
+  let multiplexed = notification::internal_backend(
+    fn() Str {
+      ""
+    },
+    fn(name: Str) Str {
+      if name == "TMUX" {
+        "/tmp/tmux"
+      } else if name == "TERM_PROGRAM" {
+        "ghostty"
+      } else {
+        ""
+      }
+    },
+    fn(title: Str, body: Str) {
+      log.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(not multiplexed.notify("ignored", ""), "multiplexers remain unsupported")
+  testing::assert(log.calls.size() == 1, "multiplexer must not emit")
+}
+
+test fn original_environment_selection_table_is_preserved() Void!Str {
+  let cases = [
+    EnvironmentCase{
+      id: "",
+      term_program: "ghostty",
+      term: "",
+      wt_session: "",
+      setting: "",
+      expected: true,
+    },
+    EnvironmentCase{
+      id: "",
+      term_program: "",
+      term: "",
+      wt_session: "session",
+      setting: "",
+      expected: true,
+    },
+    EnvironmentCase{
+      id: "",
+      term_program: "",
+      term: "xterm-ghostty",
+      wt_session: "",
+      setting: "",
+      expected: true,
+    },
+    EnvironmentCase{
+      id: "ghostty",
+      term_program: "",
+      term: "",
+      wt_session: "",
+      setting: "osc99",
+      expected: false,
+    },
+    EnvironmentCase{
+      id: "kitty 0.40",
+      term_program: "ghostty",
+      term: "",
+      wt_session: "",
+      setting: "",
+      expected: false,
+    },
+    EnvironmentCase{
+      id: "ConEmu 230724",
+      term_program: "",
+      term: "",
+      wt_session: "",
+      setting: "",
+      expected: false,
+    },
+    EnvironmentCase{
+      id: "xterm",
+      term_program: "",
+      term: "",
+      wt_session: "",
+      setting: "",
+      expected: false,
+    },
+  ]
+  for selected in cases {
+    let backend = notification::internal_backend(
+      fn() Str {
+        selected.id
+      },
+      fn(name: Str) Str {
+        if name == "TERM_PROGRAM" {
+          selected.term_program
+        } else if name == "TERM" {
+          selected.term
+        } else if name == "WT_SESSION" {
+          selected.wt_session
+        } else if name == "COOPER_NOTIFICATION_PROTOCOL" {
+          selected.setting
+        } else {
+          ""
+        }
+      },
+      fn(_: Str, _: Str) {},
+    )
+    try testing::assert(
+      backend.notify("message", "") == selected.expected,
+      "unexpected notification support for {selected.id}/{selected.term_program}/{selected.term}",
+    )
+  }
+  testing::assert(true, "environment table completed")
+}
+
+test fn original_progress_support_table_is_preserved() Void!Str {
+  let cases = [
+    EnvironmentCase{
+      id: "ghostty 1.2.3",
+      term_program: "",
+      term: "",
+      wt_session: "",
+      setting: "",
+      expected: true,
+    },
+    EnvironmentCase{
+      id: "",
+      term_program: "ghostty",
+      term: "",
+      wt_session: "",
+      setting: "",
+      expected: true,
+    },
+    EnvironmentCase{
+      id: "",
+      term_program: "",
+      term: "xterm-ghostty",
+      wt_session: "",
+      setting: "",
+      expected: true,
+    },
+    EnvironmentCase{
+      id: "",
+      term_program: "",
+      term: "",
+      wt_session: "",
+      setting: "1",
+      expected: true,
+    },
+    EnvironmentCase{
+      id: "ghostty",
+      term_program: "",
+      term: "",
+      wt_session: "",
+      setting: "off",
+      expected: false,
+    },
+    EnvironmentCase{
+      id: "WezTerm 20240203",
+      term_program: "",
+      term: "",
+      wt_session: "",
+      setting: "",
+      expected: false,
+    },
+    EnvironmentCase{
+      id: "iTerm2 3.5",
+      term_program: "ghostty",
+      term: "",
+      wt_session: "",
+      setting: "",
+      expected: false,
+    },
+  ]
+  for selected in cases {
+    let backend = notification::internal_backend(
+      fn() Str {
+        selected.id
+      },
+      fn(name: Str) Str {
+        if name == "TERM_PROGRAM" {
+          selected.term_program
+        } else if name == "TERM" {
+          selected.term
+        } else if name == "COOPER_TERMINAL_PROGRESS" {
+          selected.setting
+        } else {
+          ""
+        }
+      },
+      fn(_: Str, _: Str) {},
+    )
+    try testing::assert(
+      backend.set_progress(3, Maybe::new<Int>()) == selected.expected,
+      "unexpected progress support for {selected.id}/{selected.term_program}/{selected.term}",
+    )
+  }
+  testing::assert(true, "progress table completed")
+}
+
+test fn ghostty_progress_payloads_and_validation_are_preserved() Void!Str {
+  let log = mut Log{calls: []}
+  let backend = notification::internal_backend(
+    fn() Str {
+      "ghostty"
+    },
+    empty_environment,
+    fn(title: Str, body: Str) {
+      log.calls.push(Call{title: title, body: body})
+    },
+  )
+  try testing::assert(backend.set_progress(0, Maybe::new<Int>()), "remove")
+  try testing::assert(backend.set_progress(1, Maybe::new<Int>(42)), "normal")
+  try testing::assert(backend.set_progress(2, Maybe::new<Int>()), "error without percent")
+  try testing::assert(backend.set_progress(2, Maybe::new<Int>(75)), "error")
+  try testing::assert(backend.set_progress(3, Maybe::new<Int>()), "indeterminate")
+  try testing::assert(backend.set_progress(4, Maybe::new<Int>()), "paused without percent")
+  try testing::assert(backend.set_progress(4, Maybe::new<Int>(25)), "paused")
+  try testing::assert(not backend.set_progress(-1, Maybe::new<Int>()), "negative state")
+  try testing::assert(not backend.set_progress(0, Maybe::new<Int>(1)), "remove rejects percent")
+  try testing::assert(not backend.set_progress(1, Maybe::new<Int>()), "normal requires percent")
+  try testing::assert(not backend.set_progress(3, Maybe::new<Int>(1)), "indeterminate rejects percent")
+  try testing::assert(not backend.set_progress(5, Maybe::new<Int>()), "invalid state")
+  try testing::assert(not backend.set_progress(2, Maybe::new<Int>(101)), "invalid percent")
+  try testing::assert(log.calls.size() == 7, "only valid reports emit")
+  try testing::assert(log.calls.at(0).expect("remove").body == "4;0", "remove payload")
+  try testing::assert(log.calls.at(1).expect("normal").body == "4;1;42", "normal payload")
+  try testing::assert(log.calls.at(2).expect("error").body == "4;2", "error payload without percent")
+  try testing::assert(log.calls.at(3).expect("error").body == "4;2;75", "error payload")
+  try testing::assert(log.calls.at(4).expect("indeterminate").body == "4;3", "indeterminate payload")
+  try testing::assert(log.calls.at(5).expect("paused").body == "4;4", "paused payload without percent")
+  testing::assert(log.calls.at(6).expect("paused").body == "4;4;25", "paused payload")
+}

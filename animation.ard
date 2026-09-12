@@ -1,7 +1,7 @@
 use ard/unsafe
 
-use go:cooper/ffi/core/backend/numberbridge
 use go:math
+use go:strconv
 
 type Easing = fn(Float64) Float64
 
@@ -77,6 +77,24 @@ private fn require_finite(value: Float64, name: Str) Float64 {
     panic("{name} must be finite")
   }
   value
+}
+
+// Explicitly unsupported internal numeric boundary for integer animation tracks.
+fn internal_rounded_int(value: Float64) Int!Str {
+  if math::IsNaN(value) or math::IsInf(value, 0) {
+    Result::err("{value} is not finite")
+  } else {
+    let rounded = math::Round(value)
+    let limit = match strconv::IntSize {
+      32 => math::Ldexp(1.0, 31),
+      _ => math::Ldexp(1.0, 63),
+    }
+    if rounded >= limit or rounded < 0.0 - limit {
+      Result::err("{rounded} exceeds the platform Int range")
+    } else {
+      Result::ok(rounded.to_int())
+    }
+  }
 }
 
 fn linear(value: Float64) Float64 {
@@ -219,7 +237,7 @@ fn lerp_int(from: Int, to: Int, progress: Float64) Int {
     if interpolated < 0.0 - exact_limit or interpolated > exact_limit {
       panic("interpolated integer must fit the exact Float64 integer range")
     }
-    numberbridge::RoundedInt(interpolated).expect("interpolated integer exceeds Int range")
+    internal_rounded_int(interpolated).expect("interpolated integer exceeds Int range")
   }
 }
 

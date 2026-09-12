@@ -6,7 +6,7 @@ use cooper/core/layout/visitor as layout_visitor
 use cooper/core/paint
 use cooper/core/runtime
 use cooper/event
-use go:cooper/ffi/core/backend/numberbridge as numbers
+use go:cooper/ffi/numberbridge as numbers
 use cooper/ui/color
 use cooper/ui/geometry
 use cooper/ui/style

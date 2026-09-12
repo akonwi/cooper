@@ -1,0 +1,201 @@
+use ard/unsafe
+
+use cooper/event
+use go:cooper/ffi/vaxisbridge as bridge
+use go:strings
+use go:sync
+use go:unicode
+use go:unicode/utf8
+use go:vaxis
+
+fn valid_hyperlink(value: Str) Bool {
+  if not utf8::ValidString(value) {
+    false
+  } else {
+    mut valid = true
+    for character in value {
+      if unicode::IsControl(Int32::from(character)) {
+        valid = false
+      }
+    }
+    valid
+  }
+}
+
+private fn has_modifier(value: vaxis::ModifierMask, flag: vaxis::ModifierMask) Bool {
+  bridge::HasModifier(value, flag)
+}
+
+private fn modifiers(value: vaxis::ModifierMask) event::Modifiers {
+  event::Modifiers{
+    shift: has_modifier(value, vaxis::ModShift),
+    ctrl: has_modifier(value, vaxis::ModCtrl),
+    alt: has_modifier(value, vaxis::ModAlt),
+    super: has_modifier(value, vaxis::ModSuper),
+  }
+}
+
+fn key(received: vaxis::Key) mut event::KeyEvent {
+  mut name = ""
+  if received.Keycode == Int32::from(vaxis::KeyEnter) {
+    name = "return"
+  } else if received.Keycode == Int32::from(vaxis::KeyEsc) {
+    name = "escape"
+  } else if received.Keycode == Int32::from(vaxis::KeyTab) {
+    name = "tab"
+  } else if received.Keycode == Int32::from(vaxis::KeySpace) {
+    name = "space"
+  } else if received.Keycode == Int32::from(vaxis::KeyBackspace) {
+    name = "backspace"
+  } else if received.Keycode == Int32::from(vaxis::KeyPgUp) {
+    name = "page_up"
+  } else if received.Keycode == Int32::from(vaxis::KeyPgDown) {
+    name = "page_down"
+  } else {
+    let normalized = vaxis::Key{
+      Text: received.Text,
+      Keycode: received.Keycode,
+      ShiftedCode: received.ShiftedCode,
+      BaseLayoutCode: received.BaseLayoutCode,
+      Modifiers: vaxis::ModifierMask::from(0),
+      EventType: vaxis::EventPress,
+    }
+    name = strings::ToLower(normalized.String())
+  }
+  mut kind = event::KeyEventType::press
+  if received.EventType == vaxis::EventRepeat {
+    kind = event::KeyEventType::repeat
+  } else if received.EventType == vaxis::EventRelease {
+    kind = event::KeyEventType::release
+  }
+  event::key(name, received.Text, kind, modifiers(received.Modifiers))
+}
+
+fn paste_text(received: vaxis::Key) Str {
+  mut text = ""
+  if received.Text != "" {
+    text = received.Text
+  } else if received.Keycode == Int32::from(vaxis::KeyEnter) {
+    text = "\r"
+  } else if received.Keycode == Int32::from(vaxis::KeyTab) {
+    text = "\t"
+  } else if received.Keycode == Int32::from(vaxis::KeySpace) {
+    text = " "
+  } else if received.Keycode == Int32::from('j') and has_modifier(received.Modifiers, vaxis::ModCtrl) {
+    text = "\n"
+  }
+  text
+}
+
+struct PasteResult {
+  value: Str,
+  active: Bool,
+}
+
+private struct PasteState {
+  lock: mut sync::Mutex,
+  value: mut strings::Builder,
+  active: Bool,
+}
+
+struct PasteBuffer {
+  internal: Any,
+}
+
+private fn paste_state(buffer: mut PasteBuffer) mut PasteState {
+  unsafe::cast<mut PasteState>(buffer.internal).expect("PasteBuffer must be created by Cooper")
+}
+
+fn paste_buffer() mut PasteBuffer {
+  let state = mut PasteState{
+    lock: mut sync::Mutex{},
+    value: mut strings::Builder{},
+    active: false,
+  }
+  (mut PasteBuffer{internal: state})
+}
+
+impl PasteBuffer {
+  fn mut start() {
+    let state = paste_state(self)
+    state.lock.Lock()
+    state.value.Reset()
+    state.active = true
+    state.lock.Unlock()
+  }
+  
+  fn mut append_key(received: vaxis::Key) Bool {
+    let state = paste_state(self)
+    state.lock.Lock()
+    let active = state.active
+    if active {
+      state.value.WriteString(paste_text(received))
+    }
+    state.lock.Unlock()
+    active
+  }
+  
+  fn mut finish() PasteResult {
+    let state = paste_state(self)
+    state.lock.Lock()
+    let result = PasteResult{value: state.value.String(), active: state.active}
+    state.value.Reset()
+    state.active = false
+    state.lock.Unlock()
+    result
+  }
+  
+  fn mut reset() {
+    let state = paste_state(self)
+    state.lock.Lock()
+    state.value.Reset()
+    state.active = false
+    state.lock.Unlock()
+  }
+}
+
+fn mouse(received: vaxis::Mouse) mut event::MouseEvent {
+  mut kind = event::MouseEventType::down
+  mut button = event::MouseButton::none
+  mut scroll_x = 0
+  mut scroll_y = 0
+  if received.Button == vaxis::MouseLeftButton {
+    button = event::MouseButton::left
+  } else if received.Button == vaxis::MouseMiddleButton {
+    button = event::MouseButton::middle
+  } else if received.Button == vaxis::MouseRightButton {
+    button = event::MouseButton::right
+  } else if received.Button == vaxis::MouseWheelUp {
+    kind = event::MouseEventType::scroll
+    scroll_y = -1
+  } else if received.Button == vaxis::MouseWheelDown {
+    kind = event::MouseEventType::scroll
+    scroll_y = 1
+  } else if received.Button == vaxis::MouseWheelLeft {
+    kind = event::MouseEventType::scroll
+    scroll_x = -1
+  } else if received.Button == vaxis::MouseWheelRight {
+    kind = event::MouseEventType::scroll
+    scroll_x = 1
+  }
+  if kind != event::MouseEventType::scroll {
+    if received.EventType == vaxis::EventRelease {
+      kind = event::MouseEventType::up
+    } else if received.EventType == vaxis::EventMotion {
+      if button == event::MouseButton::none {
+        kind = event::MouseEventType::move
+      } else {
+        kind = event::MouseEventType::drag
+      }
+    }
+  }
+  event::mouse(
+    kind,
+    button,
+    received.Col,
+    received.Row,
+    modifiers(received.Modifiers),
+    scroll_x: scroll_x,
+    scroll_y: scroll_y,
+  )
+}

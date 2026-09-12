@@ -90,11 +90,11 @@ fn new_buffer(width: Int, height: Int) mut Buffer {
   if width < 0 or height < 0 {
     panic("retained paint buffer dimensions must be non-negative")
   }
-  let cells = mut List::new<StoredCell>()
+  let cells = mut List::new<StoredCell>(width * height)
   let blank = blank_cell()
   mut index = 0
   while index < width * height {
-    cells.push(blank)
+    cells.set(index, blank)
     index =+ 1
   }
   (mut Buffer{
@@ -113,7 +113,7 @@ impl Buffer {
       Maybe::new<Int>()
     }
   }
-  
+
   fn cell_at(x: Int, y: Int) Cell? {
     let index = try self.index(x, y) -> _ { Maybe::new<Cell>() }
     let stored = try self.cells.at(index) -> _ { Maybe::new<Cell>() }
@@ -125,28 +125,28 @@ impl Buffer {
       },
     )
   }
-  
+
   private fn mut put(x: Int, y: Int, cell: StoredCell) {
     match self.index(x, y) {
       index => self.cells.set(index, cell),
       _ => (),
     }
   }
-  
+
   private fn foreground_at(x: Int, y: Int) color::Color? {
     match self.cell_at(x, y) {
       cell => cell.style.foreground,
       _ => Maybe::new<color::Color>(),
     }
   }
-  
+
   private fn background_at(x: Int, y: Int) color::Color? {
     match self.cell_at(x, y) {
       cell => cell.style.background,
       _ => Maybe::new<color::Color>(),
     }
   }
-  
+
   private fn mut clear_span_at(x: Int, y: Int) {
     let existing = try self.cell_at(x, y) -> _ { () }
     mut start = x
@@ -168,7 +168,7 @@ impl Buffer {
         scanning =- 1
       }
     }
-    
+
     let lead = try self.cell_at(start, y) -> _ { () }
     mut span = lead.width
     if span < 1 {
@@ -193,7 +193,7 @@ impl Buffer {
       part =+ 1
     }
   }
-  
+
   private fn mut write_grapheme(x: Int, y: Int, grapheme: Str, width: Int, style: mut CellStyle) {
     match self.cursor {
       cursor => {
@@ -230,7 +230,7 @@ impl Buffer {
       part =+ 1
     }
   }
-  
+
   fn mut clear() {
     self.cursor = Maybe::new<Cursor>()
     let blank = blank_cell()
@@ -261,7 +261,7 @@ impl Context {
     }
     painted.@
   }
-  
+
   fn mut fill(text_style: CellStyle?) {
     let applied_style = text_style.or(style())
     let snapshot = mut self.inherited_colors(applied_style)
@@ -276,7 +276,7 @@ impl Context {
       target_y =+ 1
     }
   }
-  
+
   fn mut show_cursor(x: Int, y: Int) {
     let target_x = self.bounds.x + x
     let target_y = self.bounds.y + y
@@ -284,7 +284,7 @@ impl Context {
       self.buffer.cursor = Maybe::new<Cursor>(Cursor{x: target_x, y: target_y})
     }
   }
-  
+
   fn mut write(x: Int, y: Int, text: Str, text_style: CellStyle?) {
     self.write_measured(
       x,
@@ -300,7 +300,7 @@ impl Context {
       text_style: text_style,
     )
   }
-  
+
   fn mut write_overlay(x: Int, y: Int, text: Str, text_style: CellStyle?) {
     let applied_style = text_style.or(style())
     let snapshot = mut self.inherited_colors(applied_style)
@@ -322,7 +322,7 @@ impl Context {
       target_x = target_x + width
     }
   }
-  
+
   fn mut write_measured(
     x: Int,
     y: Int,
@@ -357,7 +357,7 @@ impl Context {
               }
               part =+ 1
             }
-            
+
             if visible {
               self.buffer.write_grapheme(target_x, target_y, character.Grapheme, width, snapshot)
             } else {

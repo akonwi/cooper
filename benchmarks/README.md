@@ -117,6 +117,23 @@ Compare revisions using the same runner; timings from the older interleaved
 verification protocol are not directly comparable. Test the process contract with
 `python3 benchmarks/test_measurement_protocol.py`.
 
+For CPU and sampled allocation diagnosis of these exact pager/feed fixtures:
+
+```sh
+python3 benchmarks/profile_text.py --output /tmp/cooper-text-profiles --seconds 5
+```
+
+The profiler repeats complete scroll sequences in one long-lived session after
+an initial warmup. Setup and frame serialization are outside the profiled region;
+the final frame must equal the warmup's final frame. CPU and allocation sampling
+run in separate processes. Allocation reports subtract a pre-loop snapshot.
+Outputs include profiles, flat/cumulative text reports, binaries, operation
+counts, and revision metadata. These are diagnostic workloads, not replacements
+for the fresh-session timing comparisons or their per-frame correctness checks.
+Do not run another Ard build in this checkout, or competing tests/benchmarks,
+while profiling. Generated driver files are temporary; fixture sources are not
+modified.
+
 ## Three-way Bubble Tea pager comparison
 
 `compare_bubbletea.py` compares main, the current Cooper branch and native Go

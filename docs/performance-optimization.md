@@ -339,3 +339,101 @@ python3 benchmarks/compare_bubbletea.py /tmp/cooper-isolated-reference . --sampl
 python3 benchmarks/complex_feed.py /tmp/cooper-isolated-reference . --samples 15 --output /tmp/cooper-isolated-feed.json
 git worktree remove /tmp/cooper-isolated-reference
 ```
+
+## Stream unwrapped painting and skip unchanged geometry synchronization
+
+Two independently committed changes follow the isolated baseline:
+
+- [47d9bf9](https://github.com/akonwi/cooper/commit/47d9bf9791ad64b835d91088c8e8e1d7884ab688):
+  uniform unwrapped Text with clip overflow and no hyperlinks streams through
+  painting once. It needs no line-width layout or glyph array for that paint.
+  The shared painter accepts an optional hard-break classifier, retaining its
+  existing clipping, inherited styling and partial-wide-span clearing. Text
+  supplies its existing Unicode hard-break classifier. Selection overlays still
+  paint afterward. Tabs retain the old normalization/resegmentation path:
+  expanded spaces can combine with following marks. Wrapping, links, rich text,
+  ellipsis, and intrinsic measurement keep their existing layout paths.
+- [199b37e](https://github.com/akonwi/cooper/commit/199b37e94ea3d994d6429dbd8b8f21946340ebc6):
+  the layout visitor reports whether it recalculated geometry. `Node.compute()`
+  skips synchronization when no transaction ran and the root has no retained
+  parent translation. Scroll setters still translate descendants immediately;
+  changed layouts still synchronize and reclamp scroll. No new cross-frame
+  cache or independently maintained dirty flag was introduced.
+
+### Profiles justified the two targets
+
+`benchmarks/profile_text.py` profiles the existing pager and lazy/eager feed
+fixtures, repeating complete scroll sequences after setup and warmup. CPU and
+allocation profiles run separately for five seconds each, without inter-step
+verification. Final frames must match the initial completed sequence. These
+long-lived sessions diagnose CPU/heap costs; they do not replace the isolated
+fresh-session benchmark or its per-frame correctness checks.
+
+Before changes, pager Text painting was 56.2% of sampled CPU, including 25.4%
+in unwrapped layout; after changes, unwrapped layout drops out of the reported
+pager hot paths. Buffer construction now accounts for about 90% of pager sampled
+allocated bytes, up from 63% as text allocation was removed. Buffer sizing remains
+deferred for the compiler update; no frame-storage reuse was introduced.
+
+Eager-feed geometry synchronization was 20.5% of sampled CPU before and 10.7%
+after. Normalized by completed operations, its cumulative samples fall from
+1.24 seconds / 1,920 operations to 0.66 seconds / 2,040 operations. This is
+consistent with eliminating the extra compute-time walk while retaining the
+scroll-time walk. CPU percentages overlap along call stacks and are not additive.
+
+### Full isolated comparison supports retaining both changes
+
+Reference is [8ed0160](https://github.com/akonwi/cooper/commit/8ed0160a522ec7b48d2e3380ab46f4bb7cb31867),
+not current main. Candidate is the geometry checkpoint above. Both use the same
+`isolated-verification-v2` runner, compiler and machine as the preceding baseline.
+Thirty pager sessions and fifteen feed sessions each follow three warmups.
+
+| Per-step latency | Reference median / p95 | Candidate median / p95 | Bubble Tea median / p95 |
+|---|---:|---:|---:|
+| Pager down | 0.298 / 0.896 ms | 0.194 / 0.684 ms | 0.156 / 0.223 ms |
+| Lazy feed | 0.688 / 1.639 ms | 0.660 / 1.688 ms | — |
+| Eager feed | 2.671 / 3.719 ms | 2.355 / 3.294 ms | — |
+
+Pager median improves 35%, and eager median/p95 improve about 12%/11%.
+Lazy median improves 4%, but p95 worsens 3%; treat lazy as roughly unchanged,
+not a demonstrated improvement. Pager p99 improves 1.156 → 1.015 ms, lazy
+3.045 → 2.997 ms, and eager 4.577 → 3.772 ms. Tail values remain noisy.
+Cooper is now 1.25× Bubble Tea's pager median but 3.07× its p95; this is not
+performance parity or a general framework score.
+
+Median pager-down heap traffic falls from 308,088 to 217,304 bytes per step,
+and allocation count from 532 to 304. Bubble Tea remains at 34,464 bytes and
+1,678 allocations. Lazy/eager heap traffic stays approximately 835 KB / 1.03 MB
+per step. The narrowed streaming path adds no glyph-list allocation. A preliminary
+five-session text-only probe already showed the pager gain with effectively
+unchanged feed results; the subsequent geometry change targets the eager feed.
+
+Proof: **440 Ard tests passed**, zero failures or panics. Formatting/compiler
+checks passed on all changed Ard files; root Go tests and the two measurement
+protocol tests passed. All **20 example PTY scripts passed**. Tinear check/build
+and startup/input/mouse/paste/clipboard/quit PTY smoke passed; its unit suite is
+still **149 passed / 1 failed**, with the same previously established
+`Inbox panes should use a dim divider` failure. No example or Tinear source was
+changed. All **26,640 per-frame checks** in the full benchmark runs and warmups
+passed, plus measured final-frame comparisons. Focused tests cover one measurement
+per unwrapped glyph, custom widths, combining marks, hard breaks, tab fallback,
+clipped wide spans, scroll reclamping, translated hits, and detached-root origins.
+
+Evidence under `benchmarks/baselines/`:
+
+- `performance-stream-pager.json.gz`, `performance-stream-feed.json.gz`: full runs.
+- `performance-stream-pager-probe.json.gz`, `performance-stream-feed-probe.json.gz`:
+  preliminary text-only probes (candidate revision includes an uncommitted text
+  change; use the committed checkpoint and full runs for exact provenance).
+- `performance-stream-profiles-before.tar.gz`, `performance-stream-profiles-after.tar.gz`:
+  CPU and before/after allocation profiles, text reports and metadata, excluding
+  binaries. The before allocation reports were regenerated from the captured
+  profiles after correcting pprof flag order; the underlying profiles were not
+  rerun or changed.
+
+Reproduce with the comparator commands above using the reference from this
+section. Run `python3 benchmarks/profile_text.py --output /tmp/cooper-text-profiles
+--seconds 5` separately for profiles. Remaining text work includes wrapped/rich
+glyph reuse; it was not broadened into a persistent cache. Geometry synchronization
+after a changed layout can still revisit descendants when scroll clamping changes
+their translation; that rarer path remains intact.

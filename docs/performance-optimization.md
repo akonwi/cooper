@@ -103,3 +103,62 @@ Versioned raw results are `benchmarks/baselines/performance-streaming-pager.json
 The pager runner calls its reference `main` and candidate `ard`; in this run
 those mean **accepted port** and **optimized port**, respectively. Consult the
 embedded revision fields rather than interpreting those labels as Git branches.
+
+## Compact frame cells
+
+The next checkpoint is
+[`5ccf34c`](https://github.com/akonwi/cooper/commit/5ccf34cefd148d5474eec9f4197a396c89013b44),
+compared with the preceding streaming implementation at
+[`a047d01`](https://github.com/akonwi/cooper/commit/a047d01).
+
+Internal stored cells now share a style snapshot per paint call instead of
+embedding the full style in each cell. Blank cells share one immutable default
+style. Public `paint::Cell` reads and testing Frames still return value styles;
+the representation change is confined to the unsupported `core/paint` storage
+and its terminal presenter. No new Go boundary or dependency was added.
+
+Every rendered frame still owns fresh cell storage: this is not buffer pooling.
+Styles are copied at the painting boundary and never mutated internally after
+publication. Single-cell overwrite skips an unnecessary clear-before-write;
+wide-span cleanup and cursor invalidation remain intact.
+
+Same toolchain, fixtures, sequential measurement, and sample counts as above:
+
+| Pager down update | Streaming checkpoint | Compact cells | Bubble Tea |
+|---|---:|---:|---:|
+| Median | 0.856 ms | 0.420 ms | 0.149 ms |
+| p95 | 1.481 ms | 0.927 ms | 0.260 ms |
+| Allocated bytes, median | 586,336 | 311,584 | 34,464 |
+| Allocation count, median | 516 | 542 | 1,678 |
+
+Median update time improved 51% and bytes 47% over the streaming checkpoint.
+Allocation count increased slightly because style snapshots now have their own
+allocation; the reduction in cell-array size more than offsets their bytes.
+Cooper remains about 2.8× slower than Bubble Tea, with higher tail latency and
+allocated bytes. Performance parity is not claimed.
+
+| Feed scroll | Streaming median / p95 | Compact median / p95 |
+|---|---:|---:|
+| Lazy | 2.009 / 2.695 ms | 1.079 / 1.727 ms |
+| Eager | 38.203 / 43.820 ms | 38.272 / 44.603 ms |
+
+Eager feed performance is effectively unchanged; this optimization is not a
+general layout speedup. All 23,760 pager and 1,600 feed frame comparisons passed.
+The focused unchanged-render profile improved from 344 to 159 µs median and
+495,907 to 224,226 bytes/op. Buffer construction still accounts for about 85% of
+sampled allocation space; text layout/width measurement is also a significant
+CPU cost. These remain the next profiling targets.
+
+Verification: **433 Ard tests passed**, with zero failures/panics; all four
+changed Ard files passed formatting and compiler checks; Go tests and all 20
+example PTY scripts passed. New tests check caller/returned-cell style isolation,
+shared wide-span hyperlinks, single-cell and overlapping-wide-cell cursor
+invalidation, clear/repaint, and old Frames after redraw, resize, and destruction.
+Tinear's check/build, Go tests, and PTY smoke passed again, with the same existing
+149-pass/one-divider-failure Ard result documented above.
+
+Raw results: `benchmarks/baselines/performance-compact-pager.json`,
+`performance-compact-feed.json`, and `performance-compact-profile.json`.
+Use the reproduction commands above with a detached reference at the streaming
+checkpoint. In this pager report the runner's `main` label means **streaming
+checkpoint**, not the repository's main branch.

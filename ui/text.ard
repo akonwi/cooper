@@ -895,7 +895,11 @@ private fn finish(lines: mut [Line]) Layout {
 
 private fn unwrapped(content: Str, measure: fn(Str) Int) Layout {
   let lines = mut List::new<Line>()
-  mut parts = mut List::new<Str>()
+  // Vaxis expands every tab to eight spaces. Normalize that expansion before
+  // slicing so iterator byte offsets also address the rendered line source.
+  let source = strings::ReplaceAll(content, "\t", "        ")
+  mut start = 0
+  mut offset = 0
   mut width = 0
   let iterator = mut vaxis::NewCharacterIterator(content)
   mut reading = true
@@ -904,18 +908,22 @@ private fn unwrapped(content: Str, measure: fn(Str) Int) Layout {
       character => {
         let grapheme = character.Grapheme
         if newline(grapheme) {
-          push_line(lines, strings::Join(parts, ""), width)
-          parts = mut List::new<Str>()
+          push_line(
+            lines,
+            source.slice(start: start, end: offset).expect("line source range"),
+            width,
+          )
+          start = offset + grapheme.size()
           width = 0
         } else {
-          parts.push(grapheme)
           width = width + measure(grapheme)
         }
+        offset = offset + grapheme.size()
       },
       _ => { reading = false },
     }
   }
-  push_line(lines, strings::Join(parts, ""), width)
+  push_line(lines, source.slice(start: start, end: offset).expect("last line source range"), width)
   finish(lines)
 }
 
@@ -2223,6 +2231,32 @@ test fn unwrapped_preserves_unicode_and_hard_breaks() Void!Str {
   testing::assert(
     empty.width == 0 and empty.height == 1 and empty.lines.at(0).expect("empty line").text == "",
     "Empty content remains one empty line",
+  )
+}
+
+test fn unwrapped_tab_expansion_preserves_original_grapheme_measurements() Void!Str {
+  let calls = mut List::new<Str>()
+  let measured = unwrapped("你\t́\r\nx\t", fn(grapheme: Str) Int {
+    calls.push(grapheme)
+    // Deliberately non-additive: resegmenting the expanded source would join
+    // the combining mark to the final space and change both calls and widths.
+    match grapheme {
+      " " => 2,
+      "́" => 3,
+      _ => 1,
+    }
+  })
+  try testing::assert(
+    calls.size() == 19 and calls.at(9).expect("standalone mark") == "́",
+    "Measure the original Vaxis stream, not resegmented expanded text",
+  )
+  try testing::assert(
+    measured.width == 20 and measured.height == 2 and measured.lines.at(1).expect("last line").width == 17,
+    "Preserve custom widths for expanded tabs and trailing lines",
+  )
+  testing::assert(
+    measured.lines.at(0).expect("first line").text == "你        ́" and measured.lines.at(1).expect("second line").text == "x        ",
+    "Slices preserve expanded tabs beside multibyte source and CRLF",
   )
 }
 

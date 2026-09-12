@@ -21,12 +21,16 @@ use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
 // viewport, so both outer axes are stretch-fit and contain no margins. A fresh
 // generation is used for every transaction; retained measurement caches remain
 // eligible through cache::State's compatibility checks.
-fn calculate(node: mut layout::Node, width: Int, height: Int) {
+// Returns whether projected geometry was recalculated.
+fn calculate(node: mut layout::Node, width: Int, height: Int) Bool {
   if width < 0 or height < 0 {
     panic("layout bounds must be non-negative")
   }
   if node.dirty or node.transaction_width != width or node.transaction_height != height {
     calculate_transaction(node, width, height)
+    true
+  } else {
+    false
   }
 }
 

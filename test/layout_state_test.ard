@@ -14,7 +14,11 @@ test fn layout_dirty_tracks_layout_values_not_paint_or_identical_replacement() V
   let root = layout::new()
   let child = layout::new()
   root.insert(child, 0)
-  visitor::calculate(root, 40, 20)
+  try testing::assert(visitor::calculate(root, 40, 20), "Initial transaction reports new geometry")
+  try testing::assert(
+    visitor::calculate(root, 40, 20) == false,
+    "Identical viewport and clean tree report no geometry change",
+  )
   child.apply(style::new(), 0)
   try testing::assert(child.dirty == false and root.dirty == false, "Identical style remains clean")
   child.apply(
@@ -22,6 +26,11 @@ test fn layout_dirty_tracks_layout_values_not_paint_or_identical_replacement() V
     0,
   )
   try testing::assert(child.dirty == false and root.dirty == false, "Paint does not invalidate layout")
+  try testing::assert(
+    visitor::calculate(root, 40, 20) == false,
+    "Paint-only updates need no geometry transaction",
+  )
+  try testing::assert(visitor::calculate(root, 41, 20), "Viewport resize reports new geometry")
   for value in [
     style::new(display: style::Display::none),
     style::new(position: style::Position::absolute),

@@ -1459,14 +1459,19 @@ impl Node {
     if width < 0 or height < 0 {
       panic("retained layout bounds must be non-negative")
     }
-    layout_visitor::calculate(self.layout_node, width, height)
+    let changed = layout_visitor::calculate(self.layout_node, width, height)
     self.viewport = geometry::Rect{
       x: 0,
       y: 0,
       width: width,
       height: height,
     }
-    self.sync_geometry(0, 0)
+    // Scroll setters already synchronize translations. An unchanged layout
+    // needs no second walk, unless a formerly attached root retains an offset.
+    let local = self.layout_node.local
+    if changed or self.geometry.screen.x != local.x or self.geometry.screen.y != local.y {
+      self.sync_geometry(0, 0)
+    }
   }
   
   private fn mut sync_geometry(parent_x: Int, parent_y: Int) {

@@ -229,8 +229,9 @@ core/            unsupported runtime mechanisms
   runtime.ard
   selection_state.ard
 ffi/             isolated Go bridges, one directory per package
+  contextbridge/ adapts Go context/cancel return pairs
   numberbridge/  numeric conversions missing from Ard
-  vaxisbridge/   Vaxis-specific clipboard and modifier adapters
+  vaxisbridge/   Vaxis modifier-bit testing
   signalwatch/   OS signal subscriptions and terminal-size queries
   urlopen/       platform URL handlers
 test/            deterministic integration tests

@@ -1,5 +1,7 @@
 use ard/unsafe
 
+use go:context
+use go:cooper/ffi/contextbridge
 use go:sync
 
 private struct State {
@@ -43,6 +45,38 @@ fn internal_new(
     stopped: false,
   }
   (mut Clipboard{internal: state})
+}
+
+private struct ReadLifetime {
+  mutex: mut sync::Mutex,
+  current: contextbridge::Cancellation,
+}
+
+// Runtime supplies terminal I/O; Ard owns the cancellable read lifetime.
+fn internal_terminal(read: fn(context::Context) Str!Error, write: fn(Str)) mut Clipboard {
+  let lifetime = mut ReadLifetime{mutex: mut sync::Mutex{}, current: contextbridge::WithCancel(context::Background())}
+  let cancel = fn() {
+    lifetime.mutex.Lock()
+    defer lifetime.mutex.Unlock()
+    lifetime.current.Cancel()
+  }
+  internal_new(
+    fn() Str!Error {
+      lifetime.mutex.Lock()
+      let current = lifetime.current.Context
+      lifetime.mutex.Unlock()
+      try current.Err()
+      read(current)
+    },
+    write,
+    cancel,
+    fn() {
+      lifetime.mutex.Lock()
+      defer lifetime.mutex.Unlock()
+      lifetime.current = contextbridge::WithCancel(context::Background())
+    },
+    cancel,
+  )
 }
 
 private struct Memory {
@@ -94,7 +128,7 @@ impl Clipboard {
       }
     }
   }
-
+  
   // Emits an OSC 52 write request. Terminal acceptance is not observable.
   fn mut write(value: Str) {
     let state = internal_state(self)
@@ -110,19 +144,19 @@ impl Clipboard {
     state.write_action(value)
     state.lifecycle.Unlock()
   }
-
+  
   // Emits an empty OSC 52 write request.
   fn mut clear() {
     self.write("")
   }
-
+  
   fn mut internal_suspend() Bool {
     let state = internal_state(self)
     if not state.read_guard.TryLock() {
       false
     } else {
       state.lifecycle.Lock()
-      let available = not state.stopped and not state.suspended
+      let available = (not state.stopped) and not state.suspended
       if available {
         state.suspended = true
         state.suspend_action()
@@ -132,17 +166,17 @@ impl Clipboard {
       available
     }
   }
-
+  
   fn mut internal_resume() {
     let state = internal_state(self)
     state.lifecycle.Lock()
-    if not state.stopped and state.suspended {
+    if (not state.stopped) and state.suspended {
       state.resume_action()
       state.suspended = false
     }
     state.lifecycle.Unlock()
   }
-
+  
   fn mut internal_cancel() {
     let state = internal_state(self)
     state.lifecycle.Lock()
@@ -152,11 +186,11 @@ impl Clipboard {
     }
     state.lifecycle.Unlock()
   }
-
+  
   fn mut internal_stop() {
     let state = internal_state(self)
     self.internal_cancel()
-
+    
     // Cancellation unblocks an active read before Vaxis is released.
     state.read_guard.Lock()
     state.read_guard.Unlock()

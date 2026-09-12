@@ -1,16 +1,107 @@
 use ard/async
 use ard/testing
 
+use go:context
 use cooper/clipboard
 use cooper/testing as cooper_testing
+use go:time
 
 private struct ReadOutcome {
   succeeded: Bool,
 }
 
+private struct TerminalCalls {
+  contexts: [context::Context],
+  writes: [Str],
+}
+
+test fn clipboard_terminal_context_rotates_and_cannot_resume_after_stop() Void!Str {
+  let calls = mut TerminalCalls{contexts: [], writes: []}
+  let service = clipboard::internal_terminal(
+    fn(ctx: context::Context) Str!Error {
+      calls.contexts.push(ctx)
+      try ctx.Err()
+      Result::ok("terminal response")
+    },
+    fn(value: Str) {
+      calls.writes.push(value)
+    },
+  )
+  defer service.internal_stop()
+  try testing::assert(
+    service.read().expect("first read") == "terminal response",
+    "Read delegates to terminal",
+  )
+  let initial = calls.contexts.at(0).expect("initial context")
+  service.write("copied")
+  service.clear()
+  try testing::assert(
+    calls.writes.at(0).expect("write") == "copied" and calls.writes.at(1).expect("clear") == "",
+    "Write and clear delegate unchanged",
+  )
+  try testing::assert(service.internal_suspend(), "Idle suspend succeeds")
+  try testing::assert(not service.internal_suspend(), "Repeated suspend is a no-op")
+  try testing::assert(initial.Err().is_err(), "Suspend cancels the old read context")
+  try testing::assert(
+    service.read().is_err() and calls.contexts.size() == 1,
+    "Suspended reads never reach terminal",
+  )
+  service.internal_resume()
+  try testing::assert(
+    service.read().expect("resumed read") == "terminal response",
+    "Resumed reads delegate to terminal",
+  )
+  let resumed = calls.contexts.at(1).expect("resumed context")
+  try testing::assert(
+    initial.Err().is_err() and resumed.Err().is_ok(),
+    "Resume creates a fresh active lifetime",
+  )
+  service.internal_resume()
+  try testing::assert(resumed.Err().is_ok(), "Repeated resume leaves active lifetime intact")
+  service.internal_cancel()
+  service.internal_cancel()
+  try testing::assert(resumed.Err().is_err(), "Repeated cancellation cancels the current lifetime")
+  service.internal_resume()
+  try testing::assert(not service.internal_suspend(), "Stopped service cannot suspend again")
+  testing::assert(
+    service.read().is_err() and calls.contexts.size() == 2,
+    "Resume after stop cannot revive terminal reads",
+  )
+}
+
+test fn clipboard_terminal_stop_cancels_real_context_and_joins_read() Void!Str {
+  let entered = Chan::new<Bool>()
+  let done = Chan::new<Bool>(1)
+  let service = clipboard::internal_terminal(
+    fn(ctx: context::Context) Str!Error {
+      entered.close()
+      // Bound a broken cancellation implementation instead of hanging the suite.
+      select {
+        ctx.Done().recv() => (),
+        time::After(5 * time::Second).recv() => (),
+      }
+      try ctx.Err()
+      Result::ok("uncancelled")
+    },
+    fn(_: Str) {},
+  )
+  defer service.internal_stop()
+  async::start(fn() {
+    done.send(service.read().is_err())
+  })
+  entered.receiver().recv()
+  try testing::assert(service.read().is_err(), "Concurrent read is rejected")
+  try testing::assert(not service.internal_suspend(), "Active read prevents suspend")
+  service.internal_stop()
+  testing::assert(
+    done.receiver().recv().expect("reader result"),
+    "Stop cancels the actual Go context and joins its reader",
+  )
+}
+
 test fn clipboard_headless_read_write_and_clear() Void!Str {
   let application = cooper_testing::new(8, 2)
-
+  
   let initial = application.context.clipboard.read().expect("clipboard read")
   try testing::assert(initial == "", "Expected empty test clipboard")
   application.context.clipboard.write("copied text")
@@ -19,7 +110,7 @@ test fn clipboard_headless_read_write_and_clear() Void!Str {
   application.context.clipboard.clear()
   let cleared = application.context.clipboard.read().expect("clipboard read")
   try testing::assert(cleared == "", "Expected clipboard clear")
-
+  
   application.destroy()
   testing::assert(
     application.context.clipboard.read().is_err(),
@@ -43,7 +134,7 @@ test fn clipboard_rejects_a_concurrent_read() Void!Str {
     fn() {},
     fn() {},
   )
-
+  
   async::start(fn() {
     outcome.succeeded = service.read().is_ok()
     done.close()
@@ -53,7 +144,7 @@ test fn clipboard_rejects_a_concurrent_read() Void!Str {
   release.close()
   done.receiver().recv()
   try testing::assert(outcome.succeeded, "Expected original clipboard read completion")
-
+  
   service.internal_stop()
   testing::assert(service.read().is_err(), "Expected stopped clipboard read rejection")
 }
@@ -74,7 +165,7 @@ test fn clipboard_rejects_suspend_while_a_read_is_active() Void!Str {
     fn() {},
     fn() {},
   )
-
+  
   async::start(fn() {
     outcome.succeeded = service.read().is_ok()
     done.close()
@@ -84,7 +175,7 @@ test fn clipboard_rejects_suspend_while_a_read_is_active() Void!Str {
   cancelled.close()
   done.receiver().recv()
   try testing::assert(not outcome.succeeded, "Expected released clipboard read error")
-
+  
   try testing::assert(service.internal_suspend(), "Expected idle clipboard suspension")
   try testing::assert(service.read().is_err(), "Expected clipboard read rejection while suspended")
   service.internal_resume()
@@ -110,7 +201,7 @@ test fn clipboard_stop_cancels_and_joins_an_active_read() Void!Str {
       cancelled.close()
     },
   )
-
+  
   async::start(fn() {
     outcome.succeeded = service.read().is_ok()
     done.close()
@@ -118,6 +209,6 @@ test fn clipboard_stop_cancels_and_joins_an_active_read() Void!Str {
   entered.receiver().recv()
   service.internal_stop()
   done.receiver().recv()
-
+  
   testing::assert(not outcome.succeeded, "Expected active clipboard read cancellation")
 }

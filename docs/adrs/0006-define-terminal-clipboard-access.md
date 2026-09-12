@@ -83,14 +83,15 @@ failure restores Clipboard availability.
 
 ### Backend and ownership
 
-Keep OSC 52 encoding, parsing, and terminal I/O in Vaxis. Add only a narrow Go
-bridge beneath `ffi/` to pair the Vaxis terminal with a cancellable
-Go context, because Ard v0.38 cannot import Go's `(context.Context,
-context.CancelFunc)` return shape from `context.WithCancel` directly.
+Keep OSC 52 encoding, parsing, and terminal I/O in Vaxis, called directly from
+Ard. `ffi/contextbridge/` only packages `context.WithCancel`'s context/cancel
+return pair into a struct. Ard v0.41.0 cannot import that pair directly or call
+a field typed as the named `context.CancelFunc`; the adapter exposes `func()`.
 
 Ard owns the public service, stopped/suspended-state validation, one-read guard,
-and lifecycle ordering. Irreversible shutdown marks Clipboard stopped and
-cancels its Go context immediately, including shutdown requested while the event
+read-context creation and cancellation, and lifecycle ordering. Irreversible
+shutdown marks Clipboard stopped and cancels its Go context immediately,
+including shutdown requested while the event
 pump is blocked in a misuse of `read()`. Final resource cleanup joins the active
 read before Vaxis closes. Pre-start signal shutdown follows the same ordering.
 

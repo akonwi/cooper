@@ -4,8 +4,8 @@ use ard/unsafe
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
+use cooper/core/terminal_events
 use cooper/event
-use go:cooper/ffi/vaxisbridge as bridge
 use cooper/runtime
 use cooper/ui/box
 use cooper/ui/color
@@ -233,7 +233,7 @@ fn span_style(
 }
 
 private fn valid_link(value: Str) Bool {
-  bridge::ValidHyperlink(value)
+  terminal_events::valid_hyperlink(value)
 }
 
 private fn validate_link(value: Str?) {

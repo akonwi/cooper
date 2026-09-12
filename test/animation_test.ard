@@ -1,10 +1,11 @@
 use ard/testing
 
 use cooper/animation
-use cooper/ui/style
 use cooper/testing as cooper_testing
+use cooper/ui/style
 use cooper/ui/text
 use go:math
+use go:strconv
 
 private struct Values {
   latest: Int,
@@ -75,6 +76,43 @@ test fn animation_easing_and_interpolation_are_deterministic() Void!Str {
   )
 }
 
+test fn animation_internal_rounding_preserves_boundaries() Void!Str {
+  try testing::assert(
+    animation::internal_rounded_int(4.5).expect("positive half") == 5,
+    "positive halves round away from zero",
+  )
+  try testing::assert(
+    animation::internal_rounded_int(-4.5).expect("negative half") == -5,
+    "negative halves round away from zero",
+  )
+  try testing::assert(
+    animation::internal_rounded_int(4.4).expect("fraction") == 4,
+    "fractions round to nearest",
+  )
+  try testing::assert(animation::internal_rounded_int(math::NaN()).is_err(), "NaN must be rejected")
+  try testing::assert(
+    animation::internal_rounded_int(math::Inf(1)).is_err(),
+    "positive infinity must be rejected",
+  )
+  try testing::assert(
+    animation::internal_rounded_int(math::Inf(-1)).is_err(),
+    "negative infinity must be rejected",
+  )
+  
+  let limit = match strconv::IntSize {
+    32 => math::Ldexp(1.0, 31),
+    _ => math::Ldexp(1.0, 63),
+  }
+  try testing::assert(
+    animation::internal_rounded_int(0.0 - limit).is_ok(),
+    "negative Int limit must be allowed",
+  )
+  testing::assert(
+    animation::internal_rounded_int(limit).is_err(),
+    "positive Int limit must be excluded",
+  )
+}
+
 test fn timeline_sequences_tracks_callbacks_pause_restart_and_completion() Void!Str {
   let application = cooper_testing::new(20, 2)
   defer application.destroy()
@@ -108,13 +146,13 @@ test fn timeline_sequences_tracks_callbacks_pause_restart_and_completion() Void!
     },
     at: 700,
   )
-
+  
   try testing::assert(timeline.play(), "play should start a paused timeline")
   try testing::assert(application.animations_active(), "playing timeline should activate the engine")
   try testing::assert(not timeline.play(), "play should be idempotent while running")
   application.advance_time(0)
   try testing::assert(values.starts == 0 and values.latest == -1, "delayed track should remain idle")
-
+  
   application.advance_time(100)
   try testing::assert(values.starts == 1 and values.latest == 0, "track should start at its offset")
   application.advance_time(300)
@@ -122,7 +160,7 @@ test fn timeline_sequences_tracks_callbacks_pause_restart_and_completion() Void!
     values.latest == 30 and timeline.current_time() == 400,
     "track should reach its midpoint",
   )
-
+  
   try testing::assert(timeline.pause(), "pause should stop a running timeline")
   try testing::assert(not timeline.pause(), "pause should be idempotent")
   application.advance_time(200)
@@ -130,7 +168,7 @@ test fn timeline_sequences_tracks_callbacks_pause_restart_and_completion() Void!
     timeline.current_time() == 400 and values.latest == 30,
     "paused time should not advance",
   )
-
+  
   try testing::assert(timeline.play(), "play should resume a paused timeline")
   application.advance_time(0)
   application.advance_time(300)
@@ -151,12 +189,12 @@ test fn timeline_sequences_tracks_callbacks_pause_restart_and_completion() Void!
     values.latest == settled_value and values.timeline_completions == 1 and (not application.animations_active()),
     "completed timelines should return the engine to idle",
   )
-
+  
   try testing::assert(timeline.play(), "playing a completed timeline should restart it")
   application.advance_time(0)
   application.advance_time(100)
   try testing::assert(timeline.iteration() == 0 and values.starts == 2, "replay should reset track state")
-
+  
   try testing::assert(timeline.restart(), "restart should reset and play")
   testing::assert(timeline.current_time() == 0, "restart should reset timeline time")
 }
@@ -181,14 +219,14 @@ test fn timeline_looping_alternates_direction_and_skips_large_intermediate_cycle
   let _ = timeline.play()
   application.advance_time(0)
   try testing::assert(latest == 0 and timeline.iteration() == 0, "loop should begin forward")
-
+  
   application.advance_time(100)
   try testing::assert(latest == 10 and timeline.iteration() == 1, "odd iteration should begin in reverse")
   application.advance_time(50)
   try testing::assert(latest == 5, "alternate iteration should move backward")
   application.advance_time(50)
   try testing::assert(latest == 0 and timeline.iteration() == 2, "even iteration should restart forward")
-
+  
   timeline.restart()
   application.advance_time(0)
   application.advance_time(250)
@@ -221,7 +259,7 @@ test fn timeline_updates_retained_controls_and_freezes_while_suspended() Void!St
     application.frame().cell(3, 0).expect("animated cell").grapheme == "X",
     "retained setter should paint the animated position",
   )
-
+  
   try testing::assert(application.suspend(), "TestApp should suspend")
   application.advance_time(1000)
   try testing::assert(application.resume(), "TestApp should resume")
@@ -238,7 +276,7 @@ test fn timeline_updates_retained_controls_and_freezes_while_suspended() Void!St
 test fn final_update_reentrancy_preserves_or_cancels_completion_by_control_action() Void!Str {
   let application = cooper_testing::new(8, 1)
   defer application.destroy()
-
+  
   mut pause_at_end = true
   mut paused_track_completions = 0
   mut paused_timeline_completions = 0
@@ -270,7 +308,7 @@ test fn final_update_reentrancy_preserves_or_cancels_completion_by_control_actio
     paused_track_completions == 1 and paused_timeline_completions == 1 and paused.is_complete(),
     "resume should deliver pending track and timeline completion exactly once",
   )
-
+  
   mut restart_at_end = true
   mut restarted_track_completions = 0
   let restarted = application.context.timeline(100)
@@ -298,7 +336,7 @@ test fn final_update_reentrancy_preserves_or_cancels_completion_by_control_actio
     restarted.is_complete() and restarted_track_completions == 1,
     "the restarted iteration should complete normally",
   )
-
+  
   mut eased_updates = 0
   let eased = application.context.timeline(100)
   eased.add(
@@ -317,7 +355,7 @@ test fn final_update_reentrancy_preserves_or_cancels_completion_by_control_actio
     eased.status() == animation::Status::destroyed and eased_updates == 0,
     "destruction from custom easing should suppress its stale update",
   )
-
+  
   mut restart_in_easing = true
   mut restarted_easing_updates = 0
   let restarted_easing = application.context.timeline(100)
@@ -345,7 +383,7 @@ test fn final_update_reentrancy_preserves_or_cancels_completion_by_control_actio
     restarted_easing.is_complete() and restarted_easing_updates == 1,
     "restarted easing iteration should update normally",
   )
-
+  
   mut destroyed_track_completions = 0
   let destroyed = application.context.timeline(100)
   destroyed.add(
@@ -418,7 +456,7 @@ test fn timeline_lifecycle_and_timing_contracts_are_enforced() Void!Str {
     },
     "unavailable",
   )
-
+  
   let owned = application.context.timeline(100)
   application.destroy()
   try testing::assert(

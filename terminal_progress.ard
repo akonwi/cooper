@@ -10,3 +10,13 @@ struct Report {
   state: State,
   percent: Int?,
 }
+
+fn internal_code(state: State) Int {
+  match state {
+    State::remove => 0,
+    State::normal => 1,
+    State::error => 2,
+    State::indeterminate => 3,
+    State::paused => 4,
+  }
+}

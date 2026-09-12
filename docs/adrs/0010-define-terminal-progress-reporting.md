@@ -140,7 +140,7 @@ terminal. `TestApp.terminal_progress_reports()` returns an ordered snapshot and
 remains readable after destruction. Headless suspension and teardown record the
 automatic remove for active progress.
 
-Go boundary tests validate every wire payload, detection, forced/disabled
+Ard policy tests validate every wire payload, detection, forced/disabled
 behavior, multiplexer rejection, and invalid combinations. PTY coverage
 validates OSC output plus remove/restore across App suspension.
 

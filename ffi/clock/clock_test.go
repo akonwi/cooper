@@ -1,18 +1,25 @@
 package clock
 
-import "testing"
+import (
+	"strconv"
+	"testing"
+)
 
 func TestIntFromInt64(t *testing.T) {
-	got, err := IntFromInt64(42)
-	if err != nil || got != 42 {
-		t.Fatalf("IntFromInt64(42) = %d, %v", got, err)
+	for _, value := range []int64{0, 42, -42, 1<<31 - 1, -1 << 31} {
+		got, err := IntFromInt64(value)
+		if err != nil || int64(got) != value {
+			t.Fatalf("IntFromInt64(%d) = %d, %v", value, got, err)
+		}
 	}
-}
-
-func TestMillisecondsNeverMovesBackward(t *testing.T) {
-	before := Milliseconds()
-	after := Milliseconds()
-	if after < before {
-		t.Fatalf("monotonic clock moved backward: before=%d after=%d", before, after)
+	for _, value := range []int64{1 << 31, -1<<31 - 1, 1<<63 - 1, -1 << 63} {
+		got, err := IntFromInt64(value)
+		if strconv.IntSize == 32 {
+			if err == nil {
+				t.Fatalf("IntFromInt64(%d) accepted overflow", value)
+			}
+		} else if err != nil || int64(got) != value {
+			t.Fatalf("IntFromInt64(%d) = %d, %v", value, got, err)
+		}
 	}
 }

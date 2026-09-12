@@ -1244,53 +1244,55 @@ impl node::Renderable for Text {
     let link_data = link_state(self.link_state)
     link_data.paint_clip = local_clip
     link_data.link_hits = []
-    let measured = layout_text(self.content, self.wrap_mode, content.width, self.width_measurer)
-    let runs = cached_style_runs(self.style_cache)
-    let truncated = ellipsis_active(measured, content.width, content.height, self.overflow_mode)
-    let has_links = style_runs_have_links(runs)
-    if runs.size() <= 1 and not truncated {
-      if has_links {
-        let link_view = self.current_view()
-        self.cache_link_hits(link_view.glyphs, runs, local_clip)
-      }
-      mut hyperlink = Maybe::new<Str>()
-      let applied = match runs.at(0) {
-        run => {
-          hyperlink = run.link
-          run.style
-        },
-        _ => self.text_style,
-      }
-      for line, y in measured.lines {
-        content_ctx.write_measured(
-          content.x,
-          content.y + y,
-          line.text,
-          self.width_measurer,
-          text_style: cell_style(applied, hyperlink: hyperlink),
-        )
-      }
-    } else {
-      let view = self.current_view()
-      if has_links {
-        self.cache_link_hits(view.glyphs, runs, local_clip)
-      }
-      paint_visual_glyphs(content_ctx, view.glyphs, runs, self.width_measurer)
-      match view.ellipsis {
-        marker => {
+    if visible.width > 0 and visible.height > 0 {
+      let measured = layout_text(self.content, self.wrap_mode, content.width, self.width_measurer)
+      let runs = cached_style_runs(self.style_cache)
+      let truncated = ellipsis_active(measured, content.width, content.height, self.overflow_mode)
+      let has_links = style_runs_have_links(runs)
+      if runs.size() <= 1 and not truncated {
+        if has_links {
+          let link_view = self.current_view(measured: measured)
+          self.cache_link_hits(link_view.glyphs, runs, local_clip)
+        }
+        mut hyperlink = Maybe::new<Str>()
+        let applied = match runs.at(0) {
+          run => {
+            hyperlink = run.link
+            run.style
+          },
+          _ => self.text_style,
+        }
+        for line, y in measured.lines {
           content_ctx.write_measured(
-            marker.x,
-            marker.y,
-            "…",
+            content.x,
+            content.y + y,
+            line.text,
             self.width_measurer,
-            text_style: cell_style(marker.style),
+            text_style: cell_style(applied, hyperlink: hyperlink),
           )
-        },
-        _ => (),
+        }
+      } else {
+        let view = self.current_view(measured: measured)
+        if has_links {
+          self.cache_link_hits(view.glyphs, runs, local_clip)
+        }
+        paint_visual_glyphs(content_ctx, view.glyphs, runs, self.width_measurer)
+        match view.ellipsis {
+          marker => {
+            content_ctx.write_measured(
+              marker.x,
+              marker.y,
+              "…",
+              self.width_measurer,
+              text_style: cell_style(marker.style),
+            )
+          },
+          _ => (),
+        }
       }
-    }
-    if self.selected_glyphs.size() > 0 {
-      paint_selected_glyphs(content_ctx, self.selected_glyphs, self.width_measurer)
+      if self.selected_glyphs.size() > 0 {
+        paint_selected_glyphs(content_ctx, self.selected_glyphs, self.width_measurer)
+      }
     }
   }
   
@@ -1478,12 +1480,15 @@ impl Text {
     }
   }
   
-  private fn current_view() VisualView {
+  private fn current_view(measured: Layout?) VisualView {
     let content = self.node_ref.content_rect()
-    let measured = layout_text(self.content, self.wrap_mode, content.width, self.width_measurer)
+    let layout = match measured {
+      value => value,
+      _ => layout_text(self.content, self.wrap_mode, content.width, self.width_measurer),
+    }
     let view = visual_view(
       self.content,
-      measured,
+      layout,
       cached_style_runs(self.style_cache),
       content.width,
       content.height,
@@ -2060,6 +2065,147 @@ private fn wide_ellipsis_width(value: Str) Int {
   } else {
     test_width(value)
   }
+}
+
+test fn clipped_text_skips_measurement_but_clears_links_and_keeps_selection() Void!Str {
+  let calls = mut List::new<Str>()
+  let ctx = runtime::new_detached(width_measurer: fn(value: Str) Int {
+    calls.push(value)
+    test_width(value)
+  })
+  let label = new(
+    ctx,
+    content: styled_text([span("docs", link: "https://example.com")]),
+    styles: layout_style::new(
+      width: layout_style::cells(6),
+      height: layout_style::cells(3),
+      border: layout_style::Border::single,
+    ),
+  )
+  ctx.compute_layout(label, 6, 3)
+  let bounds = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 6,
+    height: 3,
+  }
+  let _ = label.apply_local_selection(
+    Maybe::new<node::LocalSelection>(
+      node::LocalSelection{
+        anchor_x: 1,
+        anchor_y: 1,
+        focus_x: 2,
+        focus_y: 1,
+        logical_range: node::SelectionRange{start: 0, end: 1},
+        clip: bounds,
+        is_active: true,
+        prefer_source_text: false,
+        is_dragging: false,
+        allow_edge_pan: false,
+        generation: 0,
+        version: 0,
+      },
+    ),
+  )
+  try testing::assert(label.selected_text() == "d", "Selection is established before clipping")
+  for clip in [
+    geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 3,
+    },
+    geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 6,
+      height: 1,
+    },
+  ] {
+    let visible = mut paint::Context{
+      buffer: paint::new_buffer(6, 3),
+      bounds: bounds,
+      clip: bounds,
+    }
+    label.paint(visible)
+    try testing::assert(label.cached_link_at(1, 1).is_some(), "Visible linked text establishes hit data")
+    let before = calls.size()
+    let clipped = mut paint::Context{
+      buffer: paint::new_buffer(6, 3),
+      bounds: bounds,
+      clip: clip,
+    }
+    label.paint(clipped)
+    try testing::assert(
+      calls.size() == before,
+      "Zero content width or height performs no text or selection measurement",
+    )
+    try testing::assert(
+      label.cached_link_at(1, 1).is_none() and label.link_at(1, 1).is_none(),
+      "Clipped repaint invalidates both cached and recomputed link hits",
+    )
+    try testing::assert(
+      clipped.buffer.cell_at(0, 0).expect("visible border").grapheme == "┌",
+      "Border painting is not skipped when only the content is clipped",
+    )
+    try testing::assert(label.selected_text() == "d", "Clipping does not discard logical selection")
+    label.paint(visible)
+    try testing::assert(
+      visible.buffer.cell_at(1, 1).expect("restored selection").style.reverse and label.cached_link_at(1, 1).is_some(),
+      "Revealed text restores selected painting and link hits",
+    )
+  }
+  label.destroy()
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn text_paint_reuses_layout_for_links_styles_and_ellipsis() Void!Str {
+  for content in [
+    styled_text([span("ab", link: "https://example.com")]),
+    styled_text([span("a", style: span_style(bold: true)), span("b")]),
+    styled_text([span("abcdef")]),
+  ] {
+    let calls = mut List::new<Str>()
+    let ctx = runtime::new_detached(width_measurer: fn(value: Str) Int {
+      if value == "a" {
+        calls.push(value)
+      }
+      test_width(value)
+    })
+    let label = new(
+      ctx,
+      content: content,
+      wrap: TextWrap::none,
+      overflow: TextOverflow::ellipsis,
+      styles: layout_style::new(width: layout_style::cells(4), height: layout_style::cells(1)),
+    )
+    ctx.compute_layout(label, 4, 1)
+    let before = calls.size()
+    let bounds = geometry::Rect{
+      x: 0,
+      y: 0,
+      width: 4,
+      height: 1,
+    }
+    let surface = mut paint::Context{
+      buffer: paint::new_buffer(4, 1),
+      bounds: bounds,
+      clip: bounds,
+    }
+    label.paint(surface)
+    try testing::assert(
+      calls.size() - before == 3,
+      "The first glyph is measured for layout, source mapping, and painting, but not a second layout",
+    )
+    try testing::assert(
+      surface.buffer.cell_at(0, 0).expect("first glyph").grapheme == "a",
+      "The reused layout paints the expected glyph",
+    )
+    label.destroy()
+    ctx.destroy_detached()
+  }
+  Result::ok(())
 }
 
 test fn text_destruction_releases_link_listeners() Void!Str {

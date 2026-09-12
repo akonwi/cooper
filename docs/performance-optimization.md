@@ -162,3 +162,52 @@ Raw results: `benchmarks/baselines/performance-compact-pager.json`,
 Use the reproduction commands above with a detached reference at the streaming
 checkpoint. In this pager report the runner's `main` label means **streaming
 checkpoint**, not the repository's main branch.
+
+## ASCII hard-break detection; source slicing rejected
+
+Retained checkpoint:
+[`ea32939`](https://github.com/akonwi/cooper/commit/ea3293967d24de9d91b761cf7794f1db34a2ef70),
+compared with compact cells at
+[`4ed92a3`](https://github.com/akonwi/cooper/commit/4ed92a353e52bcf77742d6742c71b91e8a6bc64d).
+Newline detection now handles one-byte input directly; multibyte input keeps the
+existing Unicode classification. Custom width callbacks and line allocation
+remain unchanged.
+
+| Workload median | Compact checkpoint | ASCII fast path |
+|---|---:|---:|
+| Pager down | 0.443 ms | 0.432 ms |
+| Lazy feed | 1.101 ms | 1.060 ms |
+| Eager feed | 39.320 ms | 37.638 ms |
+
+This is a modest 2–4% median improvement, not a major reduction in the gap.
+Allocated bytes are unchanged; tail distributions overlap. Pager p95 was
+0.933 vs 0.940 ms. Bubble Tea measured 0.157 ms median in the same run, leaving
+Cooper about 2.7× slower. Pager used 30 measured sessions plus three warmups;
+feed used 15 plus three. All 26,640 frame checks passed.
+
+Before this change, an allocation experiment at
+[`ec39785`](https://github.com/akonwi/cooper/commit/ec397858e79af388598420d2ec9971e0dab402e7)
+sliced unwrapped lines from tab-expanded source strings while measuring the
+original Vaxis stream. It passed correctness tests and improved pager/eager-feed
+results, but was **reverted** because lazy-feed performance regressed repeatedly.
+In a 15-session repeat, lazy median increased from 1.202 to 1.509 ms despite
+allocated bytes dropping from 1,103,432 to 869,368 per step. GC occurred during
+571/600 candidate steps versus 223/600 reference steps; no-GC medians were close
+(1.070 vs 1.092 ms). These are observations, not proof of a particular GC-pacer
+mechanism. Copying completed lines rather than retaining source slices did not
+remove the regression either. GC settings and benchmark boundaries were not
+changed to accommodate the optimization.
+
+Verification of the retained implementation: **435 tests passed, zero failures
+or panics**; formatting/compiler checks passed. The text gallery, layout
+playground, links, Input, TextArea, Select, and scroll-form PTY scripts passed.
+Tinear check/build and PTY smoke passed; its unit suite still has the same
+149-pass/one-divider-failure result. New tests cover ASCII and Unicode hard
+breaks and deliberately non-additive custom measurement beside tabs, combining
+marks, CRLF, and multibyte text.
+
+Compressed raw evidence in `benchmarks/baselines/`:
+`performance-ascii-pager.json.gz`, `performance-ascii-feed.json.gz`, and
+`performance-rejected-slices-feed.json.gz`. Read with `gzip -dc`. The same
+benchmark commands apply, using the compact checkpoint as reference and 15 feed
+sessions. Do not treat the intermediate slicing commit as an accepted checkpoint.

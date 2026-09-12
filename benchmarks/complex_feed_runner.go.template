@@ -1,0 +1,51 @@
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"flag"
+	feed "github.com/akonwi/cooper/benchmarks/complex_feed"
+	"os"
+	"runtime"
+	"time"
+)
+
+type sample struct {
+	Step        int    `json:"step"`
+	Nanoseconds int64  `json:"ns"`
+	Bytes       uint64 `json:"go_bytes"`
+	Allocations uint64 `json:"go_allocations"`
+	GC          uint32 `json:"gc_cycles"`
+	Frame       string `json:"frame_sha256"`
+}
+
+func main() {
+	eager := flag.Bool("eager", false, "mount all cards rather than a window")
+	flag.Parse()
+	start := time.Now()
+	session := feed.Prepare(*eager)
+	startup := time.Since(start).Nanoseconds()
+	defer session.Close()
+	session.Verify()
+	samples := make([]sample, 0, 40)
+	var capture string
+	for i := 0; i < 40; i++ {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		start = time.Now()
+		session.Step(i)
+		duration := time.Since(start).Nanoseconds()
+		runtime.ReadMemStats(&after)
+		observation := session.Verify()
+		digest := sha256.Sum256([]byte(observation))
+		samples = append(samples, sample{i, duration, after.TotalAlloc - before.TotalAlloc,
+			after.Mallocs - before.Mallocs, after.NumGC - before.NumGC, hex.EncodeToString(digest[:])})
+		if i == 19 {
+			capture = observation
+		}
+	}
+	json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"eager": *eager, "startup_ns": startup, "samples": samples, "capture": capture,
+	})
+}

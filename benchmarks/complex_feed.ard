@@ -1,0 +1,335 @@
+use cooper/runtime
+use cooper/testing as headless
+use cooper/ui/box
+use cooper/ui/scroll_box
+use cooper/ui/style
+use cooper/ui/text
+use go:fmt
+
+// A terminal adaptation of the shape of Flutter's complex_layout benchmark.
+// It intentionally uses no source, assets, networking, or application code from
+// that benchmark.  The eager form is a correctness oracle for the virtual form.
+
+struct Session {
+  step: fn(Int),
+  verify: fn() Str,
+  close: fn(),
+}
+
+struct Mounted {
+  index: Int,
+  view: mut box::Box,
+}
+
+struct State {
+  offset: Int,
+  start: Int,
+  cards: [Mounted],
+}
+
+private fn entry_count() Int {
+  500
+}
+private fn lazy_entries() Int {
+  8
+}
+private fn short_height() Int {
+  12
+}
+private fn tall_height() Int {
+  17
+}
+
+private fn fixed_height(value: Int) style::Style {
+  style::new(width: style::percent(100.0), height: style::cells(value), flex_shrink: 0.0)
+}
+
+private fn label(ctx: mut runtime::Runtime, value: Str, height: Int?) mut text::Text {
+  text::new(
+    ctx,
+    content: value,
+    wrap: text::TextWrap::word,
+    styles: match height {
+      rows => fixed_height(rows),
+      _ => style::new(width: style::percent(100.0), flex_shrink: 0.0),
+    },
+  )
+}
+
+private fn card(ctx: mut runtime::Runtime, index: Int) mut box::Box {
+  let tall = index % 2 == 1
+  let result = box::new(
+    ctx,
+    styles: style::new(width: style::percent(100.0), flex_shrink: 0.0, gap: style::cells(1)),
+  )
+  result.add(
+    label(ctx, "ENTRY {index}  |  author-{index % 17}  |  terminal feed", Maybe::new<Int>(1)),
+  )
+  result.add(
+    label(
+      ctx,
+      match tall {
+        true => {
+          "A longer field report describes retained terminal layout with nested sections, deterministic metadata, and enough prose to wrap naturally across several lines. The second card shape deliberately carries additional detail so its measured row height differs from its neighbor while preserving the same content structure."
+        },
+        false => {
+          "A compact field report describes retained terminal layout, deterministic metadata, and enough prose to wrap naturally onto a second terminal line."
+        },
+      },
+      Maybe::new<Int>(),
+    ),
+  )
+  
+  let gallery = box::new(
+    ctx,
+    styles: style::new(width: style::percent(100.0), flex_shrink: 0.0, gap: style::cells(1)),
+  )
+  let gallery_height = match tall {
+    true => 2,
+    false => 3,
+  }
+  let tiles = box::new(
+    ctx,
+    styles: style::new(
+      width: style::percent(100.0),
+      height: style::cells(gallery_height),
+      flex_direction: style::FlexDirection::row,
+      gap: style::cells(1),
+      flex_shrink: 0.0,
+    ),
+  )
+  for tile in ["A", "B", "C"] {
+    tiles.add(
+      text::new(
+        // Whole-cell widths avoid the intentional ADR0020/native rounding difference.
+        ctx,
+        content: "[ retained tile {tile} ]",
+        styles: style::new(width: style::cells(28), flex_shrink: 0.0),
+      ),
+    )
+  }
+  gallery.add(tiles)
+  if tall {
+    gallery.add(
+      label(ctx, "[ gallery detail row: nested content, no image assets ]", Maybe::new<Int>(2)),
+    )
+  }
+  result.add(gallery)
+  let metadata_height = match tall {
+    true => 2,
+    false => 1,
+  }
+  result.add(
+    label(
+      ctx,
+      "metadata  score={index % 101}  replies={index % 13}  category={index % 7}",
+      Maybe::new<Int>(metadata_height),
+    ),
+  )
+  result.add(label(ctx, "[open]  [save]  [share]  [more]", Maybe::new<Int>(1)))
+  result
+}
+
+private fn entry_height(index: Int) Int {
+  if index % 2 == 0 {
+    short_height()
+  } else {
+    tall_height()
+  }
+}
+
+private fn total_height(start: Int, end: Int) Int {
+  mut result = 0
+  mut index = start
+  while index < end {
+    result =+ entry_height(index)
+    index =+ 1
+  }
+  result
+}
+
+private fn visible_entry(offset: Int) Int {
+  mut remaining = offset
+  mut index = 0
+  while index < entry_count() and remaining >= entry_height(index) {
+    remaining =- entry_height(index)
+    index =+ 1
+  }
+  index
+}
+
+fn prepare(eager: Bool) Session {
+  let application = headless::new(100, 36)
+  let shell = box::new(application.context, styles: fixed_height(36))
+  let header = label(
+    application.context,
+    "COOPER COMPLEX FEED | 500 logical entries",
+    Maybe::new<Int>(2),
+  )
+  let footer = label(
+    application.context,
+    "j/k scroll  |  benchmark-only deterministic feed",
+    Maybe::new<Int>(2),
+  )
+  let viewport = scroll_box::new(application.context, styles: fixed_height(32))
+  let content = box::new(application.context, styles: style::new(width: style::percent(100.0)))
+  let mounted = match eager {
+    true => entry_count(),
+    false => lazy_entries(),
+  }
+  let cards = mut List::new<mut box::Box>()
+  let state = mut State{
+    offset: 0,
+    start: 0,
+    cards: [],
+  }
+  let top = box::new(application.context, styles: fixed_height(0))
+  let bottom = box::new(
+    application.context,
+    styles: fixed_height(total_height(mounted, entry_count())),
+  )
+  
+  if not eager {
+    // The initial window starts at entry zero, so the actual virtual top extent
+    // is zero. Keep the spacer mounted to make both virtual extents explicit.
+    content.add(top)
+  }
+  mut index = 0
+  while index < mounted {
+    let created = card(application.context, index)
+    cards.push(created)
+    state.cards.push(Mounted{index: index, view: created})
+    content.add(created)
+    index =+ 1
+  }
+  if not eager {
+    content.add(bottom)
+  }
+  viewport.add(content)
+  shell.add(header)
+  shell.add(viewport)
+  shell.add(footer)
+  application.root.add(shell)
+  application.render()
+  
+  // These checks also make the constants an explicit measurement assertion:
+  // card heights arise from wrapped/nested content rather than uniform rows.
+  let measured_short = cards.at(0).expect("first card").layout().local.height
+  let measured_tall = cards.at(1).expect("second card").layout().local.height
+  if measured_short != short_height() or measured_tall != tall_height() {
+    panic("representative complex-feed card heights changed: {measured_short}/{measured_tall}")
+  }
+  
+  Session{
+    step: fn(step_index: Int) {
+      if step_index < 0 or step_index >= 40 {
+        panic("complex-feed step index must be in 0..40")
+      }
+      if step_index < 20 {
+        state.offset =+ 37
+      } else {
+        state.offset =- 37
+      }
+      if not eager {
+        let visible = visible_entry(state.offset)
+        let start = match visible > 1 {
+          true => visible - 1,
+          false => 0,
+        }
+        if start != state.start {
+          let next = mut List::new<Mounted>()
+          for old in state.cards {
+            if old.index < start or old.index >= start + lazy_entries() {
+              let _ = content.remove(old.view)
+              old.view.destroy(recursive: true)
+            }
+          }
+          mut entry = start
+          while entry < start + lazy_entries() {
+            mut existing = Maybe::new<Mounted>()
+            for old in state.cards {
+              if old.index == entry {
+                existing = Maybe::new<Mounted>(old)
+              }
+            }
+            let selected = match existing {
+              old => old,
+              _ => Mounted{index: entry, view: card(application.context, entry)},
+            }
+            next.push(selected)
+            content.add(selected.view, index: entry - start + 1)
+            entry =+ 1
+          }
+          state.cards = next.@
+          state.start = start
+          top.set_style(fixed_height(total_height(0, start)))
+          bottom.set_style(fixed_height(total_height(start + lazy_entries(), entry_count())))
+        }
+      }
+      let _ = viewport.scroll_to(state.offset)
+      application.render()
+    },
+    verify: fn() Str {
+      let actual = viewport.scroll_top()
+      if actual != state.offset {
+        panic("complex-feed scroll position differs")
+      }
+      let frame = application.frame()
+      if frame.cell(0, 0).expect("header cell").grapheme != "C" or frame.cell(0, 34).expect("footer cell").grapheme != "j" {
+        panic("complex-feed fixed header/footer are not visible")
+      }
+      if (not eager) and content.node().child_count() != lazy_entries() + 2 {
+        panic("complex-feed lazy mount exceeded its bound")
+      }
+      let visible = visible_entry(actual)
+      for mounted in state.cards {
+        if mounted.view.layout().local.height != entry_height(mounted.index) {
+          panic("mounted card height differs from virtualization index")
+        }
+        if mounted.index == visible and mounted.view.layout().screen.y != 2 + total_height(0, visible) - actual {
+          panic("visible card position differs from scroll index")
+        }
+      }
+      let frame_text = frame.text()
+      let observation = "offset={actual}\nvisible={visible}\n{frame_text}"
+      observation
+    },
+    close: fn() {
+      application.destroy()
+    },
+  }
+}
+
+fn capture() Str {
+  let session = prepare(false)
+  mut index = 0
+  while index < 40 {
+    session.step(index)
+    index =+ 1
+  }
+  let result = session.verify()
+  session.close()
+  result
+}
+
+fn main() {
+  let lazy = prepare(false)
+  let eager = prepare(true)
+  mut index = 0
+  while index < 40 {
+    lazy.step(index)
+    eager.step(index)
+    if lazy.verify() != eager.verify() {
+      panic("lazy and eager complex-feed frames differ at step {index}")
+    }
+    index =+ 1
+  }
+  let lazy_observation = lazy.verify()
+  let eager_observation = eager.verify()
+  if lazy_observation != eager_observation {
+    panic("lazy and eager complex-feed frames differ")
+  }
+  lazy.close()
+  eager.close()
+  fmt::Println(lazy_observation)
+}

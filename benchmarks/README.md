@@ -79,3 +79,29 @@ not peak/live memory or Yoga's C++ allocations. Sampled before/after profiles
 also contain small profiling-writer allocations; exclude those when diagnosing
 framework costs. CPU percentages include background GC and are not additive
 when cumulative call stacks overlap.
+
+## Complex feed reference workload
+
+`complex_feed.ard` adapts the nested, variable-height feed and down/up scrolling
+shape of Flutter's `complex_layout` benchmark. It is benchmark-only, not an
+interactive application or a Flutter source port. See
+[the workload and baseline](../docs/complex-feed-benchmark.md).
+
+```sh
+# Correctness smoke: compare lazy/eager after every step and print the final frame.
+ard build benchmarks/complex_feed.ard --out /tmp/complex-feed
+/tmp/complex-feed
+
+# Benchmark identical code against fetched main, without concurrent builds/tests.
+git fetch origin
+git worktree add --detach /tmp/cooper-complex-main origin/main
+python3 benchmarks/complex_feed.py /tmp/cooper-complex-main . \
+  --samples 30 --output /tmp/complex-feed-results.json
+git worktree remove /tmp/cooper-complex-main
+```
+
+This runner reports individual synchronous scroll-to-headless-frame latency,
+not batch averages or PTY input-to-display latency. It compares every frame's
+text and scroll/visible identity across both modes and revisions before accepting
+the results. Like `profile.py`, it instruments only generated Go entry code and
+restores it afterward. Its temporary baseline fixture is removed on completion.

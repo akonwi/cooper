@@ -229,6 +229,10 @@ core/            unsupported runtime mechanisms
   runtime.ard
   selection_state.ard
 ffi/             isolated Go bridges, one directory per package
+  numberbridge/  numeric conversions missing from Ard
+  vaxisbridge/   Vaxis-specific clipboard and modifier adapters
+  signalwatch/   OS signal subscriptions and terminal-size queries
+  urlopen/       platform URL handlers
 test/            deterministic integration tests
 examples/        curated runnable applications and PTY tests
   fixtures/      focused non-gallery regression programs

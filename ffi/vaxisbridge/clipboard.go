@@ -1,4 +1,4 @@
-package clipboardbridge
+package vaxisbridge
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"go.rockorager.dev/vaxis"
 )
 
-// Backend adapts Vaxis's OSC 52 clipboard operations to a cancellable App
+// Clipboard adapts Vaxis's OSC 52 clipboard operations to a cancellable App
 // lifetime. Cooper owns operation ordering and concurrent-read policy in Ard.
-type Backend struct {
+type Clipboard struct {
 	terminal *vaxis.Vaxis
 
 	mu      sync.Mutex
@@ -18,15 +18,15 @@ type Backend struct {
 	stopped bool
 }
 
-// New creates a clipboard backend bound to terminal.
-func New(terminal *vaxis.Vaxis) *Backend {
+// NewClipboard creates a clipboard adapter bound to terminal.
+func NewClipboard(terminal *vaxis.Vaxis) *Clipboard {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Backend{terminal: terminal, ctx: ctx, cancel: cancel}
+	return &Clipboard{terminal: terminal, ctx: ctx, cancel: cancel}
 }
 
 // Read requests the terminal host's clipboard and blocks until it responds or
 // the current active lifetime is cancelled.
-func (b *Backend) Read() (string, error) {
+func (b *Clipboard) Read() (string, error) {
 	b.mu.Lock()
 	ctx := b.ctx
 	stopped := b.stopped
@@ -42,19 +42,19 @@ func (b *Backend) Read() (string, error) {
 
 // Write emits an OSC 52 clipboard write. Vaxis exposes no acknowledgement or
 // output error for this operation.
-func (b *Backend) Write(value string) {
+func (b *Clipboard) Write(value string) {
 	b.terminal.ClipboardPush(value)
 }
 
 // Suspend cancels reads before Vaxis releases terminal input.
-func (b *Backend) Suspend() {
+func (b *Clipboard) Suspend() {
 	b.mu.Lock()
 	b.cancel()
 	b.mu.Unlock()
 }
 
 // Resume creates a fresh read lifetime after Vaxis reacquires terminal input.
-func (b *Backend) Resume() {
+func (b *Clipboard) Resume() {
 	b.mu.Lock()
 	if !b.stopped {
 		b.ctx, b.cancel = context.WithCancel(context.Background())
@@ -63,7 +63,7 @@ func (b *Backend) Resume() {
 }
 
 // Cancel permanently unblocks reads. It is safe to call repeatedly.
-func (b *Backend) Cancel() {
+func (b *Clipboard) Cancel() {
 	b.mu.Lock()
 	if !b.stopped {
 		b.stopped = true

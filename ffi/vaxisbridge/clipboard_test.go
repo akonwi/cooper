@@ -1,9 +1,9 @@
-package clipboardbridge
+package vaxisbridge
 
 import "testing"
 
 func TestCancelIsIdempotent(t *testing.T) {
-	backend := New(nil)
+	backend := NewClipboard(nil)
 	backend.Cancel()
 	backend.Cancel()
 
@@ -15,7 +15,7 @@ func TestCancelIsIdempotent(t *testing.T) {
 }
 
 func TestSuspendAndResumeRotateReadLifetime(t *testing.T) {
-	backend := New(nil)
+	backend := NewClipboard(nil)
 	initial := backend.ctx
 	backend.Suspend()
 	select {

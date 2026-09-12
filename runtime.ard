@@ -12,10 +12,10 @@ use cooper/core/runtime as dispatch_runtime
 use cooper/core/selection_state
 use cooper/core/terminal_events
 use cooper/event
-use go:cooper/ffi/clipboardbridge
-use go:cooper/ffi/clock
+use go:cooper/ffi/numberbridge as numbers
 use go:cooper/ffi/signalwatch
 use go:cooper/ffi/urlopen
+use go:cooper/ffi/vaxisbridge as bridge
 use cooper/notification
 use cooper/terminal_progress
 use cooper/ui/color
@@ -410,7 +410,7 @@ private fn new_live_state(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Boo
   let watcher = signalwatch::New()
   match vaxis::New(vaxis::Options{DisableMouse: not use_mouse, NoSignals: true}) {
     ok(terminal) => {
-      let backend = clipboardbridge::New(terminal)
+      let backend = bridge::NewClipboard(terminal)
       let clipboard = clipboard::internal_new(
         fn() Str!Error {
           backend.Read()
@@ -797,7 +797,7 @@ impl State {
       if self.animation_clock_initialized {
         let elapsed = now - self.animation_last_ms
         if elapsed > 0 {
-          delta = clock::IntFromInt64(elapsed).expect("animation frame delta exceeds Int range")
+          delta = numbers::IntFromInt64(elapsed).expect("animation frame delta exceeds Int range")
         }
       }
       self.animation_clock_initialized = true

@@ -8,8 +8,8 @@ use cooper/core/layout/measure
 use cooper/core/layout/numeric
 use cooper/core/layout/position
 use cooper/core/layout/redistribute
+use go:cooper/ffi/core/backend/numberbridge as numbers
 use cooper/ui/style
-use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
 
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 // MIT license: LICENSE.yoga. Recursive translation of Yoga 8ba025e

@@ -1,6 +1,6 @@
 use cooper/ui/color
 use cooper/ui/geometry
-use go:go.rockorager.dev/vaxis
+use go:vaxis
 
 struct CellStyle {
   foreground: color::Color?,

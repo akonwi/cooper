@@ -4,9 +4,9 @@ use cooper/core/layout/cache
 use cooper/core/layout/length
 use cooper/core/layout/measure
 use cooper/core/layout/numeric
+use go:cooper/ffi/core/backend/numberbridge as numbers
 use cooper/ui/geometry
 use cooper/ui/style
-use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
 
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 // MIT license: LICENSE.yoga. This is the child traversal and measurement phase

@@ -10,8 +10,8 @@ use cooper/ui/geometry
 use cooper/ui/scrollbar as scrollbar_control
 use cooper/ui/style as layout_style
 use cooper/ui/text
-use go:github.com/rockorager/go-uucode as unicode
 use go:math
+use go:uucode as unicode
 
 struct Option {
   label: Str,

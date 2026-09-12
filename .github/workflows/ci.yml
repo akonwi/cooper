@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  ARD_REF: 3fd626729f1e5be16d6bd074dc5f900060861f63
+  ARD_VERSION: v0.41.0
 
 jobs:
   test:
@@ -39,17 +39,11 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Build Ard v0.39.0 compiler
+      - name: Install Ard release
         shell: bash
         run: |
           set -euo pipefail
-          git clone --quiet https://github.com/akonwi/ard.git "$RUNNER_TEMP/ard"
-          git -C "$RUNNER_TEMP/ard" checkout --quiet "$ARD_REF"
-          mkdir -p "$RUNNER_TEMP/bin"
-          (
-            cd "$RUNNER_TEMP/ard/compiler"
-            go build -o "$RUNNER_TEMP/bin/ard" .
-          )
+          bash .github/scripts/install-ard.sh "$ARD_VERSION" "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Download Go dependencies

@@ -1,7 +1,7 @@
 use ard/testing
 
 use cooper/ui/text
-use go:github.com/rockorager/go-uucode as unicode
+use go:uucode as unicode
 
 struct Glyph {
   text: Str,
@@ -163,7 +163,7 @@ impl Builder {
     self.y =+ 1
     self.line_start = next_start
   }
-
+  
   private fn mut place(glyph: SourceGlyph) {
     self.glyphs.push(
       Glyph{
@@ -180,14 +180,14 @@ impl Builder {
     )
     self.x = self.x + glyph.width
   }
-
+  
   private fn mut place_wrapped(glyph: SourceGlyph) {
     if self.x > 0 and self.x + glyph.width > self.limit {
       self.finish_line(glyph.source_start, glyph.source_start)
     }
     self.place(glyph)
   }
-
+  
   private fn mut hard_break(segment: Segment) {
     match segment.newline_start {
       start => {
@@ -264,7 +264,7 @@ private fn build(content: Str, wrap: text::TextWrap, requested_limit: Int, measu
     }
     builder.hard_break(segment)
   }
-
+  
   let exact_wrapped_end = wrap != text::TextWrap::none and builder.x >= limit and builder.line_start < content.size()
   builder.lines.push(
     Line{
@@ -431,7 +431,7 @@ test fn text_area_layout_maps_hard_lines_wraps_and_trailing_caret() Void!Str {
   try testing::assert(hard.height == 3, "Expected hard and empty TextArea lines")
   try testing::assert(caret(hard, 3).y == 1, "Expected caret after first newline")
   try testing::assert(caret(hard, 4).y == 2, "Expected caret after empty line")
-
+  
   let wrapped = layout("abcd", text::TextWrap::character, 2, unit_width)
   try testing::assert(wrapped.height == 3, "Expected exact wrapped end caret row")
   try testing::assert(

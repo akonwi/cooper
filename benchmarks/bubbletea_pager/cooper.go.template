@@ -1,0 +1,8 @@
+package main
+
+import pager "github.com/akonwi/cooper/benchmarks/pager_reference"
+
+func prepare(lines []string) session {
+	model := pager.Prepare(lines)
+	return session{step: model.Step, view: model.View, close: model.Close}
+}

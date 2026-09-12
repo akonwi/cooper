@@ -1,0 +1,61 @@
+use cooper/testing as headless
+use cooper/ui/box
+use cooper/ui/style
+use cooper/ui/text
+
+// Pager rendering counterpart to Bubbles' viewport: no wrapping, fixed 80x24
+// viewport, app-local reuse of the 24 visible row nodes. No terminal backend.
+struct Session {
+  step: fn(Int),
+  view: fn() Str,
+  close: fn(),
+}
+
+struct State {
+  offset: Int,
+}
+
+fn prepare(lines: [Str]) Session {
+  let app = headless::new(80, 24)
+  let content = box::new(app.context)
+  let rows = mut List::new<mut text::Text>()
+  for index in 0..24 {
+    let row = text::new(
+      app.context,
+      content: lines.at(index).expect("initial pager row"),
+      wrap: text::TextWrap::none,
+      styles: style::new(width: style::cells(80), height: style::cells(1), flex_shrink: 0.0),
+    )
+    content.add(row)
+    rows.push(row)
+  }
+  app.root.add(content)
+  app.render()
+  let state = mut State{offset: 0}
+  Session{
+    step: fn(direction: Int) {
+      mut next = state.offset + direction
+      if next < 0 {
+        next = 0
+      }
+      if next > lines.size() - 24 {
+        next = lines.size() - 24
+      }
+      if next != state.offset {
+        state.offset = next
+        for row, index in rows {
+          row.set_content(lines.at(state.offset + index).expect("visible pager row"))
+        }
+      }
+      app.render()
+    },
+    view: fn() Str {
+      app.frame().text()
+    },
+    close: fn() {
+      app.destroy()
+    },
+  }
+}
+
+fn main() {}

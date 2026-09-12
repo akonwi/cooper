@@ -105,3 +105,15 @@ not batch averages or PTY input-to-display latency. It compares every frame's
 text and scroll/visible identity across both modes and revisions before accepting
 the results. Like `profile.py`, it instruments only generated Go entry code and
 restores it afterward. Its temporary baseline fixture is removed on completion.
+
+## Three-way Bubble Tea pager comparison
+
+`compare_bubbletea.py` compares main, the current Cooper branch and native Go
+Bubble Tea/Bubbles using the same 10,000-line pager data and 80×24 viewport.
+The shared driver checks every generated frame against independently clipped
+source rows. This measures update/view computation, excluding terminal renderer
+cadence, coalescing, diffing and I/O on all sides.
+
+See [commands and pinned dependencies](bubbletea_pager/README.md) and
+[the three-way results](../docs/bubbletea-pager-benchmark.md). Bubble Tea lives in
+an isolated benchmark Go module; production dependencies are unchanged.

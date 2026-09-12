@@ -281,3 +281,61 @@ from that checkout's `ard-out/go/build` directory. Run the resulting binary with
 
 Before using small lazy-feed timing differences to accept or reject future
 optimizations, address the verification-allocation interference explicitly.
+
+## Isolated verification establishes the next comparison baseline
+
+Checkpoint [a03541b](https://github.com/akonwi/cooper/commit/a03541b5abfc584723e326b1787a9f3d421fe7be)
+separates full frame verification from measurement into different processes.
+Each measured sequence checks its final frame only after its timing loop; a
+separate process checks every intermediate frame. Both comparators reject
+sequence or final-frame mismatches and store verification records separately.
+No GC settings, workloads, or production rendering paths changed in this
+checkpoint. `Frame.text()` now joins grapheme parts once instead of repeatedly
+copying a growing prefix; it preserves the serialized output.
+
+The same new harness ran against reference
+[27ab359](https://github.com/akonwi/cooper/commit/27ab35923036daa8f2edf12b7f3f0ac1f00be754)
+and this checkpoint, using 30 pager sessions and 15 feed sessions, each plus three
+warmups, on the same two-CPU orb with Go 1.27.0 and Ard compiler revision
+`3fd626729f1e5be16d6bd074dc5f900060861f63`. Reference means the pre-clipped-Text
+optimization checkpoint, **not current main** (the pager JSON calls it `main`).
+
+| Per-step latency | Reference median / p95 | Candidate median / p95 | Bubble Tea median / p95 |
+|---|---:|---:|---:|
+| Pager down | 0.325 / 0.937 ms | 0.315 / 0.926 ms | 0.169 / 0.246 ms |
+| Lazy feed | 1.157 / 2.069 ms | 0.680 / 1.566 ms | — |
+| Eager feed | 37.984 / 46.462 ms | 2.745 / 3.697 ms | — |
+
+Lazy median is about 41% lower and eager about 93% lower under this protocol.
+Pager's roughly 3% median difference is small; Cooper remains about 1.86× Bubble
+Tea's median and 3.76× its p95. Median pager-down heap traffic remains
+308,088 bytes against Bubble Tea's 34,464 bytes. Lazy/eager candidate heap traffic
+is 834,868 / 1,030,208 bytes per step, against 1,103,448 / 23,578,264 bytes in the
+reference. These are Go allocations, not retained memory.
+
+This comparison evaluates the earlier clipped-Text/layout-reuse optimization
+with consistent measurement isolation. The lower absolute pager timings than
+the old report are **not a newly achieved library speedup**. Old interleaved
+results remain historical evidence, not a directly comparable baseline. Small
+differences still need repeated measurements; process isolation removes this
+specific verification/GC interaction, not all measurement noise.
+
+Proof: `ard test` reported **438 passed; 0 failed; 0 panicked**. Ard format/check
+passed. `python3 benchmarks/test_measurement_protocol.py` passed two black-box
+tests: measured adapters reject early serialization and verification catches
+injected intermediate failures. Root and native pager `go test ./...` passed.
+All **26,640** per-frame checks across benchmark sessions and warmups passed,
+and all measured final hashes matched the verified sequences. No appearance or
+interactive production behavior changed in this checkpoint.
+
+Raw records: `benchmarks/baselines/performance-isolated-pager.json.gz` and
+`benchmarks/baselines/performance-isolated-feed.json.gz`, tagged
+`isolated-verification-v2`. Reproduce with the current runners and a detached
+reference worktree:
+
+```sh
+git worktree add --detach /tmp/cooper-isolated-reference 27ab35923036daa8f2edf12b7f3f0ac1f00be754
+python3 benchmarks/compare_bubbletea.py /tmp/cooper-isolated-reference . --samples 30 --output /tmp/cooper-isolated-pager.json
+python3 benchmarks/complex_feed.py /tmp/cooper-isolated-reference . --samples 15 --output /tmp/cooper-isolated-feed.json
+git worktree remove /tmp/cooper-isolated-reference
+```

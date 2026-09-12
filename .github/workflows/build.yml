@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  ARD_VERSION: v0.41.0
+  ARD_VERSION: v0.42.0
 
 jobs:
   build:

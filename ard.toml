@@ -1,5 +1,5 @@
 name = "cooper"
-ard = ">= 0.41.0"
+ard = ">= 0.42.0"
 target = "go"
 
 [go.imports]

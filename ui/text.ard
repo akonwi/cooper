@@ -1245,49 +1245,66 @@ impl node::Renderable for Text {
     link_data.paint_clip = local_clip
     link_data.link_hits = []
     if visible.width > 0 and visible.height > 0 {
-      let measured = layout_text(self.content, self.wrap_mode, content.width, self.width_measurer)
       let runs = cached_style_runs(self.style_cache)
-      let truncated = ellipsis_active(measured, content.width, content.height, self.overflow_mode)
       let has_links = style_runs_have_links(runs)
-      if runs.size() <= 1 and not truncated {
-        if has_links {
-          let link_view = self.current_view(measured: measured)
-          self.cache_link_hits(link_view.glyphs, runs, local_clip)
-        }
-        mut hyperlink = Maybe::new<Str>()
+      // Unwrapped, uniform text needs no line widths or source mapping to paint.
+      // Stream it once; tabs retain the normalization/resegmentation path below.
+      if self.wrap_mode == TextWrap::none and self.overflow_mode == TextOverflow::clip and runs.size() <= 1 and (not has_links) and (not self.content.contains("\t")) {
         let applied = match runs.at(0) {
-          run => {
-            hyperlink = run.link
-            run.style
-          },
+          run => run.style,
           _ => self.text_style,
         }
-        for line, y in measured.lines {
-          content_ctx.write_measured(
-            content.x,
-            content.y + y,
-            line.text,
-            self.width_measurer,
-            text_style: cell_style(applied, hyperlink: hyperlink),
-          )
-        }
+        content_ctx.write_measured(
+          content.x,
+          content.y,
+          self.content,
+          self.width_measurer,
+          text_style: cell_style(applied),
+          line_break: newline,
+        )
       } else {
-        let view = self.current_view(measured: measured)
-        if has_links {
-          self.cache_link_hits(view.glyphs, runs, local_clip)
-        }
-        paint_visual_glyphs(content_ctx, view.glyphs, runs, self.width_measurer)
-        match view.ellipsis {
-          marker => {
+        let measured = layout_text(self.content, self.wrap_mode, content.width, self.width_measurer)
+        let truncated = ellipsis_active(measured, content.width, content.height, self.overflow_mode)
+        if runs.size() <= 1 and not truncated {
+          if has_links {
+            let link_view = self.current_view(measured: measured)
+            self.cache_link_hits(link_view.glyphs, runs, local_clip)
+          }
+          mut hyperlink = Maybe::new<Str>()
+          let applied = match runs.at(0) {
+            run => {
+              hyperlink = run.link
+              run.style
+            },
+            _ => self.text_style,
+          }
+          for line, y in measured.lines {
             content_ctx.write_measured(
-              marker.x,
-              marker.y,
-              "…",
+              content.x,
+              content.y + y,
+              line.text,
               self.width_measurer,
-              text_style: cell_style(marker.style),
+              text_style: cell_style(applied, hyperlink: hyperlink),
             )
-          },
-          _ => (),
+          }
+        } else {
+          let view = self.current_view(measured: measured)
+          if has_links {
+            self.cache_link_hits(view.glyphs, runs, local_clip)
+          }
+          paint_visual_glyphs(content_ctx, view.glyphs, runs, self.width_measurer)
+          match view.ellipsis {
+            marker => {
+              content_ctx.write_measured(
+                marker.x,
+                marker.y,
+                "…",
+                self.width_measurer,
+                text_style: cell_style(marker.style),
+              )
+            },
+            _ => (),
+          }
         }
       }
       if self.selected_glyphs.size() > 0 {
@@ -2156,6 +2173,81 @@ test fn clipped_text_skips_measurement_but_clears_links_and_keeps_selection() Vo
     )
   }
   label.destroy()
+  ctx.destroy_detached()
+  Result::ok(())
+}
+
+test fn unwrapped_paint_streams_once_and_preserves_normalized_cells() Void!Str {
+  let calls = mut List::new<Str>()
+  let measure = fn(value: Str) Int {
+    calls.push(value)
+    match value {
+      "a" => 2,
+      "你" => 3,
+      _ => test_width(value),
+    }
+  }
+  let ctx = runtime::new_detached(width_measurer: measure)
+  for value in ["a你é\r\nb\n\nq", "a\v你\f🙂\rZ", "a\t́\r\nx\t"] {
+    let label = new(ctx, content: value, wrap: TextWrap::none, text_style: style(bold: true))
+    ctx.compute_layout(label, 8, 5)
+    let bounds = geometry::Rect{
+      x: 2,
+      y: 1,
+      width: 8,
+      height: 5,
+    }
+    let clip = geometry::Rect{
+      x: 3,
+      y: 1,
+      width: 4,
+      height: 4,
+    }
+    let actual = mut paint::Context{
+      buffer: paint::new_buffer(12, 7),
+      bounds: bounds,
+      clip: clip,
+    }
+    let expected = mut paint::Context{
+      buffer: paint::new_buffer(12, 7),
+      bounds: bounds,
+      clip: clip,
+    }
+    let before = calls.size()
+    label.paint(actual)
+    if not value.contains("\t") {
+      mut first_calls = 0
+      for seen, index in calls {
+        if index >= before and seen == "a" {
+          first_calls =+ 1
+        }
+      }
+      try testing::assert(
+        first_calls == 1,
+        "Unwrapped painting measures a glyph once, not once for layout and again for painting",
+      )
+    }
+    // The previous line-layout/resegmentation path remains the reference for
+    // tabs, mandatory breaks, custom widths and partial wide-span clearing.
+    for line, y in unwrapped(value, measure).lines {
+      expected.write_measured(0, y, line.text, measure, text_style: cell_style(style(bold: true)))
+    }
+    for y in 0..6 {
+      for x in 0..11 {
+        let a = actual.buffer.cell_at(x, y).expect("actual cell")
+        let e = expected.buffer.cell_at(x, y).expect("reference cell")
+        try testing::assert(
+          a.grapheme == e.grapheme and a.width == e.width and a.style.bold == e.style.bold,
+          "Streaming and normalized reference cells agree at {x},{y}",
+        )
+      }
+    }
+    try testing::assert(
+      actual.buffer.cell_at(3, 1).expect("clipped a").grapheme == " ",
+      "A partial custom-width glyph is cleared, not painted",
+    )
+    label.destroy()
+  }
   ctx.destroy_detached()
   Result::ok(())
 }

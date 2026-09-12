@@ -323,38 +323,54 @@ impl Context {
     }
   }
   
-  fn mut write_measured(x: Int, y: Int, text: Str, measure_width: fn(Str) Int, text_style: CellStyle?) {
+  fn mut write_measured(
+    x: Int,
+    y: Int,
+    text: Str,
+    measure_width: fn(Str) Int,
+    text_style: CellStyle?,
+    line_break: (fn(Str) Bool)?,
+  ) {
     let applied_style = text_style.or(style())
     let snapshot = mut self.inherited_colors(applied_style)
-    let target_y = self.bounds.y + y
+    mut target_y = self.bounds.y + y
     mut target_x = self.bounds.x + x
     let iterator = mut vaxis::NewCharacterIterator(text)
     mut reading = true
     while reading {
       match iterator.Next() {
         character => {
-          let width = measure_width(character.Grapheme)
-          mut visible = width > 0
-          mut part = 0
-          while part < width {
-            if not geometry::contains(self.clip, target_x + part, target_y) {
-              visible = false
-            }
-            part =+ 1
+          let breaks = match line_break {
+            classify => classify(character.Grapheme),
+            _ => false,
           }
-          
-          if visible {
-            self.buffer.write_grapheme(target_x, target_y, character.Grapheme, width, snapshot)
+          if breaks {
+            target_x = self.bounds.x + x
+            target_y =+ 1
           } else {
-            part = 0
+            let width = measure_width(character.Grapheme)
+            mut visible = width > 0
+            mut part = 0
             while part < width {
-              if geometry::contains(self.clip, target_x + part, target_y) {
-                self.buffer.clear_span_at(target_x + part, target_y)
+              if not geometry::contains(self.clip, target_x + part, target_y) {
+                visible = false
               }
               part =+ 1
             }
+            
+            if visible {
+              self.buffer.write_grapheme(target_x, target_y, character.Grapheme, width, snapshot)
+            } else {
+              part = 0
+              while part < width {
+                if geometry::contains(self.clip, target_x + part, target_y) {
+                  self.buffer.clear_span_at(target_x + part, target_y)
+                }
+                part =+ 1
+              }
+            }
+            target_x = target_x + width
           }
-          target_x = target_x + width
         },
         _ => { reading = false },
       }

@@ -1,8 +1,9 @@
-# Ard layout comparison: September 11, 2026
+# Ard layout comparison: September 12, 2026
 
-The candidate is not ready for a performance-parity claim or old-backend removal.
-The render comparison is mixed, and the layout-only probe shows unnecessary
-repeated measurement of unchanged auto-height content.
+The translated engine now replaces Tess in production. Performance remains
+mixed; this is not a performance-parity claim. The original measurements below
+describe the independent solver that has since been removed. Final translated
+engine results are recorded at the end of this document.
 
 ## Method
 
@@ -106,3 +107,39 @@ measurement; no frame budget has been agreed or proven here.
 Raw data is available in this thread's artifacts:
 `layout-comparison.json`, `layout-comparison-fixed-measurement.json`, and
 `layout-only-comparison.json`.
+
+## Final translated engine
+
+The same nine-sample, alternating-order comparison passed all non-timing
+observations after production integration. Representative median times:
+
+| Workload | Tess/Yoga µs | Ard µs | Ard / native |
+| --- | ---: | ---: | ---: |
+| 1,001-node initial layout | 25,416 | 27,367 | 1.08× |
+| 1,001-node single update | 19,711 | 16,205 | 0.82× |
+| Virtual-list single-row update | 424 | 1,439 | 3.39× |
+| Virtual-list resize | 936 | 569 | 0.61× |
+| Virtual-list paint | 445 | 1,082 | 2.43× |
+| 1,000 attach/detach/layout cycles | 168,674 | 161,064 | 0.95× |
+
+Timings were collected in the development orb alongside verification activity;
+they are diagnostic rather than a controlled performance budget. Virtual-row
+updates and painting merit profiling. No new public contract is needed for that
+optimization work, and no speed parity is claimed.
+
+The layout-only workload now reports these deterministic callback counts over
+1,000 transactions (final geometry remains 41×1):
+
+| Leaf dimensions | Unchanged | One width update per transaction | Root resize |
+| --- | ---: | ---: | ---: |
+| Fixed width/height | 0 | 0 | 0 |
+| Fixed width, auto height | 0 | 1,000 | 0 |
+
+These match the original native counts and replace the independent solver's
+192,000 callbacks per auto-height phase. A headless regression separately checks
+that content invalidation triggers a fresh callback and changes geometry, while
+an unchanged transaction or compatible root resize reuses the measurement.
+
+Final render comparison data: `.amp/in/artifacts/layout-port-comparison.json`.
+The optional native comparison fetches Tess through its historical baseline;
+production modules and builds no longer depend on it.

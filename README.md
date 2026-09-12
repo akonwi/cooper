@@ -156,7 +156,10 @@ yet a supported custom-control API.
 
 Public layout and interaction use Ard-native Style, Color, Point, Rect,
 Geometry, and Selection values.
-Tess/Yoga remains a hidden and replaceable internal layout backend.
+Production builds use Cooper's Ard-native layout implementation and do not
+require Tess, Yoga, CGo, or a C++ toolchain. The optional pinned-layout
+comparison (`python3 test/compare_layout.py`) resolves Tess only inside its
+isolated historical baseline worktree and requires a C++20 compiler.
 
 ## Installation
 

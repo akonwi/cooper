@@ -1,0 +1,115 @@
+use cooper/core/layout/flex
+use cooper/core/layout/numeric
+
+// Accepted Cooper policy layered on raw Yoga's two-pass flex allocation.
+// This is intentionally not source parity: Cooper repeatedly freezes the
+// constraints responsible for the net violation and redistributes from bases.
+// Tree ownership, line collection, and physical positioning remain elsewhere.
+
+fn bound(item: flex::Item, value: Float32) Float32 {
+  mut limited = value
+  if numeric::is_defined(item.maximum) and item.maximum >= 0.0 and limited > item.maximum {
+    limited = item.maximum
+  }
+  // Cooper's resolved contradictory bounds are minimum-winning.
+  if numeric::is_defined(item.minimum) and item.minimum >= 0.0 and limited < item.minimum {
+    limited = item.minimum
+  }
+  numeric::max_or_defined(limited, item.padding_border)
+}
+
+fn factor(item: flex::Item, growing: Bool) Float32 {
+  if not item.flexible {
+    Float32::from(0.0)
+  } else if growing {
+    item.flex_grow
+  } else {
+    item.flex_shrink
+  }
+}
+
+fn weight(item: flex::Item, growing: Bool) Float32 {
+  let value = factor(item, growing)
+  match growing {
+    true => value,
+    false => value * item.basis,
+  }
+}
+
+fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distribution {
+  let growing = remaining_free_space >= 0.0
+  let sizes = mut List::new<Float32>()
+  let frozen = mut List::new<Bool>()
+  for item in line.items {
+    let fixed = factor(item, growing) == 0.0
+    sizes.push(
+      match fixed {
+        true => bound(item, item.basis),
+        false => item.basis,
+      },
+    )
+    frozen.push(fixed)
+  }
+  
+  mut passes = line.items.size() + 1
+  while passes > 0 {
+    passes = passes - 1
+    mut free = remaining_free_space
+    mut factors = Float32::from(0.0)
+    mut weights = Float32::from(0.0)
+    for item, index in line.items {
+      if frozen.at(index).expect("freeze state") {
+        free = free - (sizes.at(index).expect("distributed size") - item.basis)
+      } else {
+        sizes.set(index, item.basis)
+        factors = factors + factor(item, growing)
+        weights = weights + weight(item, growing)
+      }
+    }
+    if weights == 0.0 {
+      break
+    }
+    
+    // CSS low-factor behavior: fractional factors claim only their fraction
+    // of the original free space rather than being normalized to one.
+    let proportional = match remaining_free_space >= 0.0 {
+      true => remaining_free_space * factors < free,
+      false => remaining_free_space * factors > free,
+    }
+    if factors < 1.0 and proportional {
+      free = remaining_free_space * factors
+    }
+    
+    mut violation = Float32::from(0.0)
+    for item, index in line.items {
+      if not frozen.at(index).expect("freeze state") {
+        let target = item.basis + free * weight(item, growing) / weights
+        let limited = bound(item, target)
+        violation = violation + limited - target
+        sizes.set(index, limited)
+      }
+    }
+    if violation == 0.0 {
+      break
+    }
+    for item, index in line.items {
+      if not frozen.at(index).expect("freeze state") {
+        let target = item.basis + free * weight(item, growing) / weights
+        let limited = sizes.at(index).expect("distributed size")
+        frozen.set(index, (limited - target) * violation > 0.0)
+      }
+    }
+  }
+  
+  mut distributed = Float32::from(0.0)
+  for item, index in line.items {
+    distributed = distributed + sizes.at(index).expect("distributed size") - item.basis
+  }
+  flex::Distribution{
+    sizes: sizes.@,
+    remaining_free_space: remaining_free_space - distributed,
+    distributed_free_space: distributed,
+    total_flex_grow_factors: line.total_flex_grow_factors,
+    total_flex_shrink_scaled_factors: line.total_flex_shrink_scaled_factors,
+  }
+}

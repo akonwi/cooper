@@ -159,6 +159,40 @@ fn with_callback(width: Axis, height: Axis, measure: fn(Input) Size) Size {
   }
 }
 
+// ADR0016: if width bounds change the measured content width, height must be
+// measured at that final width before caching the result. Raw Yoga stays above.
+fn with_callback_policy(width: Axis, height: Axis, measure: fn(Input) Size) Size {
+  if width.mode == cache::SizingMode::stretch_fit and height.mode == cache::SizingMode::stretch_fit {
+    with_callback(width, height, measure)
+  } else {
+    let measured = measure(
+      Input{
+        width: width.inner_size(),
+        width_mode: callback_mode(width.mode),
+        height: height.inner_size(),
+        height_mode: callback_mode(height.mode),
+      },
+    )
+    let final_width = width.measured_size(measured.width)
+    let initial_width = match width.mode == cache::SizingMode::stretch_fit {
+      true => width.inner_size(),
+      false => measured.width,
+    }
+    mut final_height = measured.height
+    if height.mode != cache::SizingMode::stretch_fit and final_width - width.padding_border != initial_width {
+      final_height = measure(
+        Input{
+          width: numeric::max_or_defined(Float32::from(0.0), final_width - width.padding_border),
+          width_mode: Mode::exactly,
+          height: height.inner_size(),
+          height_mode: callback_mode(height.mode),
+        },
+      ).height
+    }
+    Size{width: final_width, height: height.measured_size(final_height)}
+  }
+}
+
 fn without_children(width: Axis, height: Axis) Size {
   let w = match width.mode == cache::SizingMode::stretch_fit {
     true => width.available,

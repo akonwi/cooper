@@ -1,18 +1,21 @@
 # Tess replacement: Yoga-to-Ard port map
 
-September 11, 2026. Implementation direction, not a claim of completed parity.
+September 12, 2026. Production integration complete for Cooper's supported
+configuration and accepted ADR policies. This is not a claim of exhaustive
+upstream Yoga conformance. The original plan and incremental proof log below
+are historical; the completion section records the final implementation.
 
 The goal is to replace Tess, including its Yoga dependency, with Ard-native
 layout machinery. Translating Yoga's algorithms is how we replace the solver
 inside that dependency chain; leaving Tess in place is not completion.
-The current `core/layout.ard` is an independently implemented
-solver. Its tests and retained-framework improvements remain useful, but adding
-a custom cache to that solver would not make it a Yoga port.
+The independently implemented solver has been removed. `core/layout.ard` now
+owns retained layout data and geometry projection; `core/layout/visitor.ard`
+owns the translated recursive algorithm and invokes the focused phase modules.
 
-Cooper currently declares Tess in `go.mod`, and its retained Yoga bridge imports
-Tess for node construction, style application, measurement callbacks, tree
-operations and layout results. The replacement must own those capabilities in
-Ard as well as the solver. It need not reproduce Tess's Go API or expose Tess
+Cooper no longer declares Tess in either Go module, and the retained Yoga bridge
+has been deleted. Ard owns node construction, style application, measurement
+callbacks, tree operations and layout results as well as the solver. It does
+not reproduce Tess's Go API or expose Tess
 features Cooper does not publicly support. The final dependency graph must have
 no Tess module, Yoga native archive or layout-specific CGo bridge. This does not
 remove Cooper's separate Vaxis dependency or promise a Go-free application.
@@ -64,9 +67,9 @@ undefined availability must be distinguishable in the Ard representation.
 | `node/LayoutableChildren.h` | `collect` | Align layout traversal with Yoga's contents flattening; retain Cooper's independent retained-tree behavior. |
 | `algorithm/PixelGrid.cpp` | `project`, `freeze_horizontal`, `Allocation` | Translate edge projection mechanics, then apply ADR 0020's tie and width-reconciliation rules explicitly. |
 
-The large `compute_visible` function currently combines these responsibilities.
-Splitting it mechanically is not sufficient: the translated phase ordering,
-conditions and persistent state must be traceable to the source.
+The table records the original replacement plan, not remaining work.
+`compute_visible` and the independent flex solver are gone; source references
+and copyright notices accompany the translated phases.
 
 ## Cache and invalidation are part of the algorithm
 
@@ -635,3 +638,46 @@ Full `ard test`:410 passed,0 failed,0 panicked; compiler and formatter checks pa
 Remaining container work includes `canSkipFlex`, scroll-specific final sizing,
 baseline line extents, and owner-relative constraint parity. Positioning,
 accepted-policy integration, and removal of Tess remain pending.
+
+## Production integration completed
+
+The remaining phases above are integrated. `visitor::calculate` is the sole
+retained layout entry; no independent solver or Tess fallback remains.
+
+- `visitor` orders basis calculation, line collection, distribution, recursive
+  measurement/layout, deferred stretch, multiline remeasurement and positioning.
+  It includes fixed-size and exact-cross-axis measurement shortcuts and
+  overflow-scroll final sizing.
+- `position` implements justification, auto margins, cross alignment, reverse
+  axes and baseline placement. Root relative offsets resolve against the
+  viewport; static roots ignore them. Auto cross margins suppress alignment
+  even when their available space is negative.
+- `absolute` implements measure-then-layout and containing-block traversal,
+  skipping static and contents ancestors where required. Border/padding-box
+  references and asymmetric inset placement have dedicated tests.
+- Production policy adapters implement intrinsic keywords and percentage
+  provenance (0016), line spacing separate from child size (0017), bottom-box
+  baselines (0018), contents flattening (0019), and transaction-local projected
+  width replay with frozen horizontal geometry (0020). Iterative constraint
+  redistribution is isolated in `redistribute`; raw two-pass Yoga tests remain.
+- Natural measurements and basis caches survive projected-width replay.
+  Integral measured widths skip replay; unchanged root transactions skip the
+  visitor. Changed content still invalidates the owning chain.
+- Tess and its checksums are removed from root/examples modules, and the unused
+  `retainedyoga` bridge is deleted. Native comparison tools obtain Tess only in
+  an isolated historical worktree. Production Go boundary tests and quickstart
+  compilation succeed with `CGO_ENABLED=0`.
+
+Final headless verification: `ard test` reports **430 passed, 0 failed,
+0 panicked**. The pinned-source comparison passes 14 shared geometry cases,
+one intentional intrinsic adaptation, 169 numeric pairs, 5,184 cache decisions,
+12 rounding cases, five cached leaf visits, 2,016 axis cases, 60 lengths,
+1,728 processed dimensions, 720 direct basis cases, 32 basis fallback visits,
+32 two-pass flex distributions and 225 fixed-size shortcut cases.
+
+These are bounded differential tests plus public contract/regression tests,
+not the entire upstream Yoga suite. Unsupported Yoga configurations, RTL,
+aspect-ratio APIs and arbitrary baseline callbacks are not added by this port.
+Performance results and remaining profiling opportunities are recorded in
+`layout-performance-comparison.md`; performance parity is not a completion
+claim.

@@ -1,0 +1,272 @@
+use ard/testing
+
+use cooper/core/layout
+use cooper/core/layout/cache
+use cooper/core/layout/position
+use cooper/ui/style
+
+fn sized(width: Float64, height: Float64, value: style::Style) mut layout::Node {
+  let node = layout::new()
+  node.measured_width = Float32::from(width)
+  node.measured_height = Float32::from(height)
+  node.value = value
+  node
+}
+
+fn parent(width: Float64, height: Float64, value: style::Style) mut layout::Node {
+  let node = sized(width, height, value)
+  node.insets = layout::Insets{
+    left: 3.0,
+    top: 2.0,
+    right: 5.0,
+    bottom: 4.0,
+  }
+  node
+}
+
+test fn row_reverse_justifies_asymmetric_margins_and_relative_offsets() Void!Str {
+  let root = parent(
+    40.0,
+    16.0,
+    style::new(
+      flex_direction: style::FlexDirection::row_reverse,
+      justify_content: style::Justify::space_between,
+      align_items: style::Align::start,
+    ),
+  )
+  let a = sized(
+    6.0,
+    3.0,
+    style::new(
+      margin: style::Edges{
+        left: style::cells(1),
+        top: style::cells(2),
+        right: style::cells(3),
+        bottom: style::cells(0),
+      },
+      left: style::cells(2),
+    ),
+  )
+  let b = sized(
+    4.0,
+    2.0,
+    style::new(
+      margin: style::Edges{
+        left: style::cells(2),
+        top: style::cells(1),
+        right: style::cells(1),
+        bottom: style::cells(0),
+      },
+    ),
+  )
+  position::apply(
+    root,
+    [[a, b]],
+    [Float32::from(5.0)],
+    [Float32::from(11.0)],
+    Float32::from(40.0),
+    Float32::from(16.0),
+    cache::SizingMode::stretch_fit,
+  )
+  try testing::assert(
+    a.x == 28.0 and b.x == 9.0,
+    "reverse physical edges retain source order and distributed space",
+  )
+  testing::assert(a.y == 4.0 and b.y == 3.0, "cross start uses asymmetric top inset and margins")
+}
+
+test fn column_reverse_auto_margin_and_static_offsets() Void!Str {
+  let root = parent(
+    20.0,
+    30.0,
+    style::new(
+      flex_direction: style::FlexDirection::column_reverse,
+      align_items: style::Align::end,
+    ),
+  )
+  let a = sized(
+    4.0,
+    5.0,
+    style::new(
+      margin: style::Edges{
+        left: style::cells(1),
+        top: style::auto(),
+        right: style::cells(2),
+        bottom: style::cells(1),
+      },
+      top: style::cells(7),
+    ),
+  )
+  let b = sized(
+    3.0,
+    4.0,
+    style::new(position: style::Position::static, top: style::cells(9), right: style::cells(4)),
+  )
+  position::apply(
+    root,
+    [[a, b]],
+    [Float32::from(7.0)],
+    [Float32::from(10.0)],
+    Float32::from(20.0),
+    Float32::from(30.0),
+    cache::SizingMode::stretch_fit,
+  )
+  try testing::assert(
+    a.y == 27.0 and b.y == 6.0,
+    "positive main free space is consumed by the accepted line auto margin",
+  )
+  testing::assert(
+    a.x == 9.0 and b.x == 12.0,
+    "column cross end aligns margin boxes and static ignores offsets",
+  )
+}
+
+test fn wrapped_lines_distribute_cross_space_and_wrap_reverse() Void!Str {
+  let root = parent(
+    30.0,
+    24.0,
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap_reverse,
+      align_items: style::Align::start,
+      align_content: style::Align::space_around,
+      gap: style::cells(2),
+    ),
+  )
+  let a = sized(4.0, 3.0, style::new())
+  let b = sized(5.0, 5.0, style::new())
+  position::apply(
+    root,
+    [[a], [b]],
+    [Float32::from(3.0), Float32::from(5.0)],
+    [Float32::from(0.0), Float32::from(0.0)],
+    Float32::from(30.0),
+    Float32::from(24.0),
+    cache::SizingMode::stretch_fit,
+  )
+  try testing::assert(
+    a.y == 15.0 and b.y == 4.0,
+    "space-around line offsets mirror from physical cross end",
+  )
+  testing::assert(a.x == 3.0 and b.x == 3.0, "wrap reversal does not reverse main-axis placement")
+}
+
+test fn baseline_uses_bottom_border_box_with_margins_on_each_line() Void!Str {
+  let root = parent(
+    30.0,
+    18.0,
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      align_items: style::Align::baseline,
+      align_content: style::Align::start,
+    ),
+  )
+  let short = sized(
+    4.0,
+    2.0,
+    style::new(
+      margin: style::Edges{
+        left: style::undefined(),
+        top: style::cells(1),
+        right: style::undefined(),
+        bottom: style::cells(3),
+      },
+    ),
+  )
+  let tall = sized(
+    4.0,
+    5.0,
+    style::new(
+      margin: style::Edges{
+        left: style::undefined(),
+        top: style::cells(0),
+        right: style::undefined(),
+        bottom: style::cells(0),
+      },
+    ),
+  )
+  let next = sized(3.0, 2.0, style::new())
+  position::apply(
+    root,
+    [[short, tall], [next]],
+    [Float32::from(8.0), Float32::from(2.0)],
+    [Float32::from(0.0), Float32::from(0.0)],
+    Float32::from(30.0),
+    Float32::from(18.0),
+    cache::SizingMode::stretch_fit,
+  )
+  try testing::assert(
+    short.y == 5.0 and tall.y == 2.0,
+    "ADR0018 aligns bottom border-box edges rather than margin-box ends",
+  )
+  testing::assert(
+    next.y == 10.0,
+    "baseline adapter is independently anchored in each recorded line",
+  )
+}
+
+test fn negative_distribution_fallbacks_and_cross_auto_margin() Void!Str {
+  let root = parent(
+    14.0,
+    10.0,
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      justify_content: style::Justify::space_evenly,
+      align_items: style::Align::end,
+    ),
+  )
+  let child = sized(
+    16.0,
+    2.0,
+    style::new(
+      margin: style::Edges{
+        left: style::undefined(),
+        top: style::auto(),
+        right: style::undefined(),
+        bottom: style::cells(1),
+      },
+    ),
+  )
+  position::apply(
+    root,
+    [[child]],
+    [Float32::from(3.0)],
+    [Float32::from(-5.0)],
+    Float32::from(14.0),
+    Float32::from(10.0),
+    cache::SizingMode::stretch_fit,
+  )
+  try testing::assert(child.x == 0.5, "negative space-evenly falls back to center")
+  testing::assert(child.y == 3.0, "positive cross free space is assigned to the auto start margin")
+}
+
+test fn overflowing_cross_auto_margin_does_not_fall_back_to_alignment() Void!Str {
+  let root = parent(20.0, 10.0, style::new(flex_direction: style::FlexDirection::row))
+  let child = sized(
+    3.0,
+    7.0,
+    style::new(
+      align_self: style::Align::end,
+      margin: style::Edges{
+        top: style::auto(),
+        right: style::cells(0),
+        bottom: style::cells(0),
+        left: style::cells(0),
+      },
+    ),
+  )
+  position::apply(
+    root,
+    [[child]],
+    [Float32::from(7.0)],
+    [Float32::from(9.0)],
+    Float32::from(20.0),
+    Float32::from(10.0),
+    cache::SizingMode::stretch_fit,
+  )
+  testing::assert(
+    child.y == 2.0,
+    "Auto cross margins resolve to zero on overflow, overriding end alignment",
+  )
+}

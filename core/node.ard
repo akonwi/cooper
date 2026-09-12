@@ -2,6 +2,7 @@ use ard/unsafe
 
 use cooper/core/event_delivery
 use cooper/core/layout as engine
+use cooper/core/layout/visitor as layout_visitor
 use cooper/core/paint
 use cooper/core/runtime
 use cooper/event
@@ -1458,7 +1459,7 @@ impl Node {
     if width < 0 or height < 0 {
       panic("retained layout bounds must be non-negative")
     }
-    self.layout_node.compute(width, height)
+    layout_visitor::calculate(self.layout_node, width, height)
     self.viewport = geometry::Rect{
       x: 0,
       y: 0,

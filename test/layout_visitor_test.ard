@@ -487,3 +487,90 @@ test fn fixed_measurement_skips_boxes_but_cleans_contents_paths() Void!Str {
     "A later full layout cannot reuse the shortcut to skip descendants",
   )
 }
+
+test fn fit_content_scroll_container_is_capped_on_both_axes() Void!Str {
+  for overflow in [style::Overflow::visible, style::Overflow::scroll] {
+    let root = layout::new()
+    root.apply(style::new(overflow: overflow), 0)
+    root.insert(fixed(20, 12), 0)
+    visitor::visit(
+      root,
+      axis(8.0, cache::SizingMode::fit_content),
+      axis(6.0, cache::SizingMode::fit_content),
+      zero(),
+      zero(),
+      1,
+      false,
+    )
+    let expected_width = match overflow == style::Overflow::scroll {
+      true => 8.0,
+      false => 20.0,
+    }
+    let expected_height = match overflow == style::Overflow::scroll {
+      true => 6.0,
+      false => 12.0,
+    }
+    try testing::assert(
+      root.measured_width == Float32::from(expected_width) and root.measured_height == Float32::from(expected_height),
+      "Step9 caps scroll containers to the fit-content offer while visible overflow expands",
+    )
+  }
+  Result::ok(())
+}
+
+test fn exact_cross_measurement_skips_flex_child_revisit() Void!Str {
+  mut calls = 0
+  let child = layout::new()
+  child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
+    calls =+ 1
+    layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
+  })
+  let root = layout::new()
+  root.insert(child, 0)
+  visitor::visit(
+    root,
+    axis(10.0, cache::SizingMode::fit_content),
+    axis(6.0, cache::SizingMode::stretch_fit),
+    zero(),
+    zero(),
+    1,
+    false,
+  )
+  testing::assert(
+    calls == 1 and root.measured_width == 3.0 and root.measured_height == 6.0,
+    "canSkipFlex uses the basis pass only when measurement has an exact cross axis",
+  )
+}
+
+test fn intrinsic_policy_excludes_inter_line_lead_from_stretch_size() Void!Str {
+  let root = layout::new()
+  root.intrinsic_policy = true
+  root.apply(
+    style::new(
+      flex_direction: style::FlexDirection::row,
+      flex_wrap: style::FlexWrap::wrap,
+      align_content: style::Align::space_between,
+    ),
+    0,
+  )
+  let child = layout::new()
+  child.apply(style::new(width: style::cells(6)), 0)
+  child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
+    layout::MeasureSize{width: Float32::from(6.0), height: Float32::from(2.0)}
+  })
+  root.insert(child, 0)
+  root.insert(fixed(6, 4), 1)
+  visitor::visit(
+    root,
+    axis(10.0, cache::SizingMode::stretch_fit),
+    axis(14.0, cache::SizingMode::stretch_fit),
+    zero(),
+    zero(),
+    1,
+    true,
+  )
+  testing::assert(
+    child.height == 2.0,
+    "ADR0017 keeps distributed space-between lead out of intrinsic child sizing",
+  )
+}

@@ -1,0 +1,281 @@
+use cooper/core/layout
+use cooper/core/layout/cache
+use cooper/core/layout/children
+use cooper/core/layout/length
+use cooper/core/layout/measure
+use cooper/core/layout/numeric
+use cooper/ui/style
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
+
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// This source code is licensed under the MIT license found in LICENSE.yoga.
+// LTR, border-box translation of Yoga AbsoluteLayout.cpp's
+// layoutAbsoluteChild, positionAbsoluteChild, and layoutAbsoluteDescendants.
+// `containing_width/height` are the containing block's padding-box dimensions:
+// the caller subtracts its border exactly once before entering this module.
+
+fn resolved(value: style::Length, reference: Float32) Float32 {
+  let result = length::resolve(value, reference)
+  match numeric::is_defined(result) {
+    true => result,
+    false => Float32::from(0.0),
+  }
+}
+
+fn defined(value: style::Length, reference: Float32) Bool {
+  let result = length::resolve(value, reference)
+  numeric::is_defined(result) and result >= 0.0
+}
+
+fn axis(
+  preferred: style::Length,
+  minimum: style::Length,
+  maximum: style::Length,
+  reference: Float32,
+  available: Float32,
+  mode: cache::SizingMode,
+  padding_border: Float32,
+) measure::Axis {
+  measure::Axis{
+    available: available,
+    mode: mode,
+    padding_border: padding_border,
+    minimum: length::resolve(minimum, reference),
+    maximum: length::resolve(maximum, reference),
+  }
+}
+
+fn layout_child(
+  containing: mut layout::Node,
+  parent: mut layout::Node,
+  child: mut layout::Node,
+  containing_width: Float32,
+  containing_height: Float32,
+  containing_width_mode: cache::SizingMode,
+  generation: Int,
+  visit: fn(mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int, Bool) Bool,
+) Bool {
+  let value = child.value
+  children::resolve_insets(child, containing_width)
+  let border = Float32::from(child.border * 2)
+  let padding_row = resolved(value.padding.left, containing_width) + resolved(value.padding.right, containing_width) + border
+  let padding_column = resolved(value.padding.top, containing_width) + resolved(value.padding.bottom, containing_width) + border
+  let margin_left = resolved(value.margin.left, containing_width)
+  let margin_right = resolved(value.margin.right, containing_width)
+  let margin_top = resolved(value.margin.top, containing_width)
+  let margin_bottom = resolved(value.margin.bottom, containing_width)
+  let margin_row = margin_left + margin_right
+  let margin_column = margin_top + margin_bottom
+  let processed_width = length::processed_dimension(value.width, value.min_width, value.max_width)
+  let processed_height = length::processed_dimension(
+    value.height,
+    value.min_height,
+    value.max_height,
+  )
+  let width_value = length::resolve(processed_width, containing_width)
+  let height_value = length::resolve(processed_height, containing_height)
+  let left_set = defined(value.left, containing_width)
+  let right_set = defined(value.right, containing_width)
+  let top_set = defined(value.top, containing_height)
+  let bottom_set = defined(value.bottom, containing_height)
+  mut width = numeric::undefined()
+  mut height = numeric::undefined()
+  mut width_mode = cache::SizingMode::max_content
+  mut height_mode = cache::SizingMode::max_content
+  if numeric::is_defined(width_value) and width_value >= 0.0 {
+    width = width_value + margin_row
+    width_mode = cache::SizingMode::stretch_fit
+  } else if left_set and right_set {
+    width = containing_width - resolved(value.left, containing_width) - resolved(value.right, containing_width)
+    width_mode = cache::SizingMode::stretch_fit
+  }
+  if numeric::is_defined(height_value) and height_value >= 0.0 {
+    height = height_value + margin_column
+    height_mode = cache::SizingMode::stretch_fit
+  } else if top_set and bottom_set {
+    height = containing_height - resolved(value.top, containing_height) - resolved(value.bottom, containing_height)
+    height_mode = cache::SizingMode::stretch_fit
+  }
+  if numeric::is_defined(width) == false and (parent.value.flex_direction == style::FlexDirection::column or parent.value.flex_direction == style::FlexDirection::column_reverse) and containing_width_mode != cache::SizingMode::max_content and containing_width > 0.0 {
+    width = containing_width
+    width_mode = cache::SizingMode::fit_content
+  }
+  let width_axis = axis(
+    value.width,
+    value.min_width,
+    value.max_width,
+    containing_width,
+    width,
+    width_mode,
+    padding_row,
+  )
+  let height_axis = axis(
+    value.height,
+    value.min_height,
+    value.max_height,
+    containing_height,
+    height,
+    height_mode,
+    padding_column,
+  )
+  mut measured = false
+  if numeric::is_defined(width) == false or numeric::is_defined(height) == false or width_mode == cache::SizingMode::fit_content {
+    measured = visit(child, width_axis, height_axis, margin_row, margin_column, generation, false)
+    width = child.measured_width + margin_row
+    height = child.measured_height + margin_column
+  }
+  measured = visit(
+    child,
+    axis(
+      value.width,
+      value.min_width,
+      value.max_width,
+      containing_width,
+      width,
+      cache::SizingMode::stretch_fit,
+      padding_row,
+    ),
+    axis(
+      value.height,
+      value.min_height,
+      value.max_height,
+      containing_height,
+      height,
+      cache::SizingMode::stretch_fit,
+      padding_column,
+    ),
+    margin_row,
+    margin_column,
+    generation,
+    true,
+  ) or measured
+  let child_width = child.measured_width
+  let child_height = child.measured_height
+  let containing_border = Float32::from(containing.border)
+  let parent_padding_left = resolved(parent.value.padding.left, containing_width)
+  let parent_padding_right = resolved(parent.value.padding.right, containing_width)
+  let parent_padding_top = resolved(parent.value.padding.top, containing_width)
+  let parent_padding_bottom = resolved(parent.value.padding.bottom, containing_width)
+  mut x = Float32::from(parent.border) + parent_padding_left + margin_left
+  mut y = Float32::from(parent.border) + parent_padding_top + margin_top
+  let main_row = parent.value.flex_direction == style::FlexDirection::row or parent.value.flex_direction == style::FlexDirection::row_reverse
+  mut alignment = match value.align_self == style::Align::auto {
+    true => parent.value.align_items,
+    false => value.align_self,
+  }
+  if parent.value.flex_wrap == style::FlexWrap::wrap_reverse {
+    alignment = match alignment {
+      style::Align::end => style::Align::start,
+      style::Align::center => style::Align::center,
+      _ => style::Align::end,
+    }
+  }
+  if left_set {
+    x = containing_border + resolved(value.left, containing_width) + margin_left
+  } else if right_set {
+    x = containing_width + containing_border - resolved(value.right, containing_width) - margin_right - child_width
+  } else if main_row and (parent.value.flex_direction == style::FlexDirection::row and parent.value.justify_content == style::Justify::end or parent.value.flex_direction == style::FlexDirection::row_reverse and (parent.value.justify_content == style::Justify::start or parent.value.justify_content == style::Justify::space_between)) or (not main_row) and alignment == style::Align::end {
+    x = parent.measured_width - Float32::from(parent.border) - parent_padding_right - margin_right - child_width
+  } else if main_row and (parent.value.justify_content == style::Justify::center or parent.value.justify_content == style::Justify::space_around or parent.value.justify_content == style::Justify::space_evenly) or (not main_row) and alignment == style::Align::center {
+    x = (parent.measured_width - child_width - margin_row - parent_padding_left - parent_padding_right) / Float32::from(2.0) + margin_left + parent_padding_left
+  }
+  if top_set {
+    y = containing_border + resolved(value.top, containing_height) + margin_top
+  } else if bottom_set {
+    y = containing_height + containing_border - resolved(value.bottom, containing_height) - margin_bottom - child_height
+  } else if (not main_row) and (parent.value.flex_direction == style::FlexDirection::column and parent.value.justify_content == style::Justify::end or parent.value.flex_direction == style::FlexDirection::column_reverse and (parent.value.justify_content == style::Justify::start or parent.value.justify_content == style::Justify::space_between)) or main_row and alignment == style::Align::end {
+    y = parent.measured_height - Float32::from(parent.border) - parent_padding_bottom - margin_bottom - child_height
+  } else if (not main_row) and (parent.value.justify_content == style::Justify::center or parent.value.justify_content == style::Justify::space_around or parent.value.justify_content == style::Justify::space_evenly) or main_row and alignment == style::Align::center {
+    y = (parent.measured_height - child_height - margin_column - parent_padding_top - parent_padding_bottom) / Float32::from(2.0) + margin_top + parent_padding_top
+  }
+  child.x = numbers::Widen(x)
+  child.y = numbers::Widen(y)
+  child.width = numbers::Widen(child_width)
+  child.height = numbers::Widen(child_height)
+  measured
+}
+
+// Positions every absolute descendant owned by `containing`. `offset_x/y` are
+// the current node's already-laid-out offset from that containing block.
+fn walk(
+  containing: mut layout::Node,
+  current: mut layout::Node,
+  parent: mut layout::Node,
+  containing_width: Float32,
+  containing_height: Float32,
+  width_mode: cache::SizingMode,
+  offset_x: Float32,
+  offset_y: Float32,
+  generation: Int,
+  visit: fn(mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int, Bool) Bool,
+) Bool {
+  mut changed = false
+  for child in current.children {
+    if child.value.display != style::Display::none {
+      if child.value.position == style::Position::absolute and child.value.display != style::Display::contents {
+        changed = layout_child(
+          containing,
+          parent,
+          child,
+          containing_width,
+          containing_height,
+          width_mode,
+          generation,
+          visit,
+        ) or changed
+        if defined(child.value.left, containing_width) or defined(child.value.right, containing_width) {
+          child.x = child.x - numbers::Widen(offset_x)
+        }
+        if defined(child.value.top, containing_height) or defined(child.value.bottom, containing_height) {
+          child.y = child.y - numbers::Widen(offset_y)
+        }
+      } else if child.value.display == style::Display::contents or child.value.position == style::Position::static {
+        let next_parent = match child.value.display == style::Display::contents {
+          true => parent,
+          false => child,
+        }
+        changed = walk(
+          containing,
+          child,
+          next_parent,
+          containing_width,
+          containing_height,
+          width_mode,
+          offset_x + Float32::from(child.x),
+          offset_y + Float32::from(child.y),
+          generation,
+          visit,
+        ) or changed
+      }
+    }
+  }
+  changed
+}
+
+// Positions absolute descendants. The containing dimensions are padding-box
+// dimensions; `width_mode` is the containing block's width sizing mode.
+fn descendants(
+  containing: mut layout::Node,
+  current: mut layout::Node,
+  containing_width: Float32,
+  containing_height: Float32,
+  width_mode: cache::SizingMode,
+  offset_x: Float32,
+  offset_y: Float32,
+  generation: Int,
+  visit: fn(mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int, Bool) Bool,
+) Bool {
+  walk(
+    containing,
+    current,
+    current,
+    containing_width,
+    containing_height,
+    width_mode,
+    offset_x,
+    offset_y,
+    generation,
+    visit,
+  )
+}

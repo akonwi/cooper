@@ -3,6 +3,7 @@ use ard/testing
 use cooper/core/layout
 use cooper/core/layout/cache
 use cooper/core/layout/numeric
+use cooper/core/layout/visitor
 use cooper/core/node
 use cooper/runtime
 use cooper/ui/box
@@ -13,7 +14,7 @@ test fn layout_dirty_tracks_layout_values_not_paint_or_identical_replacement() V
   let root = layout::new()
   let child = layout::new()
   root.insert(child, 0)
-  root.compute(40, 20)
+  visitor::calculate(root, 40, 20)
   child.apply(style::new(), 0)
   try testing::assert(child.dirty == false and root.dirty == false, "Identical style remains clean")
   child.apply(
@@ -49,10 +50,10 @@ test fn layout_dirty_tracks_layout_values_not_paint_or_identical_replacement() V
     style::new(gap: style::cells(1)),
   ] {
     child.apply(style::new(), 0)
-    root.compute(40, 20)
+    visitor::calculate(root, 40, 20)
     child.apply(value, 0)
     try testing::assert(child.dirty and root.dirty, "Each layout property invalidates its owner")
-    root.compute(40, 20)
+    visitor::calculate(root, 40, 20)
     try testing::assert(child.dirty == false and root.dirty == false, "Completed layout is clean")
     child.apply(value, 0)
     try testing::assert(child.dirty == false and root.dirty == false, "Repeated value remains clean")
@@ -69,26 +70,26 @@ test fn layout_owner_changes_route_dirtiness_to_new_ancestors_only() Void!Str {
   root.insert(old, 0)
   root.insert(next, 1)
   old.insert(leaf, 0)
-  root.compute(40, 20)
+  visitor::calculate(root, 40, 20)
   leaf.mark_dirty()
   try testing::assert(
     leaf.dirty and old.dirty and root.dirty and next.dirty == false,
     "Only owner chain dirtied",
   )
-  root.compute(40, 20)
+  visitor::calculate(root, 40, 20)
   old.remove(leaf)
   try testing::assert(
     leaf.owner.is_some() == false and old.dirty and root.dirty,
     "Removal clears owner and invalidates old chain",
   )
-  root.compute(40, 20)
+  visitor::calculate(root, 40, 20)
   old.remove(leaf)
   try testing::assert(root.dirty == false, "Repeated removal is a no-op")
   leaf.mark_dirty()
   try testing::assert(root.dirty == false, "Detached dirty leaf cannot reach former owner")
   next.insert(leaf, 0)
   try testing::assert(next.dirty and root.dirty, "Attaching already-dirty leaf invalidates new owner")
-  root.compute(40, 20)
+  visitor::calculate(root, 40, 20)
   leaf.apply(style::new(width: style::cells(7)), 0)
   try testing::assert(leaf.owner.expect("new owner") == next, "Owner follows reparenting")
   testing::assert(
@@ -131,7 +132,7 @@ test fn layout_dirty_invalidates_basis_and_detach_discards_cache_state() Void!St
   let root = layout::new()
   let leaf = layout::new()
   root.insert(leaf, 0)
-  root.compute(20, 10)
+  visitor::calculate(root, 20, 10)
   leaf.cache_state.computed_flex_basis = Float32::from(7.0)
   root.cache_state.computed_flex_basis = Float32::from(9.0)
   leaf.mark_dirty()
@@ -139,7 +140,7 @@ test fn layout_dirty_invalidates_basis_and_detach_discards_cache_state() Void!St
     numeric::is_undefined(leaf.cache_state.computed_flex_basis) and numeric::is_undefined(root.cache_state.computed_flex_basis),
     "Dirty propagation clears each computed basis",
   )
-  root.compute(20, 10)
+  visitor::calculate(root, 20, 10)
   leaf.cache_state.complete(12, 3, cache::Direction::ltr)
   let entry = mut cache::Measurement{
     available_width: Float32::from(20.0),
@@ -155,5 +156,79 @@ test fn layout_dirty_invalidates_basis_and_detach_discards_cache_state() Void!St
   testing::assert(
     leaf.cache_state.generation == 0 and leaf.cache_state.measurements.size() == 0 and leaf.cache_state.cached_layout.computed_width == -1.0,
     "A detached child cannot carry stale cache records into its next owner",
+  )
+}
+
+test fn root_offsets_follow_relative_position_and_resize() Void!Str {
+  let root = layout::new()
+  root.apply(style::new(left: style::percent(25.0), bottom: style::cells(3)), 0)
+  visitor::calculate(root, 20, 10)
+  try testing::assert(root.local.x == 5 and root.local.y == -3, "Root offsets use viewport references")
+  visitor::calculate(root, 40, 10)
+  try testing::assert(
+    root.local.x == 10 and root.local.y == -3,
+    "Resize resolves percentage offsets again",
+  )
+  root.apply(style::new(position: style::Position::static, left: style::cells(7)), 0)
+  visitor::calculate(root, 40, 10)
+  testing::assert(root.local.x == 0 and root.local.y == 0, "Static roots ignore relative offsets")
+}
+
+test fn integral_layout_reuses_measurement_until_content_changes() Void!Str {
+  let root = layout::new()
+  let child = layout::new()
+  child.apply(style::new(width: style::cells(8), flex_shrink: 0.0), 0)
+  mut calls = 0
+  let natural = mut layout::MeasureSize{width: Float32::from(8.0), height: Float32::from(2.0)}
+  child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
+    calls =+ 1
+    natural.@
+  })
+  root.insert(child, 0)
+  visitor::calculate(root, 20, 10)
+  try testing::assert(calls == 1 and child.local.height == 2, "Integral widths need no projection replay")
+  visitor::calculate(root, 20, 10)
+  visitor::calculate(root, 21, 10)
+  try testing::assert(
+    calls == 1 and child.local.height == 2,
+    "Unchanged child measurement survives root resize",
+  )
+  natural.height = Float32::from(3.0)
+  child.mark_dirty()
+  visitor::calculate(root, 21, 10)
+  testing::assert(
+    calls == 2 and child.local.height == 3,
+    "Content invalidation measures once and updates geometry: calls={calls}, height={child.local.height}",
+  )
+}
+
+test fn projected_height_growth_keeps_original_column_membership() Void!Str {
+  let root = layout::new()
+  root.apply(
+    style::new(
+      flex_direction: style::FlexDirection::column,
+      flex_wrap: style::FlexWrap::wrap_reverse,
+    ),
+    0,
+  )
+  let first = layout::new()
+  first.apply(style::new(width: style::percent(50.0), height: style::cells(1), flex_shrink: 0.0), 0)
+  let second = layout::new()
+  second.apply(style::new(width: style::percent(50.0), flex_shrink: 0.0), 0)
+  second.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
+    layout::MeasureSize{
+      width: input.width,
+      height: match input.width < 2.5 {
+        true => Float32::from(2.0),
+        false => Float32::from(1.0),
+      },
+    }
+  })
+  root.insert(first, 0)
+  root.insert(second, 1)
+  visitor::calculate(root, 5, 2)
+  testing::assert(
+    second.local.x == 3 and second.local.y == 1 and second.local.width == 2 and second.local.height == 2,
+    "Replayed height overflows the original column rather than moving to another column",
   )
 }

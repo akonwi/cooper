@@ -6,6 +6,7 @@ use cooper/core/layout/measure
 use cooper/core/layout/numeric
 use cooper/ui/geometry
 use cooper/ui/style
+use go:github.com/akonwi/cooper/ffi/core/backend/numberbridge as numbers
 
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 // MIT license: LICENSE.yoga. This is the child traversal and measurement phase
@@ -25,6 +26,26 @@ fn resolved_or_zero(value: style::Length, owner_width: Float32) Float32 {
     true => resolved,
     false => Float32::from(0.0),
   }
+}
+
+fn intrinsic_basis(value: style::Length, natural: Float32, available: Float32) Float32 {
+  match value.kind {
+    style::LengthKind::max_content => natural,
+    style::LengthKind::fit_content => numeric::min_or_defined(natural, available),
+    style::LengthKind::stretch => available,
+    _ => numeric::undefined(),
+  }
+}
+
+fn resolve_insets(node: mut layout::Node, owner_width: Float32) {
+  let border = Float32::from(node.border)
+  node.insets = layout::Insets{
+    left: numbers::Widen(resolved_or_zero(node.value.padding.left, owner_width) + border),
+    right: numbers::Widen(resolved_or_zero(node.value.padding.right, owner_width) + border),
+    top: numbers::Widen(resolved_or_zero(node.value.padding.top, owner_width) + border),
+    bottom: numbers::Widen(resolved_or_zero(node.value.padding.bottom, owner_width) + border),
+  }
+  node.percent_width = numbers::Widen(owner_width)
 }
 
 fn zero_own_geometry(node: mut layout::Node) {
@@ -118,6 +139,14 @@ fn prepare(
   generation: Int,
   visit: fn(mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int) Void,
 ) Prepared {
+  let percent_width = match parent.intrinsic_policy and parent.intrinsic_width_definite == false {
+    true => numeric::undefined(),
+    false => inner_width,
+  }
+  let percent_height = match parent.intrinsic_policy and parent.intrinsic_height_definite == false {
+    true => numeric::undefined(),
+    false => inner_height,
+  }
   let flattened: mut [mut layout::Node] = mut []
   flatten(parent, flattened)
   let row = parent.value.flex_direction == style::FlexDirection::row or parent.value.flex_direction == style::FlexDirection::row_reverse
@@ -153,19 +182,24 @@ fn prepare(
       zero_none(child)
     } else if child.value.position != style::Position::absolute {
       flowing.push(child)
+      resolve_insets(child, percent_width)
       let cs = child.value
-      let margin_row = resolved_or_zero(cs.margin.left, inner_width) + resolved_or_zero(cs.margin.right, inner_width)
-      let margin_column = resolved_or_zero(cs.margin.top, inner_width) + resolved_or_zero(cs.margin.bottom, inner_width)
+      let margin_row = resolved_or_zero(cs.margin.left, percent_width) + resolved_or_zero(cs.margin.right, percent_width)
+      let margin_column = resolved_or_zero(cs.margin.top, percent_width) + resolved_or_zero(cs.margin.bottom, percent_width)
+      if parent.intrinsic_policy {
+        child.intrinsic_available_width = inner_width - margin_row
+        child.intrinsic_available_height = inner_height - margin_column
+      }
       let border = Float32::from(child.border * 2)
-      let padding_row = resolved_or_zero(cs.padding.left, inner_width) + resolved_or_zero(cs.padding.right, inner_width) + border
-      let padding_column = resolved_or_zero(cs.padding.top, inner_width) + resolved_or_zero(cs.padding.bottom, inner_width) + border
+      let padding_row = resolved_or_zero(cs.padding.left, percent_width) + resolved_or_zero(cs.padding.right, percent_width) + border
+      let padding_column = resolved_or_zero(cs.padding.top, percent_width) + resolved_or_zero(cs.padding.bottom, percent_width) + border
       let parent_width = axis(
         inner_width,
         width_mode,
         padding_row,
         cs.min_width,
         cs.max_width,
-        inner_width,
+        percent_width,
       )
       let parent_height = axis(
         inner_height,
@@ -173,7 +207,7 @@ fn prepare(
         padding_column,
         cs.min_height,
         cs.max_height,
-        inner_height,
+        percent_height,
       )
       let processed_width = length::processed_dimension(cs.width, cs.min_width, cs.max_width)
       let processed_height = length::processed_dimension(cs.height, cs.min_height, cs.max_height)
@@ -186,8 +220,8 @@ fn prepare(
         false => inner_height,
       }
       let owner_main = match row {
-        true => inner_width,
-        false => inner_height,
+        true => percent_width,
+        false => percent_height,
       }
       let padding_main = match row {
         true => padding_row,
@@ -196,7 +230,7 @@ fn prepare(
       if single.is_some() and single.expect("single flex child") == child {
         child.cache_state.computed_flex_basis = 0.0
         child.cache_state.computed_flex_basis_generation = generation
-      } else if not basis::resolve_without_measurement(
+      } else if parent.intrinsic_policy and (cs.flex_basis.kind == style::LengthKind::max_content or cs.flex_basis.kind == style::LengthKind::fit_content or cs.flex_basis.kind == style::LengthKind::stretch) or not basis::resolve_without_measurement(
         child.cache_state,
         cs.flex_basis,
         processed_main,
@@ -213,7 +247,7 @@ fn prepare(
         let width = basis::measurement_axis(
           parent_width,
           processed_width,
-          inner_width,
+          percent_width,
           margin_row,
           not row,
           scroll and row,
@@ -222,7 +256,7 @@ fn prepare(
         let height = basis::measurement_axis(
           parent_height,
           processed_height,
-          inner_height,
+          percent_height,
           margin_column,
           row,
           scroll and not row,
@@ -232,6 +266,25 @@ fn prepare(
         child.cache_state.computed_flex_basis = match row {
           true => numeric::max_or_defined(child.measured_width, padding_row),
           false => numeric::max_or_defined(child.measured_height, padding_column),
+        }
+        let natural_main = match row {
+          true => child.intrinsic_width,
+          false => child.intrinsic_height,
+        }
+        let basis_margin = match row {
+          true => margin_row,
+          false => margin_column,
+        }
+        let adapted_basis = intrinsic_basis(
+          cs.flex_basis,
+          natural_main,
+          available_main - basis_margin,
+        )
+        if parent.intrinsic_policy and numeric::is_defined(adapted_basis) {
+          child.cache_state.computed_flex_basis = numeric::max_or_defined(
+            adapted_basis,
+            padding_main,
+          )
         }
         child.cache_state.computed_flex_basis_generation = generation
       }

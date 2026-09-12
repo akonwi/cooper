@@ -31,7 +31,7 @@ that Runtime as `application.context`, and binds its Root to the same identity.
 Cooper has no separate application Context type. Keep only unsupported runtime
 mechanisms with no public counterpart beneath `core/`: Node, paint, focus, hit
 testing, routing, and scheduling. Backend bindings stay beneath
-`ffi/core/backend/`.
+`ffi/`, with one directory per Go package and no additional category nesting.
 
 Import Vaxis as `vaxis`; do not alias it as `raw`.
 

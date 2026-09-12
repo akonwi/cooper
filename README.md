@@ -228,7 +228,7 @@ core/            unsupported runtime mechanisms
   router.ard
   runtime.ard
   selection_state.ard
-ffi/core/backend/ replaceable Vaxis and retained Yoga bindings
+ffi/             isolated Go bridges, one directory per package
 test/            deterministic integration tests
 examples/        curated runnable applications and PTY tests
   fixtures/      focused non-gallery regression programs

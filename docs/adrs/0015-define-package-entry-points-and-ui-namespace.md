@@ -118,7 +118,7 @@ testing.ard
 ```
 
 Unsupported retained/runtime machinery stays beneath `core/`, and backend
-bindings stay beneath `ffi/core/backend/`.
+bindings stay beneath `ffi/`, one directory per Go package.
 
 ### Dependency direction
 

@@ -5,7 +5,7 @@ use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/event
-use go:cooper/ffi/core/backend/vaxisbridge as bridge
+use go:cooper/ffi/vaxisbridge as bridge
 use cooper/runtime
 use cooper/ui/box
 use cooper/ui/color

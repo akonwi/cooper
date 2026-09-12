@@ -84,7 +84,7 @@ failure restores Clipboard availability.
 ### Backend and ownership
 
 Keep OSC 52 encoding, parsing, and terminal I/O in Vaxis. Add only a narrow Go
-bridge beneath `ffi/core/backend/` to pair the Vaxis terminal with a cancellable
+bridge beneath `ffi/` to pair the Vaxis terminal with a cancellable
 Go context, because Ard v0.38 cannot import Go's `(context.Context,
 context.CancelFunc)` return shape from `context.WithCancel` directly.
 

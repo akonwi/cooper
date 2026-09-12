@@ -1,7 +1,7 @@
 use cooper/core/layout/cache
 use cooper/core/layout/measure as measurement
 use cooper/core/layout/numeric
-use go:cooper/ffi/core/backend/numberbridge as numbers
+use go:cooper/ffi/numberbridge as numbers
 use cooper/ui/geometry
 use cooper/ui/style
 

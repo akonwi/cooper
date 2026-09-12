@@ -1,6 +1,6 @@
 use ard/unsafe
 
-use go:cooper/ffi/core/backend/numberbridge
+use go:cooper/ffi/numberbridge
 use go:math
 
 type Easing = fn(Float64) Float64

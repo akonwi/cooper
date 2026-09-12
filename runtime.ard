@@ -11,12 +11,12 @@ use cooper/core/router
 use cooper/core/runtime as dispatch_runtime
 use cooper/core/selection_state
 use cooper/event
-use go:cooper/ffi/core/backend/clipboardbridge
-use go:cooper/ffi/core/backend/clock
-use go:cooper/ffi/core/backend/notificationbridge
-use go:cooper/ffi/core/backend/signalwatch
-use go:cooper/ffi/core/backend/urlopen
-use go:cooper/ffi/core/backend/vaxisbridge as bridge
+use go:cooper/ffi/clipboardbridge
+use go:cooper/ffi/clock
+use go:cooper/ffi/notificationbridge
+use go:cooper/ffi/signalwatch
+use go:cooper/ffi/urlopen
+use go:cooper/ffi/vaxisbridge as bridge
 use cooper/terminal_progress
 use cooper/ui/color
 use cooper/ui/selection as public_selection

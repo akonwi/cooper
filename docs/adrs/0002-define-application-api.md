@@ -543,7 +543,7 @@ through one module. The control modules remain available individually.
 Public modules own their complete Ard domain model and supporting logic. Only
 unsupported runtime mechanisms with no public counterpart—Node, paint, focus,
 hit testing, routing, scheduling, and application runtime—remain under `core/`.
-Backend bindings remain under `ffi/core/backend/`. Ard does not enforce
+Backend bindings remain under `ffi/`, one directory per Go package. Ard does not enforce
 package-private imports, so these paths communicate support boundaries rather
 than enforcing them.
 

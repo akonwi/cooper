@@ -76,7 +76,7 @@ transition or returns false after it.
 
 ### Backend selection
 
-Keep protocol details beneath `ffi/core/backend/notificationbridge/`. The
+Keep protocol details beneath `ffi/notificationbridge/`. The
 initial bridge uses Vaxis's own output path and supports only protocols Vaxis can
 emit safely:
 

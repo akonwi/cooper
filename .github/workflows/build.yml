@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  ARD_REF: 3fd626729f1e5be16d6bd074dc5f900060861f63
+  ARD_REF: 02b63279f679f05420b54b237217a996d086b3da # v0.41.0
   CGO_ENABLED: "0"
 
 jobs:
@@ -56,7 +56,7 @@ jobs:
           test "$(go env GOOS)/$(go env GOARCH)" = "${{ matrix.target }}"
           test "$(go env CGO_ENABLED)" = "0"
 
-      - name: Build Ard v0.39.0 compiler
+      - name: Build pinned Ard compiler
         shell: bash
         run: |
           set -euo pipefail

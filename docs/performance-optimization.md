@@ -211,3 +211,73 @@ Compressed raw evidence in `benchmarks/baselines/`:
 `performance-rejected-slices-feed.json.gz`. Read with `gzip -dc`. The same
 benchmark commands apply, using the compact checkpoint as reference and 15 feed
 sessions. Do not treat the intermediate slicing commit as an accepted checkpoint.
+
+## Skip clipped Text content and reuse per-paint layout
+
+Checkpoint [8502d3b](https://github.com/akonwi/cooper/commit/8502d3b2872c01b03941e5dc7191255f521de79c)
+compared with [27ab359](https://github.com/akonwi/cooper/commit/27ab35923036daa8f2edf12b7f3f0ac1f00be754).
+Text skips content layout and painting when its content clip has zero width or
+height, after painting borders and clearing stale link-hit data. It preserves
+logical selection. No Node traversal or arbitrary user paint callback is skipped.
+Visible linked/styled/ellipsized Text passes its already-computed layout into
+visual mapping; no persistent cache or width-measurer replacement was added.
+
+Standard measurements (30 pager and 15 feed sessions, each plus three warmups):
+
+| Median | Reference | Candidate |
+|---|---:|---:|
+| Pager down | 0.493 ms | 0.472 ms |
+| Lazy feed | 1.116 ms | 1.286 ms |
+| Eager feed | 38.169 ms | 2.698 ms |
+| Lazy allocated bytes/step | 1,103,432 | 834,856 |
+| Eager allocated bytes/step | 23,578,264 | 1,030,208 |
+
+Eager median improved about 93%, but the standard lazy median worsened about
+15%. Lazy p95 was essentially unchanged (1.781 vs 1.755 ms). Bubble Tea pager
+median was 0.173 ms; this work does not materially close that gap. All 26,640
+standard benchmark frame checks passed.
+
+### Inter-step verification affects GC timing
+
+Investigation found `Frame.text()` constructs its output by repeatedly
+concatenating a growing prefix. The feed's serialization/verification allocates
+about **7.2 MB after every step**, outside the timer but in the same process.
+Excluding that code from timing does not exclude its influence on garbage
+collection during the next measured step.
+
+A separate diagnostic used the same lazy workload and default GC settings,
+alternating revisions and verification modes across ten samples plus three
+warmups. It verifies either between every step, or only before and after the
+40-step timed sequence:
+
+| Diagnostic median | Reference | Candidate |
+|---|---:|---:|
+| Verification between steps | 1.097 ms | 1.226 ms |
+| Verification only at start/end | 1.160 ms | 0.681 ms |
+
+This demonstrates sensitivity to verification placement; it does not replace
+the standard results or prove performance under every application workload.
+The start/end mode alone does not validate intermediate frames. Their correctness
+was established by the separate standard run. No GC tuning, benchmark-specific
+production branch, or change to the existing benchmark runner was introduced.
+
+Verification: **437 Ard tests passed**, no failures/panics; format/check passed;
+Go tests passed. Nine affected PTY examples passed: text gallery, layout
+playground, links, Input, TextArea, Select, scroll form, horizontal scroll, and
+interaction. Tinear check/build and smoke passed, with its same previously
+established 149-pass/one-divider-failure unit result. Focused tests assert zero
+clipped-text measurements, stale-link cleanup, border/selection restoration,
+and three rather than four first-glyph measurements for linked, styled, and
+ellipsized paints. Existing tests cover visible overflow and partial wide glyphs.
+
+Raw evidence: `performance-visible-pager.json.gz`,
+`performance-visible-feed.json.gz`, and `performance-visible-gc-diagnostic.json.gz`
+under `benchmarks/baselines`. Diagnostic source:
+`benchmarks/complex_feed_gc_diagnostic.go.template`. To reproduce, first build
+`benchmarks/complex_feed.ard` in each checkout. Copy the diagnostic template to a
+temporary `.go` file and run `go build -o /tmp/feed-diagnostic /tmp/diagnostic.go`
+from that checkout's `ard-out/go/build` directory. Run the resulting binary with
+`-verify-each=true` and `-verify-each=false`, separately and without competing work.
+
+Before using small lazy-feed timing differences to accept or reject future
+optimizations, address the verification-allocation interference explicitly.

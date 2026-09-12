@@ -1,0 +1,40 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	feed "github.com/akonwi/cooper/benchmarks/complex_feed"
+	"os"
+	"runtime"
+	"time"
+)
+
+func main() {
+	verifyEach := flag.Bool("verify-each", true, "serialize and verify between measured steps")
+	flag.Parse()
+	session := feed.Prepare(false)
+	defer session.Close()
+	session.Verify()
+	ns := make([]int64, 0, 40)
+	allocations := make([]uint64, 0, 40)
+	collections := make([]uint32, 0, 40)
+	var verificationBytes uint64
+	for i := 0; i < 40; i++ {
+		var before, after, verified runtime.MemStats
+		runtime.ReadMemStats(&before)
+		start := time.Now()
+		session.Step(i)
+		elapsed := time.Since(start).Nanoseconds()
+		runtime.ReadMemStats(&after)
+		ns = append(ns, elapsed)
+		allocations = append(allocations, after.TotalAlloc-before.TotalAlloc)
+		collections = append(collections, after.NumGC-before.NumGC)
+		if *verifyEach {
+			session.Verify()
+			runtime.ReadMemStats(&verified)
+			verificationBytes += verified.TotalAlloc - after.TotalAlloc
+		}
+	}
+	session.Verify()
+	json.NewEncoder(os.Stdout).Encode(map[string]any{"ns": ns, "bytes": allocations, "gc": collections, "verification_bytes": verificationBytes})
+}

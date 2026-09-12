@@ -35,6 +35,7 @@ def main():
     driver = (native / "main.go").read_bytes()
     adapter = (native / "cooper.go.template").read_bytes()
     report = {
+        "measurement_protocol": "isolated-verification-v2",
         "revisions": {name: read_command(["git", "rev-parse", "HEAD"], root) for name,root in roots.items()},
         "compiler": read_command(["ard", "version"]), "go": read_command(["go", "version"]),
         "platform": platform.platform(), "cpus": os.cpu_count(),
@@ -44,6 +45,7 @@ def main():
                    for path in [HERE / "pager_reference.ard", native / "main.go", native / "cooper.go.template",
                                 native / "bubbletea.go", native / "go.mod", native / "go.sum"]},
         "sessions": args.samples, "raw": {name: [] for name in [*roots, "bubbletea"]},
+        "validation": {name: [] for name in [*roots, "bubbletea"]},
     }
     created = []
     reference = None
@@ -81,8 +83,10 @@ def main():
                 offset = iteration % len(order)
                 order = order[offset:] + order[:offset]
                 for name in order:
-                    result = json.loads(read_command([str(binaries[name])]))
-                    samples = result["samples"]
+                    validation = json.loads(read_command([str(binaries[name]), "-verify"]))
+                    samples = validation["samples"]
+                    if validation["verify"] is not True:
+                        raise RuntimeError("expected verification process")
                     if [s["kind"] for s in samples] != ["down"]*100 + ["up"]*100 + ["unchanged"]*40:
                         raise RuntimeError("incomplete pager session")
                     frames = [s["frame_sha256"] for s in samples]
@@ -90,8 +94,16 @@ def main():
                         reference = frames
                     if frames != reference:
                         raise RuntimeError(f"cross-framework frame mismatch: {name}/{iteration}")
+                    result = json.loads(read_command([str(binaries[name])]))
+                    if result["verify"] is not False or [s["kind"] for s in result["samples"]] != [s["kind"] for s in samples]:
+                        raise RuntimeError("incomplete measurement session")
+                    if any("frame_sha256" in s for s in result["samples"]):
+                        raise RuntimeError("measurement process performed inter-step verification")
+                    if validation["final_frame_sha256"] != frames[-1] or result["final_frame_sha256"] != frames[-1]:
+                        raise RuntimeError("measurement final frame differs from verified sequence")
                     if iteration >= 3:
                         report["raw"][name].append(result)
+                        report["validation"][name].append(validation)
                 print(f"session {iteration+1}: 720 frame checks passed", flush=True)
             report["summary"] = {}
             for name, sessions in report["raw"].items():

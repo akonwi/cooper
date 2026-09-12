@@ -10,8 +10,10 @@ both Cooper binaries. `cooper.go.template` replaces only the adapter when the
 runner builds those binaries.
 
 ```sh
-# Native-only smoke; prints timing samples and a representative frame as JSON.
+# Native-only measurement; prints timing samples and a final-frame hash as JSON.
 go run .
+# Separate untimed correctness run; includes every frame hash and a capture.
+go run . -verify
 
 # From the Cooper repository root:
 git fetch origin

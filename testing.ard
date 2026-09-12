@@ -1,15 +1,16 @@
 use ard/testing as assertions
 use ard/unsafe
 
-use cooper/clipboard
-use cooper/runtime
 use cooper/core/paint
 use cooper/event
 use cooper/notification
 use cooper/root
-use cooper/ui/selection
+use cooper/runtime
 use cooper/terminal_progress
+use cooper/ui/geometry
+use cooper/ui/selection
 use cooper/ui/text
+use go:strings
 use go:sync
 
 struct Cell {
@@ -42,11 +43,11 @@ impl Frame {
   fn width() Int {
     self.buffer.width
   }
-
+  
   fn height() Int {
     self.buffer.height
   }
-
+  
   fn cell(x: Int, y: Int) Cell? {
     match self.buffer.cell_at(x, y) {
       value => {
@@ -62,34 +63,34 @@ impl Frame {
       _ => Maybe::new<Cell>(),
     }
   }
-
+  
   fn cursor_x() Int? {
     match self.buffer.cursor {
       cursor => Maybe::new<Int>(cursor.x),
       _ => Maybe::new<Int>(),
     }
   }
-
+  
   fn cursor_y() Int? {
     match self.buffer.cursor {
       cursor => Maybe::new<Int>(cursor.y),
       _ => Maybe::new<Int>(),
     }
   }
-
+  
   fn text() Str {
-    mut output = ""
+    let parts = mut List::new<Str>()
     mut y = 0
     while y < self.buffer.height {
       if y > 0 {
-        output = "{output}\n"
+        parts.push("\n")
       }
       mut x = 0
       while x < self.buffer.width {
         match self.buffer.cell_at(x, y) {
           cell => {
             if cell.width > 0 {
-              output = "{output}{cell.grapheme}"
+              parts.push(cell.grapheme)
             }
           },
           _ => (),
@@ -98,7 +99,7 @@ impl Frame {
       }
       y =+ 1
     }
-    output
+    strings::Join(parts, "")
   }
 }
 
@@ -135,7 +136,14 @@ private fn test_runtime(application: TestApp) mut runtime::Runtime {
 }
 
 private fn modifiers(value: event::Modifiers?) event::Modifiers {
-  value.or(event::Modifiers{shift: false, ctrl: false, alt: false, super: false})
+  value.or(
+    event::Modifiers{
+      shift: false,
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
 }
 
 fn new(
@@ -143,7 +151,7 @@ fn new(
   height: Int,
   notifications_supported: Bool?,
   terminal_progress_supported: Bool?,
-  on_terminal_progress: (fn(terminal_progress::Report))?,
+  on_terminal_progress: fn(terminal_progress::Report)?,
 ) TestApp {
   let supported = notifications_supported.or(true)
   let progress_supported = terminal_progress_supported.or(true)
@@ -203,16 +211,20 @@ fn new(
 
 impl TestApp {
   fn opened_urls() [Str] {
-    let opened = unsafe::cast<mut OpenedURLs>(self.opened).expect("TestApp opened URLs must be created by Cooper")
+    let opened = unsafe::cast<mut OpenedURLs>(
+      self.opened,
+    ).expect("TestApp opened URLs must be created by Cooper")
     let output = mut List::new<Str>()
     for url in opened.values {
       output.push(url)
     }
     output.@
   }
-
+  
   fn sent_notifications() [notification::Notification] {
-    let log = unsafe::cast<mut SentNotifications>(self.notification_log).expect("TestApp notifications must be created by Cooper")
+    let log = unsafe::cast<mut SentNotifications>(
+      self.notification_log,
+    ).expect("TestApp notifications must be created by Cooper")
     log.mutex.Lock()
     let output = mut List::new<notification::Notification>()
     for sent in log.values {
@@ -221,9 +233,11 @@ impl TestApp {
     log.mutex.Unlock()
     output.@
   }
-
+  
   fn terminal_titles() [Str] {
-    let log = unsafe::cast<mut TerminalTitles>(self.terminal_title_log).expect("TestApp terminal titles must be created by Cooper")
+    let log = unsafe::cast<mut TerminalTitles>(
+      self.terminal_title_log,
+    ).expect("TestApp terminal titles must be created by Cooper")
     log.mutex.Lock()
     let output = mut List::new<Str>()
     for value in log.values {
@@ -232,9 +246,11 @@ impl TestApp {
     log.mutex.Unlock()
     output.@
   }
-
+  
   fn terminal_progress_reports() [terminal_progress::Report] {
-    let log = unsafe::cast<mut TerminalProgressReports>(self.terminal_progress_log).expect("TestApp terminal progress must be created by Cooper")
+    let log = unsafe::cast<mut TerminalProgressReports>(
+      self.terminal_progress_log,
+    ).expect("TestApp terminal progress must be created by Cooper")
     log.mutex.Lock()
     let output = mut List::new<terminal_progress::Report>()
     for report in log.values {
@@ -243,111 +259,135 @@ impl TestApp {
     log.mutex.Unlock()
     output.@
   }
-
+  
   fn mouse_cursor() event::MouseCursor {
     test_runtime(self).mouse_cursor()
   }
-
+  
   fn on_key(handler: fn(mut event::KeyEvent)) fn() {
     test_runtime(self).on_key(handler)
   }
-
+  
   fn on_paste(handler: fn(mut event::PasteEvent)) fn() {
     test_runtime(self).on_paste(handler)
   }
-
+  
   fn terminal_focus() event::TerminalFocus? {
     test_runtime(self).terminal_focus()
   }
-
+  
   fn on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
     test_runtime(self).on_terminal_focus(handler)
   }
-
+  
   fn set_terminal_focus(value: event::TerminalFocus) {
     test_runtime(self).terminal_focus_test(self.root, value)
   }
-
+  
   fn selection() selection::Selection? {
     test_runtime(self).current_selection()
   }
-
+  
   fn clear_selection() {
     test_runtime(self).clear_selection()
   }
-
+  
   fn on_selection_change(handler: fn(selection::Selection?)) fn() {
     test_runtime(self).on_selection_change(handler)
   }
-
+  
   fn render() {
     test_runtime(self).render_test(self.root)
   }
-
+  
   fn flush(limit: Int?) Int {
     test_runtime(self).flush_test(self.root, limit.or(1024))
   }
-
+  
   fn suspend() Bool {
     test_runtime(self).suspend_test()
   }
-
+  
   fn resume() Bool {
     test_runtime(self).resume_test()
   }
-
+  
   fn resize(width: Int, height: Int) {
     test_runtime(self).resize_test(width, height)
     self.render()
   }
-
+  
   fn key(received: mut event::KeyEvent) {
     test_runtime(self).key_test(self.root, received)
   }
-
+  
   fn paste(received: mut event::PasteEvent) {
     test_runtime(self).paste_test(self.root, received)
   }
-
+  
   fn mouse(received: mut event::MouseEvent) {
     test_runtime(self).mouse_test(self.root, received)
   }
-
+  
   fn advance_time(milliseconds: Int) {
     test_runtime(self).advance_time_test(milliseconds)
   }
-
+  
   fn animations_active() Bool {
     test_runtime(self).animations_active_test()
   }
-
+  
   fn failed_suspend_wakes_animation() Bool {
     test_runtime(self).failed_suspend_animation_wake_test()
   }
-
+  
   fn mouse_move(x: Int, y: Int, received_modifiers: event::Modifiers?) {
-    self.mouse(event::mouse(event::MouseEventType::move, event::MouseButton::none, x, y, modifiers(received_modifiers)))
+    self.mouse(
+      event::mouse(
+        event::MouseEventType::move,
+        event::MouseButton::none,
+        x,
+        y,
+        modifiers(received_modifiers),
+      ),
+    )
   }
-
+  
   fn mouse_down(x: Int, y: Int, button: event::MouseButton?, received_modifiers: event::Modifiers?) {
-    self.mouse(event::mouse(event::MouseEventType::down, button.or(event::MouseButton::left), x, y, modifiers(received_modifiers)))
+    self.mouse(
+      event::mouse(
+        event::MouseEventType::down,
+        button.or(event::MouseButton::left),
+        x,
+        y,
+        modifiers(received_modifiers),
+      ),
+    )
   }
-
+  
   fn mouse_up(x: Int, y: Int, button: event::MouseButton?, received_modifiers: event::Modifiers?) {
-    self.mouse(event::mouse(event::MouseEventType::up, button.or(event::MouseButton::left), x, y, modifiers(received_modifiers)))
+    self.mouse(
+      event::mouse(
+        event::MouseEventType::up,
+        button.or(event::MouseButton::left),
+        x,
+        y,
+        modifiers(received_modifiers),
+      ),
+    )
   }
-
+  
   fn click(x: Int, y: Int, button: event::MouseButton?, received_modifiers: event::Modifiers?) {
     let configured = button.or(event::MouseButton::left)
     self.mouse_down(x, y, configured, received_modifiers)
     self.mouse_up(x, y, configured, received_modifiers)
   }
-
+  
   fn double_click(x: Int, y: Int) {
     self.click(x, y)
     self.click(x, y)
   }
-
+  
   fn drag(
     start_x: Int,
     start_y: Int,
@@ -359,10 +399,12 @@ impl TestApp {
     let configured = button.or(event::MouseButton::left)
     let applied_modifiers = modifiers(received_modifiers)
     self.mouse_down(start_x, start_y, configured, applied_modifiers)
-    self.mouse(event::mouse(event::MouseEventType::drag, configured, end_x, end_y, applied_modifiers))
+    self.mouse(
+      event::mouse(event::MouseEventType::drag, configured, end_x, end_y, applied_modifiers),
+    )
     self.mouse_up(end_x, end_y, configured, applied_modifiers)
   }
-
+  
   fn scroll(x: Int, y: Int, delta_y: Int, delta_x: Int?) {
     self.mouse(
       event::mouse(
@@ -376,11 +418,11 @@ impl TestApp {
       ),
     )
   }
-
+  
   fn frame() Frame {
     Frame{buffer: test_runtime(self).frame()}
   }
-
+  
   fn destroy() {
     test_runtime(self).destroy_test(self.root)
   }
@@ -388,4 +430,36 @@ impl TestApp {
 
 fn assert_contains(actual: Str, expected: Str) Void!Str {
   assertions::assert(actual.contains(expected), "Expected frame text to contain {expected}")
+}
+
+test fn frame_text_preserves_unicode_blank_rows_and_empty_dimensions() Void!Str {
+  let buffer = paint::new_buffer(5, 3)
+  let bounds = geometry::Rect{
+    x: 0,
+    y: 0,
+    width: 5,
+    height: 3,
+  }
+  let ctx = mut paint::Context{
+    buffer: buffer,
+    bounds: bounds,
+    clip: bounds,
+  }
+  ctx.write(0, 0, "你é")
+  ctx.write(0, 2, "q")
+  let frame = Frame{buffer: buffer.@}
+  try assertions::assert(
+    frame.text() == "你é  \n     \nq    ",
+    "Serialization skips continuation cells, preserves combining graphemes and blank cells, and adds only row separators",
+  )
+  try assertions::assert(
+    frame.text() == "你é  \n     \nq    ",
+    "Serializing a frame does not consume it",
+  )
+  let zero_width = Frame{buffer: paint::new_buffer(0, 3).@}
+  let zero_height = Frame{buffer: paint::new_buffer(3, 0).@}
+  let empty = Frame{buffer: paint::new_buffer(0, 0).@}
+  try assertions::assert(zero_width.text() == "\n\n", "Zero-width frames retain empty row separators")
+  try assertions::assert(zero_height.text() == "", "Zero-height frames have no rows")
+  assertions::assert(empty.text() == "", "Empty frames serialize to an empty string")
 }

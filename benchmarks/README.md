@@ -106,6 +106,17 @@ text and scroll/visible identity across both modes and revisions before acceptin
 the results. Like `profile.py`, it instruments only generated Go entry code and
 restores it afterward. Its temporary baseline fixture is removed on completion.
 
+The feed and pager comparators use `isolated-verification-v2`: each session runs
+full per-frame correctness checks in a separate `-verify` process, then measures
+the same sequence in a fresh process without intermediate frame serialization.
+The measured process checks its final frame after the timing loop. Reports retain
+verification records separately from timing samples and compare final hashes.
+GC settings are unchanged. This prevents verification allocations from affecting
+the next timed step's GC, but does not remove the workload's own allocation costs.
+Compare revisions using the same runner; timings from the older interleaved
+verification protocol are not directly comparable. Test the process contract with
+`python3 benchmarks/test_measurement_protocol.py`.
+
 ## Three-way Bubble Tea pager comparison
 
 `compare_bubbletea.py` compares main, the current Cooper branch and native Go

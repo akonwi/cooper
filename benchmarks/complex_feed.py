@@ -40,11 +40,13 @@ def main():
         parser.error("distinct checkouts required")
     source = (HERE / "complex_feed.ard").read_bytes()
     runner = (HERE / "complex_feed_runner.go.template").read_bytes()
-    report = {"revisions": {k: read_command(["git", "rev-parse", "HEAD"], v) for k,v in roots.items()},
+    report = {"measurement_protocol": "isolated-verification-v2",
+              "revisions": {k: read_command(["git", "rev-parse", "HEAD"], v) for k,v in roots.items()},
               "compiler": read_command(["ard", "version"]), "go": read_command(["go", "version"]),
               "source_sha256": hashlib.sha256(source).hexdigest(),
               "runner_sha256": hashlib.sha256(runner).hexdigest(), "sessions": args.samples,
-              "raw": {k: {m: [] for m in ("lazy", "eager")} for k in roots}}
+              "raw": {k: {m: [] for m in ("lazy", "eager")} for k in roots},
+              "validation": {k: {m: [] for m in ("lazy", "eager")} for k in roots}}
     created = []
     expected = None
     try:
@@ -74,19 +76,30 @@ def main():
                 modes = ("lazy", "eager") if iteration % 2 == 0 else ("eager", "lazy")
                 for name in branches:
                     for mode in modes:
-                        result = json.loads(read_command([str(binaries[name]), f"-eager={str(mode == 'eager').lower()}"]))
-                        steps = result["samples"]
+                        command = [str(binaries[name]), f"-eager={str(mode == 'eager').lower()}"]
+                        validation = json.loads(read_command([*command, "-verify"]))
+                        steps = validation["samples"]
+                        if validation["verify"] is not True:
+                            raise RuntimeError("expected verification process")
                         if [step["step"] for step in steps] != list(range(40)):
                             raise RuntimeError("incomplete scroll session")
                         frames = [step["frame_sha256"] for step in steps]
                         if expected is None:
                             expected = frames
-                            reference_capture = result["capture"]
+                            reference_capture = validation["capture"]
                         if frames != expected:
-                            print("\n".join(difflib.unified_diff(reference_capture.splitlines(), result["capture"].splitlines(), fromfile="baseline", tofile=f"{name}/{mode}")))
+                            print("\n".join(difflib.unified_diff(reference_capture.splitlines(), validation["capture"].splitlines(), fromfile="baseline", tofile=f"{name}/{mode}")))
                             raise RuntimeError(f"frame mismatch: {name}/{mode}/{iteration}")
+                        result = json.loads(read_command(command))
+                        if result["verify"] is not False or [s["step"] for s in result["samples"]] != list(range(40)):
+                            raise RuntimeError("incomplete measurement session")
+                        if any("frame_sha256" in s for s in result["samples"]):
+                            raise RuntimeError("measurement process performed inter-step verification")
+                        if validation["final_frame_sha256"] != frames[-1] or result["final_frame_sha256"] != frames[-1]:
+                            raise RuntimeError("measurement final frame differs from verified sequence")
                         if iteration >= 3:
                             report["raw"][name][mode].append(result)
+                            report["validation"][name][mode].append(validation)
                 print(f"session {iteration + 1}: all 160 frame checks passed", flush=True)
             report["summary"] = {}
             for name, modes in report["raw"].items():

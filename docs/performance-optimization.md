@@ -437,3 +437,83 @@ section. Run `python3 benchmarks/profile_text.py --output /tmp/cooper-text-profi
 glyph reuse; it was not broadened into a persistent cache. Geometry synchronization
 after a changed layout can still revisit descendants when scroll clamping changes
 their translation; that rarer path remains intact.
+
+## Sized paint buffers with Ard v0.42.0
+
+The deferred list-sizing work is now supported by Ard v0.42.0. The version-only
+checkpoint is [29b4259](https://github.com/akonwi/cooper/commit/29b425945713d51c30c99a8eac999ac279aa10e0);
+the sized-buffer checkpoint is [b18a448](https://github.com/akonwi/cooper/commit/b18a44858bd99f9bd1f14cce2764be6c6b46e96d).
+Both sides of every comparison below use Ard v0.42.0 and Go 1.27.0 on the same
+two-CPU Linux orb with default GC settings. The reference is the version-only
+checkpoint, not an older compiler or the historical Tess implementation.
+
+Before changing buffer construction, five measured sessions plus three warmups
+ran against two identical copies of the version-only checkpoint. Median heap
+traffic was 217,304 bytes per pager-down update, approximately 834,800 bytes per
+lazy-feed scroll, and 1,030,192 bytes per eager-feed scroll. All 7,040 intermediate
+frame checks and measured final-frame checks passed. The version-only Ard suite
+passed 458 tests, with no failures or panics.
+
+`paint::new_buffer` now constructs `List::new<StoredCell>(width * height)` and
+initializes each slot with `set`, instead of growing an empty list with `push`.
+The new argument specifies length, not spare capacity; retaining `push` would
+double the cell count and leave zero-valued cells at the front. Generated Go
+uses `make([]StoredCell, size)`. Every frame still owns fresh storage, and blank
+cells still share the same immutable default style. No pooling, public API,
+cell representation, workload, or measurement protocol changed. Ard v0.42.0's
+formatter also removes whitespace on blank lines in the two changed Ard files.
+
+The full comparison reran the preserved reference alongside the candidate:
+30 pager sessions and 15 feed sessions, each following three warmups, using
+`isolated-verification-v2`. Builds and benchmark suites ran sequentially without
+competing test workloads.
+
+| Per-step median heap traffic | Version-only reference | Sized buffers | Reduction |
+|---|---:|---:|---:|
+| Pager down/up | 217,304 bytes | 89,720 bytes | 58.7% |
+| Pager unchanged | 196,960 bytes | 69,376 bytes | 64.8% |
+| Lazy feed | 834,712 bytes | 535,048 bytes | 35.9% |
+| Eager feed | 1,030,192 bytes | 730,576 bytes | 29.1% |
+
+Pager-down allocation count falls from 304 to 292 per step; lazy/eager counts
+fall from 4,153/6,020 to 4,139/6,006. These are cumulative allocated bytes per
+operation, not retained heap measurements. The optimization avoids backing-array
+growth and copying; it does not reduce the required cell count.
+
+| Per-step latency | Reference median / p95 | Sized median / p95 |
+|---|---:|---:|
+| Pager down | 0.213 / 0.737 ms | 0.188 / 0.446 ms |
+| Pager unchanged | 0.172 / 0.637 ms | 0.151 / 0.242 ms |
+| Lazy feed | 0.714 / 1.634 ms | 0.605 / 1.585 ms |
+| Eager feed | 2.473 / 3.446 ms | 2.406 / 3.238 ms |
+
+Pager-down and lazy-feed medians improve about 12% and 15%. Eager median improves
+only 2.7%; do not interpret that small timing difference as a general layout
+speedup. Bubble Tea pager-down measured 0.177 ms median / 0.236 ms p95 and 34,464
+bytes in the same run. Cooper still allocates more and has higher tail latency.
+
+All 26,640 intermediate-frame checks in the full comparison passed, plus all
+measured final-frame comparisons. The post-change Ard suite passes 459 tests,
+with no failures or panics. A new regression checks exact storage length, every
+blank cell in a non-square buffer, and zero-width/zero-height buffers. Existing
+tests cover clipping, wide-cell overlap, colors, hyperlinks, selection, and
+snapshot survival across redraw, resize, and destruction. Both changed Ard files
+pass formatting and compiler checks; root Go tests and both measurement-protocol
+tests pass. All 20 example PTY scripts pass, as does the benchmark smoke run
+(`python3 benchmarks/run.py --iterations 1 --warmups 0`).
+
+Raw evidence in `benchmarks/baselines/`:
+
+- `performance-sized-before-pager.json.gz` and `performance-sized-before-feed.json.gz`:
+  the pre-refactoring, identical-code baseline capture.
+- `performance-sized-pager.json.gz` and `performance-sized-feed.json.gz`:
+  the full version-only versus sized-buffer comparison.
+
+Reproduce using the current comparators and a detached reference:
+
+```sh
+git worktree add --detach /tmp/cooper-sized-reference 29b425945713d51c30c99a8eac999ac279aa10e0
+python3 benchmarks/compare_bubbletea.py /tmp/cooper-sized-reference . --samples 30 --output /tmp/cooper-sized-pager.json
+python3 benchmarks/complex_feed.py /tmp/cooper-sized-reference . --samples 15 --output /tmp/cooper-sized-feed.json
+git worktree remove /tmp/cooper-sized-reference
+```

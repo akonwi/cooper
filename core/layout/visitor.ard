@@ -78,8 +78,8 @@ fn calculate_transaction(node: mut layout::Node, width: Int, height: Int) {
   // Freeze every horizontal edge before projected-width height replay. The
   // second pass may recompute vertical line extents and baselines, but its
   // horizontal results and cache/basis writes are transaction-local.
-  node.freeze_horizontal(0.0)
-  if node.projected_width_changes_measurement() {
+  if node.projected_width_changes_measurement(0.0) {
+    node.freeze_horizontal(0.0)
     node.begin_replay()
     let _ = visit(
       node,

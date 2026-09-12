@@ -895,20 +895,27 @@ private fn finish(lines: mut [Line]) Layout {
 
 private fn unwrapped(content: Str, measure: fn(Str) Int) Layout {
   let lines = mut List::new<Line>()
-  mut current = ""
+  mut parts = mut List::new<Str>()
   mut width = 0
-  for character in vaxis::Characters(content) {
-    let grapheme = character.Grapheme
-    if newline(grapheme) {
-      push_line(lines, current, width)
-      current = ""
-      width = 0
-    } else {
-      current = "{current}{grapheme}"
-      width = width + measure(grapheme)
+  let iterator = mut vaxis::NewCharacterIterator(content)
+  mut reading = true
+  while reading {
+    match iterator.Next() {
+      character => {
+        let grapheme = character.Grapheme
+        if newline(grapheme) {
+          push_line(lines, strings::Join(parts, ""), width)
+          parts = mut List::new<Str>()
+          width = 0
+        } else {
+          parts.push(grapheme)
+          width = width + measure(grapheme)
+        }
+      },
+      _ => { reading = false },
     }
   }
-  push_line(lines, current, width)
+  push_line(lines, strings::Join(parts, ""), width)
   finish(lines)
 }
 
@@ -2197,6 +2204,26 @@ test fn unicode_word_wrap_uses_line_opportunities_and_intrinsic_measurement() Vo
     "Expected undefined width to measure unwrapped content",
   )
   testing::assert(finite.height == 2, "Expected finite width to activate wrapping")
+}
+
+test fn unwrapped_preserves_unicode_and_hard_breaks() Void!Str {
+  let measured = unwrapped("\n你é\r\n🙂\n\n", test_width)
+  try testing::assert(
+    measured.width == 3 and measured.height == 5,
+    "Expected Unicode cell widths and trailing empty lines",
+  )
+  let expected = ["", "你é", "🙂", "", ""]
+  for line, index in measured.lines {
+    try testing::assert(
+      line.text == expected.at(index).expect("expected line"),
+      "Expected exact source graphemes without hard breaks",
+    )
+  }
+  let empty = unwrapped("", test_width)
+  testing::assert(
+    empty.width == 0 and empty.height == 1 and empty.lines.at(0).expect("empty line").text == "",
+    "Empty content remains one empty line",
+  )
 }
 
 test fn styled_text_helpers_snapshot_and_resolve_tristate_styles() Void!Str {

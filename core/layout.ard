@@ -358,11 +358,12 @@ impl Node {
   // ADR0020 replay is deliberately a throw-away measurement transaction.
   // Empty caches force callbacks to observe the projected content width; the
   // natural transaction (including its fractional basis) is restored below.
-  fn projected_width_changes_measurement() Bool {
-    let frozen = self.allocation.expect("horizontal allocation is frozen")
-    mut changed = self.measure.is_some() and max(0.0, self.width - self.insets.left - self.insets.right) != frozen.content_width.to_f64()
+  fn projected_width_changes_measurement(px: Float64) Bool {
+    let x = px + self.x
+    let content_width = rounded(x + max(self.insets.left, self.width - self.insets.right)) - rounded(x + self.insets.left)
+    mut changed = self.measure.is_some() and max(0.0, self.width - self.insets.left - self.insets.right) != content_width.to_f64()
     for child in self.children {
-      changed = child.projected_width_changes_measurement() or changed
+      changed = child.projected_width_changes_measurement(x) or changed
     }
     changed
   }

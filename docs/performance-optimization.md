@@ -517,3 +517,58 @@ python3 benchmarks/compare_bubbletea.py /tmp/cooper-sized-reference . --samples 
 python3 benchmarks/complex_feed.py /tmp/cooper-sized-reference . --samples 15 --output /tmp/cooper-sized-feed.json
 git worktree remove /tmp/cooper-sized-reference
 ```
+
+### Live heap savings are much smaller than allocation savings
+
+A separate `benchmarks/compare_heap.py` diagnostic compares the same version-only
+reference with [e8b30e5](https://github.com/akonwi/cooper/commit/e8b30e5), whose
+production code is identical to the sized-buffer checkpoint. It uses the same
+Ard v0.42.0 / Go 1.27.0 environment and default GC settings. Ten fresh processes
+per revision/workload alternate execution order. Each warms up for one complete
+scroll sequence, verifies and forces GC, then runs ten more sequences (2,400
+pager operations or 400 feed operations). It forces GC again and reads
+`runtime.MemStats.HeapAlloc` with the session still alive via `runtime.KeepAlive`.
+Final serialization happens after measurement. This is diagnostic only, not a
+new latency benchmark or a change to the isolated-verification protocol.
+
+| Whole-process live heap after final GC, median | Before | Sized | Difference |
+|---|---:|---:|---:|
+| Pager | 1,313,336 bytes | 1,299,816 bytes | −13.2 KiB (−1.0%) |
+| Lazy feed | 517,648 bytes | 505,072 bytes | −12.3 KiB (−2.4%) |
+| Eager feed | 16,368,376 bytes | 16,365,496 bytes | −2.8 KiB (−0.02%) |
+
+These totals include the fixture's application data and Go runtime objects, not
+only the paint buffer. Per-process results vary by several KiB; the tiny eager
+delta should be treated as essentially unchanged, not a precise buffer saving.
+
+Direct inspection of generated `paint.NewBuffer` output confirms the narrower
+retained backing storage. `unsafe.Sizeof(paint.StoredCell{})` is 32 bytes:
+
+| Buffer | Before length / capacity | Sized length / capacity | Backing payload |
+|---|---:|---:|---:|
+| Pager, 80×24 | 1,920 / 2,304 | 1,920 / 1,920 | 73,728 → 61,440 bytes |
+| Feed, 100×36 | 3,600 / 4,096 | 3,600 / 3,600 | 131,072 → 115,200 bytes |
+
+Capacity times element size excludes allocator size-class/page rounding and
+other objects, so it is not an exact predicted change in whole-process heap.
+Most of the earlier allocation reduction removes intermediate growing arrays
+that GC would reclaim anyway; only final overcapacity affects retained cells.
+
+The diagnostic also reads `HeapAlloc` after each render, with automatic GC
+running between the two forced collections. Median **sampled** high-water marks
+are mixed: pager 3.68 → 3.84 MiB, lazy 3.35 → 3.31 MiB, eager 33.79 → 32.12 MiB.
+These can miss intra-render peaks, depend on GC timing, and do not measure RSS.
+There is no consistent peak-heap reduction demonstrated here. Median automatic
+GC cycles do fall: pager 246 → 84, lazy 127 → 75, eager 26 → 20 over the sequences.
+
+All 60 processes returned the expected operation counts and matching initial /
+final frames; each workload's final hashes also matched across revisions.
+This diagnostic does not reverify intermediate frames; the full comparison above
+already covers them. Python compilation and invalid-argument checks pass.
+Raw records: `benchmarks/baselines/performance-sized-heap.json.gz`.
+
+```sh
+git worktree add --detach /tmp/cooper-heap-reference 29b425945713d51c30c99a8eac999ac279aa10e0
+python3 benchmarks/compare_heap.py /tmp/cooper-heap-reference . --samples 10 --sequences 10 --output /tmp/cooper-sized-heap.json
+git worktree remove /tmp/cooper-heap-reference
+```

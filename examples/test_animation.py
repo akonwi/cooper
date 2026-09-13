@@ -5,8 +5,9 @@ import os
 import re
 import signal
 import sys
+import time
 
-from test_harness import Screen, binary_path, build, send, spawn, wait_exit, wait_for
+from test_harness import Screen, binary_path, build, drain, read_for, send, spawn, wait_exit, wait_for
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -58,10 +59,61 @@ def run_suspension():
 
 
 
+def run_spring_lab():
+    build("spring_lab")
+    pid, fd = spawn(binary_path("spring_lab"), rows=24, cols=80)
+    screen = Screen(24, 80)
+    rows = list(range(4, 22, 3))
+    try:
+        wait_for(fd, screen, "FAST")
+        deadline = time.monotonic() + 3.0
+        fractional = False
+        while time.monotonic() < deadline:
+            read_for(fd, screen, 0.01)
+            fractional |= any(char in screen.text() for char in "▏▎▍▌▋▊▉")
+            assert screen.line(11).find("●") <= 48, "critical spring must not overshoot from rest"
+            assert screen.line(14).find("●") <= 48, "heavy damping must not overshoot from rest"
+            if screen.line(5).find("●") > 48:
+                break
+        assert screen.line(5).find("●") > 48, "bouncy lane must visibly overshoot"
+        assert fractional, "fill bars must expose fractional-cell motion"
+        positions = [screen.line(row + 1).find("●") for row in rows]
+        assert len(set(positions)) >= 3, "presets must show distinct responses to the same target"
+        send(fd, " ")
+        wait_for(fd, screen, "PAUSED target=46")
+        frozen = screen.text()
+        drain(fd, screen, 0.3)
+        assert screen.text() == frozen, "pause must freeze every lane and elapsed time"
+        send(fd, " ")
+        wait_for(fd, screen, "COMPARE target=46")
+        send(fd, "c")
+        wait_for(fd, screen, "COMPARE target=32")
+        for row in rows:
+            assert screen.line(row + 1)[34] in "│●", "target guides must move together"
+        deadline = time.monotonic() + 12.0
+        while screen.text().count("SETTLED") != 6 and time.monotonic() < deadline:
+            read_for(fd, screen)
+        assert screen.text().count("SETTLED") == 6, "every preset must settle"
+        for row in rows:
+            assert screen.line(row + 1).find("●") == 34, "all markers must settle at the center target"
+            assert screen.line(row + 2).strip() == "█" * 32, "fill must match the exact settled position"
+            assert "x=32.00 v=0.00" in screen.line(row), "telemetry must show exact rest"
+        frozen = screen.text()
+        drain(fd, screen, 0.2)
+        assert screen.text() == frozen, "settled springs must stop updating"
+        send(fd, "\x1b[C")
+        wait_for(fd, screen, "COMPARE target=46")
+        wait_for(fd, screen, "MOVING")
+        stop(pid, fd, screen, "spring lab")
+    finally:
+        cleanup(fd, pid)
+
+
 def main():
     os.chdir(ROOT)
     run_animation()
     run_suspension()
+    run_spring_lab()
     print("✓ Cooper animation PTY tests passed")
 
 

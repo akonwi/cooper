@@ -1,0 +1,315 @@
+use ard/unsafe
+
+use go:math
+
+struct Config {
+  angular_frequency: Float64,
+  damping_ratio: Float64,
+  position_tolerance: Float64,
+  velocity_tolerance: Float64,
+}
+
+fn config(
+  angular_frequency: Float64?,
+  damping_ratio: Float64?,
+  position_tolerance: Float64?,
+  velocity_tolerance: Float64?,
+) Config {
+  Config{
+    angular_frequency: angular_frequency.or(12.0),
+    damping_ratio: damping_ratio.or(0.7),
+    position_tolerance: position_tolerance.or(0.001),
+    velocity_tolerance: velocity_tolerance.or(0.001),
+  }
+}
+
+struct Frame {
+  value: Float64,
+  velocity: Float64,
+  target: Float64,
+  delta: Int,
+}
+
+private enum Status {
+  paused,
+  playing,
+  completed,
+  destroyed,
+}
+
+private struct State {
+  config: Config,
+  value: Float64,
+  velocity: Float64,
+  target: Float64,
+  status: Status,
+  fresh: Bool,
+  revision: Int,
+  update: fn(Frame),
+  on_complete: fn()?,
+  wake: fn(),
+}
+
+struct Spring {
+  internal: Any,
+}
+
+private fn state(value: Any) mut State {
+  unsafe::cast<mut State>(value).expect("Spring must be created by Cooper")
+}
+
+private fn finite(value: Float64, name: Str) Float64 {
+  if math::IsNaN(value) or math::IsInf(value, 0) {
+    panic("{name} must be finite")
+  }
+  value
+}
+
+private fn positive(value: Float64, name: Str) {
+  if finite(value, name) <= 0.0 {
+    panic("{name} must be positive")
+  }
+}
+
+private fn available(shared: mut State) {
+  if shared.status == Status::destroyed {
+    panic("Spring is unavailable after destruction")
+  }
+}
+
+fn internal_new(value: Float64, update: fn(Frame), wake: fn(), options: Config?, on_complete: fn()?) mut Spring {
+  let settings = options.or(config())
+  positive(settings.angular_frequency, "spring angular frequency")
+  positive(settings.position_tolerance, "spring position tolerance")
+  positive(settings.velocity_tolerance, "spring velocity tolerance")
+  if finite(settings.damping_ratio, "spring damping ratio") < 0.0 {
+    panic("spring damping ratio must be non-negative")
+  }
+  let initial = finite(value, "spring value")
+  let shared = mut State{
+    config: settings,
+    value: initial,
+    velocity: 0.0,
+    target: initial,
+    status: Status::paused,
+    fresh: true,
+    revision: 0,
+    update: update,
+    on_complete: on_complete,
+    wake: wake,
+  }
+  (mut Spring{internal: shared})
+}
+
+// Altered Ard port of Harmonica's spring solver (Charmbracelet, Inc., 2021).
+// https://github.com/charmbracelet/harmonica/blob/v0.2.0/spring.go
+// Uses actual elapsed time and a cancellation-resistant over-damped root.
+//
+// MIT License
+//
+// Copyright (c) 2021 Charmbracelet, Inc.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//
+// Copyright (c) 2008-2012 Ryan Juckett
+// http://www.ryanjuckett.com/
+//
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+//
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+//
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+//
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+//
+// 3. This notice may not be removed or altered from any source
+//    distribution.
+private fn advance(shared: mut State, seconds: Float64) {
+  let frequency = shared.config.angular_frequency
+  let damping = shared.config.damping_ratio
+  let decay = frequency * damping
+  mut pp = 0.to_f64()
+  mut pv = 0.to_f64()
+  mut vp = 0.to_f64()
+  mut vv = 0.to_f64()
+  if damping > 1.0 {
+    let root = math::Sqrt(damping * damping - 1.0)
+    let fast = -frequency * (damping + root)
+    let slow = -frequency / (damping + root)
+    let fast_exp = math::Exp(fast * seconds)
+    let slow_exp = math::Exp(slow * seconds)
+    // Expm1 avoids subtracting nearly equal exponentials near critical damping.
+    pv = slow_exp * -math::Expm1((fast - slow) * seconds) / (slow - fast)
+    pp = slow_exp - slow * pv
+    vp = slow * (pp - fast_exp)
+    vv = fast_exp + slow * pv
+  } else if damping < 1.0 {
+    let alpha = frequency * math::Sqrt(1.0 - damping * damping)
+    let envelope = math::Exp(-decay * seconds)
+    let cosine = envelope * math::Cos(alpha * seconds)
+    pv = envelope * math::Sin(alpha * seconds) / alpha
+    pp = cosine + decay * pv
+    vp = -frequency * (frequency * pv)
+    vv = cosine - decay * pv
+  } else {
+    let envelope = math::Exp(-frequency * seconds)
+    pv = seconds * envelope
+    pp = envelope + frequency * pv
+    vp = -frequency * (frequency * pv)
+    vv = envelope - frequency * pv
+  }
+  let offset = shared.value - shared.target
+  let velocity = shared.velocity
+  let next_value = finite(offset * pp + velocity * pv + shared.target, "spring value")
+  let next_velocity = finite(offset * vp + velocity * vv, "spring velocity")
+  shared.value = next_value
+  shared.velocity = next_velocity
+}
+
+impl Spring {
+  fn value() Float64 {
+    state(self.internal).value
+  }
+
+  fn velocity() Float64 {
+    state(self.internal).velocity
+  }
+
+  fn target() Float64 {
+    state(self.internal).target
+  }
+
+  fn is_playing() Bool {
+    state(self.internal).status == Status::playing
+  }
+
+  fn is_complete() Bool {
+    state(self.internal).status == Status::completed
+  }
+
+  fn mut set_target(value: Float64) Bool {
+    let shared = state(self.internal)
+    available(shared)
+    let target = finite(value, "spring target")
+    if target == shared.target {
+      false
+    } else {
+      shared.target = target
+      shared.fresh = shared.fresh or shared.status != Status::playing
+      shared.status = Status::playing
+      shared.revision =+ 1
+      (shared.wake)()
+      true
+    }
+  }
+
+  fn mut play() Bool {
+    let shared = state(self.internal)
+    available(shared)
+    if shared.status == Status::playing or shared.status == Status::completed {
+      false
+    } else {
+      shared.status = Status::playing
+      shared.fresh = true
+      shared.revision =+ 1
+      (shared.wake)()
+      true
+    }
+  }
+
+  fn mut pause() Bool {
+    let shared = state(self.internal)
+    available(shared)
+    if shared.status != Status::playing {
+      false
+    } else {
+      shared.status = Status::paused
+      shared.revision =+ 1
+      (shared.wake)()
+      true
+    }
+  }
+
+  fn mut destroy() {
+    let shared = state(self.internal)
+    if shared.status != Status::destroyed {
+      shared.status = Status::destroyed
+      shared.revision =+ 1
+      shared.update = fn(frame: Frame) {}
+      shared.on_complete = Maybe::new<fn()>()
+      (shared.wake)()
+    }
+  }
+
+  fn internal_destroyed() Bool {
+    state(self.internal).status == Status::destroyed
+  }
+
+  fn mut internal_tick(delta: Int, allow: fn() Bool) Bool {
+    if delta < 0 {
+      panic("spring frame delta must be non-negative")
+    }
+    let shared = state(self.internal)
+    if (not allow()) or shared.status != Status::playing {
+      false
+    } else if delta == 0 and not shared.fresh {
+      false
+    } else {
+      let step = match shared.fresh {
+        true => 0,
+        false => delta,
+      }
+      shared.fresh = false
+      let revision = shared.revision
+      if step > 0 {
+        advance(shared, step.to_f64() / 1000.0)
+      }
+      let settled = math::Abs(shared.value - shared.target) <= shared.config.position_tolerance and math::Abs(shared.velocity) <= shared.config.velocity_tolerance
+      if settled {
+        shared.value = shared.target
+        shared.velocity = 0.0
+      }
+      (shared.update)(
+        Frame{
+          value: shared.value,
+          velocity: shared.velocity,
+          target: shared.target,
+          delta: step,
+        },
+      )
+      if allow() and shared.revision == revision and shared.status == Status::playing and settled {
+        shared.status = Status::completed
+        shared.revision =+ 1
+        match shared.on_complete {
+          complete => complete(),
+          _ => (),
+        }
+      }
+      true
+    }
+  }
+}

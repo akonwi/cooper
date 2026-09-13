@@ -1,0 +1,430 @@
+use ard/testing
+
+use cooper/animation
+use cooper/testing as headless
+use cooper/ui
+use go:math
+
+private fn close(actual: Float64, expected: Float64) Void!Str {
+  testing::assert(math::Abs(actual - expected) < 0.000001, "expected {expected}, got {actual}")
+}
+
+private fn panics(action: fn(), expected: Str) Void!Str {
+  let result = unsafe {
+    action()
+  }
+  match result {
+    ok(_) => testing::fail("expected panic: {expected}"),
+    err(message) => testing::assert(message.contains(expected), "unexpected panic: {message}"),
+  }
+}
+
+private struct Trajectory {
+  damping: Float64,
+  value: Float64,
+  velocity: Float64,
+  retargeted_value: Float64,
+  retargeted_velocity: Float64,
+}
+
+private struct SpringRef {
+  value: (mut animation::Spring)?,
+}
+
+test fn spring_matches_independent_ode_trajectories_and_preserves_retarget_velocity() Void!Str {
+  // Independently integrated x'' = -16*z*x' - 64*(x-target) using RK4,
+  // 10,000 steps per interval: x=-3, v=0; target=7 for 137ms, then -5 for 83ms.
+  let cases = [
+    Trajectory{
+      damping: 0.0,
+      value: 2.428426874045147,
+      velocity: 71.15086806117678,
+      retargeted_value: 6.331169797328248,
+      retargeted_velocity: 19.410242246730267,
+    },
+    Trajectory{
+      damping: 0.35,
+      value: 1.2943456190199503,
+      velocity: 49.789027802505885,
+      retargeted_value: 3.2091960629536707,
+      retargeted_velocity: -1.344191408424784,
+    },
+    Trajectory{
+      damping: 1.0,
+      value: -0.004941716287882525,
+      velocity: 29.303114965845513,
+      retargeted_value: 0.5308497097499116,
+      retargeted_velocity: -8.590733171987038,
+    },
+    Trajectory{
+      damping: 1.000000001,
+      value: -0.0049417177545339275,
+      velocity: 29.303114945462394,
+      retargeted_value: 0.5308497072262238,
+      retargeted_velocity: -8.590733172642805,
+    },
+    Trajectory{
+      damping: 0.999999999,
+      value: -0.004941714821244765,
+      velocity: 29.303114986228653,
+      retargeted_value: 0.5308497122735858,
+      retargeted_velocity: -8.590733171331252,
+    },
+    Trajectory{
+      damping: 2.5,
+      value: -1.315220010213494,
+      velocity: 13.796391650619725,
+      retargeted_value: -1.3409355982359186,
+      retargeted_velocity: -5.2811164509449275,
+    },
+  ]
+  for expected in cases {
+    let app = headless::new(10, 1)
+    defer app.destroy()
+    let spring = app.context.spring(
+      -3.0,
+      fn(frame: animation::SpringFrame) {},
+      options: animation::spring_config(angular_frequency: 8.0, damping_ratio: expected.damping),
+    )
+    try testing::assert(not spring.is_playing(), "construction should be paused")
+    try testing::assert(spring.set_target(7.0), "a new target should start playback")
+    app.advance_time(0)
+    app.advance_time(137)
+    try close(spring.value(), expected.value)
+    try close(spring.velocity(), expected.velocity)
+    let velocity = spring.velocity()
+    let value = spring.value()
+    try testing::assert(spring.set_target(-5.0), "retargeting should change the target")
+    try testing::assert(
+      spring.value() == value and spring.velocity() == velocity,
+      "retargeting must not reset position or momentum",
+    )
+    try testing::assert(not spring.set_target(-5.0), "same target should be a no-op")
+    app.advance_time(83)
+    try close(spring.value(), expected.retargeted_value)
+    try close(spring.velocity(), expected.retargeted_velocity)
+  }
+  Result::ok(())
+}
+
+test fn spring_irregular_steps_match_one_elapsed_step() Void!Str {
+  for damping in [0.0, 0.4, 1.0, 1.0000000000000002, 0.9999999999999999, 3.0] {
+    let options = animation::spring_config(angular_frequency: 9.0, damping_ratio: damping)
+    let whole = animation::internal_new_spring(
+      -4.0,
+      fn(frame: animation::SpringFrame) {},
+      fn() {},
+      options: options,
+    )
+    let split = animation::internal_new_spring(
+      -4.0,
+      fn(frame: animation::SpringFrame) {},
+      fn() {},
+      options: options,
+    )
+    let allow = fn() Bool {
+      true
+    }
+    let _ = whole.set_target(13.0)
+    let _ = split.set_target(13.0)
+    let _ = whole.internal_tick(0, allow)
+    let _ = split.internal_tick(0, allow)
+    let _ = whole.internal_tick(347, allow)
+    for delta in [7, 93, 1, 246] {
+      let _ = split.internal_tick(delta, allow)
+    }
+    try close(split.value(), whole.value())
+    try close(split.velocity(), whole.velocity())
+  }
+  Result::ok(())
+}
+
+test fn spring_requires_velocity_to_settle_then_snaps_and_returns_runtime_to_idle() Void!Str {
+  let app = headless::new(20, 1)
+  defer app.destroy()
+  mut completions = 0
+  mut updates = 0
+  let marker = ui::text(
+    app.context,
+    content: "X",
+    styles: ui::style(position: ui::Position::absolute),
+  )
+  app.root.add(marker)
+  let spring = app.context.spring(
+    2.0,
+    fn(frame: animation::SpringFrame) {
+      updates =+ 1
+      let applied = mut marker.style()
+      applied.left = ui::cells(math::Round(frame.value).to_int())
+      marker.set_style(applied.@)
+    },
+    on_complete: fn() {
+      completions =+ 1
+    },
+  )
+  let _ = spring.set_target(13.0)
+  app.advance_time(0)
+  app.advance_time(100)
+  app.render()
+  try testing::assert(
+    app.frame().cell(6, 0).expect("intermediate cell").grapheme == "X",
+    "floating motion should update retained geometry",
+  )
+  app.advance_time(10000)
+  app.render()
+  try testing::assert(
+    spring.is_complete() and spring.value() == 13.0 and spring.velocity() == 0.0,
+    "long elapsed time should settle exactly",
+  )
+  try testing::assert(
+    app.frame().cell(13, 0).expect("final cell").grapheme == "X",
+    "final update should paint the exact target",
+  )
+  try testing::assert(
+    completions == 1 and not app.animations_active(),
+    "completion should stop frame delivery",
+  )
+  let settled_updates = updates
+  app.advance_time(1000)
+  try testing::assert(
+    updates == settled_updates and completions == 1,
+    "completed springs should stay idle",
+  )
+  try testing::assert(not spring.play(), "completed spring needs a new target")
+  let _ = spring.set_target(4.0)
+  app.advance_time(0)
+  app.advance_time(10000)
+  try testing::assert(completions == 2 and spring.value() == 4.0, "settled spring should be reusable")
+
+  // At a quarter period the position is at the target but velocity is maximal.
+  let oscillator = app.context.spring(
+    0.0,
+    fn(frame: animation::SpringFrame) {},
+    options: animation::spring_config(angular_frequency: math::Pi * 2.0, damping_ratio: 0.0),
+  )
+  let _ = oscillator.set_target(10.0)
+  app.advance_time(0)
+  app.advance_time(250)
+  try close(oscillator.value(), 10.0)
+  try testing::assert(
+    oscillator.is_playing() and oscillator.velocity() > 60.0,
+    "crossing the target must not complete a moving spring",
+  )
+  app.advance_time(250)
+  try close(oscillator.value(), 20.0)
+  testing::assert(
+    oscillator.is_playing(),
+    "zero velocity away from the target must not complete either",
+  )
+}
+
+test fn spring_pause_suspend_and_runtime_ownership_freeze_motion() Void!Str {
+  let app = headless::new(10, 1)
+  let other = headless::new(10, 1)
+  defer other.destroy()
+  let timeline = app.context.timeline(100000)
+  let _ = timeline.play()
+  let spring = app.context.spring(
+    -3.0,
+    fn(frame: animation::SpringFrame) {},
+    options: animation::spring_config(angular_frequency: 8.0, damping_ratio: 1.0),
+  )
+  let _ = spring.set_target(7.0)
+  app.advance_time(0)
+  app.advance_time(137)
+  let position = spring.value()
+  let velocity = spring.velocity()
+  other.advance_time(400)
+  try testing::assert(spring.value() == position, "another Runtime must not advance this spring")
+  try testing::assert(spring.pause() and not spring.pause(), "pause should be idempotent")
+  app.advance_time(200)
+  try testing::assert(
+    spring.value() == position and spring.velocity() == velocity,
+    "pause freezes position and velocity",
+  )
+  let _ = spring.play()
+  let _ = spring.set_target(8.0)
+  let _ = spring.set_target(7.0)
+  app.advance_time(50)
+  try testing::assert(
+    spring.value() == position,
+    "resuming and retargeting alongside an active timeline must establish a fresh baseline",
+  )
+  try testing::assert(app.suspend(), "suspend should succeed")
+  app.advance_time(1000)
+  try testing::assert(app.resume(), "resume should succeed")
+  app.advance_time(0)
+  try testing::assert(
+    spring.value() == position and spring.velocity() == velocity,
+    "suspension must not become elapsed spring time",
+  )
+  let _ = spring.set_target(-5.0)
+  app.advance_time(83)
+  try close(spring.value(), 0.5308497097499116)
+  try close(spring.velocity(), -8.590733171987038)
+  app.destroy()
+  spring.destroy()
+  try testing::assert(
+    spring.internal_destroyed() and not spring.is_playing(),
+    "Runtime cleanup should destroy owned springs idempotently",
+  )
+  try panics(
+    fn() {
+      let _ = spring.set_target(1.0)
+    },
+    "after destruction",
+  )
+  panics(
+    fn() {
+      app.context.spring(0.0, fn(frame: animation::SpringFrame) {})
+    },
+    "active App Runtime",
+  )
+}
+
+test fn spring_callback_mutation_cancels_stale_completion_and_preserves_new_springs() Void!Str {
+  for action in ["retarget", "pause", "destroy", "suspend", "destroy_app"] {
+    let app = headless::new(10, 1)
+    defer app.destroy()
+    let reference = mut SpringRef{value: Maybe::new<mut animation::Spring>()}
+    mut changed = false
+    mut completions = 0
+    mut child_updates = 0
+    let spring = app.context.spring(
+      0.0,
+      fn(frame: animation::SpringFrame) {
+        if frame.value == 10.0 and not changed {
+          changed = true
+          let current = reference.value.expect("spring reference")
+          match action {
+            "retarget" => {
+              let _ = current.set_target(-2.0)
+              let child = app.context.spring(0.0, fn(frame: animation::SpringFrame) {
+                child_updates =+ 1
+              })
+              let _ = child.set_target(3.0)
+            },
+            "pause" => {
+              let _ = current.pause()
+            },
+            "destroy" => current.destroy(),
+            "suspend" => {
+              let _ = app.suspend()
+            },
+            _ => app.destroy(),
+          }
+        }
+      },
+      on_complete: fn() {
+        completions =+ 1
+      },
+    )
+    reference.value = Maybe::new<mut animation::Spring>(spring)
+    let _ = spring.set_target(10.0)
+    app.advance_time(0)
+    app.advance_time(10000)
+    try testing::assert(changed and completions == 0, "{action} must invalidate pending completion")
+    if action == "retarget" {
+      try testing::assert(
+        child_updates == 0 and spring.is_playing(),
+        "new spring waits until the next frame; retargeted spring remains active",
+      )
+      app.advance_time(0)
+      try testing::assert(child_updates == 1, "a spring created in a callback must remain owned")
+      app.advance_time(10000)
+      try testing::assert(
+        completions == 1 and spring.value() == -2.0 and (not app.animations_active()),
+        "both springs should finish normally",
+      )
+    } else if action == "pause" or action == "suspend" {
+      if action == "pause" {
+        let _ = spring.play()
+      } else {
+        let _ = app.resume()
+      }
+      app.advance_time(0)
+      app.advance_time(1)
+      try testing::assert(
+        completions == 1 and spring.is_complete(),
+        "completion should occur once after resumption",
+      )
+    }
+  }
+  Result::ok(())
+}
+
+test fn spring_rejects_invalid_numeric_contracts() Void!Str {
+  let app = headless::new(10, 1)
+  defer app.destroy()
+  for value in [0.0, -1.0, math::NaN(), math::Inf(1)] {
+    try panics(
+      fn() {
+        app.context.spring(
+          0.0,
+          fn(frame: animation::SpringFrame) {},
+          options: animation::spring_config(angular_frequency: value),
+        )
+      },
+      "spring angular frequency",
+    )
+    try panics(
+      fn() {
+        app.context.spring(
+          0.0,
+          fn(frame: animation::SpringFrame) {},
+          options: animation::spring_config(position_tolerance: value),
+        )
+      },
+      "spring position tolerance",
+    )
+    try panics(
+      fn() {
+        app.context.spring(
+          0.0,
+          fn(frame: animation::SpringFrame) {},
+          options: animation::spring_config(velocity_tolerance: value),
+        )
+      },
+      "spring velocity tolerance",
+    )
+  }
+  for value in [-1.0, math::NaN(), math::Inf(1)] {
+    try panics(
+      fn() {
+        app.context.spring(
+          0.0,
+          fn(frame: animation::SpringFrame) {},
+          options: animation::spring_config(damping_ratio: value),
+        )
+      },
+      "spring damping ratio",
+    )
+  }
+  for value in [math::NaN(), math::Inf(1), math::Inf(-1)] {
+    try panics(
+      fn() {
+        app.context.spring(value, fn(frame: animation::SpringFrame) {})
+      },
+      "spring value must be finite",
+    )
+  }
+  let spring = app.context.spring(0.0, fn(frame: animation::SpringFrame) {})
+  try panics(
+    fn() {
+      let _ = spring.set_target(math::NaN())
+    },
+    "spring target must be finite",
+  )
+  try panics(
+    fn() {
+      let _ = spring.internal_tick(-1, fn() Bool {
+        true
+      })
+    },
+    "non-negative",
+  )
+  testing::assert(
+    not spring.is_playing() and spring.target() == 0.0,
+    "invalid input must not mutate the spring",
+  )
+}

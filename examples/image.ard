@@ -1,0 +1,166 @@
+use ard/async
+
+use cooper
+use cooper/ui
+use go:os
+use go:time
+
+private fn distance(value: Int) Int {
+  if value < 0 {
+    0 - value
+  } else {
+    value
+  }
+}
+
+// A deterministic pixel-art fixture; optionally pass a PNG/JPEG/WebP path instead.
+private fn landscape() ui::ImageData {
+  let pixels = mut List::new<ui::Color>()
+  mut y = 0
+  while y < 64 {
+    mut x = 0
+    while x < 96 {
+      mut pixel = ui::rgb(38 + y * 2, 33 + y, 86 + y)
+      if (x - 67) * (x - 67) + (y - 20) * (y - 20) < 81 {
+        pixel = ui::rgb(255, 204, 125)
+      }
+      if y > 24 + distance(x - 28) / 2 {
+        pixel = ui::rgb(73, 77, 119)
+      }
+      if y > 29 + distance(x - 70) / 2 {
+        pixel = ui::rgb(44, 55, 87)
+      }
+      if y > 45 {
+        pixel = ui::rgb((29 + y) % (3 * 6), (66 + y) % (3 * 6), (88 + y) % (3 * 8))
+        if distance(x - 67) < (64 - y) / 2 and y % 3 == 0 {
+          pixel = ui::rgb(191, 144, 119)
+        }
+      }
+      pixels.push(pixel)
+      x =+ 1
+    }
+    y =+ 1
+  }
+  ui::image_data(96, 64, pixels.@)
+}
+
+fn main() {
+  let source = match os::Args.at(1) {
+    path => ui::decode_image(os::ReadFile(path).expect("read image")).expect("decode PNG/JPEG/WebP"),
+    _ => landscape(),
+  }
+  let app = cooper::app().expect("create image example")
+  defer app.destroy()
+  let root = ui::box(
+    app.context,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      background: ui::rgb(13, 19, 32),
+    ),
+  )
+  root.add(
+    ui::text(
+      app.context,
+      content: " COOPER / IMAGE PROTOTYPE\n Auto graphics · contain fit · PNG / JPEG / WebP",
+      styles: ui::style(height: ui::cells(3), flex_shrink: 0.0),
+      text_style: ui::text_style(foreground: ui::rgb(206, 221, 240)),
+    ),
+  )
+  let panel = ui::box(
+    app.context,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      flex_grow: 1.0,
+      min_height: ui::cells(0),
+      border: ui::Border::rounded,
+      border_color: ui::rgb(83, 111, 137),
+    ),
+  )
+  let viewport = ui::scroll_box(
+    app.context,
+    styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
+    scrollbar_options: ui::scrollbar_options(visibility: ui::ScrollbarVisibility::hidden),
+  )
+  let image = ui::image(
+    app.context,
+    source,
+    styles: ui::style(width: ui::percent(100.0), height: ui::cells(28), flex_shrink: 0.0),
+  )
+  viewport.add(image)
+  panel.add(viewport)
+  root.add(panel)
+  let status = ui::text(
+    app.context,
+    content: " Scroll: 0 · READY",
+    styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+    text_style: ui::text_style(foreground: ui::rgb(157, 192, 211)),
+  )
+  root.add(status)
+  root.add(
+    ui::text(
+      app.context,
+      content: " ↑/↓ scroll   P popup   S suspend/resume   Q quit",
+      styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+      text_style: ui::text_style(foreground: ui::rgb(157, 192, 211)),
+    ),
+  )
+  app.root.add(root)
+  let popup = ui::box(
+    app.context,
+    title: " OVERLAY ",
+    styles: ui::style(
+      display: ui::Display::none,
+      position: ui::Position::absolute,
+      left: ui::cells(12),
+      top: ui::cells(7),
+      width: ui::cells(40),
+      height: ui::cells(6),
+      border: ui::Border::rounded,
+      border_color: ui::rgb(240, 192, 121),
+      background: ui::rgb(20, 29, 46),
+      z_index: 10,
+      padding: ui::edges(ui::cells(1)),
+    ),
+  )
+  popup.add(
+    ui::text(
+      app.context,
+      content: "A popup above the image.\nPress P to reveal the pixels again.",
+      text_style: ui::text_style(foreground: ui::rgb(237, 222, 199)),
+    ),
+  )
+  app.root.add(popup)
+  let _ = app.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type == cooper::KeyEventType::press {
+      if received.matches("q") {
+        app.destroy()
+      } else if received.matches("p") {
+        let next = mut popup.style()
+        next.display = match next.display {
+          ui::Display::none => ui::Display::flex,
+          _ => ui::Display::none,
+        }
+        popup.set_style(next.@)
+      } else if received.matches("down") or received.matches("up") {
+        let delta = match received.matches("down") {
+          true => 1,
+          false => -1,
+        }
+        let _ = viewport.scroll_by(delta)
+        status.set_content(" Scroll: {viewport.scroll_top()} · READY")
+        received.prevent_default()
+      } else if received.matches("s") {
+        async::start(fn() {
+          app.suspend().expect("suspend image example")
+          time::Sleep(200 * time::Millisecond)
+          app.resume().expect("resume image example")
+          app.context.dispatch(fn() {
+            status.set_content(" Scroll: {viewport.scroll_top()} · RESUMED")
+          }).expect("update resumed image example")
+        })
+      }
+    }
+  })
+  app.run().expect("run image example")
+}

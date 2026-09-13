@@ -4,11 +4,12 @@ go 1.27.0
 
 // Ard source imports these modules directly through the Go backend.
 require (
-	github.com/rockorager/go-uucode v1.2.0
-	go.rockorager.dev/vaxis v0.17.2-0.20260811162040-8a93a9a0e2e7
+	github.com/akonwi/vaxis v0.0.0-20260913113926-34e520204135
+	github.com/rockorager/go-uucode v1.2.2
+	golang.org/x/image v0.46.0
 )
 
 require (
-	golang.org/x/sys v0.10.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.10.0 // indirect
 )

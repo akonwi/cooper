@@ -143,6 +143,8 @@ yet a supported custom-control API.
 - `Text` — selectable multiline plain or StyledText spans with Unicode-aware
   word wrapping by default, inheritable styles, plain-click/OSC 8 hyperlinks
   with pointer cursors, and optional ellipsis overflow;
+- `Image` — [static-image prototype](./examples/README.md#image-prototype) with
+  PNG/JPEG/WebP decoding, contain fitting, native Kitty graphics, and half-block fallback;
 - `Input` — grapheme-aware single-line CLI editing, editable selection, validation, and callbacks;
 - `TextArea` — multiline editing with Unicode wrapping, cursor navigation,
   selection, and a configurable automatic overflow scrollbar;

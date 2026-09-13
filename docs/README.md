@@ -2,6 +2,23 @@
 
 Design decisions for Cooper's Ard-native retained-mode framework.
 
+## Benchmarks and implementation history
+
+- [Benchmark guide](../benchmarks/README.md) — current runners, reproduction,
+  output storage, and access to archived raw data.
+- [Performance checkpoints](./performance-optimization.md) — optimization
+  findings through sized paint buffers and live-heap measurements.
+- Historical measurements: [layout baseline](./layout-profiling-baseline.md),
+  [layout comparison](./layout-performance-comparison.md),
+  [complex feed](./complex-feed-benchmark.md), and
+  [Bubble Tea pager](./bubbletea-pager-benchmark.md).
+- Layout migration research: [Ard evaluation](./ard-layout-evaluation.md),
+  [Yoga port map](./yoga-ard-port-map.md), and
+  [conformance audit](./layout-conformance-audit.md).
+
+Historical reports describe their named revisions, not current main. Keep their
+findings and design rationale here; generated benchmark data belongs outside Git.
+
 ## Canonical design
 
 - [ADR 0002](./adrs/0002-define-application-api.md) — accepted imperative

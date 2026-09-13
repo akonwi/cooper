@@ -1,2 +1,7 @@
 ard-out/
 .amp/portals/*
+
+# Generated benchmark results and Python import caches.
+/benchmarks/results/
+/benchmarks/baselines/
+__pycache__/

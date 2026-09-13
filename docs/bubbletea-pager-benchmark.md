@@ -118,7 +118,7 @@ checks every frame and rotates their execution order. No production dependency
 or backend switch is added.
 
 Raw samples, representative frame text, dependency list, source hashes and
-summaries are versioned in `benchmarks/baselines/bubbletea-pager-2026-09-12.json.gz`.
-The uncompressed review copy is `.amp/in/artifacts/bubbletea-pager-baseline.json`.
-The inspected `.amp/in/artifacts/bubbletea-pager.png` visualizes the identical
-captured views at offset 100; it is not a live-terminal screenshot.
+summaries are preserved as `bubbletea-pager-2026-09-12.json.gz` in the
+[Git archive](https://github.com/akonwi/cooper/tree/e100649ecb4f83740fbcceab13cd701f37d4fe43/benchmarks/baselines),
+not the current checkout. See the [benchmark guide](../benchmarks/README.md)
+for retrieval and where to save new generated results.

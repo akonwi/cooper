@@ -107,15 +107,12 @@ The runner temporarily copies its fixture into the baseline checkout, restores
 the generated Go entry file after building, and cleans up its copied source.
 Do not run another Ard build in either checkout concurrently.
 
-Versioned raw samples, frame hashes, representative frame text, source hashes,
-revisions and summaries are compressed losslessly in
-`benchmarks/baselines/complex-feed-2026-09-12.json.gz`:
+Raw samples, frame hashes, representative frame text, source hashes, revisions
+and summaries are preserved as `complex-feed-2026-09-12.json.gz` in the
+[Git archive](https://github.com/akonwi/cooper/tree/e100649ecb4f83740fbcceab13cd701f37d4fe43/benchmarks/baselines),
+not the current checkout. The benchmark guide explains retrieval and where to
+save new generated results.
 
-```sh
-gzip -dc benchmarks/baselines/complex-feed-2026-09-12.json.gz | python3 -m json.tool
-```
-
-The uncompressed review artifact is `.amp/in/artifacts/complex-feed-baseline.json`.
 Use this fixture before optimizing against an assumed complex-feed bottleneck;
 preserve all frame checks and compare both timing distributions and allocation
 traffic on the same machine.

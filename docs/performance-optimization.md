@@ -1,5 +1,12 @@
 # Performance optimization checkpoints
 
+This is a historical checkpoint log, not a current-main benchmark. Raw result
+filenames below refer to the
+[archived baseline directory](https://github.com/akonwi/cooper/tree/e100649ecb4f83740fbcceab13cd701f37d4fe43/benchmarks/baselines),
+removed from the working tree because it contains generated data. See the
+[benchmark guide](../benchmarks/README.md) for current runners, output storage,
+and retrieval instructions. Measurements and caveats remain here for reference.
+
 ## Streaming text and conditional layout snapshots
 
 The first checkpoint on `bubbletea-performance` is

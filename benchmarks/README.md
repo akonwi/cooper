@@ -1,4 +1,21 @@
-# Retained layout experiments
+# Benchmarks
+
+Keep fixtures, runners, and concise findings in Git. Raw JSON samples, frame
+captures, profiles, binaries, and profiling archives are generated output: save
+them under `/tmp` or ignored `benchmarks/results/`, not in commits.
+
+Historical raw data formerly under `benchmarks/baselines/` is preserved in the
+[Git archive](https://github.com/akonwi/cooper/tree/e100649ecb4f83740fbcceab13cd701f37d4fe43/benchmarks/baselines).
+Report references to that directory name archived files, not current checkout
+paths. Recover a file without restoring the whole directory, for example:
+
+```sh
+git show e100649ecb4f83740fbcceab13cd701f37d4fe43:benchmarks/baselines/performance-sized-heap.json.gz > /tmp/performance-sized-heap.json.gz
+```
+
+See [performance checkpoints](../docs/performance-optimization.md) for findings,
+revision-specific comparisons, and remaining work. Historical reports are not
+current-main performance claims.
 
 Run the benchmark suite from the repository root:
 
@@ -21,7 +38,7 @@ the nearest-rank tail value as `max` instead.
 - `retained_interaction.ard`: 100 fully overlapping z-index siblings under
   10,000 pointer moves plus 100 selections through 200 retained Text controls.
 
-The same workloads compile against main's Tess backend and the Ard port.
+The workloads also support historical comparisons between Tess and the Ard port.
 Legacy `backend=tess_*` output labels identify workloads, not the active solver.
 
 The virtual-list benchmark measures the supported TestApp surface: initial
@@ -133,6 +150,19 @@ for the fresh-session timing comparisons or their per-frame correctness checks.
 Do not run another Ard build in this checkout, or competing tests/benchmarks,
 while profiling. Generated driver files are temporary; fixture sources are not
 modified.
+
+## Live heap comparison
+
+```sh
+python3 benchmarks/compare_heap.py /path/to/baseline . \
+  --samples 10 --sequences 10 --output /tmp/cooper-heap.json
+```
+
+This diagnostic measures whole-process live Go heap after forced GC while the
+application remains alive, plus heap samples after each render during scrolling.
+Sampled maxima are not exact peaks or RSS. It uses the same pager/feed fixtures
+and verifies the final frames, but does not replace intermediate-frame checks or
+latency measurements. Run it without competing builds or benchmarks.
 
 ## Three-way Bubble Tea pager comparison
 

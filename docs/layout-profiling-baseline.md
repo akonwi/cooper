@@ -148,11 +148,11 @@ baseline checkpoint.
 
 ## Saved evidence
 
-- Versioned raw repeated samples: `benchmarks/baselines/main-2026-09-12-profile.json`.
-- Versioned raw scenario samples: `benchmarks/baselines/main-2026-09-12-retained.json`.
-- CPU profiles, before/after allocation profiles and flat/cumulative reports:
-  `.amp/in/artifacts/main-layout-profile/` in the profiling thread.
-- Review archive: `.amp/in/artifacts/main-layout-profile.tar.gz`.
+Generated evidence is no longer stored in the working tree. The
+[archived baseline directory](https://github.com/akonwi/cooper/tree/e100649ecb4f83740fbcceab13cd701f37d4fe43/benchmarks/baselines)
+contains `main-2026-09-12-profile.json` (repeated samples) and
+`main-2026-09-12-retained.json` (scenario samples). See the
+[benchmark guide](../benchmarks/README.md) for retrieval and reproduction.
 
 Raw JSON includes exact Cooper revisions, fixture hashes and all samples. The
 profiling fixture and Go driver are benchmark-only additions; they do not change

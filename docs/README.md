@@ -60,6 +60,8 @@ findings and design rationale here; generated benchmark data belongs outside Git
   boxless retained grouping contract; implementation pending.
 - [ADR 0020](./adrs/0020-define-layout-cell-rounding.md) — accepted
   shared-edge cell rounding contract; implementation pending.
+- [ADR 0021](./adrs/0021-define-spring-animations.md) — accepted
+  Ard-owned scalar springs, momentum-preserving retargeting, and Runtime lifecycle semantics.
 
 ## Architecture Decision Records
 
@@ -87,6 +89,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0018](./adrs/0018-define-baseline-alignment.md) | Accepted | Define baseline alignment |
 | [0019](./adrs/0019-define-display-contents.md) | Accepted | Define display contents for retained nodes |
 | [0020](./adrs/0020-define-layout-cell-rounding.md) | Accepted | Define layout cell rounding |
+| [0021](./adrs/0021-define-spring-animations.md) | Accepted | Define spring animations |
 
 ### Add an ADR
 

@@ -39,8 +39,9 @@ def main():
         wait_for(fd, screen, "BUILT-IN SELECTS")
         wait_for(fd, screen, "Home description")
         drain(fd, screen, 0.2)
-        assert "Select…" in screen.line(6), screen.text()
-        assert "▾" in screen.line(6), screen.text()
+        # TabSelect has only its label and description rows, without an underline.
+        assert "Select…" in screen.line(5), screen.text()
+        assert "▾" in screen.line(5), screen.text()
 
         send(fd, "\x1b[C")
         wait_for(fd, screen, "Tab highlight: Profile · index 1")
@@ -61,7 +62,9 @@ def main():
         send(fd, "\r")
         wheel_down(fd, col=10, row=12)
         drain(fd, screen, 0.1)
-        drag(fd, start_col=79, start_row=8, end_col=79, end_row=21)
+        thumb_row = next(y for y in range(24) if screen.line(y).endswith("█"))
+        arrow_row = next(y for y in range(24) if screen.line(y).endswith("▼"))
+        drag(fd, start_col=79, start_row=thumb_row, end_col=79, end_row=arrow_row - 1)
         wait_for(fd, screen, "About description")
         send(fd, "\r")
         wait_for(fd, screen, "Select submitted: Billing · index 6")

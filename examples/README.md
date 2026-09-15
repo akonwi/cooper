@@ -163,10 +163,31 @@ nested replies, stale feed/reader completions, compact layout, and clean exit.
 records ANSI snapshots. Request-count assertions check that opening, expanding,
 and paginating fetch only the requested level; collapsing hides replies but
 preserves the parent body. Collapsing does not cancel an already-requested batch.
-This fixture tests network behavior, not rendering performance. Use the
-[network-free CUI benchmark](../benchmarks/README.md#cui-reconciliation) to
-measure large-tree rendering. All loaded visible comments use ordinary retained
-nodes: no virtualization yet.
+Feeds and expanded comments use `cui::virtual_list`: only viewport/overscan rows
+and the focused row retain controls. The page model keeps cached data, expansion,
+and selection independently of mounted rows. Scrollbar dragging can leave the
+selection offscreen; keyboard selection reveals it again. The fixture checks
+that navigating across the mounted window does not fetch additional items.
+Use the [network-free virtualization benchmark](../docs/cui-virtual-list-benchmark.md)
+to measure rendering latency and peak RSS separately from fetching.
+
+## CUI virtual comments
+
+`cui_virtual_comments.ard` exercises 4,000 already-loaded comments with variable
+heights, nesting, and width-dependent wrapping. It makes no network requests.
+Its blank scrollbar track and cyan block thumb demonstrate consumer-provided
+`scrollbar_options`; they do not change Cooper's defaults.
+
+```sh
+ard run cui_virtual_comments.ard
+python3 test_cui_virtual_comments.py
+```
+
+Use arrows/PageUp/PageDown to scroll, e to collapse/expand the top visible comment,
+g to jump to comment 2000, t to return to the top, and Ctrl+C to quit. The PTY test
+covers paging, jumps, rewrapping, and collapse/expansion. `CUI_CAPTURE_DIR` enables
+ANSI captures. See the [virtual-list API](../docs/declarative.md#virtual-lists)
+for row lifetime, stable keys, defaults, and scrollbar customization.
 
 ## Animation
 

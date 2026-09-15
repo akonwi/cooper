@@ -81,7 +81,11 @@ jobs:
             examples/test_interaction.py \
             examples/test_declarative_jobs.py \
             examples/test_cui_tinear.py \
+            examples/test_cui_tinear_drag.py \
+            examples/test_cui_controls.py \
             examples/test_cui_hackernews.py \
+            examples/test_cui_virtual_comments.py \
+            benchmarks/cui_virtual_list.py \
             benchmarks/run.py
 
       - name: Test terminal examples
@@ -112,14 +116,19 @@ jobs:
           python3 test_interaction.py
           python3 test_declarative_jobs.py
           python3 test_cui_tinear.py
+          python3 test_cui_tinear_drag.py
+          python3 test_cui_controls.py
           ard test hackernews
           python3 test_cui_hackernews.py
+          python3 test_cui_virtual_comments.py
 
       - name: Smoke-test benchmarks
         if: runner.os == 'Linux'
         env:
           ARD: ard
-        run: python3 benchmarks/run.py --iterations 1 --warmups 0
+        run: |
+          python3 benchmarks/run.py --iterations 1 --warmups 0
+          python3 benchmarks/cui_virtual_list.py --samples 1 --warmups 0
 
       - name: Check whitespace
         env:

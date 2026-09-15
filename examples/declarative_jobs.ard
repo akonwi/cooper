@@ -1,0 +1,184 @@
+use cooper
+use cooper/cui as d
+use cooper/ui
+
+struct JobRowProps {
+  key: Str,
+  label: Str,
+  action: fn(Str, Str),
+  ref: mut d::InputRef,
+}
+
+struct JobRow {
+  props: mut JobRowProps,
+  note: Str,
+  details: Bool,
+  field: mut d::InputRef,
+}
+
+private fn job_row(props: mut JobRowProps) mut JobRow {
+  (mut JobRow{
+    props: props,
+    note: "",
+    details: false,
+    field: props.ref,
+  })
+}
+
+private fn line() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
+}
+
+impl d::Component for JobRow {
+  fn mut render() d::View {
+    let children = mut List::new<d::View>()
+    children.push(d::text("{self.props.label} · note: {self.note}", styles: line()))
+    children.push(
+      d::input(
+        self.note,
+        key: "note",
+        styles: line(),
+        placeholder: "type a local note",
+        ref: self.field,
+        on_input: fn(value: Str, ctx: d::Context) {
+          self.note = value
+        },
+        on_key: fn(received: mut cooper::KeyEvent, ctx: d::Context) {
+          if received.event_type == cooper::KeyEventType::press and received.matches("f2") {
+            self.details = not self.details
+            received.prevent_default()
+          } else if received.event_type == cooper::KeyEventType::press and received.matches("f3") {
+            self.props.action(self.props.key, "reorder")
+            received.prevent_default()
+          } else if received.event_type == cooper::KeyEventType::press and received.matches("f4") {
+            self.props.action(self.props.key, "other")
+            received.prevent_default()
+          }
+        },
+      ),
+    )
+    if self.details {
+      children.push(
+        d::text("details: {self.props.key} keeps component-local state", styles: line()),
+      )
+    }
+    mut height = 4
+    if self.details {
+      height = 5
+    }
+    d::box(
+      children.@,
+      key: "card-{self.props.key}",
+      title: self.props.label,
+      styles: ui::style(
+        border: ui::Border::single,
+        width: ui::percent(100.0),
+        height: ui::cells(height),
+        flex_shrink: 0.0,
+      ),
+    )
+  }
+}
+
+struct JobsScreen {
+  initial_focus: mut d::InputRef,
+  order: [Str],
+  beta_present: Bool,
+}
+
+struct ScreenProps {
+  initial_focus: mut d::InputRef,
+}
+
+private fn jobs_screen(props: mut ScreenProps) mut JobsScreen {
+  (mut JobsScreen{
+    initial_focus: props.initial_focus,
+    order: ["alpha", "beta"],
+    beta_present: true,
+  })
+}
+
+private fn label(key: Str) Str {
+  if key == "alpha" {
+    "Alpha build · running"
+  } else {
+    "Beta deploy · queued"
+  }
+}
+
+impl JobsScreen {
+  fn mut act(key: Str, command: Str) {
+    if command == "reorder" {
+      if self.beta_present {
+        if self.order.at(0).or("") == "alpha" {
+          self.order = ["beta", "alpha"]
+        } else {
+          self.order = ["alpha", "beta"]
+        }
+      }
+    } else if command == "other" {
+      self.beta_present = not self.beta_present
+      if self.beta_present {
+        self.order = ["alpha", "beta"]
+      } else {
+        self.order = ["alpha"]
+      }
+    }
+  }
+}
+
+impl d::Component for JobsScreen {
+  fn mut render() d::View {
+    let rows = mut List::new<d::View>()
+    rows.push(
+      d::text(
+        "DECLARATIVE JOBS · F2 details · F3 reorder · F4 remove/reinsert Beta · Ctrl+C quit",
+        styles: line(),
+        text_style: ui::text_style(foreground: ui::hex("#38BDF8"), bold: true),
+      ),
+    )
+    for key in self.order {
+      let current_key = key
+      mut field = d::input_ref()
+      if current_key == "alpha" {
+        field = self.initial_focus
+      }
+      rows.push(
+        d::child(
+          job_row,
+          JobRowProps{
+            key: current_key,
+            label: label(current_key),
+            action: fn(row_key: Str, command: Str) {
+              self.act(row_key, command)
+            },
+            ref: field,
+          },
+          key: current_key,
+        ),
+      )
+    }
+    d::scroll_box(
+      rows.@,
+      styles: ui::style(
+        width: ui::percent(100.0),
+        height: ui::percent(100.0),
+        padding: ui::edges(ui::cells(1)),
+      ),
+    )
+  }
+}
+
+fn main() {
+  let application = cooper::app().expect("create declarative jobs example")
+  defer application.destroy()
+  let initial_focus = d::input_ref()
+  let renderer = d::mount(
+    application.context,
+    application.root,
+    d::child(jobs_screen, ScreenProps{initial_focus: initial_focus}),
+  )
+  defer renderer.destroy()
+  let _ = initial_focus.current.expect("mounted Alpha input").focus()
+  application.run().expect("run declarative jobs example")
+}

@@ -1,0 +1,99 @@
+use ard/testing
+
+use cooper/cui
+use cooper/testing as headless
+use cooper/ui
+
+struct Model {
+  ref: mut cui::ScrollBoxRef,
+  reverse: Bool,
+}
+struct Props {
+  model: mut Model,
+}
+struct Screen {
+  model: mut Model,
+}
+private fn screen(props: mut Props) mut Screen {
+  (mut Screen{model: props.model})
+}
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    let scroller = cui::scroll_box(
+      [
+        cui::box([], styles: ui::style(width: ui::cells(60), height: ui::cells(40), flex_shrink: 0.0)),
+      ],
+      key: "scroll",
+      ref: self.model.ref,
+      styles: ui::style(width: ui::cells(20), height: ui::cells(5), flex_shrink: 0.0),
+    )
+    let other = cui::text("other", key: "other")
+    if self.model.reverse {
+      cui::box([other, scroller])
+    } else {
+      cui::box([scroller, other])
+    }
+  }
+}
+
+test fn scroll_ref_preserves_position_and_identity_on_reorder() Void!Str {
+  let app = headless::new(30, 10)
+  defer app.destroy()
+  let ref = cui::scroll_box_ref()
+  let model = mut Model{ref: ref, reverse: false}
+  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+  app.flush()
+  let panel = ref.current.expect("attached")
+  let _ = panel.scroll_to_x(7)
+  let _ = panel.scroll_to(13)
+  app.flush()
+  renderer.update(fn() {
+    model.reverse = true
+  })
+  app.flush()
+  try testing::assert(
+    ref.current.expect("retained").node_ref.id == panel.node_ref.id,
+    "key retains scroller",
+  )
+  try testing::assert(
+    panel.scroll_left() == 7 and panel.scroll_top() == 13,
+    "reconciliation preserves both axes",
+  )
+  renderer.destroy()
+  testing::assert(
+    not ref.current.is_some() and panel.node_ref.is_destroyed(),
+    "renderer owns cleanup",
+  )
+}
+
+test fn scroll_refs_reject_duplicate_and_foreign_ownership() Void!Str {
+  let app = headless::new(30, 10)
+  defer app.destroy()
+  let ref = cui::scroll_box_ref()
+  let renderer = cui::mount(app.context, app.root, cui::scroll_box([], ref: ref))
+  defer renderer.destroy()
+  let original = ref.current.expect("original")
+  let stolen = unsafe {
+    cui::mount(app.context, app.root, cui::scroll_box([], ref: ref))
+  }
+  match stolen {
+    ok(_) => try testing::fail("foreign ref must be rejected"),
+    err(message) => try testing::assert(message.contains("outside this renderer"), message),
+  }
+  let duplicate = cui::scroll_box_ref()
+  let failed = unsafe {
+    cui::mount(
+      app.context,
+      app.root,
+      cui::scroll_box([cui::scroll_box([], ref: duplicate)], ref: duplicate),
+    )
+  }
+  match failed {
+    ok(_) => try testing::fail("nested duplicate must be rejected"),
+    err(message) => try testing::assert(message.contains("two views"), message),
+  }
+  testing::assert(
+    not duplicate.current.is_some() and ref.current.expect("owner unchanged").node_ref.id == original.node_ref.id,
+    "validation occurs before mutation",
+  )
+}

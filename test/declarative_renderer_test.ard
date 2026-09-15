@@ -1,0 +1,528 @@
+use ard/testing
+
+use cooper/cui as d
+use cooper/event
+use cooper/testing as headless
+use cooper/ui
+
+private fn key(name: Str, text: Str?, shift: Bool?) mut event::KeyEvent {
+  event::key(
+    name,
+    text.or(""),
+    event::KeyEventType::press,
+    event::Modifiers{
+      shift: shift.or(false),
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
+}
+
+struct Log {
+  created: Int,
+  mounted: Int,
+  inputs: Int,
+  renders: Int,
+  closed: [Str],
+  probe: fn(),
+  refs_ready: Bool,
+}
+
+private fn log() mut Log {
+  (mut Log{
+    created: 0,
+    mounted: 0,
+    inputs: 0,
+    renders: 0,
+    closed: [],
+    probe: fn() {},
+    refs_ready: true,
+  })
+}
+
+struct Draw {
+  render: fn() d::View,
+  log: mut Log,
+}
+
+struct Root {
+  props: mut Draw,
+}
+
+private fn root(props: mut Draw) mut Root {
+  (mut Root{props: props})
+}
+
+impl d::Component for Root {
+  fn mut render() d::View {
+    self.props.log.renders =+ 1
+    self.props.render()
+  }
+}
+
+struct RowProps {
+  name: Str,
+  label: Str,
+  ref: mut d::InputRef,
+  log: mut Log,
+  changed: fn(Str),
+}
+
+struct Row {
+  props: mut RowProps,
+  value: Str,
+}
+
+private fn row(props: mut RowProps) mut Row {
+  props.log.created =+ 1
+  (mut Row{props: props, value: props.name})
+}
+
+impl d::Component for Row {
+  fn mut render() d::View {
+    d::input(
+      self.value,
+      ref: self.props.ref,
+      on_input: fn(value: Str, ctx: d::Context) {
+        self.value = value
+        self.props.log.inputs =+ 1
+        self.props.changed(value)
+      },
+      on_submit: fn(value: Str, ctx: d::Context) {
+        self.props.changed(self.props.label)
+      },
+    )
+  }
+}
+
+impl d::Lifecycle for Row {
+  fn mut mounted(ctx: d::Context) {
+    self.props.log.mounted =+ 1
+    self.props.log.refs_ready = self.props.log.refs_ready and self.props.ref.current.is_some()
+  }
+
+  fn mut unmounting(ctx: d::Context) {
+    self.props.log.probe()
+    self.props.log.closed.push(self.props.name)
+  }
+}
+
+struct Rows {
+  order: [Str],
+  label: Str,
+  left: mut d::InputRef,
+  right: mut d::InputRef,
+  latest: Str,
+}
+
+private fn rows() mut Rows {
+  (mut Rows{
+    order: ["left", "right"],
+    label: "old",
+    left: d::input_ref(),
+    right: d::input_ref(),
+    latest: "",
+  })
+}
+
+private fn collection(model: mut Rows, record: mut Log, keyed: Bool?) d::View {
+  let children = mut List::new<d::View>()
+  for name in model.order {
+    mut ref = model.right
+    if name == "left" {
+      ref = model.left
+    }
+    let label = model.label
+    mut identity = Maybe::new<Str>()
+    if keyed.or(true) {
+      identity = Maybe::new(name)
+    }
+    children.push(
+      d::child(
+        row,
+        RowProps{
+          name: name,
+          label: label,
+          ref: ref,
+          log: record,
+          changed: fn(value: Str) {
+            model.latest = label + ":" + value
+          },
+        },
+        key: identity,
+      ),
+    )
+  }
+  d::scroll_box([d::box(children.@)], styles: ui::style(width: ui::cells(20), height: ui::cells(3)))
+}
+
+test fn keyed_collection_retains_state_focus_selection_and_latest_props_without_reconstruction() Void!Str {
+  let app = headless::new(20, 3)
+  defer app.destroy()
+  let record = log()
+  let model = rows()
+  let description = d::child(
+    root,
+    Draw{log: record, render: fn() d::View {
+      collection(model, record)
+    }},
+  )
+  try testing::assert(record.created == 0, "descriptions are lazy")
+  let renderer = d::mount(app.context, app.root, description)
+  app.flush()
+  let field = model.right.current.expect("right")
+  let id = field.node_ref.id
+  let _ = field.focus()
+  app.key(key("end"))
+  app.key(key("left", shift: true))
+  app.key(key("left", shift: true))
+  try testing::assert(field.selected_text() == "ht", "asymmetric selection")
+  renderer.update(fn() {
+    model.order = ["right", "left"]
+    model.label = "new"
+  })
+  renderer.invalidate()
+  let before = record.renders
+  app.flush()
+  try testing::assert(record.renders == before + 1, "pending invalidations coalesce")
+  try testing::assert(
+    field.node_ref.id == id and field.is_focused() and field.layout().screen.y == 0,
+    "reorder preserves actual control and focus",
+  )
+  try testing::assert(field.selected_text() == "ht", "reorder preserves cursor-backed selection")
+  app.key(key("z", text: "Z"))
+  app.key(key("return"))
+  app.flush()
+  try testing::assert(
+    field.value() == "rigZ" and model.latest == "new:new",
+    "ordinary state and newest props/callback",
+  )
+  try testing::assert(
+    record.created == 2 and record.mounted == 2 and record.inputs == 1 and record.refs_ready,
+    "construct and mount once; no duplicate input listeners; refs available on mount",
+  )
+  renderer.destroy()
+  testing::assert(
+    record.closed.size() == 2 and not model.right.current.is_some(),
+    "automatic child cleanup",
+  )
+}
+
+test fn committed_removal_reinsertion_resets_state_but_coalesced_absence_does_not() Void!Str {
+  let app = headless::new(20, 3)
+  defer app.destroy()
+  let record = log()
+  let model = rows()
+  let renderer = d::mount(
+    app.context,
+    app.root,
+    d::child(
+      root,
+      Draw{log: record, render: fn() d::View {
+        collection(model, record)
+      }},
+    ),
+  )
+  app.flush()
+  let old = model.left.current.expect("left")
+  old.set_value("edited")
+  app.flush()
+  renderer.update(fn() {
+    model.order = ["right"]
+  })
+  renderer.update(fn() {
+    model.order = ["left", "right"]
+  })
+  app.flush()
+  try testing::assert(
+    model.left.current.expect("retained").node_ref.id == old.node_ref.id and old.value() == "edited",
+    "only committed descriptions change lifetime",
+  )
+  renderer.update(fn() {
+    model.order = ["right"]
+  })
+  app.flush()
+  try testing::assert(
+    old.node_ref.is_destroyed() and not model.left.current.is_some(),
+    "removed control and ref retired",
+  )
+  renderer.update(fn() {
+    model.order = ["left", "right"]
+  })
+  app.flush()
+  let replacement = model.left.current.expect("replacement")
+  try testing::assert(
+    replacement.node_ref.id != old.node_ref.id and replacement.value() == "left",
+    "reinsertion constructs fresh state",
+  )
+  testing::assert(
+    record.created == 3 and record.closed.at(0).or("") == "left",
+    "exact incarnation lifecycle",
+  )
+}
+
+struct GroupProps {
+  model: mut Rows,
+  log: mut Log,
+}
+
+struct Group {
+  props: mut GroupProps,
+}
+
+private fn group(props: mut GroupProps) mut Group {
+  (mut Group{props: props})
+}
+
+impl d::Component for Group {
+  fn mut render() d::View {
+    collection(self.props.model, self.props.log)
+  }
+}
+
+impl d::Lifecycle for Group {
+  fn mut mounted(ctx: d::Context) {}
+
+  fn mut unmounting(ctx: d::Context) {
+    self.props.log.closed.push("group")
+  }
+}
+
+test fn nested_teardown_cancels_all_descendant_events_before_bottom_up_cleanup_and_isolates_renderers() Void!Str {
+  let app = headless::new(20, 6)
+  defer app.destroy()
+  let record = log()
+  let model = rows()
+  let renderer = d::mount(
+    app.context,
+    app.root,
+    d::child(group, GroupProps{model: model, log: record}),
+  )
+  let other_record = log()
+  let other_model = rows()
+  let other = d::mount(
+    app.context,
+    app.root,
+    d::child(group, GroupProps{model: other_model, log: other_record}),
+  )
+  app.flush()
+  let right = model.right.current.expect("right")
+  record.probe = fn() {
+    if not right.node_ref.is_destroyed() {
+      right.set_value("STALE")
+    }
+  }
+  try testing::assert(
+    renderer.dispatch(fn() {
+      record.inputs =+ 100
+    }).is_ok(),
+    "queued before close",
+  )
+  renderer.destroy()
+  app.flush()
+  try testing::assert(record.inputs == 0, "cancel siblings and queued renderer work before cleanup")
+  for expected, index in ["left", "right", "group"] {
+    try testing::assert(record.closed.at(index).or("") == expected, "children unmount before parent")
+  }
+  try testing::assert(
+    other.is_active() and other_record.closed.size() == 0,
+    "independent renderer remains alive",
+  )
+  app.destroy()
+  renderer.destroy()
+  other.destroy()
+  testing::assert(
+    record.closed.size() == 3 and other_record.closed.size() == 3 and (not other_model.left.current.is_some()),
+    "runtime cleanup is automatic and idempotent",
+  )
+}
+
+test fn duplicate_keys_and_refs_across_components_preserve_existing_controls() Void!Str {
+  for duplicate_key in [true, false] {
+    let app = headless::new(20, 3)
+    defer app.destroy()
+    let record = log()
+    let model = rows()
+    let renderer = d::mount(
+      app.context,
+      app.root,
+      d::child(
+        root,
+        Draw{log: record, render: fn() d::View {
+          collection(model, record)
+        }},
+      ),
+    )
+    app.flush()
+    let original = model.left.current.expect("original")
+    mut expected = "InputRef"
+    if duplicate_key {
+      model.order = ["left", "left"]
+      expected = "duplicate view key"
+    } else {
+      model.right = model.left
+    }
+    renderer.invalidate()
+    let failed = unsafe {
+      app.flush()
+    }
+    match failed {
+      ok(_) => try testing::fail("ambiguous descriptions must panic"),
+      err(message) => try testing::assert(message.contains(expected), message),
+    }
+    try testing::assert(
+      not original.node_ref.is_destroyed() and model.left.current.expect("ref").node_ref.id == original.node_ref.id,
+      "prepare before changing controls or refs",
+    )
+  }
+  Result::ok(())
+}
+
+test fn normalized_and_rejected_controlled_values_preserve_selection_without_feedback() Void!Str {
+  let app = headless::new(20, 1)
+  defer app.destroy()
+  let ref = d::input_ref()
+  let renderer = d::mount(app.context, app.root, d::input("a\tb\r\n", ref: ref))
+  let field = ref.current.expect("field")
+  let _ = field.focus()
+  app.key(key("end"))
+  app.key(key("left", shift: true))
+  app.key(key("left", shift: true))
+  renderer.invalidate()
+  app.flush()
+  try testing::assert(
+    field.selected_text() == " b",
+    "unchanged normalized value does not reset selection",
+  )
+  app.key(key("x", text: "X"))
+  app.flush()
+  try testing::assert(
+    field.value() == "a    b",
+    "absent handler rejects controlled edit and restores normalized value",
+  )
+  renderer.destroy()
+  testing::assert(not ref.current.is_some(), "primitive roots clean up too")
+}
+
+test fn unkeyed_state_follows_position_and_ref_reassignment_does_not_remount() Void!Str {
+  let app = headless::new(20, 3)
+  defer app.destroy()
+  let record = log()
+  let model = rows()
+  let renderer = d::mount(
+    app.context,
+    app.root,
+    d::child(
+      root,
+      Draw{log: record, render: fn() d::View {
+        collection(model, record, keyed: false)
+      }},
+    ),
+  )
+  app.flush()
+  let left = model.left.current.expect("left")
+  let right = model.right.current.expect("right")
+  renderer.update(fn() {
+    model.order = ["right", "left"]
+  })
+  app.flush()
+  try testing::assert(
+    model.right.current.expect("first position").node_ref.id == left.node_ref.id and model.right.current.expect("value").value() == "left",
+    "unkeyed identity follows position, not data",
+  )
+  try testing::assert(
+    model.left.current.expect("second position").node_ref.id == right.node_ref.id,
+    "swapped refs are assigned after clearing all previous refs",
+  )
+  let old_ref = model.left
+  model.left = d::input_ref()
+  renderer.invalidate()
+  app.flush()
+  testing::assert(
+    not old_ref.current.is_some() and model.left.current.expect("new ref").node_ref.id == right.node_ref.id and record.created == 2,
+    "ref replacement is not component replacement",
+  )
+}
+
+struct Other {
+  props: mut RowProps,
+}
+
+private fn other(props: mut RowProps) mut Other {
+  (mut Other{props: props})
+}
+
+impl d::Component for Other {
+  fn mut render() d::View {
+    d::input("other", ref: self.props.ref)
+  }
+}
+
+test fn same_key_different_component_type_replaces_even_when_output_control_kind_matches() Void!Str {
+  let app = headless::new(20, 1)
+  defer app.destroy()
+  let record = log()
+  let model = rows()
+  let renderer = d::mount(
+    app.context,
+    app.root,
+    d::child(
+      root,
+      Draw{
+        log: record,
+        render: fn() d::View {
+          let props = RowProps{
+            name: "left",
+            label: "",
+            log: record,
+            ref: model.left,
+            changed: fn(value: Str) {},
+          }
+          if model.label == "other" {
+            d::child(other, props, key: "same")
+          } else {
+            d::child(row, props, key: "same")
+          }
+        },
+      },
+    ),
+  )
+  app.flush()
+  let before = model.left.current.expect("row")
+  renderer.update(fn() {
+    model.label = "other"
+  })
+  app.flush()
+  let after = model.left.current.expect("other")
+  try testing::assert(
+    before.node_ref.is_destroyed() and after.node_ref.id != before.node_ref.id and after.value() == "other",
+    "type change replaces instance and descendant controls",
+  )
+  renderer.destroy()
+  testing::assert(
+    record.closed.size() == 1 and not model.left.current.is_some(),
+    "optional Lifecycle and exact teardown",
+  )
+}
+
+test fn input_refs_cannot_be_stolen_by_another_renderer() Void!Str {
+  let app = headless::new(20, 2)
+  defer app.destroy()
+  let ref = d::input_ref()
+  let renderer = d::mount(app.context, app.root, d::input("original", ref: ref))
+  let original = ref.current.expect("original")
+  let failed = unsafe {
+    d::mount(app.context, app.root, d::input("stolen", ref: ref))
+  }
+  match failed {
+    ok(_) => try testing::fail("cross-renderer ref reuse must reject"),
+    err(message) => try testing::assert(message.contains("outside this renderer"), message),
+  }
+  try testing::assert(
+    ref.current.expect("preserved").node_ref.id == original.node_ref.id and original.value() == "original",
+    "reject before changing original ref or control",
+  )
+  renderer.destroy()
+  testing::assert(not ref.current.is_some(), "original renderer still owns cleanup")
+}

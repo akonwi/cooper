@@ -1,0 +1,26 @@
+use cooper/core/runtime as scopes
+use cooper/event
+
+// Capture this value before starting a worker. Only dispatched callbacks may
+// access mutable component state. Cancellation is signaled before unmounting.
+struct Context {
+  dispatch: fn(fn()) Void!event::DispatchError,
+  cancellation: Receiver<Void>,
+}
+
+fn internal_new(
+  base: fn(fn()) Void!event::DispatchError,
+  scope: mut scopes::MountScope,
+  invalidate: fn(),
+) Context {
+  let deliver = scopes::scoped_dispatch(base, scope)
+  Context{
+    dispatch: fn(work: fn()) Void!event::DispatchError {
+      deliver(fn() {
+        work()
+        invalidate()
+      })
+    },
+    cancellation: scope.cancellation(),
+  }
+}

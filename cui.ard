@@ -1,0 +1,49 @@
+use ard/unsafe
+
+use cooper/cui/context
+use cooper/cui/renderer
+use cooper/cui/view
+
+type Component = view::Component
+type Lifecycle = view::Lifecycle
+type Renderer = renderer::Renderer
+type View = view::View
+type InputRef = view::InputRef
+type BoxRef = view::BoxRef
+type ScrollBoxRef = view::ScrollBoxRef
+type Context = context::Context
+
+let mount = renderer::mount
+let input_ref = view::input_ref
+let box_ref = view::box_ref
+let scroll_box_ref = view::scroll_box_ref
+let box = view::box
+let scroll_box = view::scroll_box
+let text = view::text
+let input = view::input
+
+// Both types are inferred from the ordinary constructor and props value.
+fn child(create: fn(mut $P) mut $C, props: $P, key: Str?) View {
+  view::child(
+    view::Specification{
+      props: props,
+      matches: fn(instance: Any, previous_props: Any) Bool {
+        unsafe::cast<mut $C>(instance).is_some() and unsafe::cast<$P>(previous_props).is_some()
+      },
+      create: fn() mut view::Instance {
+        mut current = props
+        let concrete = create(mut current)
+        let component = unsafe::cast<mut Component>(concrete).expect("child must implement Component")
+        (mut view::Instance{
+          concrete: concrete,
+          component: component,
+          receive: fn(next: Any) {
+            current = unsafe::cast<$P>(next).expect("matching component props")
+          },
+          mounted: false,
+        })
+      },
+    },
+    key,
+  )
+}

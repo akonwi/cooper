@@ -79,6 +79,8 @@ jobs:
             examples/test_lifecycle.py \
             examples/test_explorer.py \
             examples/test_interaction.py \
+            examples/test_declarative_jobs.py \
+            examples/test_cui_tinear.py \
             benchmarks/run.py
 
       - name: Test terminal examples
@@ -107,6 +109,8 @@ jobs:
           python3 test_lifecycle.py
           python3 test_explorer.py
           python3 test_interaction.py
+          python3 test_declarative_jobs.py
+          python3 test_cui_tinear.py
 
       - name: Smoke-test benchmarks
         if: runner.os == 'Linux'

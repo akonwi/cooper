@@ -1,0 +1,244 @@
+use ard/async
+use ard/testing
+
+use cooper/cui
+use cooper/testing as headless
+use cooper/ui
+
+struct Model {
+  visible: Bool,
+  hidden: Bool,
+  mounts: Int,
+  calls: Int,
+  renders: Int,
+  context: cui::Context?,
+  cleanup_cancelled: Bool,
+}
+struct Props {
+  model: mut Model,
+}
+struct Worker {
+  model: mut Model,
+}
+private fn worker(props: mut Props) mut Worker {
+  (mut Worker{model: props.model})
+}
+impl cui::Component for Worker {
+  fn mut render() cui::View {
+    self.model.renders =+ 1
+    cui::text("completed: {self.model.calls}")
+  }
+}
+impl cui::Lifecycle for Worker {
+  fn mut mounted(ctx: cui::Context) {
+    self.model.mounts =+ 1
+    self.model.context = Maybe::new(ctx)
+  }
+
+  fn mut unmounting(ctx: cui::Context) {
+    self.model.cleanup_cancelled = select {
+      ctx.cancellation.recv() => true,
+      _ => false,
+    }
+    let _ = ctx.dispatch(fn() {
+      self.model.calls =+ 1000
+    })
+  }
+}
+struct Screen {
+  model: mut Model,
+}
+private fn screen(props: mut Props) mut Screen {
+  (mut Screen{model: props.model})
+}
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    if self.model.visible {
+      mut display = ui::Display::flex
+      if self.model.hidden {
+        display = ui::Display::none
+      }
+      cui::box(
+        [cui::child(worker, Props{model: self.model}, key: "worker")],
+        styles: ui::style(display: display),
+      )
+    } else {
+      cui::text("removed")
+    }
+  }
+}
+private fn model() mut Model {
+  (mut Model{
+    visible: true,
+    hidden: false,
+    mounts: 0,
+    calls: 0,
+    renders: 0,
+    context: Maybe::new<cui::Context>(),
+    cleanup_cancelled: false,
+  })
+}
+
+test fn background_dispatch_queues_state_changes_and_coalesces_rendering() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: data}))
+  defer renderer.destroy()
+  app.flush()
+  let before = data.renders
+  let dispatch = data.context.expect("mounted").dispatch
+  let done = Chan::new<Bool>()
+  async::start(fn() {
+    let first = dispatch(fn() {
+      data.calls =+ 1
+    })
+    let second = dispatch(fn() {
+      data.calls =+ 10
+    })
+    done.send(first.is_ok() and second.is_ok())
+  })
+  try testing::assert(done.recv().or(false), "background posts accepted")
+  try testing::assert(data.calls == 0, "worker cannot mutate until UI dispatch drains")
+  app.flush()
+  testing::assert(
+    data.calls == 11 and data.renders == before + 1,
+    "ordered updates coalesce into one render",
+  )
+}
+
+test fn unmount_drops_already_queued_work_and_old_context_never_revives() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: data}))
+  defer renderer.destroy()
+  app.flush()
+  let old = data.context.expect("first mount")
+  renderer.update(fn() {
+    data.visible = false
+  })
+  try testing::assert(
+    old.dispatch(fn() {
+      data.calls =+ 100
+    }).is_ok(),
+    "accepted before unmount commits",
+  )
+  app.flush()
+  try testing::assert(
+    data.calls == 0 and data.cleanup_cancelled,
+    "queued work suppressed and cancellation precedes cleanup",
+  )
+  try testing::assert(
+    old.dispatch(fn() {
+      data.calls =+ 100
+    }).is_err(),
+    "retired dispatch rejects new work",
+  )
+  renderer.update(fn() {
+    data.visible = true
+  })
+  app.flush()
+  let fresh = data.context.expect("new mount")
+  try testing::assert(
+    old.dispatch(fn() {
+      data.calls =+ 100
+    }).is_err(),
+    "old context stays retired",
+  )
+  try testing::assert(
+    fresh.dispatch(fn() {
+      data.calls =+ 1
+    }).is_ok(),
+    "new context accepts work",
+  )
+  app.flush()
+  testing::assert(data.calls == 1, "only new incarnation updates")
+}
+
+test fn mount_cancellation_isolated_between_renderers_and_closed_on_runtime_teardown() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let first = model()
+  let second = model()
+  let one = cui::mount(app.context, app.root, cui::child(screen, Props{model: first}))
+  let two = cui::mount(app.context, app.root, cui::child(screen, Props{model: second}))
+  app.flush()
+  let ctx = first.context.expect("first")
+  let other = second.context.expect("second")
+  let _ = ctx.dispatch(fn() {
+    first.calls =+ 1
+  })
+  one.destroy()
+  let _ = other.dispatch(fn() {
+    second.calls =+ 10
+  })
+  app.flush()
+  try testing::assert(
+    first.calls == 0 and second.calls == 10,
+    "destroy suppresses queued work only for its own renderer",
+  )
+  let _ = other.dispatch(fn() {
+    second.calls =+ 100
+  })
+  app.destroy()
+  one.destroy()
+  two.destroy()
+  let cancelled = select {
+    other.cancellation.recv() => true,
+    _ => false,
+  }
+  try testing::assert(cancelled and second.cleanup_cancelled, "runtime cancellation precedes cleanup")
+  testing::assert(
+    other.dispatch(fn() {
+      second.calls =+ 1000
+    }).is_err() and second.calls == 10,
+    "runtime shutdown rejects updates",
+  )
+}
+
+test fn hidden_page_retains_context_until_removed() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: data}))
+  defer renderer.destroy()
+  app.flush()
+  let original = data.context.expect("mounted")
+  renderer.update(fn() {
+    data.hidden = true
+  })
+  app.flush()
+  try testing::assert(data.mounts == 1 and not data.cleanup_cancelled, "hidden is not unmounted")
+  try testing::assert(
+    original.dispatch(fn() {
+      data.calls = 17
+    }).is_ok(),
+    "hidden page accepts work",
+  )
+  app.flush()
+  try testing::assert(data.calls == 17, "completion delivered while hidden")
+  renderer.update(fn() {
+    data.hidden = false
+  })
+  app.flush()
+  try testing::assert(data.mounts == 1 and data.calls == 17, "showing retains state and lifetime")
+  renderer.update(fn() {
+    data.hidden = true
+    data.visible = false
+  })
+  app.flush()
+  try testing::assert(
+    data.cleanup_cancelled and original.dispatch(fn() {}).is_err(),
+    "closing a hidden page cancels it",
+  )
+  renderer.update(fn() {
+    data.visible = true
+    data.hidden = false
+  })
+  app.flush()
+  testing::assert(
+    data.mounts == 2 and original.dispatch(fn() {}).is_err(),
+    "reopening cannot revive old callbacks",
+  )
+}

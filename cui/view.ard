@@ -1,0 +1,202 @@
+use ard/unsafe
+
+use cooper/cui/context
+use cooper/event
+use cooper/ui
+
+// CUI components retain their state across matching view descriptions.
+trait Component {
+  fn mut render() View
+}
+
+trait Lifecycle {
+  fn mut mounted(ctx: context::Context)
+
+  fn mut unmounting(ctx: context::Context)
+}
+
+struct Instance {
+  concrete: Any,
+  component: mut Component,
+  receive: fn(Any),
+  mounted: Bool,
+}
+
+struct Specification {
+  props: Any,
+  matches: fn(Any, Any) Bool,
+  create: fn() mut Instance,
+}
+
+enum Kind {
+  box,
+  scroll,
+  text,
+  input,
+  component,
+}
+
+// A ref does not own its control. It is cleared when the view is removed.
+struct InputRef {
+  current: (mut ui::Input)?,
+}
+
+fn input_ref() mut InputRef {
+  (mut InputRef{current: Maybe::new<mut ui::Input>()})
+}
+
+struct BoxRef {
+  current: (mut ui::Box)?,
+}
+
+fn box_ref() mut BoxRef {
+  (mut BoxRef{current: Maybe::new<mut ui::Box>()})
+}
+
+struct ScrollBoxRef {
+  current: (mut ui::ScrollBox)?,
+}
+
+fn scroll_box_ref() mut ScrollBoxRef {
+  (mut ScrollBoxRef{current: Maybe::new<mut ui::ScrollBox>()})
+}
+
+struct View {
+  internal: Any,
+}
+
+// Keep recursive descriptions behind an opaque value: generic callback
+// substitution in Ard 0.42 cannot traverse a directly recursive View safely.
+struct Description {
+  kind: Kind,
+  key: Str?,
+  styles: ui::Style,
+  children: [View],
+  content: ui::TextContent,
+  text_style: ui::TextStyle,
+  wrap: ui::TextWrap,
+  overflow: ui::TextOverflow,
+  title: Str,
+  value: Str,
+  placeholder: Str,
+  focused: Bool?,
+  on_input: fn(Str, context::Context)?,
+  on_submit: fn(Str, context::Context)?,
+  on_key: fn(mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(mut event::MouseEvent, context::Context)?,
+  input_ref: (mut InputRef)?,
+  box_ref: (mut BoxRef)?,
+  scroll_ref: (mut ScrollBoxRef)?,
+  component: Specification?,
+}
+
+fn describe(value: View) Description {
+  unsafe::cast<Description>(value.internal).expect("View must be created by a constructor")
+}
+
+private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
+  Description{
+    kind: kind,
+    key: key,
+    styles: styles.or(ui::style()),
+    children: [],
+    content: "",
+    text_style: ui::text_style(),
+    wrap: ui::TextWrap::word,
+    overflow: ui::TextOverflow::clip,
+    title: "",
+    value: "",
+    placeholder: "",
+    focused: Maybe::new<Bool>(),
+    on_input: Maybe::new<fn(Str, context::Context)>(),
+    on_submit: Maybe::new<fn(Str, context::Context)>(),
+    on_key: Maybe::new<fn(mut event::KeyEvent, context::Context)>(),
+    on_mouse: Maybe::new<fn(mut event::MouseEvent, context::Context)>(),
+    input_ref: Maybe::new<mut InputRef>(),
+    box_ref: Maybe::new<mut BoxRef>(),
+    scroll_ref: Maybe::new<mut ScrollBoxRef>(),
+    component: Maybe::new<Specification>(),
+  }
+}
+
+fn text(
+  content: ui::TextContent,
+  key: Str?,
+  styles: ui::Style?,
+  text_style: ui::TextStyle?,
+  wrap: ui::TextWrap?,
+  overflow: ui::TextOverflow?,
+) View {
+  let result = mut base(Kind::text, key, styles)
+  result.content = content
+  result.text_style = text_style.or(ui::text_style())
+  result.wrap = wrap.or(ui::TextWrap::word)
+  result.overflow = overflow.or(ui::TextOverflow::clip)
+  View{internal: result.@}
+}
+
+fn box(
+  children: [View],
+  key: Str?,
+  styles: ui::Style?,
+  title: Str?,
+  focused: Bool?,
+  on_key: fn(mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(mut event::MouseEvent, context::Context)?,
+  ref: (mut BoxRef)?,
+) View {
+  let result = mut base(Kind::box, key, styles)
+  result.children = children
+  result.title = title.or("")
+  result.focused = focused
+  result.on_key = on_key
+  result.on_mouse = on_mouse
+  result.box_ref = ref
+  View{internal: result.@}
+}
+
+fn scroll_box(
+  children: [View],
+  key: Str?,
+  styles: ui::Style?,
+  on_key: fn(mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(mut event::MouseEvent, context::Context)?,
+  ref: (mut ScrollBoxRef)?,
+) View {
+  let result = mut base(Kind::scroll, key, styles)
+  result.children = children
+  result.on_key = on_key
+  result.on_mouse = on_mouse
+  result.scroll_ref = ref
+  View{internal: result.@}
+}
+
+fn input(
+  value: Str,
+  key: Str?,
+  styles: ui::Style?,
+  placeholder: Str?,
+  focused: Bool?,
+  on_input: fn(Str, context::Context)?,
+  on_submit: fn(Str, context::Context)?,
+  on_key: fn(mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(mut event::MouseEvent, context::Context)?,
+  ref: (mut InputRef)?,
+) View {
+  let result = mut base(Kind::input, key, styles)
+  result.value = value
+  result.placeholder = placeholder.or("")
+  result.focused = focused
+  result.on_input = on_input
+  result.on_submit = on_submit
+  result.on_key = on_key
+  result.on_mouse = on_mouse
+  result.input_ref = ref
+  View{internal: result.@}
+}
+
+fn child(specification: Specification, key: Str?) View {
+  let result = mut base(Kind::component, key, Maybe::new(ui::style(display: ui::Display::contents)))
+  result.component = Maybe::new(specification)
+  View{internal: result.@}
+}

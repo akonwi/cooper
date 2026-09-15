@@ -2,6 +2,13 @@
 
 Design decisions for Cooper's Ard-native retained-mode framework.
 
+## Experimental declarative framework
+
+- [Framework guide](./declarative.md) — persistent components, typed child inputs,
+  automatic nested ownership, lifecycle, reconciliation, and updates.
+- [ADR 0022](./adrs/0022-define-declarative-components.md) — proposed declarative
+  component API.
+
 ## Benchmarks and implementation history
 
 - [Benchmark guide](../benchmarks/README.md) — current runners, reproduction,
@@ -90,6 +97,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0019](./adrs/0019-define-display-contents.md) | Accepted | Define display contents for retained nodes |
 | [0020](./adrs/0020-define-layout-cell-rounding.md) | Accepted | Define layout cell rounding |
 | [0021](./adrs/0021-define-spring-animations.md) | Accepted | Define spring animations |
+| [0022](./adrs/0022-define-declarative-components.md) | Proposed | Define declarative components |
 
 ### Add an ADR
 

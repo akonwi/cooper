@@ -22,6 +22,70 @@ ard run quickstart.ard
 
 Use Left and Right to change the counter, or press Q to quit.
 
+## Declarative jobs
+
+`declarative_jobs.ard` exercises the experimental `cooper/cui` framework
+and requires Ard v0.42.0. Row factories receive ordinary typed props; persistent
+components own editable notes and expandable details, while keyed reordering
+preserves their component state, editor state, and focus.
+
+```sh
+ard run declarative_jobs.ard
+python3 test_declarative_jobs.py
+```
+
+Type a note in Alpha, press F2 to expand details, F3 to reorder, and F4 to
+remove/reinsert Beta. Press Ctrl+C to quit. See the
+[framework guide](../docs/declarative.md) for identity and lifecycle contracts.
+
+## CUI Tinear
+
+`cui_tinear.ard` is a static-data adaptation of [tinear](https://github.com/akonwi/tinear).
+It uses keyed issue cards, component-owned detail state, and declarative focus.
+The Inbox uses a ScrollBoxRef for preview scrolling without changing focus.
+Run `ard run cui_tinear.ard` or `python3 test_cui_tinear.py` here.
+
+Use j/k or arrows for cards, h/l for columns, Enter to open/reuse an issue tab,
+d/c for Description/Comments, and Escape to close the active issue tab.
+Tab/Shift+Tab cycle through Inbox, My Issues, and open issue tabs; `1` opens Inbox
+and `2` returns to My Issues.
+Click tab labels to switch or their × to close. Closing an inactive tab leaves
+the current page alone. Footer hints follow the active page.
+
+`/` focuses the case-sensitive local
+title/identifier filter; Enter accepts it, then Enter opens the selected result.
+Escape clears the filter. Ctrl+C quits. A 126-column terminal shows all three
+columns. Horizontal navigation preserves the row, clamps in shorter columns,
+and skips empty columns. Selection scrolls fully into view on both axes; cards
+can also be hovered and clicked to open. Column headings show result counts.
+Open tabs retain their own section and loading/error state while hidden. Switching
+does not cancel work; closing does. Reopening a closed tab starts fresh. The board
+retains its filter and selection across tab switches.
+This is not a full clone: document search, issue editing, drag/drop, and session
+restoration across process restarts are not implemented.
+
+`?` opens global issue search from any page. Type a case-sensitive title or ID,
+use ↑/↓ to select, and Enter or a click to open/reuse its issue tab. Escape
+closes the dialog and restores the previous page's focus. Search debounces for
+300ms with simulated async work; changing the query clears old results, and
+closing the dialog cancels pending work. The dialog blocks background clicks
+and tab navigation. Global search is independent of the board's local filter.
+
+Inbox has three static notifications in a 35% list / preview split. Use j/k or
+arrows to select, Enter to open the selected issue, Backspace to archive locally,
+and r to simulate refresh (archived notices stay archived). Click a row to select
+it. h/l scroll the preview one row, Space/Shift+Space page by ten rows. Preview
+loads are simulated, cached, and ignore stale responses. Selection resets preview
+scrolling; switching tabs preserves the Inbox. Empty Inbox remains navigable.
+
+Detail loading is simulated with a 650ms delay. Press r to reload/retry, f to
+simulate a failed request, or Escape while loading to exercise automatic
+component cancellation. On the board, r simulates a 700ms refresh while leaving
+the static issue data unchanged. Repeated refreshes are single-flight; detail
+reloads ignore superseded responses using a request counter. Components use
+ordinary `async::start` workers, select on mount cancellation, and deliver state
+changes through `ctx.dispatch`. No networking is involved.
+
 ## Animation
 
 `animation.ard` moves one retained Text control through a Runtime-owned typed

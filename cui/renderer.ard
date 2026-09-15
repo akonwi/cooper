@@ -1,0 +1,763 @@
+use ard/unsafe
+
+use cooper/core/node
+use cooper/core/runtime as scopes
+use cooper/cui/context
+use cooper/cui/view
+use cooper/event
+use cooper/root
+use cooper/runtime
+use cooper/ui
+
+private struct Mounted {
+  description: view::Description,
+  control: mut node::Renderable,
+  children: [mut Mounted],
+  parent: (mut Mounted)?,
+  instance: (mut view::Instance)?,
+  context: context::Context,
+  scope: (mut scopes::MountScope)?,
+  active: Bool,
+  applying: Bool,
+  requested_value: Str,
+  effective_value: Str,
+  remove_key: fn(),
+  remove_mouse: fn(),
+}
+
+private struct Prepared {
+  description: view::Description,
+  previous: (mut Mounted)?,
+  instance: (mut view::Instance)?,
+  children: [Prepared],
+}
+
+private struct State {
+  runtime: mut runtime::Runtime,
+  scope: mut scopes::MountScope,
+  view: view::View,
+  container: mut ui::Box,
+  children: [mut Mounted],
+  active: Bool,
+  pending: Bool,
+  committing: Bool,
+}
+
+struct Renderer {
+  internal: Any,
+}
+
+private fn state(renderer: Renderer) mut State {
+  unsafe::cast<mut State>(renderer.internal).expect("Renderer must be created by mount")
+}
+
+private fn box(control: mut node::Renderable) mut ui::Box {
+  unsafe::cast<mut ui::Box>(control).expect("box control")
+}
+
+private fn input(control: mut node::Renderable) mut ui::Input {
+  unsafe::cast<mut ui::Input>(control).expect("input control")
+}
+
+private fn scroll(control: mut node::Renderable) mut ui::ScrollBox {
+  unsafe::cast<mut ui::ScrollBox>(control).expect("scroll control")
+}
+
+private fn live(mounted: mut Mounted) Bool {
+  mounted.active
+}
+
+private fn same_identity(previous: mut Mounted, next: view::Description) Bool {
+  mut same = previous.description.kind == next.kind and previous.description.key == next.key
+  match next.component {
+    specification => {
+      match previous.instance {
+        instance => {
+          same = same and specification.matches(instance.concrete, previous.description.component.expect("component").props)
+        },
+        _ => { same = false },
+      }
+    },
+    _ => (),
+  }
+  same
+}
+
+private fn validate(children: [view::View], refs: mut [mut view::InputRef]) {
+  for child_view, index in children {
+    let child = view::describe(child_view)
+    match child.key {
+      key => {
+        for other_view, other_index in children {
+          let other = view::describe(other_view)
+          if index != other_index and other.key == Maybe::new(key) {
+            panic("duplicate view key: " + key)
+          }
+        }
+      },
+      _ => (),
+    }
+    if (child.kind == view::Kind::text or child.kind == view::Kind::input) and child.children.size() != 0 {
+      panic("leaf view cannot have children")
+    }
+    match child.input_ref {
+      ref => {
+        for previous in refs {
+          if previous == ref {
+            panic("InputRef cannot be used by two views")
+          }
+        }
+        refs.push(ref)
+      },
+      _ => (),
+    }
+    validate(child.children, refs)
+  }
+}
+
+private fn prepare(
+  previous: [mut Mounted],
+  descriptions: [view::View],
+  refs: mut [mut view::InputRef],
+) [Prepared] {
+  // Validate literal descendants before running any child constructor.
+  let literal_refs = mut List::new<mut view::InputRef>()
+  validate(descriptions, literal_refs)
+  let result = mut List::new<Prepared>()
+  for value, index in descriptions {
+    let description = view::describe(value)
+    match description.input_ref {
+      ref => {
+        for existing in refs {
+          if existing == ref {
+            panic("InputRef cannot be used by two views")
+          }
+        }
+        refs.push(ref)
+      },
+      _ => (),
+    }
+    mut found = Maybe::new<mut Mounted>()
+    for old, old_index in previous {
+      if old.active and same_identity(old, description) and (description.key.is_some() or old_index == index) {
+        found = Maybe::new(old)
+        break
+      }
+    }
+    mut children = List::new<mut Mounted>()
+    mut instance = Maybe::new<mut view::Instance>()
+    match found {
+      old => {
+        children = old.children
+        instance = old.instance
+      },
+      _ => (),
+    }
+    mut child_views = description.children
+    match description.component {
+      specification => {
+        let component = match instance {
+          existing => {
+            existing.receive(specification.props)
+            existing
+          },
+          _ => specification.create(),
+        }
+        instance = Maybe::new(component)
+        child_views = [component.component.render()]
+      },
+      _ => (),
+    }
+    result.push(
+      Prepared{
+        description: description,
+        previous: found,
+        instance: instance,
+        children: prepare(children, child_views, refs),
+      },
+    )
+  }
+  result.@
+}
+
+private fn retired(previous: [mut Mounted], prepared: [Prepared], removed: mut [mut Mounted]) {
+  for old in previous {
+    mut retained = false
+    for next in prepared {
+      match next.previous {
+        current => {
+          if current == old {
+            retained = true
+            retired(old.children, next.children, removed)
+          }
+        },
+        _ => (),
+      }
+    }
+    if not retained {
+      removed.push(old)
+    }
+  }
+}
+
+private fn cancel(mounted: mut Mounted) {
+  mounted.active = false
+  match mounted.scope {
+    scope => scope.stop(),
+    _ => (),
+  }
+  for child in mounted.children {
+    cancel(child)
+  }
+}
+
+private fn clear_ref(mounted: mut Mounted) {
+  match mounted.description.scroll_ref {
+    ref => {
+      match ref.current {
+        current => {
+          if current.node_ref.id == mounted.control.node().id {
+            ref.current = Maybe::new<mut ui::ScrollBox>()
+          }
+        },
+        _ => (),
+      }
+    },
+    _ => (),
+  }
+  match mounted.description.box_ref {
+    ref => {
+      match ref.current {
+        current => {
+          if current.node_ref.id == mounted.control.node().id {
+            ref.current = Maybe::new<mut ui::Box>()
+          }
+        },
+        _ => (),
+      }
+    },
+    _ => (),
+  }
+  match mounted.description.input_ref {
+    ref => {
+      match ref.current {
+        current => {
+          if current.node_ref.id == mounted.control.node().id {
+            ref.current = Maybe::new<mut ui::Input>()
+          }
+        },
+        _ => (),
+      }
+    },
+    _ => (),
+  }
+}
+
+private fn dispose(mounted: mut Mounted) {
+  mounted.active = false
+  clear_ref(mounted)
+  for child in mounted.children {
+    dispose(child)
+  }
+  mounted.children = []
+  mounted.parent = Maybe::new<mut Mounted>()
+  if not mounted.control.node().is_destroyed() {
+    match mounted.description.kind {
+      view::Kind::scroll => scroll(mounted.control).destroy(),
+      _ => mounted.control.node().destroy(),
+    }
+  }
+  match mounted.instance {
+    instance => {
+      if instance.mounted {
+        instance.mounted = false
+        match unsafe::cast<mut view::Lifecycle>(instance.component) {
+          lifecycle => lifecycle.unmounting(mounted.context),
+          _ => (),
+        }
+      }
+    },
+    _ => (),
+  }
+}
+
+private fn clear_refs(children: [mut Mounted]) {
+  for child in children {
+    clear_ref(child)
+    clear_refs(child.children)
+  }
+}
+
+private fn owns(children: [mut Mounted], target: mut node::Node) Bool {
+  mut found = false
+  for child in children {
+    if child.control.node() == target or owns(child.children, target) {
+      found = true
+    }
+  }
+  found
+}
+
+private fn validate_box_refs(
+  prepared: [Prepared],
+  refs: mut [mut view::BoxRef],
+  previous: [mut Mounted],
+) {
+  for plan in prepared {
+    match plan.description.box_ref {
+      ref => {
+        for existing in refs {
+          if existing == ref {
+            panic("BoxRef cannot be used by two views")
+          }
+        }
+        refs.push(ref)
+        match ref.current {
+          control => {
+            if not owns(previous, control.node_ref) {
+              panic("BoxRef is already mounted outside this renderer")
+            }
+          },
+          _ => (),
+        }
+      },
+      _ => (),
+    }
+    validate_box_refs(plan.children, refs, previous)
+  }
+}
+
+private fn validate_scroll_refs(
+  prepared: [Prepared],
+  refs: mut [mut view::ScrollBoxRef],
+  previous: [mut Mounted],
+) {
+  for plan in prepared {
+    match plan.description.scroll_ref {
+      ref => {
+        for existing in refs {
+          if existing == ref {
+            panic("ScrollBoxRef cannot be used by two views")
+          }
+        }
+        refs.push(ref)
+        match ref.current {
+          control => {
+            if not owns(previous, control.node_ref) {
+              panic("ScrollBoxRef is already mounted outside this renderer")
+            }
+          },
+          _ => (),
+        }
+      },
+      _ => (),
+    }
+    validate_scroll_refs(plan.children, refs, previous)
+  }
+}
+
+fn mount(runtime: mut runtime::Runtime, root: mut root::Root, view: view::View) Renderer {
+  let container = ui::box(runtime, styles: ui::style(display: ui::Display::contents))
+  let renderer = mut State{
+    runtime: runtime,
+    scope: scopes::new_mount_scope(),
+    view: view,
+    container: container,
+    children: [],
+    active: true,
+    pending: false,
+    committing: false,
+  }
+  container.node_ref.on_cleanup(fn() {
+    renderer.close()
+  })
+  root.add(container)
+  renderer.refresh()
+  // App construction may precede Runtime startup; apply focus again once its
+  // dispatch queue is running and the Root can accept focus requests.
+  let _ = runtime.dispatch(fn() {
+    if renderer.active {
+      renderer.apply_focus(renderer.children)
+    }
+  })
+  Renderer{internal: renderer}
+}
+
+impl State {
+  fn is_active() Bool {
+    self.active
+  }
+
+  // UI-thread API. Component event callbacks call this automatically.
+  fn mut invalidate() {
+    if self.active and not self.pending {
+      self.pending = true
+      match self.runtime.dispatch(fn() {
+        self.pending = false
+        if self.active {
+          self.refresh()
+        }
+      }) {
+        ok => (),
+        err => { self.pending = false },
+      }
+    }
+  }
+
+  fn mut update(work: fn()) {
+    if self.active {
+      work()
+      self.invalidate()
+    }
+  }
+
+  // Background-safe entry point: all model/renderer access occurs in dispatch.
+  fn mut dispatch(work: fn()) Void!event::DispatchError {
+    self.runtime.dispatch(fn() {
+      if self.active {
+        work()
+        self.invalidate()
+      }
+    })
+  }
+
+  private fn mut context(scope: mut scopes::MountScope) context::Context {
+    context::internal_new(
+      fn(work: fn()) Void!event::DispatchError {
+        self.runtime.dispatch(work)
+      },
+      scope,
+      fn() {
+        self.invalidate()
+      },
+    )
+  }
+
+  private fn mut create(
+    description: view::Description,
+    instance: (mut view::Instance)?,
+    inherited: context::Context,
+  ) mut Mounted {
+    mut scope = Maybe::new<mut scopes::MountScope>()
+    mut ctx = inherited
+    if instance.is_some() {
+      let owned = scopes::new_mount_scope()
+      scope = Maybe::new(owned)
+      ctx = self.context(owned)
+    }
+    let control: mut node::Renderable = match description.kind {
+      view::Kind::text => ui::text(self.runtime, content: description.content),
+      view::Kind::input => ui::input(self.runtime, value: description.value),
+      view::Kind::scroll => ui::scroll_box(self.runtime),
+      _ => ui::box(self.runtime),
+    }
+    mut effective_value = ""
+    if description.kind == view::Kind::input {
+      effective_value = input(control).value()
+    }
+    let mounted = mut Mounted{
+      description: description,
+      control: control,
+      children: [],
+      parent: Maybe::new<mut Mounted>(),
+      instance: instance,
+      context: ctx,
+      scope: scope,
+      active: true,
+      applying: false,
+      requested_value: description.value,
+      effective_value: effective_value,
+      remove_key: fn() {},
+      remove_mouse: fn() {},
+    }
+    if description.kind == view::Kind::input {
+      let field = input(control)
+      let _ = field.on_input(fn(value: Str) {
+        if self.active and live(mounted) and (not mounted.applying) {
+          match mounted.description.on_input {
+            handler => handler(value, mounted.context),
+            _ => (),
+          }
+          self.invalidate()
+        }
+      })
+      let _ = field.on_submit(fn(value: Str) {
+        if self.active and live(mounted) {
+          match mounted.description.on_submit {
+            handler => {
+              handler(value, mounted.context)
+              self.invalidate()
+            },
+            _ => (),
+          }
+        }
+      })
+    }
+    mounted
+  }
+
+  private fn mut apply(mounted: mut Mounted, description: view::Description) {
+    clear_ref(mounted)
+    mounted.description = description
+    match description.kind {
+      view::Kind::text => {
+        let text = unsafe::cast<mut ui::Text>(mounted.control).expect("text control")
+        text.set_style(description.styles)
+        text.set_content(description.content)
+        text.set_text_style(description.text_style)
+        text.set_wrap(description.wrap)
+        text.set_overflow(description.overflow)
+      },
+      view::Kind::input => {
+        let field = input(mounted.control)
+        field.set_style(description.styles)
+        field.set_placeholder(description.placeholder)
+        mut needs_write = field.value() != mounted.effective_value
+        if mounted.requested_value != description.value {
+          needs_write = field.value() != description.value
+        }
+        if needs_write {
+          mounted.applying = true
+          field.set_value(description.value)
+          mounted.applying = false
+        }
+        mounted.requested_value = description.value
+        mounted.effective_value = field.value()
+        match description.input_ref {
+          ref => {
+            if ref.current.is_some() {
+              panic("InputRef is already mounted")
+            }
+            ref.current = Maybe::new(field)
+          },
+          _ => (),
+        }
+      },
+      view::Kind::scroll => {
+        let panel = scroll(mounted.control)
+        panel.set_style(description.styles)
+        match description.scroll_ref {
+          ref => { ref.current = Maybe::new(panel) },
+          _ => (),
+        }
+      },
+      _ => {
+        box(mounted.control).set_style(description.styles)
+        box(mounted.control).set_title(description.title)
+      },
+    }
+    mounted.remove_key()
+    mounted.remove_mouse()
+    mounted.remove_key = fn() {}
+    mounted.remove_mouse = fn() {}
+    mounted.remove_key = mounted.control.node().on_key(fn(key: mut event::KeyEvent) {
+      self.deliver_key(mounted, key)
+    })
+    if description.kind == view::Kind::box {
+      box(
+        mounted.control,
+      ).set_focusable(description.on_key.is_some() or description.focused.is_some())
+      match description.box_ref {
+        ref => { ref.current = Maybe::new(box(mounted.control)) },
+        _ => (),
+      }
+    }
+    match description.on_mouse {
+      handler => {
+        let receive = fn(mouse: mut event::MouseEvent) {
+          if self.active and live(mounted) {
+            handler(mouse, mounted.context)
+            self.invalidate()
+          }
+        }
+        mounted.remove_mouse = match description.kind {
+          view::Kind::input => input(mounted.control).on_mouse(receive),
+          view::Kind::scroll => scroll(mounted.control).on_mouse(receive),
+          _ => box(mounted.control).on_mouse(receive),
+        }
+      },
+      _ => (),
+    }
+  }
+
+  private fn mut deliver_key(target: mut Mounted, key: mut event::KeyEvent) {
+    mut current = Maybe::new(target)
+    while current.is_some() and self.active and live(target) and (not key.is_propagation_stopped()) {
+      let owner = current.expect("current key route owner")
+      if not live(owner) {
+        break
+      }
+      match owner.description.on_key {
+        handler => {
+          handler(key, owner.context)
+          self.invalidate()
+        },
+        _ => (),
+      }
+      current = owner.parent
+    }
+  }
+
+  private fn mut reconcile(
+    parent: mut node::Renderable,
+    parent_kind: view::Kind,
+    prepared: [Prepared],
+    inherited: context::Context,
+    owner: (mut Mounted)?,
+  ) [mut Mounted] {
+    let next = mut List::new<mut Mounted>()
+    for plan, index in prepared {
+      let description = plan.description
+      let current = match plan.previous {
+        old => old,
+        _ => self.create(description, plan.instance, inherited),
+      }
+      current.parent = owner
+      self.apply(current, description)
+      match parent_kind {
+        view::Kind::scroll => scroll(parent).add(current.control, index: index),
+        _ => box(parent).add(current.control, index: index),
+      }
+      current.children = self.reconcile(
+        current.control,
+        description.kind,
+        plan.children,
+        current.context,
+        Maybe::new(current),
+      )
+      next.push(current)
+    }
+    next.@
+  }
+
+  private fn mut mounted(children: [mut Mounted]) {
+    for child in children {
+      self.mounted(child.children)
+      match child.instance {
+        instance => {
+          if not instance.mounted {
+            instance.mounted = true
+            match unsafe::cast<mut view::Lifecycle>(instance.component) {
+              lifecycle => {
+                lifecycle.mounted(child.context)
+                self.invalidate()
+              },
+              _ => (),
+            }
+          }
+        },
+        _ => (),
+      }
+    }
+  }
+
+  private fn mut apply_focus(children: [mut Mounted]) {
+    for child in children {
+      match child.description.focused {
+        focused => {
+          if focused {
+            let _ = child.control.node().focus()
+          } else {
+            child.control.node().blur()
+          }
+        },
+        _ => (),
+      }
+      self.apply_focus(child.children)
+    }
+  }
+
+  private fn mut refresh() {
+    if self.committing {
+      panic("reentrant declarative render")
+    }
+    self.committing = true
+    defer {
+      self.committing = false
+    }
+    let refs = mut List::new<mut view::InputRef>()
+    let prepared = prepare(self.children, [self.view], refs)
+    let box_refs = mut List::new<mut view::BoxRef>()
+    validate_box_refs(prepared, box_refs, self.children)
+    let scroll_refs = mut List::new<mut view::ScrollBoxRef>()
+    validate_scroll_refs(prepared, scroll_refs, self.children)
+    for ref in refs {
+      match ref.current {
+        field => {
+          if not owns(self.children, field.node_ref) {
+            panic("InputRef is already mounted outside this renderer")
+          }
+        },
+        _ => (),
+      }
+    }
+    let removed = mut List::new<mut Mounted>()
+    retired(self.children, prepared, removed)
+    for child in removed {
+      cancel(child)
+    }
+    for child in removed {
+      dispose(child)
+    }
+    if removed.size() != 0 {
+      self.invalidate()
+    }
+    clear_refs(self.children)
+    self.children = self.reconcile(
+      self.container,
+      view::Kind::box,
+      prepared,
+      self.context(self.scope),
+      Maybe::new<mut Mounted>(),
+    )
+    self.mounted(self.children)
+    self.apply_focus(self.children)
+  }
+
+  private fn mut close() {
+    if self.active {
+      self.active = false
+      self.pending = false
+      self.scope.stop()
+      for child in self.children {
+        cancel(child)
+      }
+      for child in self.children {
+        dispose(child)
+      }
+      self.children = []
+    }
+  }
+
+  fn mut destroy() {
+    if self.committing {
+      panic("cannot destroy a renderer while rendering")
+    }
+    self.close()
+    if not self.container.node_ref.is_destroyed() {
+      self.container.destroy(recursive: true)
+    }
+  }
+}
+
+impl Renderer {
+  fn is_active() Bool {
+    state(self).is_active()
+  }
+
+  fn invalidate() {
+    state(self).invalidate()
+  }
+
+  fn update(work: fn()) {
+    state(self).update(work)
+  }
+
+  fn dispatch(work: fn()) Void!event::DispatchError {
+    state(self).dispatch(work)
+  }
+
+  fn destroy() {
+    state(self).destroy()
+  }
+}

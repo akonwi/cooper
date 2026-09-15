@@ -2,6 +2,7 @@ use cooper/animation
 use cooper/core/runtime as scopes
 use cooper/event
 use cooper/runtime
+use cooper/ui/selection
 
 // Capture this value before starting a worker. Only dispatched callbacks may
 // access mutable component state. Cancellation is signaled before unmounting.
@@ -11,6 +12,14 @@ struct Context {
   // UI-thread-only escape hatch for callbacks that change ancestor/shared state.
   // Local dispatch and animation updates otherwise refresh only this subtree.
   invalidate_root: fn(),
+  // UI-thread-only Runtime subscriptions; removal on unmount is automatic.
+  // Returned functions optionally unsubscribe early and are idempotent.
+  on_terminal_focus: fn(fn(event::TerminalFocus)) fn(),
+  on_selection_change: fn(fn(selection::Selection?)) fn(),
+  on_key: fn(fn(mut event::KeyEvent)) fn(),
+  on_paste: fn(fn(mut event::PasteEvent)) fn(),
+  terminal_focus: fn() event::TerminalFocus?,
+  current_selection: fn() selection::Selection?,
   internal_animate: fn(Int, fn(animation::Frame), animation::Easing) fn(),
 }
 
@@ -45,6 +54,76 @@ fn internal_new(
     invalidate_root: fn() {
       if not scope.is_cancelled() {
         invalidate_root()
+      }
+    },
+    on_terminal_focus: fn(handler: fn(event::TerminalFocus)) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = runtime.on_terminal_focus(fn(value: event::TerminalFocus) {
+          if subscription.active {
+            handler(value)
+            invalidate()
+          }
+        })
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
+    on_selection_change: fn(handler: fn(selection::Selection?)) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = runtime.on_selection_change(fn(value: selection::Selection?) {
+          if subscription.active {
+            handler(value)
+            invalidate()
+          }
+        })
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
+    on_key: fn(handler: fn(mut event::KeyEvent)) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = runtime.on_key(fn(value: mut event::KeyEvent) {
+          if subscription.active {
+            handler(value)
+            invalidate()
+          }
+        })
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
+    on_paste: fn(handler: fn(mut event::PasteEvent)) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = runtime.on_paste(fn(value: mut event::PasteEvent) {
+          if subscription.active {
+            handler(value)
+            invalidate()
+          }
+        })
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
+    terminal_focus: fn() event::TerminalFocus? {
+      if scope.is_cancelled() {
+        Maybe::new<event::TerminalFocus>()
+      } else {
+        runtime.terminal_focus()
+      }
+    },
+    current_selection: fn() selection::Selection? {
+      if scope.is_cancelled() {
+        Maybe::new<selection::Selection>()
+      } else {
+        runtime.current_selection()
       }
     },
     internal_animate: fn(duration: Int, update: fn(animation::Frame), ease: animation::Easing) fn() {

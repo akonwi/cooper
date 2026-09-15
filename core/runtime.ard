@@ -4,10 +4,29 @@ use go:sync
 
 private fn no_op() {}
 
+// A delivery guard is separate from Runtime's listener list: Runtime may already
+// have copied that list when another listener removes this subscription.
+struct Subscription {
+  active: Bool,
+  remove_listener: fn(),
+}
+
+impl Subscription {
+  fn mut cancel() {
+    if self.active {
+      self.active = false
+      let remove = self.remove_listener
+      self.remove_listener = no_op
+      remove()
+    }
+  }
+}
+
 struct MountScope {
   stopped: Bool,
   cancellation: Chan<Void>,
   animations: [mut animation::Timeline],
+  subscriptions: [mut Subscription],
 }
 
 fn new_mount_scope() mut MountScope {
@@ -15,10 +34,27 @@ fn new_mount_scope() mut MountScope {
     stopped: false,
     cancellation: Chan::new<Void>(),
     animations: [],
+    subscriptions: [],
   })
 }
 
 impl MountScope {
+  // Registration, delivery, and cancellation all stay on the UI thread.
+  fn mut subscription() mut Subscription {
+    let subscription = mut Subscription{active: not self.stopped, remove_listener: no_op}
+    if not self.stopped {
+      let retained = mut List::new<mut Subscription>()
+      for current in self.subscriptions {
+        if current.active {
+          retained.push(current)
+        }
+      }
+      retained.push(subscription)
+      self.subscriptions = retained.@
+    }
+    subscription
+  }
+
   // UI-thread-only, like stop and the component lifecycle.
   fn mut own_animation(timeline: mut animation::Timeline) {
     if self.stopped {
@@ -54,6 +90,10 @@ impl MountScope {
         timeline.destroy()
       }
       self.animations = []
+      for subscription in self.subscriptions {
+        subscription.cancel()
+      }
+      self.subscriptions = []
     }
   }
 }

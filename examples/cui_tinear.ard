@@ -942,15 +942,10 @@ impl cui::Component for Toast {
   }
 }
 
-struct TerminalState {
-  focused: Bool,
-}
 struct ScreenProps {
   selected: Str,
-  terminal: mut TerminalState,
 }
 struct TinearScreen {
-  terminal: mut TerminalState,
   items: [Issue],
   board: mut cui::ScrollBoxRef,
   columns: mut [Str: mut cui::ScrollBoxRef],
@@ -981,7 +976,6 @@ private fn tinear_screen(props: mut ScreenProps) mut TinearScreen {
     columns.set(state, cui::scroll_box_ref())
   }
   (mut TinearScreen{
-    terminal: props.terminal,
     items: issues(),
     board: cui::scroll_box_ref(),
     columns: columns,
@@ -1269,11 +1263,20 @@ impl TinearScreen {
   }
 }
 
+impl cui::Lifecycle for TinearScreen {
+  fn mut mounted(ctx: cui::Context) {
+    let _ = ctx.on_terminal_focus(fn(focus: cooper::TerminalFocus) {
+      if focus == cooper::TerminalFocus::lost {
+        self.cancel_drag()
+      }
+    })
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+
 impl cui::Component for TinearScreen {
   fn mut render() cui::View {
-    if not self.terminal.focused {
-      self.cancel_drag()
-    }
     mut chosen = Maybe::new<Issue>()
     mut has_selection = false
     for state in ["Todo", "In Progress", "Done"] {
@@ -1658,18 +1661,11 @@ impl cui::Component for TinearScreen {
 fn main() {
   let application = cooper::app().expect("create tinear example")
   defer application.destroy()
-  let terminal = mut TerminalState{focused: true}
   let renderer = cui::mount(
     application.context,
     application.root,
-    cui::child(tinear_screen, ScreenProps{selected: "TIN-142", terminal: terminal}),
+    cui::child(tinear_screen, ScreenProps{selected: "TIN-142"}),
   )
   defer renderer.destroy()
-  let remove_focus = application.on_terminal_focus(fn(focus: cooper::TerminalFocus) {
-    renderer.update(fn() {
-      terminal.focused = focus == cooper::TerminalFocus::gained
-    })
-  })
-  defer remove_focus()
   application.run().expect("run tinear example")
 }

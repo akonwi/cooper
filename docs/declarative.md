@@ -203,9 +203,46 @@ subtree are canceled first; controls and refs are then disposed child-first, and
 `unmounting` runs child-first. Root cleanup follows the same rules on explicit
 renderer destruction or Runtime teardown; suspension does not unmount it.
 
-The framework owns component children and their dispatch lifetimes. Components
-own their workers and external resources. Cleanup functions should remain
-idempotent.
+The framework owns component children, dispatch lifetimes, animations, and
+context subscriptions. Components own their workers and other external resources.
+Cleanup functions should remain idempotent.
+
+## Component-scoped Runtime subscriptions
+
+Subscribe directly through the context, usually once in `mounted`:
+
+```ard
+fn mut mounted(ctx: cui::Context) {
+  let _ = ctx.on_terminal_focus(fn(focus: cooper::TerminalFocus) {
+    if focus == cooper::TerminalFocus::lost {
+      self.cancel_drag()
+    }
+  })
+}
+```
+
+No application-level listener, stored context, or `unmounting` cleanup is needed.
+Available methods mirror Runtime: `on_terminal_focus`, `on_selection_change`,
+`on_key`, and `on_paste`. Each returns an idempotent removal function if you need
+to unsubscribe early. Registration, delivery, queries, and removal are UI-thread
+operations; workers must use `ctx.dispatch`.
+
+Callbacks run synchronously with the original Runtime event and automatically
+invalidate the owning component's subtree. Key and paste handlers can prevent
+defaults or stop propagation immediately. These are **global Runtime listeners**,
+not focused-control listeners; prefer a view's `on_key` for ordinary local input.
+If a callback changes ancestor/shared state, use `ctx.invalidate_root()`.
+
+Subscriptions are removed before `unmounting`, on renderer destruction, and on
+Runtime teardown. Even callbacks already captured in a Runtime delivery snapshot
+are suppressed after removal. Hidden components remain mounted and subscribed;
+keyed identity retains subscriptions rather than registering them again. A retired
+context cannot register a new listener.
+
+Subscriptions report future changes, without replaying the current value. Read
+`ctx.terminal_focus()` or `ctx.current_selection()` for a snapshot when needed.
+Both return optional values (unknown focus or no selection); retired contexts
+return none. Do not register subscriptions from `render()`.
 
 ## Simulated asynchronous operations
 

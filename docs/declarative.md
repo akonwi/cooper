@@ -117,15 +117,17 @@ the application stores tab data and an active ID, not component instances.
 Describe focus only on the active page. Hidden pages still render on updates;
 this is retained identity, not an offscreen-rendering optimization.
 
-Primitive identity uses key and kind, or unkeyed position and kind. The initial
-surface is deliberately small:
+Primitive identity uses key and kind, or unkeyed position and kind.
 
 | Constructor | Supported properties |
 | --- | --- |
 | `text(content, ...)` | String or rich TextContent, style, TextStyle, wrapping, overflow, key |
 | `input(value, ...)` | Controlled value, placeholder, style, focused, input/submit/key/mouse callbacks, InputRef, key |
 | `box(children, ...)` | Children, style, title, focused, key/mouse callbacks, BoxRef, key |
-| `scroll_box(children, ...)` | Children, style, key/mouse callbacks, ScrollBoxRef, key |
+| `scroll_box(children, ...)` | Children, style, scrollbar options, key/mouse callbacks, ScrollBoxRef, key |
+| `text_area(value, ...)` | Controlled multiline value, wrapping, text/placeholder styles, scrollbar options, focus, callbacks, TextAreaRef, key |
+| `select_input(options, ...)` / `tab_select(options, ...)` | Selection, configuration, appearance, focus, callbacks, SelectRef, key |
+| `virtual_list(items, ...)` | Stable item keys, row builder, height estimates, overscan, scrollbar options, VirtualListRef, key |
 
 Styles and common values come from `cooper/ui`. A `View` is a description, not a
 control handle.
@@ -444,6 +446,25 @@ Both tuning parameters are optional and measured in terminal rows:
 - `overscan`: 12 by default on each side; zero is supported.
 - `row_height`: optional positive fixed height, clipping oversized content. Omit
   it for automatically measured, variable-height rows.
+
+Both `cui::virtual_list` and `cui::scroll_box` accept optional
+`scrollbar_options: ui::ScrollbarOptions`. This uses the core scrollbar API
+unchanged: configure visibility, arrows, scroll step, glyphs, and independent
+track/thumb/arrow styles. For example:
+
+```ard
+scrollbar_options: ui::scrollbar_options(
+  appearance: ui::scrollbar_appearance(
+    track_glyph: " ",
+    thumb_glyph: "█",
+    thumb_style: ui::span_style(foreground: ui::indexed(6), bold: false),
+  ),
+)
+```
+
+Omitting options preserves the core defaults. Updated options apply without
+remounting the list; hidden visibility returns the scrollbar gutter to content.
+Glyphs must occupy one terminal cell. These options configure the vertical bar.
 
 The list preserves a stable-key scroll anchor as rows are measured, reordered,
 inserted, removed, or rewrapped after a width change. Removing the anchor picks

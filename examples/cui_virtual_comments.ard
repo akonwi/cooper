@@ -74,6 +74,13 @@ impl cui::Component for Screen {
             )
           },
           ref: self.model.list,
+          scrollbar_options: ui::scrollbar_options(
+            appearance: ui::scrollbar_appearance(
+              track_glyph: " ",
+              thumb_glyph: "█",
+              thumb_style: ui::span_style(foreground: ui::indexed(6), bold: false),
+            ),
+          ),
         ),
         cui::text(
           "↑↓ / PgUp PgDn scroll · e toggle top comment · g jump #2000 · t top · Ctrl-C quit",

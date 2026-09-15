@@ -441,3 +441,93 @@ test fn fixed_rows_center_end_and_nearest_align_exactly() Void!Str {
   app.flush()
   testing::assert(list.scroll_top() == 90, "Nearest above viewport aligns to start")
 }
+
+struct StyledListState {
+  options: ui::ScrollbarOptions,
+  ref: mut cui::VirtualListRef,
+}
+struct StyledListProps {
+  state: mut StyledListState,
+}
+struct StyledList {
+  props: mut StyledListProps,
+}
+private fn styled_list(props: mut StyledListProps) mut StyledList {
+  (mut StyledList{props: props})
+}
+impl cui::Component for StyledList {
+  fn mut render() cui::View {
+    cui::virtual_list(
+      items(100),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        cui::text("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", styles: ui::style(height: ui::cells(1)))
+      },
+      row_height: 1,
+      scrollbar_options: self.props.state.options,
+      ref: self.props.state.ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    )
+  }
+}
+
+test fn scrollbar_options_apply_update_hide_and_restore() Void!Str {
+  let app = headless::new(12, 6)
+  defer app.destroy()
+  let ref = cui::virtual_list_ref()
+  let data = mut StyledListState{
+    ref: ref,
+    options: ui::scrollbar_options(
+      appearance: ui::scrollbar_appearance(
+        track_glyph: ".",
+        thumb_glyph: "#",
+        thumb_style: ui::span_style(foreground: ui::indexed(2), bold: false),
+        track_style: ui::span_style(dim: false),
+      ),
+    ),
+  }
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::child(styled_list, StyledListProps{state: data}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let original = ref.current.expect("list")
+  let thumb = app.frame().cell(11, 0).expect("thumb")
+  try testing::assert(
+    thumb.grapheme == "#" and not thumb.style.bold,
+    "Custom thumb overrides default glyph and bold",
+  )
+  try testing::assert(
+    thumb.style.foreground.expect("color").index.expect("palette") == Uint8::from(2),
+    "Custom thumb color",
+  )
+  let track = app.frame().cell(11, 5).expect("track")
+  try testing::assert(
+    track.grapheme == "." and not track.style.dim,
+    "Custom track overrides glyph and dim",
+  )
+  renderer.update(fn() {
+    data.options = ui::scrollbar_options(visibility: ui::ScrollbarVisibility::hidden)
+  })
+  app.flush()
+  try testing::assert(
+    app.frame().cell(11, 0).expect("content").grapheme == "x",
+    "Hidden scrollbar returns gutter to content",
+  )
+  renderer.update(fn() {
+    data.options = ui::scrollbar_options()
+  })
+  app.flush()
+  try testing::assert(
+    ref.current.expect("same list") == original,
+    "Options updates preserve list identity",
+  )
+  testing::assert(
+    app.frame().cell(11, 0).expect("default thumb").grapheme == "┃",
+    "Default options restore standard thumb",
+  )
+}

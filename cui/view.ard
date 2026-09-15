@@ -207,12 +207,14 @@ fn scroll_box(
   children: [View],
   key: Str?,
   styles: ui::Style?,
+  scrollbar_options: ui::ScrollbarOptions?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut ScrollBoxRef)?,
 ) View {
   let result = mut base(Kind::scroll, key, styles)
   result.children = children
+  result.scrollbar_options = scrollbar_options.or(ui::scrollbar_options())
   result.on_key = on_key
   result.on_mouse = on_mouse
   result.scroll_ref = ref

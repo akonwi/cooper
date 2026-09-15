@@ -845,6 +845,7 @@ impl State {
       view::Kind::scroll => {
         let panel = scroll(mounted.control)
         panel.set_style(description.styles)
+        panel.set_scrollbar_options(description.scrollbar_options)
         match description.scroll_ref {
           ref => { ref.current = Maybe::new(panel) },
           _ => (),

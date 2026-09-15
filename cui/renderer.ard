@@ -59,6 +59,67 @@ private fn input(control: mut node::Renderable) mut ui::Input {
   unsafe::cast<mut ui::Input>(control).expect("input control")
 }
 
+private fn text_area(control: mut node::Renderable) mut ui::TextArea {
+  unsafe::cast<mut ui::TextArea>(control).expect("text area control")
+}
+
+private fn select_control(control: mut node::Renderable) mut ui::Select {
+  unsafe::cast<mut ui::Select>(control).expect("select control")
+}
+
+private fn same_options(left: [ui::SelectOption], right: [ui::SelectOption]) Bool {
+  mut same = left.size() == right.size()
+  for item, index in left {
+    match right.at(index) {
+      other => {
+        if item.label != other.label or item.description != other.description or item.value != other.value {
+          same = false
+        }
+      },
+      _ => { same = false },
+    }
+  }
+  same
+}
+
+private fn same_menu(left: ui::SelectConfig, right: ui::SelectConfig) Bool {
+  left.placeholder == right.placeholder and left.max_visible == right.max_visible and left.show_descriptions == right.show_descriptions and left.show_indicator == right.show_indicator and left.item_spacing == right.item_spacing and left.fast_step == right.fast_step and left.wrap_selection == right.wrap_selection
+}
+
+private fn same_tabs(left: ui::SelectTabConfig, right: ui::SelectTabConfig) Bool {
+  left.tab_width == right.tab_width and left.show_description == right.show_description and left.show_arrows == right.show_arrows and left.wrap_selection == right.wrap_selection
+}
+
+private fn apply_select(
+  mounted: mut Mounted,
+  description: view::Description,
+  previous: view::Description,
+) {
+  let field = select_control(mounted.control)
+  mounted.applying = true
+  field.set_style(description.styles)
+  if not same_options(previous.options, description.options) {
+    field.set_options(description.options)
+  }
+  if description.kind == view::Kind::select_input {
+    if not same_menu(previous.select_config, description.select_config) {
+      field.set_config(description.select_config)
+    }
+  } else if not same_tabs(previous.tab_config, description.tab_config) {
+    field.set_tab_config(description.tab_config)
+  }
+  field.set_appearance(description.appearance)
+  let _ = field.set_selected_index(description.selected_index)
+  let _ = description.highlighted_index.map(fn(index: Int) {
+    let _ = field.set_highlighted_index(index)
+  })
+  mounted.applying = false
+  match description.select_ref {
+    ref => { ref.current = Maybe::new(field) },
+    _ => (),
+  }
+}
+
 private fn scroll(control: mut node::Renderable) mut ui::ScrollBox {
   unsafe::cast<mut ui::ScrollBox>(control).expect("scroll control")
 }
@@ -219,6 +280,32 @@ private fn cancel(mounted: mut Mounted) {
 }
 
 private fn clear_ref(mounted: mut Mounted) {
+  match mounted.description.text_area_ref {
+    ref => {
+      match ref.current {
+        current => {
+          if current.node_ref.id == mounted.control.node().id {
+            ref.current = Maybe::new<mut ui::TextArea>()
+          }
+        },
+        _ => (),
+      }
+    },
+    _ => (),
+  }
+  match mounted.description.select_ref {
+    ref => {
+      match ref.current {
+        current => {
+          if current.node_ref.id == mounted.control.node().id {
+            ref.current = Maybe::new<mut ui::Select>()
+          }
+        },
+        _ => (),
+      }
+    },
+    _ => (),
+  }
   match mounted.description.scroll_ref {
     ref => {
       match ref.current {
@@ -271,6 +358,9 @@ private fn dispose(mounted: mut Mounted) {
   if not mounted.control.node().is_destroyed() {
     match mounted.description.kind {
       view::Kind::scroll => scroll(mounted.control).destroy(),
+      view::Kind::text_area => text_area(mounted.control).destroy(),
+      view::Kind::select_input => select_control(mounted.control).destroy(),
+      view::Kind::tab_select => select_control(mounted.control).destroy(),
       _ => mounted.control.node().destroy(),
     }
   }
@@ -360,6 +450,55 @@ private fn validate_scroll_refs(
       _ => (),
     }
     validate_scroll_refs(plan.children, refs, previous)
+  }
+}
+
+private fn validate_control_refs(
+  prepared: [Prepared],
+  areas: mut [mut view::TextAreaRef],
+  selects: mut [mut view::SelectRef],
+  previous: [mut Mounted],
+) {
+  for plan in prepared {
+    match plan.description.text_area_ref {
+      ref => {
+        for existing in areas {
+          if existing == ref {
+            panic("TextAreaRef cannot be used by two views")
+          }
+        }
+        areas.push(ref)
+        match ref.current {
+          control => {
+            if not owns(previous, control.node_ref) {
+              panic("TextAreaRef is already mounted outside this renderer")
+            }
+          },
+          _ => (),
+        }
+      },
+      _ => (),
+    }
+    match plan.description.select_ref {
+      ref => {
+        for existing in selects {
+          if existing == ref {
+            panic("SelectRef cannot be used by two views")
+          }
+        }
+        selects.push(ref)
+        match ref.current {
+          control => {
+            if not owns(previous, control.node_ref) {
+              panic("SelectRef is already mounted outside this renderer")
+            }
+          },
+          _ => (),
+        }
+      },
+      _ => (),
+    }
+    validate_control_refs(plan.children, areas, selects, previous)
   }
 }
 
@@ -456,12 +595,33 @@ impl State {
     let control: mut node::Renderable = match description.kind {
       view::Kind::text => ui::text(self.runtime, content: description.content),
       view::Kind::input => ui::input(self.runtime, value: description.value),
+      view::Kind::text_area => ui::text_area(self.runtime, value: description.value),
+      view::Kind::select_input => {
+        ui::select_input(
+          self.runtime,
+          description.options,
+          config: description.select_config,
+          selected_index: description.selected_index,
+          highlighted_index: description.highlighted_index,
+        )
+      },
+      view::Kind::tab_select => {
+        ui::tab_select(
+          self.runtime,
+          description.options,
+          config: description.tab_config,
+          selected_index: description.selected_index,
+          highlighted_index: description.highlighted_index,
+        )
+      },
       view::Kind::scroll => ui::scroll_box(self.runtime),
       _ => ui::box(self.runtime),
     }
     mut effective_value = ""
     if description.kind == view::Kind::input {
       effective_value = input(control).value()
+    } else if description.kind == view::Kind::text_area {
+      effective_value = text_area(control).value()
     }
     let mounted = mut Mounted{
       description: description,
@@ -501,10 +661,53 @@ impl State {
         }
       })
     }
+    if description.kind == view::Kind::text_area {
+      let _ = text_area(
+        control,
+      ).on_input(fn(value: Str) {
+        if self.active and live(mounted) and (not mounted.applying) {
+          match mounted.description.on_input {
+            handler => handler(value, mounted.context),
+            _ => (),
+          }
+          self.invalidate()
+        }
+      })
+    } else if description.kind == view::Kind::select_input or description.kind == view::Kind::tab_select {
+      let field = select_control(control)
+      let _ = field.on_highlight(fn(value: ui::SelectSelection) {
+        if self.active and live(mounted) and (not mounted.applying) {
+          match mounted.description.on_highlight {
+            handler => handler(value, mounted.context),
+            _ => (),
+          }
+          self.invalidate()
+        }
+      })
+      let _ = field.on_change(fn(value: ui::SelectSelection) {
+        if self.active and live(mounted) and (not mounted.applying) {
+          match mounted.description.on_change {
+            handler => handler(value, mounted.context),
+            _ => (),
+          }
+          self.invalidate()
+        }
+      })
+      let _ = field.on_submit(fn(value: ui::SelectSelection) {
+        if self.active and live(mounted) and (not mounted.applying) {
+          match mounted.description.on_select_submit {
+            handler => handler(value, mounted.context),
+            _ => (),
+          }
+          self.invalidate()
+        }
+      })
+    }
     mounted
   }
 
   private fn mut apply(mounted: mut Mounted, description: view::Description) {
+    let previous = mounted.description
     clear_ref(mounted)
     mounted.description = description
     match description.kind {
@@ -542,6 +745,33 @@ impl State {
           _ => (),
         }
       },
+      view::Kind::text_area => {
+        let field = text_area(mounted.control)
+        field.set_style(description.styles)
+        field.set_placeholder(description.placeholder)
+        field.set_wrap(description.wrap)
+        field.set_text_style(description.text_style)
+        field.set_placeholder_style(description.placeholder_style)
+        field.set_selectable(description.selectable)
+        field.set_scrollbar_options(description.scrollbar_options)
+        mut needs_write = field.value() != mounted.effective_value
+        if mounted.requested_value != description.value {
+          needs_write = field.value() != description.value
+        }
+        if needs_write {
+          mounted.applying = true
+          field.set_value(description.value)
+          mounted.applying = false
+        }
+        mounted.requested_value = description.value
+        mounted.effective_value = field.value()
+        match description.text_area_ref {
+          ref => { ref.current = Maybe::new(field) },
+          _ => (),
+        }
+      },
+      view::Kind::select_input => apply_select(mounted, description, previous),
+      view::Kind::tab_select => apply_select(mounted, description, previous),
       view::Kind::scroll => {
         let panel = scroll(mounted.control)
         panel.set_style(description.styles)
@@ -581,6 +811,9 @@ impl State {
         }
         mounted.remove_mouse = match description.kind {
           view::Kind::input => input(mounted.control).on_mouse(receive),
+          view::Kind::text_area => text_area(mounted.control).on_mouse(receive),
+          view::Kind::select_input => select_control(mounted.control).on_mouse(receive),
+          view::Kind::tab_select => select_control(mounted.control).on_mouse(receive),
           view::Kind::scroll => scroll(mounted.control).on_mouse(receive),
           _ => box(mounted.control).on_mouse(receive),
         }
@@ -690,6 +923,9 @@ impl State {
     validate_box_refs(prepared, box_refs, self.children)
     let scroll_refs = mut List::new<mut view::ScrollBoxRef>()
     validate_scroll_refs(prepared, scroll_refs, self.children)
+    let areas = mut List::new<mut view::TextAreaRef>()
+    let selects = mut List::new<mut view::SelectRef>()
+    validate_control_refs(prepared, areas, selects, self.children)
     for ref in refs {
       match ref.current {
         field => {

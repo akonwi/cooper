@@ -50,7 +50,7 @@ test fn select_is_compact_closed_and_opens_anchored_option_menu() Void!Str {
   )
   application.root.add(control)
   application.render()
-  
+
   try testing::assert(control.layout().screen.height == 1, "Expected compact one-row Select")
   try testing::assert(application.frame().text().contains("Select…"), "Expected closed placeholder")
   try testing::assert(not application.frame().text().contains("Option 0"), "Expected closed menu hidden")
@@ -58,7 +58,7 @@ test fn select_is_compact_closed_and_opens_anchored_option_menu() Void!Str {
     application.frame().cell(18, 0).expect("closed arrow").grapheme == "▾",
     "Expected closed arrow",
   )
-  
+
   try testing::assert(control.focus(), "Expected focusable Select")
   application.key(key("return"))
   try testing::assert(control.is_open(), "Expected Enter to open Select")
@@ -72,13 +72,13 @@ test fn select_is_compact_closed_and_opens_anchored_option_menu() Void!Str {
     "Expected scrollbar thumb sized from visible viewport",
   )
   try testing::assert(control.layout().screen.height == 1, "Expected popup not to expand Select layout")
-  
+
   application.key(key("escape"))
   try testing::assert(
     not control.is_open() and not control.selected().is_some(),
     "Expected Escape to close without selection",
   )
-  
+
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected Select cleanup")
 }
@@ -106,7 +106,7 @@ test fn select_keyboard_separates_highlight_change_and_submit() Void!Str {
   application.root.add(control)
   application.render()
   let _ = control.focus()
-  
+
   application.key(key("space"))
   application.key(key("down"))
   application.key(key("down", shift: true))
@@ -122,14 +122,14 @@ test fn select_keyboard_separates_highlight_change_and_submit() Void!Str {
     application.frame().text().contains("Option 4"),
     "Expected trigger to display committed value",
   )
-  
+
   application.key(key("return"))
   application.key(key("return"))
   try testing::assert(
     changes == 1 and submissions == 2,
     "Expected repeated submit without duplicate change",
   )
-  
+
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected keyboard Select cleanup")
 }
@@ -144,7 +144,7 @@ test fn select_pointer_opens_menu_and_click_commits_option() Void!Str {
   )
   application.root.add(control)
   application.render()
-  
+
   application.click(2, 0)
   try testing::assert(
     control.is_open() and control.is_focused(),
@@ -166,7 +166,7 @@ test fn select_pointer_opens_menu_and_click_commits_option() Void!Str {
     application.frame().text().contains("Option 2"),
     "Expected clicked value in trigger",
   )
-  
+
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected pointer Select cleanup")
 }
@@ -223,7 +223,7 @@ test fn select_popup_wheel_indicator_and_blur_preserve_commit_state() Void!Str {
   control.blur()
   try testing::assert(not control.is_open(), "Expected blur to close popup")
   try testing::assert(control.selected_index().or(-1) == 2, "Expected blur not to commit highlight")
-  
+
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected popup Select cleanup")
 }
@@ -266,11 +266,11 @@ test fn select_popup_layers_above_later_siblings() Void!Str {
   application.render()
   let _ = control.open()
   application.render()
-  
+
   application.click(3, 1)
   try testing::assert(control.selected_index().or(-1) == 0, "Expected popup above later sibling")
   try testing::assert(cover_clicks == 0, "Expected popup to own overlapping hit")
-  
+
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected layered Select cleanup")
 }
@@ -285,7 +285,7 @@ test fn select_open_focus_space_and_submit_destruction_are_safe() Void!Str {
   )
   application.root.add(control)
   application.render()
-  
+
   try testing::assert(control.open() and control.is_focused(), "Expected programmatic open to focus")
   application.key(key("space"))
   try testing::assert(
@@ -297,7 +297,7 @@ test fn select_open_focus_space_and_submit_destruction_are_safe() Void!Str {
   })
   application.key(key("return"))
   try testing::assert(control.node_ref.is_destroyed(), "Expected safe submit-time destruction")
-  
+
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected destroyed Select cleanup")
 }
@@ -327,13 +327,13 @@ test fn select_portal_stays_private_and_parent_destruction_is_safe() Void!Str {
     application.root.child_count() == 1,
     "Expected private portal outside Root child model",
   )
-  
+
   panel.destroy(true)
   try testing::assert(
     control.node_ref.is_destroyed(),
     "Expected recursive owner destruction with open popup",
   )
-  
+
   application.destroy()
   testing::assert(panel.node_ref.is_destroyed(), "Expected portal destruction cleanup")
 }
@@ -350,7 +350,7 @@ test fn select_options_snapshot_programmatic_selection_and_empty_state() Void!St
   source.set(0, select_control::option("Mutated"))
   application.root.add(control)
   application.render()
-  
+
   try testing::assert(
     control.options().at(0).expect("snapshot").label == "Option 0",
     "Expected option snapshot",
@@ -365,7 +365,7 @@ test fn select_options_snapshot_programmatic_selection_and_empty_state() Void!St
     not control.open() and not control.selected().is_some(),
     "Expected inert empty Select",
   )
-  
+
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected option Select cleanup")
 }
@@ -381,7 +381,13 @@ test fn tab_select_retains_horizontal_navigation_activation_and_overflow() Void!
   application.root.add(tabs)
   application.render()
   try testing::assert(tabs.focus(), "Expected TabSelect focus")
-  
+  try testing::assert(tabs.layout().screen.height == 2, "Tabs reserve only label and description rows")
+  try testing::assert(
+    application.frame().cell(1, 1).expect("description").grapheme == "D",
+    "Description follows labels directly",
+  )
+  try testing::assert(not application.frame().text().contains("▬"), "No built-in tab underline")
+
   application.key(key("left"))
   try testing::assert(tabs.highlighted_index().or(-1) == 5, "Expected wrapped tab navigation")
   application.key(key("return"))
@@ -389,7 +395,14 @@ test fn tab_select_retains_horizontal_navigation_activation_and_overflow() Void!
   try testing::assert(application.frame().text().contains("Descript"), "Expected tab description")
   application.click(0, 0)
   try testing::assert(tabs.highlighted_index().or(-1) == 4, "Expected overflow arrow navigation")
-  
+  tabs.set_tab_config(select_control::tab_config(tab_width: 6, show_description: false))
+  application.render()
+  try testing::assert(tabs.layout().screen.height == 1, "Tabs without descriptions occupy one row")
+  try testing::assert(
+    application.frame().cell(1, 1).expect("empty row").grapheme == " ",
+    "No reserved underline row after configuration change",
+  )
+
   application.destroy()
   testing::assert(tabs.node_ref.is_destroyed(), "Expected TabSelect cleanup")
 }
@@ -427,7 +440,7 @@ test fn select_popup_preserves_inherited_colors_and_marker_row_background() Void
   )
   let _ = control.open()
   application.render()
-  
+
   let marker = application.frame().cell(0, 1).expect("highlight marker")
   let label = application.frame().cell(2, 1).expect("highlight label")
   try testing::assert(
@@ -448,7 +461,7 @@ test fn select_popup_preserves_inherited_colors_and_marker_row_background() Void
     inherited.style.foreground.expect("popup foreground").blue == Uint8::from(255),
     "Expected popup inherited foreground",
   )
-  
+
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected popup color cleanup")
 }
@@ -487,7 +500,7 @@ test fn select_appearance_patches_trigger_menu_and_arrows() Void!Str {
     application.frame().cell(0, 1).expect("custom menu marker").grapheme == "•",
     "Expected custom menu marker",
   )
-  
+
   application.destroy()
   testing::assert(control.node_ref.is_destroyed(), "Expected appearance Select cleanup")
 }

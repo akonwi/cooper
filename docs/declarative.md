@@ -291,10 +291,47 @@ own component's context. `stop_propagation()` stops ancestor callbacks;
 (such as input editing). This is CUI routing, not a change to Cooper's imperative
 key dispatch. Mouse events retain Cooper's existing bubbling behavior.
 
-An input is controlled: write accepted `on_input` values into component state.
+Inputs and TextAreas are controlled: write accepted `on_input` values into component state.
 If a callback leaves the model unchanged, reconciliation restores the described
 value. Equal and normalized values avoid unnecessary setters, preserving cursor
 and selection state.
+
+`cui::text_area(value, ...)` adds multiline editing with `placeholder`, `wrap`,
+`text_style`, `placeholder_style`, `selectable`, and `scrollbar_options`. Enter
+inserts a newline; there is no single-line `on_submit` event. Use `on_key` for an
+application-specific save shortcut. `text_area_ref()` exposes the retained
+TextArea for selection, paste listeners, and other imperative editing APIs.
+
+`cui::select_input(options, ...)` and `cui::tab_select(options, ...)` use ordinary
+`ui::SelectOption` values. Their `config` arguments accept `ui::SelectConfig` and
+`ui::SelectTabConfig`, respectively; both accept `ui::SelectAppearance`.
+
+```ard
+cui::select_input(
+  [ui::select_option("Low"), ui::select_option("High")],
+  selected_index: self.priority,
+  on_change: fn(choice: ui::SelectSelection, ctx: cui::Context) {
+    self.priority = Maybe::new(choice.index)
+  },
+)
+```
+
+`selected_index` is controlled: absent/none means no committed selection.
+Accept a choice in `on_change` or `on_submit`; leaving the model unchanged
+restores its previous selection without firing feedback callbacks. Selection
+indexes clamp to the current options, matching retained construction; empty
+options clear selection. Highlight is separate: omit `highlighted_index` to
+retain keyboard/mouse navigation locally, or provide a valid index to control
+it. `on_highlight`, `on_change`, and `on_submit` receive `ui::SelectSelection`
+plus the owning component's Context. Submitting an already selected option
+still fires `on_submit`.
+
+`select_ref()` serves both Select presentations. Equal option/config values do
+not reset an open menu or its navigation during rerenders. Changed configuration
+uses the retained control's close/reset behavior. Switching between constructor
+kinds remounts the control; keyed reordering within one kind preserves it.
+Both new ref types follow the same exclusive ownership and cleanup rules as
+InputRef. All three controls accept `focused`, `on_key`, and `on_mouse`.
 
 Use `d::input_ref()` for imperative capabilities such as focus. A ref does not
 own its control, is populated before lifecycle mounting, and is cleared when the
@@ -318,5 +355,5 @@ component view before controls or refs are mutated. Violations panic. Exceptions
 from application constructors, rendering, or lifecycle hooks are also programmer
 errors; Cooper makes no transactional model rollback or recovery promise.
 
-Select, TextArea, images, animations, custom control adapters, fine-grained
-scheduling, and a framework-managed background executor are not exposed.
+Images, custom control adapters, fine-grained scheduling, and a framework-managed
+background executor are not exposed.

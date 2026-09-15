@@ -1,0 +1,362 @@
+use ard/testing
+
+use cooper/cui
+use cooper/event
+use cooper/testing as headless
+use cooper/ui
+
+struct Model {
+  menu: mut cui::SelectRef,
+  area: mut cui::TextAreaRef,
+  options: [ui::SelectOption],
+  selected: Int?,
+  highlighted: Int?,
+  value: Str,
+  accept: Bool,
+  tabs: Bool,
+  reverse: Bool,
+  visible: Bool,
+  duplicate: Bool,
+  changes: Int,
+  highlights: Int,
+  submits: Int,
+  inputs: Int,
+  keys: Int,
+  contexts: [cui::Context],
+  menu_config: ui::SelectConfig,
+}
+struct Props {
+  model: mut Model,
+}
+struct Form {
+  model: mut Model,
+}
+private fn form(props: mut Props) mut Form {
+  (mut Form{model: props.model})
+}
+
+impl cui::Component for Form {
+  fn mut render() cui::View {
+    if not self.model.visible {
+      cui::text("removed")
+    } else {
+      let changed = fn(value: ui::SelectSelection, ctx: cui::Context) {
+        self.model.changes =+ 1
+        self.model.contexts.push(ctx)
+        if self.model.accept {
+          self.model.selected = Maybe::new(value.index)
+        }
+      }
+      let highlighted = fn(value: ui::SelectSelection, ctx: cui::Context) {
+        self.model.highlights =+ 1
+        self.model.contexts.push(ctx)
+      }
+      let submitted = fn(value: ui::SelectSelection, ctx: cui::Context) {
+        self.model.submits =+ 1
+        self.model.contexts.push(ctx)
+      }
+      mut menu = cui::select_input(
+        self.model.options,
+        selected_index: self.model.selected,
+        highlighted_index: self.model.highlighted,
+        config: self.model.menu_config,
+        key: "menu",
+        ref: self.model.menu,
+        styles: ui::style(width: ui::cells(24)),
+        on_change: changed,
+        on_highlight: highlighted,
+        on_submit: submitted,
+      )
+      if self.model.tabs {
+        menu = cui::tab_select(
+          self.model.options,
+          selected_index: self.model.selected,
+          highlighted_index: self.model.highlighted,
+          config: ui::select_tab_config(tab_width: 8, show_description: false),
+          key: "menu",
+          ref: self.model.menu,
+          styles: ui::style(width: ui::cells(24)),
+          on_change: changed,
+          on_highlight: highlighted,
+          on_submit: submitted,
+        )
+      }
+      let area = cui::text_area(
+        self.model.value,
+        key: "area",
+        ref: self.model.area,
+        styles: ui::style(width: ui::cells(24), height: ui::cells(4)),
+        on_input: fn(value: Str, ctx: cui::Context) {
+          self.model.inputs =+ 1
+          self.model.contexts.push(ctx)
+          if self.model.accept {
+            self.model.value = value
+          }
+        },
+        on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+          self.model.keys =+ 1
+          self.model.contexts.push(ctx)
+          if key.matches("f2") {
+            key.prevent_default()
+          }
+        },
+      )
+      if self.model.duplicate {
+        cui::box(
+          [menu, cui::tab_select(self.model.options, key: "other", ref: self.model.menu), area],
+        )
+      } else if self.model.reverse {
+        cui::box([area, menu])
+      } else {
+        cui::box([menu, area])
+      }
+    }
+  }
+}
+
+private fn model() mut Model {
+  (mut Model{
+    menu: cui::select_ref(),
+    area: cui::text_area_ref(),
+    options: [
+      ui::select_option("Alpha", value: "a"),
+      ui::select_option("Beta", value: "b"),
+      ui::select_option("Gamma", value: "g"),
+    ],
+    selected: Maybe::new<Int>(),
+    highlighted: Maybe::new<Int>(),
+    value: "alpha\r\nbeta",
+    accept: true,
+    tabs: false,
+    reverse: false,
+    visible: true,
+    duplicate: false,
+    changes: 0,
+    highlights: 0,
+    submits: 0,
+    inputs: 0,
+    keys: 0,
+    contexts: [],
+    menu_config: ui::select_config(show_descriptions: false, max_visible: 2),
+  })
+}
+private fn key(name: Str, text: Str?, shift: Bool?) mut event::KeyEvent {
+  event::key(
+    name,
+    text.or(""),
+    event::KeyEventType::press,
+    event::Modifiers{
+      shift: shift.or(false),
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
+}
+
+test fn selects_control_commit_without_resetting_navigation_or_popup() Void!Str {
+  for tabs in [false, true] {
+    let app = headless::new(32, 12)
+    defer app.destroy()
+    let data = model()
+    data.tabs = tabs
+    let renderer = cui::mount(app.context, app.root, cui::child(form, Props{model: data}))
+    defer renderer.destroy()
+    app.flush()
+    let menu = data.menu.current.expect("select")
+    let _ = menu.focus()
+    if not tabs {
+      let _ = menu.open()
+    }
+    let _ = menu.set_highlighted_index(2)
+    app.flush()
+    try testing::assert(
+      menu.highlighted_index().or(-1) == 2,
+      "uncontrolled highlight survives callback rerender",
+    )
+    try testing::assert(not menu.selected_index().is_some(), "highlight does not commit")
+    if not tabs {
+      try testing::assert(menu.is_open(), "rerender does not close popup")
+    }
+    let _ = menu.submit()
+    app.flush()
+    try testing::assert(
+      menu.selected_index().or(-1) == 2 and data.changes == 1 and data.submits == 1,
+      "accept committed choice once",
+    )
+    renderer.update(fn() {
+      data.accept = false
+    })
+    app.flush()
+    let _ = menu.select(0)
+    app.flush()
+    try testing::assert(
+      menu.selected_index().or(-1) == 2 and menu.highlighted_index().or(-1) == 0,
+      "reject selection without rewinding navigation",
+    )
+    try testing::assert(data.changes == 2, "controlled rollback is silent")
+    renderer.update(fn() {
+      data.selected = Maybe::new<Int>()
+      data.highlighted = Maybe::new(1)
+      data.reverse = true
+    })
+    app.flush()
+    try testing::assert(
+      data.menu.current.expect("same").node_ref.id == menu.node_ref.id,
+      "keyed reorder retains select",
+    )
+    try testing::assert(not menu.selected_index().is_some(), "none clears committed selection")
+    let before = data.highlights
+    let _ = menu.move_by(1)
+    app.flush()
+    try testing::assert(
+      menu.highlighted_index().or(-1) == 1 and data.highlights == before + 1,
+      "controlled highlight restored silently",
+    )
+    renderer.update(fn() {
+      data.options = [ui::select_option("Replacement", description: "updated", value: "new")]
+      data.selected = Maybe::new(9)
+    })
+    app.flush()
+    try testing::assert(menu.selected_index().or(-1) == 0, "selection clamps when options shrink")
+    try testing::assert(
+      menu.selected().expect("selected").option.value.or("") == "new",
+      "option data updates",
+    )
+    if not tabs {
+      let _ = menu.open()
+      renderer.update(fn() {
+        data.menu_config = ui::select_config(placeholder: "Changed", max_visible: 1)
+      })
+      app.flush()
+      try testing::assert(not menu.is_open(), "changed configuration follows retained close behavior")
+    }
+    renderer.update(fn() {
+      data.options = []
+    })
+    app.flush()
+    try testing::assert(
+      (not menu.selected_index().is_some()) and not menu.highlighted_index().is_some(),
+      "empty options clear both indexes",
+    )
+    try testing::assert(not menu.is_open(), "empty select cannot leave a popup behind")
+  }
+  Result::ok(())
+}
+
+test fn textarea_normalized_controlled_edits_reorder_and_context_cleanup() Void!Str {
+  let app = headless::new(32, 12)
+  defer app.destroy()
+  let data = model()
+  let renderer = cui::mount(app.context, app.root, cui::child(form, Props{model: data}))
+  defer renderer.destroy()
+  app.flush()
+  let area = data.area.current.expect("area")
+  let _ = area.focus()
+  try testing::assert(
+    area.value() == "alpha\nbeta" and data.inputs == 0,
+    "initial normalization without feedback",
+  )
+  app.key(key("end"))
+  app.key(key("left", shift: true))
+  renderer.update(fn() {
+    data.reverse = true
+  })
+  app.flush()
+  try testing::assert(area.selected_text() == "a", "normalized rerender preserves selection")
+  try testing::assert(
+    data.area.current.expect("same").node_ref.id == area.node_ref.id,
+    "keyed textarea retained",
+  )
+  app.key(key("X", text: "X"))
+  app.flush()
+  try testing::assert(
+    data.value == "alpha\nbetX" and area.value() == data.value and data.inputs == 1,
+    "accepted replacement updates model once: value={data.value}, field={area.value()}, inputs={data.inputs}",
+  )
+  app.key(key("return"))
+  app.flush()
+  try testing::assert(data.value == "alpha\nbetX\n", "Enter inserts newline")
+  renderer.update(fn() {
+    data.accept = false
+  })
+  app.flush()
+  app.key(key("Y", text: "Y"))
+  app.flush()
+  try testing::assert(
+    area.value() == data.value and data.inputs == 3,
+    "rejected edit restored without callback feedback",
+  )
+  try testing::assert(data.keys > 0, "textarea routes CUI key callbacks")
+  let context = data.contexts.at(0).expect("event context")
+  renderer.update(fn() {
+    data.visible = false
+  })
+  app.flush()
+  try testing::assert(
+    (not data.area.current.is_some()) and not data.menu.current.is_some(),
+    "refs cleared on removal",
+  )
+  try testing::assert(area.node_ref.is_destroyed(), "owned textarea destroyed")
+  try testing::assert(area.viewport_ref.is_destroyed(), "textarea internal nodes are destroyed too")
+  // Removing controls alone preserves their containing component's context.
+  try testing::assert(
+    context.dispatch(fn() {}).is_ok(),
+    "event context belongs to component, not control",
+  )
+  renderer.destroy()
+  testing::assert(context.dispatch(fn() {}).is_err(), "renderer teardown retires context")
+}
+
+test fn new_control_refs_reject_duplicates_and_foreign_ownership_before_mutation() Void!Str {
+  let app = headless::new(32, 12)
+  defer app.destroy()
+  let data = model()
+  let renderer = cui::mount(app.context, app.root, cui::child(form, Props{model: data}))
+  defer renderer.destroy()
+  app.flush()
+  let menu = data.menu.current.expect("menu")
+  let _ = menu.open()
+  data.duplicate = true
+  renderer.invalidate()
+  let result = unsafe {
+    app.flush()
+  }
+  match result {
+    ok(_) => try testing::fail("duplicate SelectRef must panic"),
+    err(message) => try testing::assert(message.contains("SelectRef"), message),
+  }
+  try testing::assert(
+    menu.is_open() and not menu.node_ref.is_destroyed(),
+    "validation leaves existing popup intact",
+  )
+  let foreign = unsafe {
+    let other = cui::mount(app.context, app.root, cui::text_area("foreign", ref: data.area))
+    other.destroy()
+  }
+  match foreign {
+    ok(_) => try testing::fail("foreign TextAreaRef must panic"),
+    err(message) => try testing::assert(message.contains("outside this renderer"), message),
+  }
+  let foreign_select = unsafe {
+    let other = cui::mount(app.context, app.root, cui::select_input([], ref: data.menu))
+    other.destroy()
+  }
+  match foreign_select {
+    ok(_) => try testing::fail("foreign SelectRef must panic"),
+    err(message) => try testing::assert(message.contains("outside this renderer"), message),
+  }
+  let duplicate_area = unsafe {
+    let ref = cui::text_area_ref()
+    let other = cui::mount(
+      app.context,
+      app.root,
+      cui::box([cui::text_area("a", ref: ref), cui::text_area("b", ref: ref)]),
+    )
+    other.destroy()
+  }
+  match duplicate_area {
+    ok(_) => testing::fail("duplicate TextAreaRef must panic"),
+    err(message) => testing::assert(message.contains("TextAreaRef"), message),
+  }
+}

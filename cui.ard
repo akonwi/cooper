@@ -9,18 +9,25 @@ type Lifecycle = view::Lifecycle
 type Renderer = renderer::Renderer
 type View = view::View
 type InputRef = view::InputRef
+type TextAreaRef = view::TextAreaRef
+type SelectRef = view::SelectRef
 type BoxRef = view::BoxRef
 type ScrollBoxRef = view::ScrollBoxRef
 type Context = context::Context
 
 let mount = renderer::mount
 let input_ref = view::input_ref
+let text_area_ref = view::text_area_ref
+let select_ref = view::select_ref
 let box_ref = view::box_ref
 let scroll_box_ref = view::scroll_box_ref
 let box = view::box
 let scroll_box = view::scroll_box
 let text = view::text
 let input = view::input
+let text_area = view::text_area
+let select_input = view::select_input
+let tab_select = view::tab_select
 
 // Both types are inferred from the ordinary constructor and props value.
 fn child(create: fn(mut $P) mut $C, props: $P, key: Str?) View {

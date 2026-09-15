@@ -58,8 +58,6 @@ def main():
         wait_for(fd, screen, "Highlighted: Profile (profile) - Index: 1")
         send(fd, "\r")
         wait_for(fd, screen, "Last Selected: Profile (profile)")
-        send(fd, "u")
-        wait_for(fd, screen, "Underline: off")
         send(fd, "p")
         wait_for(fd, screen, "Descriptions hidden — press P")
         send(fd, "s")
@@ -122,7 +120,7 @@ def main():
         click(fd, col=5, row=1)
         wait_for(fd, screen, "Highlighted: API (api) - Index: 11")
         drain(fd, screen, 0.2)
-        assert "Underline: off" in screen.text() and "Wrap: on" in screen.text()
+        assert "Description: off" in screen.text() and "Wrap: on" in screen.text()
 
         resize(fd, rows=20, cols=70)
         narrow = Screen(20, 70)

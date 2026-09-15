@@ -38,6 +38,23 @@ Type a note in Alpha, press F2 to expand details, F3 to reorder, and F4 to
 remove/reinsert Beta. Press Ctrl+C to quit. See the
 [framework guide](../docs/declarative.md) for identity and lifecycle contracts.
 
+## CUI controls
+
+`cui_controls.ard` is a declarative issue editor using TabSelect, Select, and
+TextArea. Tab/Shift+Tab changes focus; arrows navigate choices; Enter commits a
+choice or inserts a newline in the editor. F2 rejects edits through controlled
+state, F3 reorders keyed fields without replacing them, and F4 clears selection
+and text. Ctrl+C quits.
+
+```sh
+ard run cui_controls.ard
+python3 test_cui_controls.py
+```
+
+The PTY test checks popup navigation across rerenders, controlled multiline
+editing, keyed reorder, and compact layout. Set `CUI_CAPTURE_DIR` to record ANSI
+snapshots. This example requires Ard v0.42.0.
+
 ## CUI Tinear
 
 `cui_tinear.ard` is a static-data adaptation of [tinear](https://github.com/akonwi/tinear).

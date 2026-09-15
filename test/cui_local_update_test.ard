@@ -1,0 +1,313 @@
+use ard/testing
+
+use cooper/animation
+use cooper/cui
+use cooper/testing as headless
+
+struct Model {
+  label: Str,
+  value: Int,
+  renders: Int,
+  mounts: Int,
+  unmounts: Int,
+  children: [mut Model],
+  context: cui::Context?,
+  ref: mut cui::BoxRef,
+}
+struct Props {
+  model: mut Model,
+  prefix: Str,
+}
+struct Component {
+  props: mut Props,
+}
+private fn component(props: mut Props) mut Component {
+  (mut Component{props: props})
+}
+private fn model(label: Str, children: [mut Model]) mut Model {
+  (mut Model{
+    label: label,
+    value: 0,
+    renders: 0,
+    mounts: 0,
+    unmounts: 0,
+    children: children,
+    context: Maybe::new<cui::Context>(),
+    ref: cui::box_ref(),
+  })
+}
+impl cui::Component for Component {
+  fn mut render() cui::View {
+    let data = self.props.model
+    data.renders =+ 1
+    let children = mut List::new<cui::View>()
+    children.push(cui::text("{self.props.prefix}{data.label}={data.value}"))
+    for child in data.children {
+      children.push(
+        cui::child(
+          component,
+          Props{model: child, prefix: data.value.to_str() + ":"},
+          key: child.label,
+        ),
+      )
+    }
+    cui::box(children.@, ref: data.ref)
+  }
+}
+impl cui::Lifecycle for Component {
+  fn mut mounted(ctx: cui::Context) {
+    self.props.model.mounts =+ 1
+    self.props.model.context = Maybe::new(ctx)
+  }
+
+  fn mut unmounting(ctx: cui::Context) {
+    self.props.model.unmounts =+ 1
+  }
+}
+
+test fn dispatch_and_animation_refresh_only_the_owning_subtree() Void!Str {
+  let app = headless::new(40, 10)
+  defer app.destroy()
+  let leaf = model("leaf", [])
+  let left = model("left", [leaf])
+  let right = model("right", [])
+  let root = model("root", [left, right])
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::child(component, Props{model: root, prefix: ""}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let root_before = root.renders
+  let right_before = right.renders
+  let left_before = left.renders
+  let leaf_before = leaf.renders
+  let original = leaf.ref.current.expect("leaf ref").node_ref.id
+  let ctx = left.context.expect("left context")
+  try ctx.dispatch(fn() {
+    left.value = 7
+  }).map_err(fn(err) Str {
+    "dispatch failed"
+  })
+  try ctx.dispatch(fn() {
+    left.value =+ 4
+  }).map_err(fn(err) Str {
+    "dispatch failed"
+  })
+  app.flush()
+  try testing::assert(
+    root.renders == root_before and right.renders == right_before,
+    "Ancestors and siblings do not render",
+  )
+  try testing::assert(
+    left.renders == left_before + 1 and leaf.renders == leaf_before + 1,
+    "Coalesced owner renders its descendants once",
+  )
+  try testing::assert(app.frame().text().contains("11:leaf=0"), "Descendants receive updated props")
+  try testing::assert(
+    leaf.ref.current.expect("retained ref").node_ref.id == original and leaf.mounts == 1,
+    "Local updates retain keyed controls and lifecycle",
+  )
+  let cancel = ctx.animate(100, fn(frame: animation::Frame) {
+    left.value = frame.elapsed
+  })
+  app.advance_time(0)
+  app.flush()
+  app.advance_time(37)
+  app.flush()
+  cancel()
+  try testing::assert(
+    app.frame().text().contains("37:leaf=0"),
+    "Animation updates visible text and descendant props",
+  )
+  testing::assert(
+    root.renders == root_before and right.renders == right_before,
+    "Animation frames leave unrelated components untouched",
+  )
+}
+
+test fn dirty_ancestors_cover_children_in_either_queue_order_and_global_updates_win() Void!Str {
+  let app = headless::new(40, 10)
+  defer app.destroy()
+  let leaf = model("leaf", [])
+  let branch = model("branch", [leaf])
+  let sibling = model("sibling", [])
+  let root = model("root", [branch, sibling])
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::child(component, Props{model: root, prefix: ""}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  for child_first in [true, false] {
+    let before = leaf.renders
+    let sibling_before = sibling.renders
+    mut first = leaf
+    mut second = branch
+    if not child_first {
+      first = branch
+      second = leaf
+    }
+    let _ = first.context.expect(
+      "first",
+    ).dispatch(fn() {
+      first.value =+ 1
+    })
+    let _ = second.context.expect(
+      "second",
+    ).dispatch(fn() {
+      second.value =+ 1
+    })
+    app.flush()
+    try testing::assert(
+      leaf.renders == before + 1,
+      "Child refresh absorbed by dirty ancestor in either order",
+    )
+    try testing::assert(sibling.renders == sibling_before, "Clean sibling remains untouched")
+  }
+  let before = leaf.renders
+  let _ = leaf.context.expect(
+    "leaf",
+  ).dispatch(fn() {
+    leaf.value = 91
+  })
+  let _ = renderer.dispatch(fn() {
+    branch.value = 52
+  })
+  app.flush()
+  try testing::assert(leaf.renders == before + 1, "Full renderer update absorbs local dirty work")
+  try testing::assert(
+    app.frame().text().contains("52:leaf=91"),
+    "Full update propagates current props and state",
+  )
+  let root_before = root.renders
+  let ctx = leaf.context.expect("leaf")
+  let _ = ctx.dispatch(fn() {
+    root.value = 73
+    ctx.invalidate_root()
+  })
+  app.flush()
+  testing::assert(
+    root.renders == root_before + 1 and app.frame().text().contains("73:branch=52"),
+    "Shared-state escape hatch refreshes ancestors",
+  )
+}
+
+test fn local_removal_retires_queued_children_and_reordering_preserves_contexts() Void!Str {
+  let app = headless::new(40, 10)
+  defer app.destroy()
+  let left = model("left", [])
+  let right = model("right", [])
+  let root = model("root", [left, right])
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::child(component, Props{model: root, prefix: ""}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let old = left.context.expect("left")
+  let original = left.ref.current.expect("left ref").node_ref.id
+  let _ = root.context.expect(
+    "root",
+  ).dispatch(fn() {
+    root.children = [right, left]
+  })
+  app.flush()
+  let _ = old.dispatch(fn() {
+    left.value = 13
+  })
+  app.flush()
+  try testing::assert(
+    app.frame().text().contains("left=13") and left.ref.current.expect("reordered").node_ref.id == original,
+    "Keyed reorder preserves context target and control",
+  )
+  let before = left.renders
+  let _ = old.dispatch(fn() {
+    left.value = 99
+  })
+  let _ = root.context.expect(
+    "root",
+  ).dispatch(fn() {
+    root.children = [right]
+  })
+  app.flush()
+  try testing::assert(
+    left.renders == before and left.unmounts == 1 and left.ref.current.is_none(),
+    "Removed dirty child never renders and is cleaned once",
+  )
+  try testing::assert(old.dispatch(fn() {}).is_err(), "Retired context rejects work")
+  let root_before = root.renders
+  old.invalidate_root()
+  app.flush()
+  try testing::assert(root.renders == root_before, "Retired context cannot invalidate the root")
+  let _ = root.context.expect(
+    "root",
+  ).dispatch(fn() {
+    root.children = [left, right]
+  })
+  app.flush()
+  try testing::assert(
+    left.mounts == 2 and left.ref.current.expect("remounted").node_ref.id != original,
+    "Remount creates a new lifetime",
+  )
+  testing::assert(old.dispatch(fn() {}).is_err(), "Old context cannot dirty the remount")
+}
+
+test fn sibling_updates_are_independent_and_cannot_steal_each_others_refs() Void!Str {
+  let app = headless::new(40, 10)
+  defer app.destroy()
+  let left = model("left", [])
+  let right = model("right", [])
+  let root = model("root", [left, right])
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::child(component, Props{model: root, prefix: ""}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let before = root.renders
+  let left_before = left.renders
+  let right_before = right.renders
+  let _ = left.context.expect(
+    "left",
+  ).dispatch(fn() {
+    left.value = 17
+  })
+  let _ = right.context.expect(
+    "right",
+  ).dispatch(fn() {
+    right.value = 43
+  })
+  app.flush()
+  try testing::assert(
+    root.renders == before and left.renders == left_before + 1 and right.renders == right_before + 1,
+    "Both dirty siblings update once without their parent",
+  )
+  try testing::assert(
+    app.frame().text().contains("left=17") and app.frame().text().contains("right=43"),
+    "Both independently updated subtrees are painted",
+  )
+  let saved = left.ref
+  let original = saved.current.expect("left control")
+  let other = right.ref.current.expect("right control")
+  let _ = left.context.expect(
+    "left",
+  ).dispatch(fn() {
+    left.ref = right.ref
+  })
+  let result = unsafe {
+    app.flush()
+  }
+  match result {
+    ok(_) => try testing::fail("Local updates must reject refs belonging to untouched siblings"),
+    err(message) => try testing::assert(message.contains("BoxRef"), message),
+  }
+  testing::assert(
+    saved.current.expect("original ref") == original and right.ref.current.expect("sibling ref") == other,
+    "Validation happens before mutating either subtree",
+  )
+}

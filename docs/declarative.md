@@ -152,8 +152,33 @@ the mount-scoped `ctx.dispatch` supplied to their lifecycle hook instead.
 
 Constructors and `render` must be deterministic and effect-free. Rendering may
 describe callbacks but must not subscribe, acquire resources, or mutate renderer
-ownership. The renderer is root-driven rather than fine-grained or dependency
-tracked.
+ownership.
+
+Component `ctx.dispatch` callbacks, animation frames, and mounted hooks invalidate
+only their owning component's subtree. Ancestors and unrelated siblings are not
+rendered or reconciled. Descendants still receive props when their parent renders;
+this is component-level scheduling, not property-level dependency tracking.
+Repeated invalidations coalesce, and a dirty ancestor covers its dirty descendants.
+Queued updates cannot revive an unmounted component.
+
+Renderer `update`, `dispatch`, and `invalidate` remain tree-wide. Control event
+callbacks also retain tree-wide invalidation: they may call parent-provided
+closures or change shared state. For that same situation inside a local async or
+animation callback, call `ctx.invalidate_root()` after changing the shared state:
+
+```ard
+let _ = ctx.dispatch(fn() {
+  self.props.close()
+  ctx.invalidate_root()
+})
+```
+
+`invalidate_root` is UI-thread-only and does nothing after its component unmounts.
+Use it only when readers outside the owning subtree need to update. Layout and
+painting still follow Cooper's retained-tree rules; local reconciliation does not
+imply constant-time layout for a large tree. Compare both update paths with
+`ard run benchmarks/cui_local_update.ard` (dispatch through headless painting,
+including component render counts; no network requests).
 
 ## Lifecycle and resources
 
@@ -216,7 +241,7 @@ fn mut mounted(ctx: d::Context) {
 Capture request inputs and the dispatch function before starting the worker.
 Access mutable component state only inside the dispatched callback. `dispatch`
 is background-safe, returns `Void!DispatchError`, and automatically schedules a
-render after delivery. A successful return means queued, not guaranteed delivery.
+subtree render after delivery. A successful return means queued, not guaranteed delivery.
 The mount is checked both when posting and when executing: unmount suppresses
 already-queued callbacks as well as rejecting new posts. Old handles never become
 valid again after reinsertion. Renderer and Runtime destruction also retire them.
@@ -252,7 +277,7 @@ let cancel = ctx.animate(
 
 Import `cooper/animation` for frames, easing, and interpolation. Duration is
 positive milliseconds and easing defaults to linear. Frames run on the UI
-thread and invalidate CUI automatically. `cancel()` is idempotent; retaining it
+thread and invalidate their component subtree automatically. `cancel()` is idempotent; retaining it
 is optional because completion, component unmount, and renderer destruction
 release the animation's callbacks. Starting an animation on a retired context
 does nothing. Both `animate` and cancellation are UI-thread-only; workers must

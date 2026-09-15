@@ -901,6 +901,8 @@ impl cui::Lifecycle for Toast {
         time::After(3 * time::Second).recv() => {
           let _ = ctx.dispatch(fn() {
             self.props.close()
+            // close changes the parent's notice, not the toast's local state.
+            ctx.invalidate_root()
           })
         },
       }

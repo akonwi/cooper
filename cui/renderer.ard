@@ -40,6 +40,8 @@ private struct State {
   children: [mut Mounted],
   active: Bool,
   pending: Bool,
+  full_refresh: Bool,
+  dirty: [mut Mounted],
   committing: Bool,
 }
 
@@ -512,6 +514,8 @@ fn mount(runtime: mut runtime::Runtime, root: mut root::Root, view: view::View) 
     children: [],
     active: true,
     pending: false,
+    full_refresh: false,
+    dirty: [],
     committing: false,
   }
   container.node_ref.on_cleanup(fn() {
@@ -536,12 +540,57 @@ impl State {
 
   // UI-thread API. Component event callbacks call this automatically.
   fn mut invalidate() {
+    self.full_refresh = true
+    self.schedule()
+  }
+
+  private fn mut invalidate_component(component: mut Mounted) {
+    if self.active and component.active {
+      mut queued = false
+      for existing in self.dirty {
+        if existing == component {
+          queued = true
+        }
+      }
+      if not queued {
+        self.dirty.push(component)
+        self.schedule()
+      }
+    }
+  }
+
+  private fn mut schedule() {
     if self.active and not self.pending {
       self.pending = true
       match self.runtime.dispatch(fn() {
         self.pending = false
+        let full = self.full_refresh
+        let dirty = self.dirty
+        self.full_refresh = false
+        self.dirty = []
         if self.active {
-          self.refresh()
+          if full {
+            self.refresh()
+          } else {
+            for component in dirty {
+              // A dirty ancestor renders this component with current props.
+              // Skip it regardless of which invalidation arrived first.
+              mut ancestor = component.parent
+              mut covered = false
+              while ancestor.is_some() {
+                let parent = ancestor.expect("dirty component ancestor")
+                for candidate in dirty {
+                  if candidate == parent {
+                    covered = true
+                  }
+                }
+                ancestor = parent.parent
+              }
+              if component.active and not covered {
+                self.refresh(component)
+              }
+            }
+          }
         }
       }) {
         ok => (),
@@ -567,13 +616,19 @@ impl State {
     })
   }
 
-  private fn mut context(scope: mut scopes::MountScope) context::Context {
+  private fn mut context(scope: mut scopes::MountScope, owner: (mut Mounted)?) context::Context {
     context::internal_new(
       self.runtime,
       fn(work: fn()) Void!event::DispatchError {
         self.runtime.dispatch(work)
       },
       scope,
+      fn() {
+        match owner {
+          component => self.invalidate_component(component),
+          _ => self.invalidate(),
+        }
+      },
       fn() {
         self.invalidate()
       },
@@ -586,11 +641,9 @@ impl State {
     inherited: context::Context,
   ) mut Mounted {
     mut scope = Maybe::new<mut scopes::MountScope>()
-    mut ctx = inherited
     if instance.is_some() {
       let owned = scopes::new_mount_scope()
       scope = Maybe::new(owned)
-      ctx = self.context(owned)
     }
     let control: mut node::Renderable = match description.kind {
       view::Kind::text => ui::text(self.runtime, content: description.content),
@@ -629,7 +682,7 @@ impl State {
       children: [],
       parent: Maybe::new<mut Mounted>(),
       instance: instance,
-      context: ctx,
+      context: inherited,
       scope: scope,
       active: true,
       applying: false,
@@ -637,6 +690,10 @@ impl State {
       effective_value: effective_value,
       remove_key: fn() {},
       remove_mouse: fn() {},
+    }
+    match scope {
+      owned => { mounted.context = self.context(owned, mounted) },
+      _ => (),
     }
     if description.kind == view::Kind::input {
       let field = input(control)
@@ -882,7 +939,7 @@ impl State {
             match unsafe::cast<mut view::Lifecycle>(instance.component) {
               lifecycle => {
                 lifecycle.mounted(child.context)
-                self.invalidate()
+                self.invalidate_component(child)
               },
               _ => (),
             }
@@ -909,7 +966,7 @@ impl State {
     }
   }
 
-  private fn mut refresh() {
+  private fn mut refresh(owner: (mut Mounted)?) {
     if self.committing {
       panic("reentrant declarative render")
     }
@@ -917,19 +974,32 @@ impl State {
     defer {
       self.committing = false
     }
+    mut previous = self.children
+    mut descriptions = [self.view]
+    mut parent: mut node::Renderable = self.container
+    mut inherited = self.context(self.scope)
+    match owner {
+      component => {
+        previous = component.children
+        descriptions = [component.instance.expect("component refresh owner").component.render()]
+        parent = component.control
+        inherited = component.context
+      },
+      _ => (),
+    }
     let refs = mut List::new<mut view::InputRef>()
-    let prepared = prepare(self.children, [self.view], refs)
+    let prepared = prepare(previous, descriptions, refs)
     let box_refs = mut List::new<mut view::BoxRef>()
-    validate_box_refs(prepared, box_refs, self.children)
+    validate_box_refs(prepared, box_refs, previous)
     let scroll_refs = mut List::new<mut view::ScrollBoxRef>()
-    validate_scroll_refs(prepared, scroll_refs, self.children)
+    validate_scroll_refs(prepared, scroll_refs, previous)
     let areas = mut List::new<mut view::TextAreaRef>()
     let selects = mut List::new<mut view::SelectRef>()
-    validate_control_refs(prepared, areas, selects, self.children)
+    validate_control_refs(prepared, areas, selects, previous)
     for ref in refs {
       match ref.current {
         field => {
-          if not owns(self.children, field.node_ref) {
+          if not owns(previous, field.node_ref) {
             panic("InputRef is already mounted outside this renderer")
           }
         },
@@ -937,7 +1007,7 @@ impl State {
       }
     }
     let removed = mut List::new<mut Mounted>()
-    retired(self.children, prepared, removed)
+    retired(previous, prepared, removed)
     for child in removed {
       cancel(child)
     }
@@ -945,24 +1015,27 @@ impl State {
       dispose(child)
     }
     if removed.size() != 0 {
-      self.invalidate()
+      match owner {
+        component => self.invalidate_component(component),
+        _ => self.invalidate(),
+      }
     }
-    clear_refs(self.children)
-    self.children = self.reconcile(
-      self.container,
-      view::Kind::box,
-      prepared,
-      self.context(self.scope),
-      Maybe::new<mut Mounted>(),
-    )
-    self.mounted(self.children)
-    self.apply_focus(self.children)
+    clear_refs(previous)
+    let children = self.reconcile(parent, view::Kind::box, prepared, inherited, owner)
+    match owner {
+      component => { component.children = children },
+      _ => { self.children = children },
+    }
+    self.mounted(children)
+    self.apply_focus(children)
   }
 
   private fn mut close() {
     if self.active {
       self.active = false
       self.pending = false
+      self.full_refresh = false
+      self.dirty = []
       self.scope.stop()
       for child in self.children {
         cancel(child)

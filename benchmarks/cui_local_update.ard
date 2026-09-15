@@ -1,0 +1,121 @@
+use cooper/cui
+use cooper/testing
+use cooper/ui
+use go:fmt
+use go:time
+
+// Compare whole-renderer and component-local updates on the same mounted tree.
+// Includes dispatch, reconciliation, layout and headless painting; no networking.
+
+struct RowState {
+  value: Int,
+  renders: Int,
+  context: cui::Context?,
+}
+struct RowProps {
+  state: mut RowState,
+}
+struct Row {
+  props: mut RowProps,
+}
+private fn row(props: mut RowProps) mut Row {
+  (mut Row{props: props})
+}
+impl cui::Component for Row {
+  fn mut render() cui::View {
+    self.props.state.renders =+ 1
+    cui::text(
+      "value={self.props.state.value}",
+      styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+    )
+  }
+}
+impl cui::Lifecycle for Row {
+  fn mut mounted(ctx: cui::Context) {
+    self.props.state.context = Maybe::new(ctx)
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+struct Props {
+  rows: [mut RowState],
+}
+struct Screen {
+  props: mut Props,
+}
+private fn screen(props: mut Props) mut Screen {
+  (mut Screen{props: props})
+}
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    let children = mut List::new<cui::View>()
+    for item, index in self.props.rows {
+      children.push(cui::child(row, RowProps{state: item}, key: index.to_str()))
+    }
+    cui::scroll_box(
+      children.@,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    )
+  }
+}
+
+fn main() {
+  for count in [250, 500, 1000] {
+    let rows = mut List::new<mut RowState>()
+    mut index = 0
+    while index < count {
+      rows.push(
+        mut RowState{
+          value: 0,
+          renders: 0,
+          context: Maybe::new<cui::Context>(),
+        },
+      )
+      index =+ 1
+    }
+    let app = testing::new(100, 30)
+    let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{rows: rows.@}))
+    app.flush()
+    let target = rows.at(7).expect("visible row")
+    for local in [false, true] {
+      renderer.update(fn() {
+        target.value = 0
+      })
+      app.flush()
+      for item in rows {
+        item.renders = 0
+      }
+      let started = time::Now()
+      mut update = 0
+      while update < 100 {
+        let work = fn() {
+          target.value =+ 1
+        }
+        if local {
+          target.context.expect("mounted").dispatch(work).expect("local dispatch")
+        } else {
+          renderer.dispatch(work).expect("global dispatch")
+        }
+        app.flush()
+        update =+ 1
+      }
+      let elapsed = time::Since(started)
+      mut renders = 0
+      for item in rows {
+        renders =+ item.renders
+      }
+      if not app.frame().text().contains("value={target.value}") {
+        panic("updated row must be painted")
+      }
+      fmt::Printf(
+        "rows=%d local=%t updates=100 elapsed_us=%d row_renders=%d\n",
+        count,
+        local,
+        elapsed.Microseconds(),
+        renders,
+      )
+    }
+    renderer.destroy()
+    app.destroy()
+  }
+}

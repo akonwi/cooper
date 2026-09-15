@@ -1,0 +1,189 @@
+// Keyed, positive row heights. Tree entries and steps are one-based.
+struct Index {
+  keys: [Str],
+  positions: [Str: Int],
+  measured: [Str: Int],
+  heights: [Int],
+  tree: [Int],
+  steps: [Int],
+  extent: Int,
+}
+
+// Cooper's supported 64-bit targets use a signed 64-bit Int.
+private fn checked_add(left: Int, right: Int) Int {
+  if right > 9223372036854775807 - left {
+    panic("virtual extent overflow")
+  }
+  left + right
+}
+
+private fn build(keys: [Str], estimate: Int, measured: [Str: Int]) Index {
+  if estimate < 1 {
+    panic("virtual extent estimate must be positive")
+  }
+  let positions = mut Map::new<Int>()
+  let retained = mut Map::new<Int>()
+  let heights = mut List::new<Int>()
+  let tree = mut [0]
+  let steps = mut [0]
+  mut extent = 0
+  for key, index in keys {
+    if positions.has(key) {
+      panic("virtual extent keys must be unique")
+    }
+    positions.set(key, index)
+    mut height = estimate
+    match measured.get(key) {
+      cached => {
+        height = cached
+        retained.set(key, cached)
+      },
+      _ => (),
+    }
+    extent = checked_add(extent, height)
+    heights.push(height)
+    tree.push(height)
+    let position = index + 1
+    if position % 2 == 0 {
+      steps.push(steps.at(position / 2).expect("Fenwick step") * 2)
+    } else {
+      steps.push(1)
+    }
+  }
+  // Each subtree contributes once to its parent: O(n), not n updates.
+  for mut index = 0; index < keys.size(); index =+ 1 {
+    let position = index + 1
+    let step = steps.at(position).expect("Fenwick step")
+    if step <= keys.size() - position {
+      let parent = position + step
+      tree.set(
+        parent,
+        checked_add(
+          tree.at(parent).expect("Fenwick parent"),
+          tree.at(position).expect("Fenwick child"),
+        ),
+      )
+    }
+  }
+  Index{
+    keys: keys,
+    positions: positions.@,
+    measured: retained.@,
+    heights: heights.@,
+    tree: tree.@,
+    steps: steps.@,
+    extent: extent,
+  }
+}
+
+fn new(keys: [Str], estimate: Int) mut Index {
+  (mut build(keys, estimate, Map::new<Int>()))
+}
+
+impl Index {
+  fn count() Int {
+    self.keys.size()
+  }
+
+  fn key(index: Int) Str {
+    self.keys.at(index).expect("virtual extent index out of bounds")
+  }
+
+  fn position(key: Str) Int? {
+    self.positions.get(key)
+  }
+
+  // Sum of [0, end); both zero and count are valid endpoints.
+  fn prefix(end: Int) Int {
+    if end < 0 or end > self.count() {
+      panic("virtual extent prefix out of bounds")
+    }
+    mut position = end
+    mut sum = 0
+    while position > 0 {
+      sum =+ self.tree.at(position).expect("Fenwick prefix")
+      position =- self.steps.at(position).expect("Fenwick step")
+    }
+    sum
+  }
+
+  fn total() Int {
+    self.extent
+  }
+
+  // Find the row containing offset; exact trailing edges belong to the next row.
+  fn index_at(offset: Int) Int {
+    if offset < 0 {
+      0
+    } else if offset >= self.extent {
+      self.count()
+    } else {
+      mut step = 1
+      while step <= self.count() / 2 {
+        step = step * 2
+      }
+      mut position = 0
+      mut remaining = offset
+      while step > 0 {
+        if step <= self.count() - position {
+          let next = position + step
+          let height = self.tree.at(next).expect("Fenwick search")
+          if height <= remaining {
+            position = next
+            remaining =- height
+          }
+        }
+        step = step / 2
+      }
+      position
+    }
+  }
+
+  fn mut set_height(index: Int, height: Int) Bool {
+    let key = self.key(index)
+    if height < 1 {
+      panic("virtual extent height must be positive")
+    }
+    let previous = self.heights.at(index).expect("virtual extent height")
+    let extent = checked_add(self.extent - previous, height)
+    // Even an unchanged estimate is now an explicit measurement.
+    self.measured.set(key, height)
+    if height == previous {
+      false
+    } else {
+      self.extent = extent
+      self.heights.set(index, height)
+      let delta = height - previous
+      mut position = index + 1
+      while position <= self.count() {
+        self.tree.set(position, self.tree.at(position).expect("Fenwick update") + delta)
+        let step = self.steps.at(position).expect("Fenwick step")
+        if step > self.count() - position {
+          break
+        }
+        position =+ step
+      }
+      true
+    }
+  }
+
+  fn mut replace(keys: [Str], estimate: Int) {
+    let replacement = build(keys, estimate, self.measured)
+    self.keys = replacement.keys
+    self.positions = replacement.positions
+    self.measured = replacement.measured
+    self.heights = replacement.heights
+    self.tree = replacement.tree
+    self.steps = replacement.steps
+    self.extent = replacement.extent
+  }
+
+  fn mut reset(estimate: Int) {
+    let replacement = build(self.keys, estimate, Map::new<Int>())
+    self.measured = replacement.measured
+    self.heights = replacement.heights
+    self.tree = replacement.tree
+    self.steps = replacement.steps
+    self.extent = replacement.extent
+  }
+}

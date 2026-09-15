@@ -632,6 +632,19 @@ impl State {
       fn() {
         self.invalidate()
       },
+      fn(work: fn() Bool) fn() {
+        self.runtime.internal_on_layout(fn() Bool {
+          mut changed = false
+          if self.active and not scope.is_cancelled() {
+            changed = work()
+            if changed {
+              self.refresh(owner)
+              self.runtime.internal_preserve_focus_scroll()
+            }
+          }
+          changed
+        })
+      },
     )
   }
 

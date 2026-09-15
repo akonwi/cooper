@@ -22,6 +22,11 @@ struct PageProps {
   open: fn(Int),
 }
 
+struct CommentRow {
+  id: Int,
+  depth: Int,
+}
+
 // Requests run off-thread; queue, cache, and selection are UI-thread-only.
 // The component owns scheduling, while Context owns callback lifetime.
 struct Page {
@@ -40,7 +45,7 @@ struct Page {
   visible: [Int],
   loading_feed: Bool,
   error: Str,
-  scroll: mut cui::ScrollBoxRef,
+  scroll: mut cui::VirtualListRef,
 }
 
 private fn page(props: mut PageProps) mut Page {
@@ -60,7 +65,7 @@ private fn page(props: mut PageProps) mut Page {
     visible: [],
     loading_feed: false,
     error: "",
-    scroll: cui::scroll_box_ref(),
+    scroll: cui::virtual_list_ref(),
   })
 }
 
@@ -196,6 +201,9 @@ impl Page {
       next,
     ).map(fn(id: Int) {
       self.selected = id
+      let _ = self.scroll.current.map(fn(scroll) {
+        let _ = scroll.reveal(id.to_str())
+      })
     })
   }
 
@@ -225,100 +233,111 @@ impl Page {
     }
   }
 
-  fn mut row(id: Int, depth: Int, rows: mut [cui::View], visited: mut [Str: Bool]) {
+  // Flatten loaded data only; offscreen rows do not construct any views.
+  fn mut collect(id: Int, depth: Int, rows: mut [CommentRow], visited: mut [Str: Bool]) {
     if not visited.get(id.to_str()).or(false) {
       visited.set(id.to_str(), true)
       match self.items.get(id.to_str()) {
         _ => {
-          let _ = self.errors.get(
-            id.to_str(),
-          ).map(fn(error: Str) {
-            rows.push(cui::text("#{id}: {error}", key: "error-{id}", styles: line()))
-          })
+          if self.errors.has(id.to_str()) {
+            rows.push(CommentRow{id: id, depth: depth})
+          }
         },
         item => {
           if self.selected == 0 {
             self.selected = id
           }
           self.visible.push(id)
+          rows.push(CommentRow{id: id, depth: depth})
           let closed = id != self.props.story and self.collapsed.get(id.to_str()).or(true)
-          mut label = item.by.or("unknown")
-          mut content = item.text.or("")
-          if self.props.story == 0 or id == self.props.story {
-            label = "{item.score.or(0)} points · {label} · {item.descendants.or(0)} comments"
-            content = item.title.or("Untitled")
-          }
-          if item.deleted.or(false) {
-            content = "[deleted]"
-          }
-          if item.dead.or(false) {
-            content = "[dead]"
-          }
-          if self.props.story != 0 and id != self.props.story and item.kids.or([]).size() != 0 {
-            let count = item.kids.or([]).size()
-            if closed {
-              label = "▸ {label} · {count} replies (collapsed)"
-            } else {
-              label = "▾ {label} · {count} replies"
-            }
-          }
-          mut indent = depth * 2
-          if indent > 20 {
-            indent = 20
-          }
-          let padding = mut ui::edges()
-          padding.left = ui::cells(indent + 1)
-          padding.right = ui::cells(1)
-          let body = mut List::new<cui::View>()
-          body.push(
-            cui::text(
-              label,
-              styles: line(),
-              text_style: ui::text_style(foreground: ui::indexed(208)),
-            ),
-          )
-          body.push(
-            cui::text(content, styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0)),
-          )
-          if id == self.props.story {
-            if not item.text.or("").is_empty() {
-              body.push(cui::text(item.text.or("")))
-            }
-            let url = item.url.or("https://news.ycombinator.com/item?id={id}")
-            if (url.starts_with("https://") or url.starts_with("http://")) and (not url.contains("\n")) and (not url.contains("\t")) {
-              body.push(cui::text(ui::styled_text([ui::span(url, link: url)])))
-            }
-          }
-          mut background = ui::indexed(0)
-          if id == self.selected {
-            background = ui::indexed(236)
-          }
-          rows.push(
-            cui::box(
-              body.@,
-              key: id.to_str(),
-              focused: self.props.active and id == self.selected,
-              styles: ui::style(
-                width: ui::percent(100.0),
-                flex_shrink: 0.0,
-                padding: padding.@,
-                background: background,
-              ),
-              on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
-                if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
-                  self.activate(id, ctx)
-                  mouse.prevent_default()
-                }
-              },
-            ),
-          )
           if self.props.story != 0 and not closed {
             for child in item.kids.or([]) {
-              self.row(child, depth + 1, rows, visited)
+              self.collect(child, depth + 1, rows, visited)
             }
           }
         },
       }
+    }
+  }
+
+  fn mut row(entry: CommentRow) cui::View {
+    let id = entry.id
+    match self.items.get(id.to_str()) {
+      _ => {
+        let error = self.errors.get(id.to_str()).or("Unavailable")
+        cui::text("#{id}: {error}", key: "error-{id}", styles: line())
+      },
+      item => {
+        let closed = id != self.props.story and self.collapsed.get(id.to_str()).or(true)
+        mut label = item.by.or("unknown")
+        mut content = item.text.or("")
+        if self.props.story == 0 or id == self.props.story {
+          label = "{item.score.or(0)} points · {label} · {item.descendants.or(0)} comments"
+          content = item.title.or("Untitled")
+        }
+        if item.deleted.or(false) {
+          content = "[deleted]"
+        }
+        if item.dead.or(false) {
+          content = "[dead]"
+        }
+        if self.props.story != 0 and id != self.props.story and item.kids.or([]).size() != 0 {
+          let count = item.kids.or([]).size()
+          if closed {
+            label = "▸ {label} · {count} replies (collapsed)"
+          } else {
+            label = "▾ {label} · {count} replies"
+          }
+        }
+        mut indent = entry.depth * 2
+        if indent > 20 {
+          indent = 20
+        }
+        let padding = mut ui::edges()
+        padding.left = ui::cells(indent + 1)
+        padding.right = ui::cells(1)
+        let body = mut List::new<cui::View>()
+        body.push(
+          cui::text(
+            label,
+            styles: line(),
+            text_style: ui::text_style(foreground: ui::indexed(208)),
+          ),
+        )
+        body.push(
+          cui::text(content, styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0)),
+        )
+        if id == self.props.story {
+          if not item.text.or("").is_empty() {
+            body.push(cui::text(item.text.or("")))
+          }
+          let url = item.url.or("https://news.ycombinator.com/item?id={id}")
+          if (url.starts_with("https://") or url.starts_with("http://")) and (not url.contains("\n")) and (not url.contains("\t")) {
+            body.push(cui::text(ui::styled_text([ui::span(url, link: url)])))
+          }
+        }
+        mut background = ui::indexed(0)
+        if id == self.selected {
+          background = ui::indexed(236)
+        }
+        cui::box(
+          body.@,
+          key: id.to_str(),
+          focused: self.props.active and id == self.selected,
+          styles: ui::style(
+            width: ui::percent(100.0),
+            flex_shrink: 0.0,
+            padding: padding.@,
+            background: background,
+          ),
+          on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+            if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
+              self.activate(id, ctx)
+              mouse.prevent_default()
+            }
+          },
+        )
+      },
     }
   }
 }
@@ -333,11 +352,11 @@ impl cui::Lifecycle for Page {
 
 impl cui::Component for Page {
   fn mut render() cui::View {
-    let rows = mut List::new<cui::View>()
+    let rows = mut List::new<CommentRow>()
     self.visible = []
     let visited = mut Map::new<Bool>()
     for id in self.roots {
-      self.row(id, 0, rows, visited)
+      self.collect(id, 0, rows, visited)
     }
     mut status = "{self.loaded} loaded · {self.running} requests · m more in selected branch · r retry"
     if self.props.story == 0 {
@@ -359,8 +378,14 @@ impl cui::Component for Page {
     cui::box(
       [
         cui::text(status, styles: line()),
-        cui::scroll_box(
+        cui::virtual_list(
           rows.@,
+          item_key: fn(row: CommentRow) Str {
+            row.id.to_str()
+          },
+          render_item: fn(row: CommentRow) cui::View {
+            self.row(row)
+          },
           ref: self.scroll,
           styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
         ),

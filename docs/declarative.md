@@ -419,3 +419,72 @@ errors; Cooper makes no transactional model rollback or recovery promise.
 
 Images, custom control adapters, fine-grained scheduling, and a framework-managed
 background executor are not exposed.
+
+## Virtual lists
+
+`cui::virtual_list` describes a scrolling collection without building every row:
+
+```ard
+cui::virtual_list(
+  comments,
+  item_key: fn(comment: Comment) Str { comment.id.to_str() },
+  render_item: fn(comment: Comment) cui::View {
+    cui::text(comment.body)
+  },
+)
+```
+
+Give the list a bounded viewport through its parent layout or `styles`. Keys
+must be unique across the collection. The builder runs only for mounted rows:
+the viewport, overscan, and any offscreen row retaining keyboard focus.
+
+Both tuning parameters are optional and measured in terminal rows:
+
+- `estimated_height`: 6 by default; positive initial height for unmeasured items.
+- `overscan`: 12 by default on each side; zero is supported.
+- `row_height`: optional positive fixed height, clipping oversized content. Omit
+  it for automatically measured, variable-height rows.
+
+The list preserves a stable-key scroll anchor as rows are measured, reordered,
+inserted, removed, or rewrapped after a width change. Removing the anchor picks
+a surviving successor, then predecessor. The scrollbar's total extent is an
+estimate until all heights are known; it can change during scrolling.
+
+Pass `ref: cui::virtual_list_ref()` when imperative navigation is needed. Through
+`ref.current.map(...)`, the mounted list supports `scroll_to_key(key, alignment)`
+with `cui::ScrollAlignment::{start, center, end, nearest}` (default `start`),
+`reveal(key)` (nearest), `scroll_by(cells)`, and `focus()`. It also exposes
+`visible_range()` (start inclusive, end exclusive), `scroll_top()`,
+`total_height()`, and `mounted_count()`. `invalidate_item(key)` discards the
+cached height in favor of the estimate and requests measurement when mounted;
+it returns whether an active list accepted the key. Mounted rows are measured
+automatically when their layout changes.
+
+**Offscreen rows unmount.** Their component contexts and scoped resources retire
+normally. Keys preserve identity while mounted, not arbitrary offscreen local
+state. Keep durable editing, selection, expansion, and fetched data in the owning
+model, keyed by item identity. A focused row stays mounted until focus moves;
+this does not mount intervening rows or prevent scrolling away from it.
+
+Nested trees are flattened by application code into the currently expanded
+sequence, with indentation rendered inside each row. Virtualization does not
+fetch data or prescribe a tree model. The `cui_virtual_comments` example exercises
+4,000 already-loaded comments, nested collapse, key jumps, and width-dependent
+wrapping without any networking:
+
+```sh
+cd examples
+ard run cui_virtual_comments.ard
+python3 test_cui_virtual_comments.py
+```
+
+`cui_hackernews` uses the same list for feeds and expanded comments. Its page
+model retains fetched items, selection, and expansion state; scrolling does not
+schedule requests. The HTTP/PTY test checks offscreen selection and navigation
+back through cached rows. See the [isolated rendering benchmark](cui-virtual-list-benchmark.md)
+for latency and peak RSS comparisons without networking.
+
+Source replacement rebuilds the key/height index in O(n); scrolling reuses it.
+Offset lookup and height updates use a Fenwick tree in O(log n). Data and cached
+height metadata still occupy O(n) memory; only retained row controls are bounded
+by the visible working set. The current height-overflow guard targets 64-bit Int.

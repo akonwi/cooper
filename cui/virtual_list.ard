@@ -1,0 +1,515 @@
+use cooper/core/node
+use cooper/core/virtual_extent
+use cooper/cui/context
+use cooper/cui/view
+use cooper/event
+use cooper/ui
+
+enum Alignment {
+  start,
+  center,
+  end,
+  nearest,
+}
+struct Range {
+  start: Int,
+  end: Int,
+}
+struct Ref {
+  current: (mut VirtualList)?,
+}
+fn ref() mut Ref {
+  (mut Ref{current: Maybe::new<mut VirtualList>()})
+}
+
+// One source object per application render, not per scroll/layout pass.
+struct Source {
+  keys: [Str],
+  build: fn(Int) view::View,
+  estimate: Int,
+  overscan: Int,
+  row_height: Int?,
+  styles: ui::Style,
+  ref: (mut Ref)?,
+  on_key: fn(mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(mut event::MouseEvent, context::Context)?,
+}
+struct Props {
+  source: mut Source,
+}
+struct Row {
+  key: Str,
+  ref: mut view::BoxRef,
+}
+
+struct VirtualList {
+  props: mut Props,
+  source: mut Source,
+  index: mut virtual_extent::Index,
+  scroll: mut view::ScrollBoxRef,
+  rows: [Row],
+  width: Int,
+  height: Int,
+  sample_height: Int,
+  top: Int,
+  anchor: Str?,
+  delta: Int,
+  restore: Bool,
+  pending: Str?,
+  alignment: Alignment,
+  active: Bool,
+  bound_ref: (mut Ref)?,
+}
+
+fn new(props: mut Props) mut VirtualList {
+  let source = props.source
+  (mut VirtualList{
+    props: props,
+    source: source,
+    index: virtual_extent::new(source.keys, source.row_height.or(source.estimate)),
+    scroll: view::scroll_box_ref(),
+    rows: [],
+    width: 0,
+    height: 1,
+    sample_height: source.row_height.or(source.estimate),
+    top: 0,
+    anchor: source.keys.at(0),
+    delta: 0,
+    restore: false,
+    pending: Maybe::new<Str>(),
+    alignment: Alignment::nearest,
+    active: false,
+    bound_ref: Maybe::new<mut Ref>(),
+  })
+}
+
+private fn focused(target: mut node::Node) Bool {
+  mut found = target.is_focused()
+  for child in target.children {
+    if focused(child) {
+      found = true
+    }
+  }
+  found
+}
+private fn nonnegative(value: Int) Int {
+  if value < 0 {
+    0
+  } else {
+    value
+  }
+}
+
+impl VirtualList {
+  fn scroll_top() Int {
+    self.top
+  }
+
+  fn total_height() Int {
+    self.index.total()
+  }
+
+  fn mounted_count() Int {
+    self.rows.size()
+  }
+
+  fn mut focus() Bool {
+    self.scroll.current.map(fn(scroll) Bool {
+      scroll.focus()
+    }).or(false)
+  }
+
+  fn visible_range() Range {
+    let first = self.index.index_at(self.top)
+    mut end = first
+    if self.height > 0 and first < self.index.count() {
+      end = self.index.index_at(self.top + self.height - 1)
+      if end < self.index.count() {
+        end =+ 1
+      }
+    }
+    Range{start: first, end: end}
+  }
+
+  // Bool means the key exists and the request was accepted. Unmeasured targets
+  // settle to their measured alignment before the next frame is painted.
+  fn mut scroll_to_key(key: Str, alignment: Alignment?) Bool {
+    if self.active and self.index.position(key).is_some() {
+      self.pending = Maybe::new(key)
+      self.alignment = alignment.or(Alignment::start)
+      let _ = self.scroll.current.map(fn(scroll) {
+        scroll.node_ref.request_redraw()
+      })
+      true
+    } else {
+      false
+    }
+  }
+
+  fn mut reveal(key: Str) Bool {
+    self.scroll_to_key(key, Alignment::nearest)
+  }
+
+  fn mut scroll_by(cells: Int) Bool {
+    self.pending = Maybe::new<Str>()
+    self.scroll.current.map(fn(scroll) Bool {
+      scroll.scroll_by(cells)
+    }).or(false)
+  }
+
+  fn mut invalidate_item(key: Str) Bool {
+    mut position = Maybe::new<Int>()
+    if self.active {
+      position = self.index.position(key)
+    }
+    match position {
+      index => {
+        self.capture_anchor(self.top)
+        let _ = self.index.set_height(index, self.source.row_height.or(self.source.estimate))
+        self.restore = true
+        let _ = self.scroll.current.map(fn(scroll) {
+          scroll.node_ref.request_redraw()
+        })
+        true
+      },
+      _ => false,
+    }
+  }
+
+  private fn mut capture_anchor(top: Int) {
+    let position = self.index.index_at(top)
+    if position < self.index.count() {
+      self.anchor = Maybe::new(self.index.key(position))
+      self.delta = top - self.index.prefix(position)
+    } else {
+      self.anchor = Maybe::new<Str>()
+      self.delta = 0
+    }
+  }
+
+  private fn anchor_top() Int {
+    match self.anchor {
+      key => {
+        match self.index.position(key) {
+          index => {
+            let start = self.index.prefix(index)
+            let height = self.index.prefix(index + 1) - start
+            mut delta = self.delta
+            if delta >= height {
+              delta = height - 1
+            }
+            start + nonnegative(delta)
+          },
+          _ => self.top,
+        }
+      },
+      _ => self.top,
+    }
+  }
+
+  private fn clamp_top(top: Int) Int {
+    let maximum = nonnegative(self.index.total() - self.height)
+    if top > maximum {
+      maximum
+    } else {
+      nonnegative(top)
+    }
+  }
+
+  private fn indices() [Int] {
+    let indices = mut List::new<Int>()
+    let selected = mut Map::new<Bool>()
+    mut first = self.index.index_at(nonnegative(self.top - self.source.overscan))
+    let edge = self.top + self.height + self.source.overscan
+    mut cursor = self.index.prefix(first)
+    // Use observed heights to size the next materialization batch. A wildly
+    // high initial estimate must not require one layout pass per new row.
+    while first < self.index.count() and cursor < edge {
+      indices.push(first)
+      selected.set(self.index.key(first), true)
+      cursor =+ self.index.measured.get(self.index.key(first)).or(self.sample_height)
+      first =+ 1
+    }
+    // Focus is the only automatic keep-alive exception. A far-away focused row
+    // is retained separately; intervening rows are not materialized.
+    for row in self.rows {
+      if not selected.get(row.key).or(false) {
+        match row.ref.current {
+          control => {
+            if focused(control.node_ref) {
+              let _ = self.index.position(
+                row.key,
+              ).map(fn(index: Int) {
+                indices.push(index)
+              })
+            }
+          },
+          _ => (),
+        }
+      }
+    }
+    indices.@
+  }
+
+  private fn mut bind_ref() {
+    match self.bound_ref {
+      ref => { ref.current = Maybe::new<mut VirtualList>() },
+      _ => (),
+    }
+    self.bound_ref = self.source.ref
+    match self.bound_ref {
+      ref => {
+        match ref.current {
+          other => {
+            if other != self {
+              panic("VirtualListRef is already mounted")
+            }
+          },
+          _ => (),
+        }
+        ref.current = Maybe::new(self)
+      },
+      _ => (),
+    }
+  }
+
+  private fn mut sync_source() {
+    if self.source != self.props.source {
+      // An event may scroll and rerender the owner before the next layout pass.
+      // Preserve that new position rather than restoring the previous frame.
+      if not self.restore {
+        let _ = self.scroll.current.map(fn(scroll) {
+          self.top = scroll.scroll_top()
+        })
+      }
+      self.capture_anchor(self.top)
+      let old_keys = self.source.keys
+      let old_position = self.index.index_at(self.top)
+      let old_height = self.source.row_height
+      self.source = self.props.source
+      self.index.replace(self.source.keys, self.source.row_height.or(self.source.estimate))
+      if old_height != self.source.row_height {
+        self.index.reset(self.source.row_height.or(self.source.estimate))
+      }
+      match self.anchor {
+        key => {
+          if self.index.position(key).is_none() {
+            self.anchor = Maybe::new<Str>()
+            mut index = old_position + 1
+            while index < old_keys.size() and self.anchor.is_none() {
+              let candidate = old_keys.at(index).expect("old successor")
+              if self.index.position(candidate).is_some() {
+                self.anchor = Maybe::new(candidate)
+              }
+              index =+ 1
+            }
+            index = old_position - 1
+            while index >= 0 and self.anchor.is_none() {
+              let candidate = old_keys.at(index).expect("old predecessor")
+              if self.index.position(candidate).is_some() {
+                self.anchor = Maybe::new(candidate)
+              }
+              index =- 1
+            }
+            self.delta = 0
+          }
+        },
+        _ => (),
+      }
+      self.top = self.clamp_top(self.anchor_top())
+      self.restore = true
+      if self.active {
+        self.bind_ref()
+      }
+    }
+  }
+
+  private fn mut settle() Bool {
+    match self.scroll.current {
+      scroll => {
+        let viewport = scroll.viewport_geometry().screen
+        if viewport.width <= 0 or viewport.height <= 0 {
+          false
+        } else {
+          mut changed = false
+          let resized = self.width != viewport.width
+          self.height = viewport.height
+          if not self.restore and not resized {
+            if self.top != scroll.scroll_top() {
+              changed = true
+            }
+            self.top = scroll.scroll_top()
+            self.capture_anchor(self.top)
+          }
+          if resized {
+            self.width = viewport.width
+            self.index.reset(self.source.row_height.or(self.source.estimate))
+            changed = true
+          }
+          mut measured = 0
+          mut measured_count = 0
+          for row in self.rows {
+            match row.ref.current {
+              control => {
+                match self.index.position(row.key) {
+                  index => {
+                    let height = control.layout().local.height
+                    if height > 0 {
+                      measured =+ height
+                      measured_count =+ 1
+                    }
+                    if height > 0 and self.index.set_height(index, self.source.row_height.or(height)) {
+                      changed = true
+                    }
+                  },
+                  _ => (),
+                }
+              },
+              _ => (),
+            }
+          }
+          if measured_count > 0 {
+            self.sample_height = self.source.row_height.or(measured / measured_count)
+          }
+          mut desired = self.anchor_top()
+          match self.pending {
+            key => {
+              match self.index.position(key) {
+                index => {
+                  let start = self.index.prefix(index)
+                  let end = self.index.prefix(index + 1)
+                  desired = match self.alignment {
+                    Alignment::start => start,
+                    Alignment::center => {
+                      let row_height = end - start
+                      let remaining = self.height - row_height
+                      let inset = remaining / 2
+                      start - inset
+                    },
+                    Alignment::end => end - self.height,
+                    Alignment::nearest => {
+                      if start < self.top {
+                        start
+                      } else if end > self.top + self.height {
+                        if end - start > self.height {
+                          start
+                        } else {
+                          end - self.height
+                        }
+                      } else {
+                        self.top
+                      }
+                    },
+                  }
+                },
+                _ => { self.pending = Maybe::new<Str>() },
+              }
+            },
+            _ => (),
+          }
+          desired = self.clamp_top(desired)
+          if desired != self.top {
+            changed = true
+          }
+          self.top = desired
+          if changed {
+            self.restore = true
+          } else if self.restore or self.pending.is_some() {
+            changed = scroll.scroll_to(self.top)
+            self.restore = false
+          }
+          let indices = self.indices()
+          if indices.size() != self.rows.size() {
+            changed = true
+          }
+          for index, slot in indices {
+            match self.rows.at(slot) {
+              row => {
+                if row.key != self.index.key(index) {
+                  changed = true
+                }
+              },
+              _ => { changed = true },
+            }
+          }
+          if not changed {
+            self.pending = Maybe::new<Str>()
+            self.capture_anchor(self.top)
+          }
+          changed
+        }
+      },
+      _ => false,
+    }
+  }
+}
+
+impl view::Component for VirtualList {
+  fn mut render() view::View {
+    self.sync_source()
+    let rows = mut List::new<Row>()
+    let children = mut List::new<view::View>()
+    for index in self.indices() {
+      let key = self.index.key(index)
+      mut ref = view::box_ref()
+      for old in self.rows {
+        if old.key == key {
+          ref = old.ref
+        }
+      }
+      children.push(
+        view::box(
+          [(self.source.build)(index)],
+          key: key,
+          ref: ref,
+          styles: ui::style(
+            position: ui::Position::absolute,
+            top: ui::cells(self.index.prefix(index)),
+            left: ui::cells(0),
+            width: ui::percent(100.0),
+            min_height: ui::cells(1),
+            overflow: ui::Overflow::hidden,
+            height: self.source.row_height.map(fn(height: Int) ui::Length {
+              ui::cells(height)
+            }),
+          ),
+        ),
+      )
+      rows.push(Row{key: key, ref: ref})
+    }
+    self.rows = rows.@
+    view::scroll_box(
+      [
+        view::box(
+          children.@,
+          styles: ui::style(
+            height: ui::cells(self.index.total()),
+            width: ui::percent(100.0),
+            flex_shrink: 0.0,
+          ),
+        ),
+      ],
+      styles: self.source.styles,
+      ref: self.scroll,
+      on_key: self.source.on_key,
+      on_mouse: self.source.on_mouse,
+    )
+  }
+}
+impl view::Lifecycle for VirtualList {
+  fn mut mounted(ctx: context::Context) {
+    self.active = true
+    self.bind_ref()
+    let _ = ctx.internal_layout(fn() Bool {
+      self.settle()
+    })
+  }
+
+  fn mut unmounting(ctx: context::Context) {
+    self.active = false
+    let _ = self.bound_ref.map(fn(ref) {
+      ref.current = Maybe::new<mut VirtualList>()
+    })
+    self.bound_ref = Maybe::new<mut Ref>()
+  }
+}

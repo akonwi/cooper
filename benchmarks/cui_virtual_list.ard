@@ -1,0 +1,183 @@
+use cooper/cui
+use cooper/testing
+use cooper/ui
+use go:fmt
+use go:os
+use go:time
+
+// No-network eager/virtual comparison over the same already-loaded row data.
+// Run one mode and item count per process so an external runner can record RSS.
+
+struct Metrics {
+  builds: Int,
+}
+struct Model {
+  items: [Int],
+  metrics: mut Metrics,
+  virtual_ref: mut cui::VirtualListRef,
+  eager_ref: mut cui::ScrollBoxRef,
+  eager: Bool,
+}
+struct Props {
+  model: mut Model,
+}
+struct Screen {
+  model: mut Model,
+}
+
+private fn row(id: Int, metrics: mut Metrics) cui::View {
+  metrics.builds =+ 1
+  let lines = mut List::new<cui::View>()
+  lines.push(cui::text("row={id} author={id % 17}", styles: ui::style(height: ui::cells(1))))
+  mut line = 0
+  while line < id % 3 {
+    lines.push(
+      cui::box(
+        [cui::text("detail={id}:{line} deterministic loaded text")],
+        styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+      ),
+    )
+    line =+ 1
+  }
+  cui::box(lines.@, styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0))
+}
+
+private fn screen(props: mut Props) mut Screen {
+  (mut Screen{model: props.model})
+}
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    let size = ui::style(width: ui::percent(100.0), height: ui::percent(100.0))
+    if self.model.eager {
+      let rows = mut List::new<cui::View>()
+      for id in self.model.items {
+        rows.push(row(id, self.model.metrics))
+      }
+      cui::scroll_box(rows.@, ref: self.model.eager_ref, styles: size)
+    } else {
+      cui::virtual_list(
+        self.model.items,
+        item_key: fn(id: Int) Str {
+          id.to_str()
+        },
+        render_item: fn(id: Int) cui::View {
+          row(id, self.model.metrics)
+        },
+        estimated_height: 2,
+        overscan: 8,
+        ref: self.model.virtual_ref,
+        styles: size,
+      )
+    }
+  }
+}
+
+private fn offset(index: Int) Int {
+  let cycles = index / 3
+  let remainder = index % 3
+  let partial = match remainder {
+    0 => 0,
+    1 => 1,
+    _ => 3,
+  }
+  cycles * 6 + partial
+}
+private fn aligned(index: Int) Int {
+  index / 3 * 3
+}
+
+fn main() {
+  let eager = os::Getenv("COOPER_BENCH_MODE") == "eager"
+  let count = match os::Getenv("COOPER_BENCH_COUNT") == "4000" {
+    true => 4000,
+    false => 1000,
+  }
+  let items = mut List::new<Int>()
+  mut index = 0
+  while index < count {
+    items.push(index)
+    index =+ 1
+  }
+  let app = testing::new(80, 24)
+  let model = mut Model{
+    items: items.@,
+    metrics: mut Metrics{builds: 0},
+    virtual_ref: cui::virtual_list_ref(),
+    eager_ref: cui::scroll_box_ref(),
+    eager: eager,
+  }
+  let mounted = time::Now()
+  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+  app.flush()
+  let mount_us = time::Since(mounted).Microseconds()
+  if not app.frame().text().contains("row=0") {
+    panic("initial frame did not paint loaded rows")
+  }
+  let initial_builds = model.metrics.builds
+  // Multiples of three have exact offsets under both the deterministic height
+  // function and the virtual list's two-cell estimate.
+  let targets = [
+    aligned(count / 4),
+    aligned(count / 2),
+    aligned(count - 60),
+    aligned(count / 3),
+    aligned(count - 120),
+    0,
+  ]
+  let jumped = time::Now()
+  for target in targets {
+    if eager {
+      let _ = model.eager_ref.current.expect("eager list").scroll_to(offset(target))
+    } else {
+      let accepted = model.virtual_ref.current.expect("virtual list").scroll_to_key(target.to_str())
+      if not accepted {
+        panic("virtual jump was rejected")
+      }
+    }
+    app.flush()
+    if not app.frame().text().contains("row={target}") {
+      panic("jump target was not painted: {target}")
+    }
+  }
+  let jump_us = time::Since(jumped).Microseconds()
+  let scrolled = time::Now()
+  for delta in [7, 13, 29, -11, 41, -19, 5, 23, -31, 17] {
+    if eager {
+      let _ = model.eager_ref.current.expect("eager list").scroll_by(delta)
+    } else {
+      let _ = model.virtual_ref.current.expect("virtual list").scroll_by(delta)
+    }
+    app.flush()
+  }
+  let scroll_us = time::Since(scrolled).Microseconds()
+  let final_text = app.frame().text()
+  // Deltas total 74 cells: row 37 starts at 73, so its detail line is first.
+  if not final_text.starts_with("detail=37:0") or not final_text.contains("row=38 author=4") {
+    panic("scroll workload did not paint the expected loaded rows")
+  }
+  let mounted_rows = match eager {
+    true => count,
+    false => model.virtual_ref.current.expect("virtual list").mounted_count(),
+  }
+  let mode = match eager {
+    true => "eager",
+    false => "virtual",
+  }
+  fmt::Printf(
+    "mode=%s count=%d viewport=80x24 mount_us=%d jump_us=%d scroll_us=%d initial_builds=%d total_builds=%d mounted_rows=%d final_top=%d\n",
+    mode,
+    count,
+    mount_us,
+    jump_us,
+    scroll_us,
+    initial_builds,
+    model.metrics.builds,
+    mounted_rows,
+    match eager {
+      true => model.eager_ref.current.expect("eager list").scroll_top(),
+      false => model.virtual_ref.current.expect("virtual list").scroll_top(),
+    },
+  )
+  renderer.destroy()
+  app.destroy()
+}

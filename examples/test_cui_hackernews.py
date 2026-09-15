@@ -141,6 +141,7 @@ def main():
         send(fd, 'j\r')
         wait_for(fd, screen, '36 loaded · 0 requests')
         wait_for(fd, screen, 'Nested reply with emphasis.')
+        assert screen.text().count('asynchronous requests.') == 3, 'wrapped parent text was clipped'
         with API.lock:
             assert all(API.counts[f'/item/{id}.json'] == 1 for id in range(200, 230))
             assert API.counts['/item/230.json'] == 0, 'expansion exceeded one page'
@@ -189,6 +190,17 @@ def main():
         wait_for(fd, compact, 'Comment 216:')
         send(fd, '\x1b[5~')  # PageUp scrolls without changing selection.
         wait_for(fd, compact, 'Comment 211:')
+        # Selection can cross the mounted window without fetching more data.
+        with API.lock:
+            before_navigation = sum(API.counts.values())
+        send(fd, 'j' * 28)
+        wait_for(fd, compact, 'Comment 239:')
+        drain(fd, compact, 0.15)
+        compact.save('virtual-far')
+        send(fd, 'k' * 28)
+        wait_for(fd, compact, 'Comment 211:')
+        with API.lock:
+            assert sum(API.counts.values()) == before_navigation, 'virtual scrolling fetched data'
         send(fd, '\x1b')
         wait_for(fd, compact, '3 loaded · 0 requests')
         send(fd, 'j\r')

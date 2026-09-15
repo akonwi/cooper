@@ -1,0 +1,154 @@
+use cooper
+use cooper/cui
+use cooper/ui
+
+struct Comment {
+  id: Int,
+  depth: Int,
+  body: Str,
+}
+struct Model {
+  comments: [Comment],
+  visible: [Comment],
+  collapsed: mut [Str: Bool],
+  list: mut cui::VirtualListRef,
+}
+impl Model {
+  fn mut project() {
+    let rows = mut List::new<Comment>()
+    mut hidden_below = 4
+    for comment in self.comments {
+      if comment.depth <= hidden_below {
+        hidden_below = 4
+        rows.push(comment)
+        if self.collapsed.get(comment.id.to_str()).or(false) {
+          hidden_below = comment.depth
+        }
+      }
+    }
+    self.visible = rows.@
+  }
+}
+struct Props {
+  model: mut Model,
+}
+struct Screen {
+  model: mut Model,
+}
+private fn screen(props: mut Props) mut Screen {
+  (mut Screen{model: props.model})
+}
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    cui::box(
+      [
+        cui::text(
+          "CUI · Virtual comments · 4,000 loaded / {self.model.visible.size()} visible",
+          text_style: ui::text_style(bold: true),
+          styles: ui::style(height: ui::cells(1)),
+        ),
+        cui::virtual_list(
+          self.model.visible,
+          item_key: fn(comment: Comment) Str {
+            comment.id.to_str()
+          },
+          render_item: fn(comment: Comment) cui::View {
+            let closed = self.model.collapsed.get(comment.id.to_str()).or(false)
+            mut indicator = "−"
+            if closed {
+              indicator = "+"
+            }
+            let padding = mut ui::edges()
+            padding.left = ui::cells(comment.depth * 3)
+            cui::box(
+              [
+                cui::text(
+                  "{indicator} comment #{comment.id} · user{comment.id % 31} · depth {comment.depth}",
+                  text_style: ui::text_style(foreground: ui::indexed(6), bold: true),
+                ),
+                cui::text(comment.body),
+                cui::text("reply · {comment.id % 97} points", text_style: ui::text_style(dim: true)),
+                cui::text(""),
+              ],
+              styles: ui::style(padding: padding.@),
+            )
+          },
+          ref: self.model.list,
+        ),
+        cui::text(
+          "↑↓ / PgUp PgDn scroll · e toggle top comment · g jump #2000 · t top · Ctrl-C quit",
+          styles: ui::style(height: ui::cells(1)),
+        ),
+      ],
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    )
+  }
+}
+fn main() {
+  let app = cooper::app().expect("create virtual comments example")
+  defer app.destroy()
+  let comments = mut List::new<Comment>()
+  mut id = 0
+  while id < 4000 {
+    mut body = "A virtual list should preserve the comment you are reading while surrounding content changes."
+    if id % 3 == 0 {
+      body = body + " Stable keys matter when replies are expanded, comments are inserted, or the terminal is resized. The component owns the data; the framework owns the visible controls."
+    }
+    if id == 2000 {
+      mut repeat = 0
+      while repeat < 5 {
+        body = body + " This comment is deliberately longer than the viewport to exercise scrolling within a single row."
+        repeat =+ 1
+      }
+    }
+    comments.push(
+      Comment{
+        id: id,
+        depth: id % 4,
+        body: body,
+      },
+    )
+    id =+ 1
+  }
+  let model = mut Model{
+    comments: comments.@,
+    visible: [],
+    collapsed: mut Map::new<Bool>(),
+    list: cui::virtual_list_ref(),
+  }
+  model.project()
+  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+  defer renderer.destroy()
+  let _ = app.context.dispatch(fn() {
+    let _ = model.list.current.map(fn(list) {
+      let _ = list.focus()
+    })
+  })
+  let _ = app.on_key(fn(key: mut cooper::KeyEvent) {
+    if key.matches("g") {
+      let _ = model.list.current.map(fn(list) {
+        let _ = list.scroll_to_key("2000")
+      })
+      key.prevent_default()
+    } else if key.matches("t") {
+      let _ = model.list.current.map(fn(list) {
+        let _ = list.scroll_to_key("0")
+      })
+      key.prevent_default()
+    } else if key.matches("e") {
+      let _ = model.list.current.map(fn(list) {
+        let _ = model.visible.at(
+          list.visible_range().start,
+        ).map(fn(comment: Comment) {
+          renderer.update(fn() {
+            let id = comment.id.to_str()
+            model.collapsed.set(id, not model.collapsed.get(id).or(false))
+            model.project()
+          })
+        })
+      })
+      key.prevent_default()
+    }
+  })
+  app.run().expect("run virtual comments example")
+}

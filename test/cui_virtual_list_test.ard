@@ -1,0 +1,399 @@
+use ard/testing
+
+use cooper/cui
+use cooper/testing as headless
+use cooper/ui
+
+private fn items(count: Int) [Int] {
+  let values = mut List::new<Int>()
+  mut index = 0
+  while index < count {
+    values.push(index)
+    index =+ 1
+  }
+  values.@
+}
+private fn row(id: Int) cui::View {
+  let children = mut List::new<cui::View>()
+  children.push(cui::text("row{id}", styles: ui::style(height: ui::cells(1))))
+  mut line = 0
+  while line < id % 3 {
+    children.push(cui::text("body{id}:{line}", styles: ui::style(height: ui::cells(1))))
+    line =+ 1
+  }
+  cui::box(children.@, styles: ui::style(flex_shrink: 0.0))
+}
+struct Model {
+  items: [Int],
+  builds: Int,
+  ref: mut cui::VirtualListRef,
+}
+struct Props {
+  data: mut Model,
+}
+struct Screen {
+  data: mut Model,
+}
+private fn screen(props: mut Props) mut Screen {
+  (mut Screen{data: props.data})
+}
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    cui::virtual_list(
+      self.data.items,
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        self.data.builds =+ 1
+        row(id)
+      },
+      ref: self.data.ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    )
+  }
+}
+
+test fn variable_rows_are_lazy_and_reveal_settles_before_paint() Void!Str {
+  let app = headless::new(30, 8)
+  defer app.destroy()
+  let data = mut Model{
+    items: items(1000),
+    builds: 0,
+    ref: cui::virtual_list_ref(),
+  }
+  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{data: data}))
+  defer renderer.destroy()
+  app.flush()
+  let list = data.ref.current.expect("mounted list")
+  try testing::assert(app.frame().text().contains("row0"), "Default options measure the initial viewport")
+  try testing::assert(
+    data.builds < 100 and list.mounted_count() < 40,
+    "Mount is bounded by viewport, not item count",
+  )
+  try testing::assert(list.scroll_to_key("97"), "Offscreen key accepted")
+  app.flush()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("first cell").grapheme == "r" and app.frame().text().contains("row97"),
+    "Unmeasured jump renders target in the same frame",
+  )
+  try testing::assert(list.visible_range().start == 97, "Start alignment resolves to the keyed row")
+  try testing::assert(
+    list.mounted_count() < 40 and data.builds < 250,
+    "Jump does not build intervening rows",
+  )
+  let _ = list.scroll_to_key("500")
+  app.flush()
+  let _ = list.scroll_to_key("97")
+  app.flush()
+  try testing::assert(list.visible_range().start == 97, "Measured revisit retains key offsets")
+  renderer.destroy()
+  testing::assert(
+    data.ref.current.is_none() and not list.reveal("97"),
+    "Teardown clears public ref and retires requests",
+  )
+}
+
+test fn insert_reorder_remove_and_empty_preserve_a_keyed_anchor() Void!Str {
+  let app = headless::new(30, 8)
+  defer app.destroy()
+  let data = mut Model{
+    items: items(200),
+    builds: 0,
+    ref: cui::virtual_list_ref(),
+  }
+  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{data: data}))
+  defer renderer.destroy()
+  app.flush()
+  let list = data.ref.current.expect("list")
+  renderer.update(fn() {
+    let _ = list.scroll_by(7)
+  })
+  app.flush()
+  try testing::assert(list.scroll_top() == 7, "Owner rerender preserves scrolling from the same event")
+  let _ = list.scroll_to_key("97")
+  app.flush()
+  renderer.update(fn() {
+    let next = mut List::new<Int>()
+    next.push(1001)
+    next.push(1002)
+    for id in data.items {
+      next.push(id)
+    }
+    data.items = next.@
+  })
+  app.flush()
+  try testing::assert(
+    list.visible_range().start == 99 and app.frame().text().contains("row97"),
+    "Prepend preserves visible key rather than index",
+  )
+  renderer.update(fn() {
+    let next = mut List::new<Int>()
+    for id in data.items {
+      if id != 97 {
+        next.push(id)
+      }
+    }
+    data.items = next.@
+  })
+  app.flush()
+  try testing::assert(
+    app.frame().text().contains("row98") and not app.frame().text().contains("row97"),
+    "Deleting anchor falls forward to surviving successor",
+  )
+  renderer.update(fn() {
+    data.items = []
+  })
+  app.flush()
+  testing::assert(
+    list.mounted_count() == 0 and list.total_height() == 0 and list.scroll_top() == 0 and (not list.reveal("97")),
+    "Empty transition clamps extent and retires all rows",
+  )
+}
+
+test fn bad_estimates_and_oversized_rows_converge_without_blank_frames() Void!Str {
+  let app = headless::new(30, 80)
+  defer app.destroy()
+  let ref = cui::virtual_list_ref()
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      items(1000),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        cui::text("single{id}", styles: ui::style(height: ui::cells(1)))
+      },
+      estimated_height: 10000,
+      overscan: 0,
+      ref: ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    ),
+  )
+  app.flush()
+  try testing::assert(
+    app.frame().text().contains("single79") and ref.current.expect("list").mounted_count() == 80,
+    "Severe overestimate fills the entire viewport in bounded passes",
+  )
+  renderer.destroy()
+  let tall = cui::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      [0, 1, 2],
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        cui::box([cui::text("tall{id}")], styles: ui::style(height: ui::cells(200)))
+      },
+      ref: ref,
+      overscan: 0,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    ),
+  )
+  defer tall.destroy()
+  app.flush()
+  let list = ref.current.expect("tall list")
+  let _ = list.reveal("1")
+  app.flush()
+  try testing::assert(
+    list.visible_range().start == 1 and app.frame().text().contains("tall1"),
+    "Nearest reveal of taller-than-viewport row does not oscillate",
+  )
+  let _ = list.scroll_by(37)
+  app.flush()
+  testing::assert(
+    list.visible_range().start == 1 and list.scroll_top() == 237,
+    "Can scroll inside a single tall row",
+  )
+}
+
+test fn width_changes_remeasure_and_preserve_the_visible_key() Void!Str {
+  let app = headless::new(40, 8)
+  defer app.destroy()
+  let ref = cui::virtual_list_ref()
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      items(200),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        cui::text(
+          "row{id}: variable width text wraps over additional terminal lines when resized narrower.",
+        )
+      },
+      ref: ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let list = ref.current.expect("list")
+  let _ = list.scroll_to_key("80")
+  app.flush()
+  app.resize(19, 8)
+  app.flush()
+  try testing::assert(
+    list.visible_range().start == 80 and app.frame().text().contains("row80:"),
+    "Narrow rewrap preserves anchor identity",
+  )
+  app.resize(63, 8)
+  app.flush()
+  testing::assert(
+    list.visible_range().start == 80 and app.frame().text().contains("row80:"),
+    "Wider rewrap also preserves anchor identity",
+  )
+}
+
+test fn focused_row_is_pinned_until_focus_moves() Void!Str {
+  let app = headless::new(30, 8)
+  defer app.destroy()
+  let field = cui::input_ref()
+  let ref = cui::virtual_list_ref()
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      items(200),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        if id == 0 {
+          cui::input("editable", ref: field)
+        } else {
+          row(id)
+        }
+      },
+      ref: ref,
+      overscan: 0,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let input = field.current.expect("initial input")
+  try testing::assert(input.focus(), "Input can take focus")
+  app.flush()
+  let list = ref.current.expect("list")
+  let _ = list.scroll_to_key("100")
+  app.flush()
+  try testing::assert(list.visible_range().start == 100, "Pinned focus does not undo scrolling")
+  try testing::assert(
+    field.current.is_some() and input.is_focused(),
+    "Offscreen focused row remains mounted",
+  )
+  try testing::assert(list.mounted_count() < 15, "Pinning does not build intervening rows")
+  try testing::assert(list.focus(), "Move focus to list")
+  app.flush()
+  try testing::assert(field.current.is_none(), "Unfocused offscreen input is unmounted")
+  renderer.destroy()
+  testing::assert(not list.invalidate_item("100"), "Retired list rejects invalidation")
+}
+
+test fn virtual_visible_cells_match_eager_layout_after_key_jumps() Void!Str {
+  let lazy = headless::new(30, 8)
+  defer lazy.destroy()
+  let eager = headless::new(30, 8)
+  defer eager.destroy()
+  let ref = cui::virtual_list_ref()
+  let scroll = cui::scroll_box_ref()
+  let rows = mut List::new<cui::View>()
+  for id in items(200) {
+    rows.push(row(id))
+  }
+  let size = ui::style(width: ui::percent(100.0), height: ui::percent(100.0))
+  let eager_renderer = cui::mount(
+    eager.context,
+    eager.root,
+    cui::scroll_box(rows.@, ref: scroll, styles: size),
+  )
+  defer eager_renderer.destroy()
+  let lazy_renderer = cui::mount(
+    lazy.context,
+    lazy.root,
+    cui::virtual_list(
+      items(200),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: row,
+      ref: ref,
+      styles: size,
+    ),
+  )
+  defer lazy_renderer.destroy()
+  eager.flush()
+  lazy.flush()
+  for target in [0, 1, 2, 37, 125, 190, 1] {
+    mut offset = 0
+    mut id = 0
+    while id < target {
+      let extra = id % 3
+      offset =+ extra + 1
+      id =+ 1
+    }
+    let _ = ref.current.expect("list").scroll_to_key(target.to_str())
+    let _ = scroll.current.expect("eager scroll").scroll_to(offset)
+    eager.flush()
+    lazy.flush()
+    mut y = 0
+    while y < 8 {
+      mut x = 0
+      // The scrollbar intentionally reflects estimated rather than eager extent.
+      while x < 29 {
+        try testing::assert(
+          lazy.frame().cell(x, y).expect("lazy cell").grapheme == eager.frame().cell(x, y).expect("eager cell").grapheme,
+          "Visible cell {x},{y} at key {target} matches eager layout (offset {offset}): lazy={lazy.frame().text()} eager={eager.frame().text()}",
+        )
+        x =+ 1
+      }
+      y =+ 1
+    }
+  }
+  testing::assert(
+    ref.current.expect("list").mounted_count() < 40,
+    "Cell parity uses a bounded working set",
+  )
+}
+
+test fn fixed_rows_center_end_and_nearest_align_exactly() Void!Str {
+  let app = headless::new(30, 8)
+  defer app.destroy()
+  let ref = cui::virtual_list_ref()
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      items(200),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: row,
+      row_height: 1,
+      ref: ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let list = ref.current.expect("list")
+  let _ = list.scroll_to_key("100", cui::ScrollAlignment::center)
+  app.flush()
+  try testing::assert(list.scroll_top() == 97, "One-cell row centered in eight-cell viewport")
+  let _ = list.scroll_to_key("100", cui::ScrollAlignment::end)
+  app.flush()
+  try testing::assert(list.scroll_top() == 93, "End alignment places row on final viewport line")
+  let _ = list.reveal("95")
+  app.flush()
+  try testing::assert(list.scroll_top() == 93, "Nearest leaves an already visible row in place")
+  let _ = list.reveal("90")
+  app.flush()
+  testing::assert(list.scroll_top() == 90, "Nearest above viewport aligns to start")
+}

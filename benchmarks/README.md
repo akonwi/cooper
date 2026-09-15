@@ -221,3 +221,11 @@ cadence, coalescing, diffing and I/O on all sides.
 See [commands and pinned dependencies](bubbletea_pager/README.md) and
 [the three-way results](../docs/bubbletea-pager-benchmark.md). Bubble Tea lives in
 an isolated benchmark Go module; production dependencies are unchanged.
+
+## CUI virtualization
+
+Run `python3 benchmarks/cui_virtual_list.py --samples 10 --warmups 2` from
+the repository root to compare eager and virtual lists with 1,000 and 4,000
+already-loaded variable-height rows. It reports mount, jump, and scroll timings,
+isolated-process peak RSS, and row construction counts. Compilation and network
+requests are excluded. See [method and results](../docs/cui-virtual-list-benchmark.md).

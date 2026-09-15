@@ -20,6 +20,8 @@ struct Context {
   on_paste: fn(fn(mut event::PasteEvent)) fn(),
   terminal_focus: fn() event::TerminalFocus?,
   current_selection: fn() selection::Selection?,
+  // Framework-only: settle lazy descendants between layout and painting.
+  internal_layout: fn(fn() Bool) fn(),
   internal_animate: fn(Int, fn(animation::Frame), animation::Easing) fn(),
 }
 
@@ -41,6 +43,7 @@ fn internal_new(
   scope: mut scopes::MountScope,
   invalidate: fn(),
   invalidate_root: fn(),
+  layout: fn(fn() Bool) fn(),
 ) Context {
   let deliver = scopes::scoped_dispatch(base, scope)
   Context{
@@ -51,6 +54,17 @@ fn internal_new(
       })
     },
     cancellation: scope.cancellation(),
+    internal_layout: fn(work: fn() Bool) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = layout(fn() Bool {
+          subscription.active and work()
+        })
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
     invalidate_root: fn() {
       if not scope.is_cancelled() {
         invalidate_root()

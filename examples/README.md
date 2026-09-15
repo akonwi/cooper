@@ -86,6 +86,53 @@ reloads ignore superseded responses using a request counter. Components use
 ordinary `async::start` workers, select on mount cancellation, and deliver state
 changes through `ctx.dispatch`. No networking is involved.
 
+## CUI Hacker News
+
+`cui_hackernews.ard` is a read-only client for the official Hacker News Firebase
+API, requiring Ard v0.42.0. It exercises real HTTP requests, component-owned
+async scheduling, keyed lists, nested comments, focus reveal, and scrolling.
+
+```sh
+ard run cui_hackernews.ard
+ard test hackernews
+python3 test_cui_hackernews.py
+HN_STRESS_COMMENTS=1000 python3 test_cui_hackernews.py
+```
+
+Use 1/2/3/4 for Top/New/Ask/Show, j/k or arrows to select, Enter or a click to
+open a story or collapse/expand a comment, and Escape to return to the feed.
+Space/PageDown and Shift+Space/PageUp scroll ten rows without moving selection,
+including within comments taller than the viewport. Ctrl+C quits. Story URLs
+are terminal hyperlinks; comment markup is rendered as plain text, preserving
+paragraphs, Unicode, and link labels (not inline link destinations).
+
+Each page processes batches of 30 items; m requests another batch and r retries
+failures after current requests settle. Six workers per page and a shared
+six-connection HTTP transport bound concurrency. Responses have a ten-second
+timeout and a 2 MiB size cap. Successful items are cached for this process's
+lifetime. Returning from a story retains the feed's selection and scroll;
+switching feeds or closing a reader retires that component. The next read uses
+the cache, but collapse state resets after closing a reader. Deleted/dead
+comments retain their replies. Deep nesting caps visual indentation at 20 cells.
+
+Ard 0.42 has no native HTTP/JSON modules, so those platform operations are
+isolated in `hackernews/api.ard`. Workers use `ctx.dispatch`; unmount prevents
+late UI updates and follow-on scheduling. **Already-running HTTP requests are
+not actively aborted**: they finish or time out. This is not request cancellation.
+The client is read-only: no authentication, voting, posting, or persistent cache.
+
+The PTY test runs against a local HTTP fixture, not the public service. It checks
+out-of-order completions, retries, cached expansion, deleted/dead comments,
+nested replies, stale feed/reader completions, compact layout, and clean exit.
+`HN_API_ROOT` overrides the API base URL for fixtures. `HN_CAPTURE_DIR` optionally
+records ANSI snapshots. The larger stress run loads 1,034 items, including a
+deep reply chain, and reports load time, process RSS on Linux, and paced key
+latency. These timings include HTTP and rendering, not isolated render costs.
+All loaded visible comments use ordinary retained nodes: no virtualization yet.
+Large threads expose noticeable rendering latency; use this fixture to measure
+future reconciliation/rendering improvements rather than treating it as a
+performance target already met.
+
 ## Animation
 
 `animation.ard` moves one retained Text control through a Runtime-owned typed

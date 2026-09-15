@@ -1,0 +1,475 @@
+use ard/async
+
+use cooper
+use cooper/cui
+use cooper/ui
+use examples/hackernews/api
+
+private fn line() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
+}
+
+private fn fill() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::percent(100.0))
+}
+
+struct PageProps {
+  client: api::Client,
+  cache: mut [Str: api::Item],
+  feed: Str,
+  story: Int,
+  active: Bool,
+  open: fn(Int),
+}
+
+// Requests run off-thread; queue, cache, and selection are UI-thread-only.
+// The component owns scheduling, while Context owns callback lifetime.
+struct Page {
+  props: mut PageProps,
+  roots: [Int],
+  queue: [Int],
+  seen: mut [Str: Bool],
+  items: mut [Str: api::Item],
+  errors: mut [Str: Str],
+  collapsed: mut [Str: Bool],
+  next: Int,
+  running: Int,
+  budget: Int,
+  loaded: Int,
+  selected: Int,
+  visible: [Int],
+  loading_feed: Bool,
+  error: Str,
+  scroll: mut cui::ScrollBoxRef,
+}
+
+private fn page(props: mut PageProps) mut Page {
+  (mut Page{
+    props: props,
+    roots: [],
+    queue: [],
+    seen: mut Map::new<Bool>(),
+    items: mut Map::new<api::Item>(),
+    errors: mut Map::new<Str>(),
+    collapsed: mut Map::new<Bool>(),
+    next: 0,
+    running: 0,
+    budget: 30,
+    loaded: 0,
+    selected: 0,
+    visible: [],
+    loading_feed: false,
+    error: "",
+    scroll: cui::scroll_box_ref(),
+  })
+}
+
+impl Page {
+  fn mut enqueue(ids: [Int]) {
+    for id in ids {
+      if not self.seen.get(id.to_str()).or(false) {
+        self.seen.set(id.to_str(), true)
+        self.queue.push(id)
+      }
+    }
+  }
+
+  fn mut received(id: Int, value: api::Item) {
+    self.props.cache.set(id.to_str(), value)
+    self.items.set(id.to_str(), value)
+    self.loaded =+ 1
+    if self.props.story != 0 {
+      self.enqueue(value.kids.or([]))
+    }
+  }
+
+  fn mut pump(ctx: cui::Context) {
+    while self.running < 6 and self.next < self.queue.size() and self.next < self.budget {
+      let _ = self.queue.at(
+        self.next,
+      ).map(fn(id: Int) {
+        self.next =+ 1
+        match self.props.cache.get(id.to_str()) {
+          item => self.received(id, item),
+          _ => {
+            self.running =+ 1
+            let client = self.props.client
+            async::start(fn() {
+              let cancelled = select {
+                ctx.cancellation.recv() => true,
+                _ => false,
+              }
+              if not cancelled {
+                let result = client.item(id)
+                let _ = ctx.dispatch(fn() {
+                  self.running =- 1
+                  match result {
+                    ok(item) => self.received(id, item),
+                    err(error) => self.errors.set(id.to_str(), error),
+                  }
+                  self.pump(ctx)
+                })
+              }
+            })
+          },
+        }
+      })
+    }
+  }
+
+  fn mut start(ctx: cui::Context) {
+    if self.props.story != 0 {
+      self.roots = [self.props.story]
+      self.enqueue(self.roots)
+      self.pump(ctx)
+    } else if not self.loading_feed {
+      self.loading_feed = true
+      self.error = ""
+      let client = self.props.client
+      let feed = self.props.feed
+      async::start(fn() {
+        let result = client.feed(feed)
+        let _ = ctx.dispatch(fn() {
+          self.loading_feed = false
+          match result {
+            err(error) => { self.error = error },
+            ok(ids) => {
+              self.roots = ids
+              self.enqueue(ids)
+              self.pump(ctx)
+            },
+          }
+        })
+      })
+    }
+  }
+
+  fn mut retry(ctx: cui::Context) {
+    if self.running == 0 and not self.loading_feed {
+      if not self.error.is_empty() {
+        self.start(ctx)
+      } else {
+        let pending = mut List::new<Int>()
+        mut failures = 0
+        for id in self.queue {
+          if self.errors.get(id.to_str()).is_some() {
+            pending.push(id)
+            failures =+ 1
+          }
+        }
+        for id, index in self.queue {
+          if index >= self.next {
+            pending.push(id)
+          }
+        }
+        self.budget = self.budget - self.next + failures
+        self.next = 0
+        self.queue = pending.@
+        self.errors = mut Map::new<Str>()
+        self.pump(ctx)
+      }
+    }
+  }
+
+  fn mut move(amount: Int) {
+    mut index = 0
+    for id, i in self.visible {
+      if id == self.selected {
+        index = i
+      }
+    }
+    mut next = index + amount
+    if next < 0 {
+      next = 0
+    }
+    if next >= self.visible.size() {
+      next = self.visible.size() - 1
+    }
+    let _ = self.visible.at(
+      next,
+    ).map(fn(id: Int) {
+      self.selected = id
+    })
+  }
+
+  fn mut activate(id: Int) {
+    self.selected = id
+    if self.props.story == 0 {
+      self.props.open(id)
+    } else {
+      self.collapsed.set(id.to_str(), not self.collapsed.get(id.to_str()).or(false))
+    }
+  }
+
+  fn mut row(id: Int, depth: Int, rows: mut [cui::View], visited: mut [Str: Bool]) {
+    if not visited.get(id.to_str()).or(false) {
+      visited.set(id.to_str(), true)
+      match self.items.get(id.to_str()) {
+        _ => {
+          let _ = self.errors.get(
+            id.to_str(),
+          ).map(fn(error: Str) {
+            rows.push(cui::text("#{id}: {error}", key: "error-{id}", styles: line()))
+          })
+        },
+        item => {
+          if self.selected == 0 {
+            self.selected = id
+          }
+          self.visible.push(id)
+          let closed = self.collapsed.get(id.to_str()).or(false)
+          mut label = item.by.or("unknown")
+          mut content = item.text.or("")
+          if self.props.story == 0 or id == self.props.story {
+            label = "{item.score.or(0)} points · {label} · {item.descendants.or(0)} comments"
+            content = item.title.or("Untitled")
+          }
+          if item.deleted.or(false) {
+            content = "[deleted]"
+          }
+          if item.dead.or(false) {
+            content = "[dead]"
+          }
+          if closed {
+            label = "▸ {label} (collapsed)"
+          } else {
+            label = "▾ {label}"
+          }
+          mut indent = depth * 2
+          if indent > 20 {
+            indent = 20
+          }
+          let padding = mut ui::edges()
+          padding.left = ui::cells(indent + 1)
+          padding.right = ui::cells(1)
+          let body = mut List::new<cui::View>()
+          body.push(
+            cui::text(
+              label,
+              styles: line(),
+              text_style: ui::text_style(foreground: ui::indexed(208)),
+            ),
+          )
+          if not closed {
+            body.push(
+              cui::text(content, styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0)),
+            )
+            if id == self.props.story {
+              if not item.text.or("").is_empty() {
+                body.push(cui::text(item.text.or("")))
+              }
+              let url = item.url.or("https://news.ycombinator.com/item?id={id}")
+              if (url.starts_with("https://") or url.starts_with("http://")) and (not url.contains("\n")) and (not url.contains("\t")) {
+                body.push(cui::text(ui::styled_text([ui::span(url, link: url)])))
+              }
+            }
+          }
+          mut background = ui::indexed(0)
+          if id == self.selected {
+            background = ui::indexed(236)
+          }
+          rows.push(
+            cui::box(
+              body.@,
+              key: id.to_str(),
+              focused: self.props.active and id == self.selected,
+              styles: ui::style(
+                width: ui::percent(100.0),
+                flex_shrink: 0.0,
+                padding: padding.@,
+                background: background,
+              ),
+              on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+                if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
+                  self.activate(id)
+                  mouse.prevent_default()
+                }
+              },
+            ),
+          )
+          if self.props.story != 0 and not closed {
+            for child in item.kids.or([]) {
+              self.row(child, depth + 1, rows, visited)
+            }
+          }
+        },
+      }
+    }
+  }
+}
+
+impl cui::Lifecycle for Page {
+  fn mut mounted(ctx: cui::Context) {
+    self.start(ctx)
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+
+impl cui::Component for Page {
+  fn mut render() cui::View {
+    let rows = mut List::new<cui::View>()
+    self.visible = []
+    let visited = mut Map::new<Bool>()
+    for id in self.roots {
+      self.row(id, 0, rows, visited)
+    }
+    mut status = "{self.loaded} loaded · {self.running} requests · m load 30 more · r retry"
+    if self.loading_feed {
+      status = "Loading {self.props.feed} stories…"
+    }
+    if not self.error.is_empty() {
+      status = self.error
+    }
+    if self.loading_feed == false and self.roots.size() == 0 and self.error.is_empty() {
+      status = "No stories."
+    }
+    let styles = mut fill()
+    if not self.props.active {
+      styles.display = ui::Display::none
+    }
+    cui::box(
+      [
+        cui::text(status, styles: line()),
+        cui::scroll_box(
+          rows.@,
+          ref: self.scroll,
+          styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
+        ),
+      ],
+      styles: styles.@,
+      focused: self.props.active and self.visible.size() == 0,
+      on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+        if key.event_type == cooper::KeyEventType::press {
+          if key.matches("j") or key.matches("down") {
+            self.move(1)
+            key.prevent_default()
+          } else if key.matches("k") or key.matches("up") {
+            self.move(-1)
+            key.prevent_default()
+          } else if key.matches("enter") or key.matches("return") {
+            self.activate(self.selected)
+            key.prevent_default()
+          } else if key.matches("space") or key.matches("pagedown") {
+            let _ = self.scroll.current.map(fn(scroll) {
+              scroll.scroll_by(10)
+            })
+            key.prevent_default()
+          } else if key.matches("space", shift: true) or key.matches("pageup") {
+            let _ = self.scroll.current.map(fn(scroll) {
+              scroll.scroll_by(-10)
+            })
+            key.prevent_default()
+          } else if key.matches("m") {
+            self.budget =+ 30
+            self.pump(ctx)
+            key.prevent_default()
+          } else if key.matches("r") {
+            self.retry(ctx)
+            key.prevent_default()
+          }
+        }
+      },
+    )
+  }
+}
+
+struct AppProps {
+  client: api::Client,
+}
+struct News {
+  client: api::Client,
+  cache: mut [Str: api::Item],
+  feed: Str,
+  story: Int,
+}
+private fn news(props: mut AppProps) mut News {
+  (mut News{
+    client: props.client,
+    cache: mut Map::new<api::Item>(),
+    feed: "top",
+    story: 0,
+  })
+}
+impl cui::Component for News {
+  fn mut render() cui::View {
+    let pages = mut List::new<cui::View>()
+    pages.push(
+      cui::child(
+        page,
+        PageProps{
+          client: self.client,
+          cache: self.cache,
+          feed: self.feed,
+          story: 0,
+          active: self.story == 0,
+          open: fn(id: Int) {
+            self.story = id
+          },
+        },
+        key: self.feed,
+      ),
+    )
+    if self.story != 0 {
+      pages.push(
+        cui::child(
+          page,
+          PageProps{
+            client: self.client,
+            cache: self.cache,
+            feed: self.feed,
+            story: self.story,
+            active: true,
+            open: fn(id: Int) {},
+          },
+          key: "story-{self.story}",
+        ),
+      )
+    }
+    cui::box(
+      [
+        cui::text(
+          "HACKER NEWS · 1 Top  2 New  3 Ask  4 Show · {self.feed}",
+          styles: line(),
+          text_style: ui::text_style(foreground: ui::indexed(208), bold: true),
+        ),
+        cui::box(
+          pages.@,
+          styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
+        ),
+        cui::text(
+          "j/k select · Enter open/collapse · Space scroll · Esc back · Ctrl+C quit",
+          styles: line(),
+        ),
+      ],
+      styles: fill(),
+      on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+        if key.event_type == cooper::KeyEventType::press {
+          if key.matches("escape") {
+            self.story = 0
+            key.prevent_default()
+          }
+          for feed, i in ["top", "new", "ask", "show"] {
+            if key.matches((i + 1).to_str()) {
+              self.feed = feed
+              self.story = 0
+              key.prevent_default()
+            }
+          }
+        }
+      },
+    )
+  }
+}
+
+fn main() {
+  let application = cooper::app().expect("create Hacker News example")
+  defer application.destroy()
+  let renderer = cui::mount(
+    application.context,
+    application.root,
+    cui::child(news, AppProps{client: api::client()}),
+  )
+  defer renderer.destroy()
+  application.run().expect("run Hacker News example")
+}

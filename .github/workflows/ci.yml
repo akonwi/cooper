@@ -81,6 +81,7 @@ jobs:
             examples/test_interaction.py \
             examples/test_declarative_jobs.py \
             examples/test_cui_tinear.py \
+            examples/test_cui_hackernews.py \
             benchmarks/run.py
 
       - name: Test terminal examples
@@ -111,6 +112,8 @@ jobs:
           python3 test_interaction.py
           python3 test_declarative_jobs.py
           python3 test_cui_tinear.py
+          ard test hackernews
+          python3 test_cui_hackernews.py
 
       - name: Smoke-test benchmarks
         if: runner.os == 'Linux'

@@ -10,6 +10,8 @@ buffer for Vaxis to diff.
 
 ![Cooper operations dashboard example](./screenshots/dashboard.gif)
 
+![Six spring presets responding to shared targets](./screenshots/spring-lab.gif)
+
 ## Status
 
 Cooper is under active development and requires Ard v0.41.0 or newer. The
@@ -29,8 +31,9 @@ The canonical design is defined by the accepted
 [multiline TextArea ADR](./docs/adrs/0011-define-multiline-text-area.md),
 [terminal title ADR](./docs/adrs/0012-define-terminal-title-updates.md),
 [Runtime ownership ADR](./docs/adrs/0013-consolidate-context-into-runtime.md),
-[animation ADR](./docs/adrs/0014-define-animation-timelines.md), and
-[package entry-point ADR](./docs/adrs/0015-define-package-entry-points-and-ui-namespace.md).
+[animation ADR](./docs/adrs/0014-define-animation-timelines.md),
+[package entry-point ADR](./docs/adrs/0015-define-package-entry-points-and-ui-namespace.md), and
+[spring animation ADR](./docs/adrs/0021-define-spring-animations.md).
 Cooper has no compatibility constraint while it is implemented.
 
 ## Application shape
@@ -94,6 +97,37 @@ defer timeline.destroy()
 Timelines support scheduled tracks and callbacks, pause/restart, looping,
 alternate direction, custom easing functions, and deterministic headless time.
 
+For interruptible motion, Runtime-owned scalar springs preserve velocity when
+their target changes:
+
+```ard
+use go:math
+
+let spring = application.context.spring(
+  0.0,
+  fn(frame: animation::SpringFrame) {
+    let applied = mut panel.style()
+    applied.left = ui::cells(math::Round(frame.value).to_int())
+    panel.set_style(applied.@)
+  },
+  options: animation::spring_config(angular_frequency: 12.0, damping_ratio: 0.7),
+)
+defer spring.destroy()
+let _ = spring.set_target(20.0)
+// A later event can redirect motion without resetting momentum.
+let _ = spring.set_target(8.0)
+```
+
+Springs start paused. A changed target starts playback; `pause()` and `play()`
+freeze and resume both value and velocity. They snap to the target and stop
+requesting frames when both position and velocity are within tolerance.
+Keep floating-point state in the spring and round only when applying cells.
+The solver is an Ard port of [Harmonica](https://github.com/charmbracelet/harmonica),
+with no new Go dependency. See the [spring contract](./docs/adrs/0021-define-spring-animations.md)
+and run `ard run spring_lab.ard` from `examples` to try retargeting and pause/resume.
+The [spring comparison lab](./examples/README.md#spring-comparisons) includes
+an animated recording of six presets responding to shared targets.
+
 ## Retained model
 
 Every built-in control owns one persistent internal Node. Parent/child
@@ -116,7 +150,7 @@ yet a supported custom-control API.
   App-lifetime cancellation. After nonblocking `start()`, use dispatch or a
   Cooper callback for retained-tree mutation.
 - Frame requests are demand-driven and coalesced; Runtime-owned animation
-  timelines schedule paced frames only while playing.
+  timelines and springs schedule paced frames only while playing.
 - Layout and drawing use one frame-consistent grapheme/terminal-width measurer.
 - Drawing writes directly into one backend-independent cell buffer.
 - Vaxis input is converted to Cooper-owned event values.
@@ -178,6 +212,7 @@ The runnable examples exercise the public application and control APIs:
 cd examples
 ard run quickstart.ard
 ard run animation.ard
+ard run spring_lab.ard
 ard run layout_playground.ard
 ard run text_gallery.ard
 ard run dashboard.ard
@@ -212,7 +247,7 @@ ui/              focused UI implementation modules
   text.ard
   text_area.ard
   text_area_layout.ard
-animation.ard    typed Runtime-owned timelines, easing, and interpolation
+animation.ard    Runtime-owned timelines and springs, easing, and interpolation
 clipboard.ard    Runtime-exposed OSC 52 clipboard service
 event.ard        Cooper-owned events, controls, and propagation state
 notification.ard accepted notification request snapshots

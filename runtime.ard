@@ -210,6 +210,7 @@ private struct State {
   animation_applied_clock_generation: Int,
   animation_execution_generation: Int,
   timelines: [mut animation::Timeline],
+  springs: [mut animation::Spring],
   pending_resize_cols: Int,
   pending_resize_rows: Int,
   lifecycle: mut sync::Mutex,
@@ -353,6 +354,7 @@ private fn state(
     animation_applied_clock_generation: 0,
     animation_execution_generation: 0,
     timelines: [],
+    springs: [],
     pending_resize_cols: 0,
     pending_resize_rows: 0,
     lifecycle: lifecycle,
@@ -692,6 +694,30 @@ impl State {
     created
   }
 
+  fn mut spring(
+    value: Float64,
+    update: fn(animation::SpringFrame),
+    options: animation::SpringConfig?,
+    on_complete: fn()?,
+  ) mut animation::Spring {
+    self.lifecycle.Lock()
+    defer self.lifecycle.Unlock()
+    let available = (not self.retained_destroyed) and (not self.resources_stopped) and (not self.detached) and self.phase != 3 and self.phase != 4
+    if not available {
+      panic("cannot create a Spring without an active App Runtime")
+    }
+    self.prune_animations()
+    let created = animation::internal_new_spring(
+      value,
+      update,
+      self.animation_wake(),
+      options: options,
+      on_complete: on_complete,
+    )
+    self.springs.push(created)
+    created
+  }
+
   private fn mut prune_animations() {
     let retained = mut List::new<mut animation::Timeline>()
     for timeline in self.timelines {
@@ -700,12 +726,24 @@ impl State {
       }
     }
     self.timelines = retained.@
+    let springs = mut List::new<mut animation::Spring>()
+    for spring in self.springs {
+      if not spring.internal_destroyed() {
+        springs.push(spring)
+      }
+    }
+    self.springs = springs.@
   }
 
   private fn mut animations_active() Bool {
     mut active = false
     for timeline in self.timelines {
       if timeline.internal_active() {
+        active = true
+      }
+    }
+    for spring in self.springs {
+      if spring.is_playing() {
         active = true
       }
     }
@@ -798,6 +836,7 @@ impl State {
 
       let initial_size = self.timelines.size()
       let candidates = self.timelines
+      let spring_candidates = self.springs
       let retained = mut List::new<mut animation::Timeline>()
       for timeline in candidates {
         if allow() and not timeline.internal_destroyed() {
@@ -822,6 +861,15 @@ impl State {
         index =+ 1
       }
       self.timelines = retained.@
+      // Snapshot before callbacks: newly created springs begin on the next frame.
+      for spring in spring_candidates {
+        if allow() and not spring.internal_destroyed() {
+          if spring.internal_tick(delta, allow) {
+            changed = true
+          }
+        }
+      }
+      self.prune_animations()
       if not self.animations_active() {
         self.reset_animation_clock()
       }
@@ -834,6 +882,11 @@ impl State {
     self.timelines = []
     for timeline in retained {
       timeline.destroy()
+    }
+    let springs = self.springs
+    self.springs = []
+    for spring in springs {
+      spring.destroy()
     }
     self.animation_frame_pending = false
     self.reset_animation_clock()
@@ -892,6 +945,7 @@ impl State {
   fn mut advance_time_test(delta_ms: Int) {
     self.lifecycle.Lock()
     let phase = self.phase
+    let generation = self.animation_execution_generation
     self.lifecycle.Unlock()
     let active = phase == 2
     if phase != 2 and phase != 14 {
@@ -903,7 +957,10 @@ impl State {
     self.test_now_ms = self.test_now_ms + Int64::from(delta_ms)
     if active {
       let _ = self.advance_animations(self.test_now_ms, fn() Bool {
-        true
+        self.lifecycle.Lock()
+        let valid = self.phase == 2 and self.animation_execution_generation == generation
+        self.lifecycle.Unlock()
+        valid
       })
     }
   }
@@ -2683,6 +2740,15 @@ impl Runtime {
     internal_state(
       self,
     ).timeline(duration, loop: loop, alternate: alternate, on_complete: on_complete)
+  }
+
+  fn mut spring(
+    value: Float64,
+    update: fn(animation::SpringFrame),
+    options: animation::SpringConfig?,
+    on_complete: fn()?,
+  ) mut animation::Spring {
+    internal_state(self).spring(value, update, options: options, on_complete: on_complete)
   }
 
   fn mut compute_layout(root: mut node::Renderable, width: Int, height: Int) {

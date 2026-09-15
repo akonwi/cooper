@@ -1,0 +1,254 @@
+use cooper
+use cooper/animation
+use cooper/ui
+use go:math
+
+private struct Preset {
+  name: Str,
+  frequency: Float64,
+  damping: Float64,
+  color: ui::Color,
+}
+
+private struct Metrics {
+  value: Float64,
+  velocity: Float64,
+  elapsed: Int,
+}
+
+private struct Lane {
+  motion: mut animation::Spring,
+  guide: mut ui::Text,
+  metrics: mut Metrics,
+}
+
+private struct State {
+  target: Int,
+  paused: Bool,
+}
+
+private fn placed(x: Int, y: Int) ui::Style {
+  ui::style(position: ui::Position::absolute, left: ui::cells(x), top: ui::cells(y))
+}
+
+private fn bar(value: Float64) Str {
+  let bounded = math::Max(0.0, math::Min(64.0, value))
+  let whole = bounded.to_int()
+  let fraction = (bounded * 8.0).to_int() % 8
+  let partial = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]
+  mut content = ""
+  mut index = 0
+  while index < 64 {
+    let cell = match index < whole {
+      true => "█",
+      false => {
+        match index == whole {
+          true => partial.at(fraction).or(" "),
+          false => " ",
+        }
+      },
+    }
+    content = content + cell
+    index =+ 1
+  }
+  content
+}
+
+private fn description(preset: Preset, metrics: mut Metrics, phase: Str) Str {
+  "{preset.name}  w={preset.frequency} z={preset.damping}  x={metrics.value} v={metrics.velocity}  {metrics.elapsed}ms {phase}"
+}
+
+private fn lane(context: mut cooper::Runtime, parent: mut ui::Box, preset: Preset, row: Int) Lane {
+  let label = ui::text(context, content: preset.name, selectable: false, styles: placed(2, row))
+  let track = ui::text(
+    context,
+    content: "────────────────────────────────────────────────────────────────",
+    selectable: false,
+    styles: placed(2, row + 1),
+  )
+  let guide = ui::text(context, content: "│", selectable: false, styles: placed(48, row + 1))
+  let marker = ui::text(context, content: "●", selectable: false, styles: placed(20, row + 1))
+  let fill = ui::text(
+    context,
+    content: bar(18.0),
+    selectable: false,
+    text_style: ui::text_style(foreground: preset.color),
+    styles: placed(2, row + 2),
+  )
+  parent.add(label)
+  parent.add(track)
+  parent.add(guide)
+  parent.add(marker)
+  parent.add(fill)
+  let metrics = mut Metrics{
+    value: 18.0,
+    velocity: 0.0,
+    elapsed: 0,
+  }
+  let motion = context.spring(
+    18.0,
+    fn(frame: animation::SpringFrame) {
+      metrics.value = frame.value
+      metrics.velocity = frame.velocity
+      metrics.elapsed = metrics.elapsed + frame.delta
+      let applied = mut marker.style()
+      applied.left = ui::cells(2 + math::Round(frame.value).to_int())
+      marker.set_style(applied.@)
+      fill.set_content(bar(frame.value))
+      label.set_content(description(preset, metrics, "MOVING"))
+    },
+    options: animation::spring_config(
+      angular_frequency: preset.frequency,
+      damping_ratio: preset.damping,
+    ),
+    on_complete: fn() {
+      label.set_content(description(preset, metrics, "SETTLED"))
+    },
+  )
+  Lane{
+    motion: motion,
+    guide: guide,
+    metrics: metrics,
+  }
+}
+
+fn main() {
+  let application = cooper::app().expect("create spring lab")
+  defer application.destroy()
+  let panel = ui::box(
+    application.context,
+    styles: ui::style(width: ui::cells(80), height: ui::cells(24)),
+  )
+  application.root.add(panel)
+  panel.add(
+    ui::text(
+      application.context,
+      content: "SPRING LAB / six responses, one target",
+      selectable: false,
+      styles: placed(2, 0),
+    ),
+  )
+  let header = ui::text(
+    application.context,
+    content: "COMPARE target=46",
+    selectable: false,
+    styles: placed(2, 1),
+  )
+  panel.add(header)
+  panel.add(
+    ui::text(
+      application.context,
+      content: "● whole cells    colored bar: eighth cells    │ target",
+      selectable: false,
+      styles: placed(2, 2),
+    ),
+  )
+  panel.add(
+    ui::text(
+      application.context,
+      content: "←/→ target  C center  Space pause/resume  Ctrl+C quit",
+      selectable: false,
+      styles: placed(2, 23),
+    ),
+  )
+  panel.add(
+    ui::text(
+      application.context,
+      content: "w: frequency (rad/s)  z: damping ratio  time: active ms since retarget",
+      selectable: false,
+      styles: placed(2, 22),
+    ),
+  )
+  let presets = [
+    Preset{
+      name: "BOUNCY  ",
+      frequency: 8.0,
+      damping: 0.35,
+      color: ui::hex("#F9A8D4"),
+    },
+    Preset{
+      name: "BALANCED",
+      frequency: 8.0,
+      damping: 0.7,
+      color: ui::hex("#A7F3D0"),
+    },
+    Preset{
+      name: "CRITICAL",
+      frequency: 8.0,
+      damping: 1.0,
+      color: ui::hex("#93C5FD"),
+    },
+    Preset{
+      name: "HEAVY   ",
+      frequency: 8.0,
+      damping: 2.0,
+      color: ui::hex("#C4B5FD"),
+    },
+    Preset{
+      name: "SLOW    ",
+      frequency: 4.0,
+      damping: 0.7,
+      color: ui::hex("#FDE68A"),
+    },
+    Preset{
+      name: "FAST    ",
+      frequency: 16.0,
+      damping: 0.7,
+      color: ui::hex("#FDBA74"),
+    },
+  ]
+  let lanes = mut List::new<Lane>()
+  mut row = 4
+  for preset in presets {
+    lanes.push(lane(application.context, panel, preset, row))
+    row = row + 3
+  }
+  let state = mut State{target: 46, paused: false}
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type != cooper::KeyEventType::release {
+      if received.matches("left") or received.matches("right") or received.matches("c") {
+        let target = match received.matches("left") {
+          true => 18,
+          false => {
+            match received.matches("right") {
+              true => 46,
+              false => 32,
+            }
+          },
+        }
+        if target != state.target {
+          state.target = target
+          state.paused = false
+          for item in lanes {
+            item.metrics.elapsed = 0
+            let _ = item.motion.set_target(target.to_f64())
+            let applied = mut item.guide.style()
+            applied.left = ui::cells(2 + target)
+            item.guide.set_style(applied.@)
+          }
+          header.set_content("COMPARE target={state.target}")
+        }
+        received.prevent_default()
+      } else if received.matches("space") {
+        state.paused = not state.paused
+        for item in lanes {
+          if state.paused {
+            let _ = item.motion.pause()
+          } else {
+            let _ = item.motion.play()
+          }
+        }
+        let phase = match state.paused {
+          true => "PAUSED",
+          false => "COMPARE",
+        }
+        header.set_content("{phase} target={state.target}")
+        received.prevent_default()
+      }
+    }
+  })
+  for item in lanes {
+    let _ = item.motion.set_target(46.0)
+  }
+  application.run().expect("run spring lab")
+}

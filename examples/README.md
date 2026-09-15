@@ -34,6 +34,50 @@ ard run animation.ard
 
 The animation starts automatically. Press Ctrl+C to quit after it completes.
 
+## Spring comparisons
+
+![Six spring presets responding to shared targets](../screenshots/spring-lab.gif)
+
+`spring_lab.ard` compares six presets on a shared horizontal scale in an
+80×24 or larger terminal:
+
+| Preset | Angular frequency (rad/s) | Damping ratio |
+| --- | --- | --- |
+| Bouncy | 8 | 0.35 |
+| Balanced | 8 | 0.7 |
+| Critical | 8 | 1 |
+| Heavy | 8 | 2 |
+| Slow | 4 | 0.7 |
+| Fast | 16 | 0.7 |
+
+Each lane shows a whole-cell marker, a colored fill bar with eighth-cell
+resolution, a target guide, current position/velocity, and active elapsed time.
+The first four lanes isolate damping; Slow and Fast vary the frequency of
+Balanced. All use the same settling tolerances. `SETTLED` holds the final time
+so the different settling times remain comparable. Bars clamp to their track
+only for display; spring values retain their overshoot.
+
+```sh
+ard run spring_lab.ard
+```
+
+In the lab, Left/Right send every lane to the same left/right target, C chooses
+the center, and Space freezes/resumes all lanes. Changing the target also
+resumes playback and resets each lane's elapsed counter without resetting its
+position or velocity. Press Ctrl+C to quit. Run `python3 test_animation.py` for
+PTY checks of the spring lab and the timeline examples.
+
+The GIF is recorded with [VHS v0.11.0](https://github.com/charmbracelet/vhs)
+using [`screenshots/spring-lab.tape`](../screenshots/spring-lab.tape), then
+optimized with gifsicle. With VHS, ttyd, ffmpeg, gifsicle, and DejaVu Sans Mono
+installed, regenerate it from the repository root:
+
+```sh
+(cd examples && ard build --out ../ard-out/spring_lab spring_lab.ard)
+vhs screenshots/spring-lab.tape
+gifsicle -O3 --colors 64 --batch screenshots/spring-lab.gif
+```
+
 ## Layout playground
 
 `layout_playground.ard` keeps four colored cards mounted while seven keyboard-

@@ -1,7 +1,14 @@
 use ard/unsafe
 
+use cooper/animation/spring as springs
 use go:math
 use go:strconv
+
+type Spring = springs::Spring
+type SpringConfig = springs::Config
+type SpringFrame = springs::Frame
+let spring_config = springs::config
+let internal_new_spring = springs::internal_new
 
 type Easing = fn(Float64) Float64
 

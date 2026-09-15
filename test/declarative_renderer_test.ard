@@ -379,6 +379,63 @@ test fn duplicate_keys_and_refs_across_components_preserve_existing_controls() V
   Result::ok(())
 }
 
+test fn keys_are_sibling_local_and_empty_keys_are_not_unkeyed() Void!Str {
+  let app = headless::new(20, 5)
+  defer app.destroy()
+  let keyed = d::input_ref()
+  let positional = d::input_ref()
+  let record = log()
+  mut reordered = false
+  let renderer = d::mount(
+    app.context,
+    app.root,
+    d::child(
+      root,
+      Draw{
+        log: record,
+        render: fn() d::View {
+          let first = d::input("keyed", key: "", ref: keyed)
+          let middle = d::input("positional", ref: positional)
+          let last = d::text("last", key: "last")
+          mut children = [first, middle, last]
+          if reordered {
+            children = [last, middle, first]
+          }
+          d::box(
+            [
+              d::box(children, key: "left"),
+              d::box([d::text("other sibling group", key: "")], key: "right"),
+            ],
+          )
+        },
+      },
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let original_keyed = keyed.current.expect("keyed input").node_ref.id
+  let original_positional = positional.current.expect("positional input").node_ref.id
+  renderer.update(fn() {
+    reordered = true
+  })
+  app.flush()
+  try testing::assert(
+    keyed.current.expect("retained key").node_ref.id == original_keyed,
+    "empty key follows identity",
+  )
+  try testing::assert(
+    positional.current.expect("retained position").node_ref.id == original_positional,
+    "unkeyed child follows index",
+  )
+  let failed = unsafe {
+    d::mount(app.context, app.root, d::box([d::text("a", key: ""), d::text("b", key: "")]))
+  }
+  match failed {
+    ok(_) => testing::fail("duplicate empty keys must reject"),
+    err(message) => testing::assert(message.contains("duplicate view key"), message),
+  }
+}
+
 test fn normalized_and_rejected_controlled_values_preserve_selection_without_feedback() Void!Str {
   let app = headless::new(20, 1)
   defer app.destroy()

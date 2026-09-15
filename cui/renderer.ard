@@ -84,16 +84,15 @@ private fn same_identity(previous: mut Mounted, next: view::Description) Bool {
 }
 
 private fn validate(children: [view::View], refs: mut [mut view::InputRef]) {
-  for child_view, index in children {
+  let keys = mut Map::new<Bool>()
+  for child_view in children {
     let child = view::describe(child_view)
     match child.key {
       key => {
-        for other_view, other_index in children {
-          let other = view::describe(other_view)
-          if index != other_index and other.key == Maybe::new(key) {
-            panic("duplicate view key: " + key)
-          }
+        if keys.get(key).or(false) {
+          panic("duplicate view key: " + key)
         }
+        keys.set(key, true)
       },
       _ => (),
     }
@@ -123,6 +122,12 @@ private fn prepare(
   // Validate literal descendants before running any child constructor.
   let literal_refs = mut List::new<mut view::InputRef>()
   validate(descriptions, literal_refs)
+  let keyed = mut Map::new<mut Mounted>()
+  for old in previous {
+    let _ = old.description.key.map(fn(key: Str) {
+      keyed.set(key, old)
+    })
+  }
   let result = mut List::new<Prepared>()
   for value, index in descriptions {
     let description = view::describe(value)
@@ -138,11 +143,17 @@ private fn prepare(
       _ => (),
     }
     mut found = Maybe::new<mut Mounted>()
-    for old, old_index in previous {
-      if old.active and same_identity(old, description) and (description.key.is_some() or old_index == index) {
-        found = Maybe::new(old)
-        break
-      }
+    let candidate = match description.key {
+      key => keyed.get(key),
+      _ => previous.at(index),
+    }
+    match candidate {
+      old => {
+        if old.active and same_identity(old, description) {
+          found = Maybe::new(old)
+        }
+      },
+      _ => (),
     }
     mut children = List::new<mut Mounted>()
     mut instance = Maybe::new<mut view::Instance>()
@@ -181,21 +192,17 @@ private fn prepare(
 }
 
 private fn retired(previous: [mut Mounted], prepared: [Prepared], removed: mut [mut Mounted]) {
-  for old in previous {
-    mut retained = false
-    for next in prepared {
-      match next.previous {
-        current => {
-          if current == old {
-            retained = true
-            retired(old.children, next.children, removed)
-          }
-        },
-        _ => (),
-      }
+  let retained = mut Map::new<Prepared>()
+  for next in prepared {
+    match next.previous {
+      current => retained.set(current.control.node().id.to_str(), next),
+      _ => (),
     }
-    if not retained {
-      removed.push(old)
+  }
+  for old in previous {
+    match retained.get(old.control.node().id.to_str()) {
+      next => retired(old.children, next.children, removed),
+      _ => removed.push(old),
     }
   }
 }

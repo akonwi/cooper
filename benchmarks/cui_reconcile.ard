@@ -1,0 +1,88 @@
+use cooper/cui
+use cooper/testing
+use cooper/ui
+use go:fmt
+use go:os
+use go:runtime/pprof
+use go:time
+
+struct Model {
+  count: Int,
+  selected: Int,
+}
+struct Props {
+  model: mut Model,
+}
+struct Screen {
+  model: mut Model,
+}
+private fn screen(props: mut Props) mut Screen {
+  (mut Screen{model: props.model})
+}
+
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    let rows = mut List::new<cui::View>()
+    mut index = 0
+    while index < self.model.count {
+      let id = index
+      rows.push(
+        cui::box(
+          [
+            cui::text("Author {id}", styles: ui::style(height: ui::cells(1))),
+            cui::text("Comment {id}: retained trees should keep identity across selection changes."),
+          ],
+          key: id.to_str(),
+          focused: id == self.model.selected,
+          styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0),
+        ),
+      )
+      index =+ 1
+    }
+    cui::scroll_box(
+      rows.@,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    )
+  }
+}
+
+fn main() {
+  let profile = os::Getenv("COOPER_CPU_PROFILE")
+  if not profile.is_empty() {
+    let output = os::Create(profile).expect("create CPU profile")
+    pprof::StartCPUProfile(output).expect("start CPU profile")
+    defer {
+      pprof::StopCPUProfile()
+      let _ = output.Close()
+    }
+  }
+  for count in [250, 500, 1000] {
+    let app = testing::new(100, 30)
+    let model = mut Model{count: count, selected: 0}
+    let start = time::Now()
+    let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+    app.flush()
+    let mount = time::Since(start)
+    let update_start = time::Now()
+    mut index = 0
+    while index < 20 {
+      renderer.update(fn() {
+        model.selected = model.selected + 1
+      })
+      app.flush()
+      index =+ 1
+    }
+    let updates = time::Since(update_start)
+    if not app.frame().text().contains("Comment 20:") {
+      panic("selection updates must reveal the final row")
+    }
+    fmt::Printf(
+      "rows=%d mount_ms=%d updates_20_ms=%d\n",
+      count,
+      mount.Milliseconds(),
+      updates.Milliseconds(),
+    )
+    renderer.destroy()
+    app.destroy()
+  }
+}

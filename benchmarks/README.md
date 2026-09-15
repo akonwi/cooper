@@ -56,6 +56,50 @@ The interaction benchmark reports stacking-aware hit traversal and global
 selection reconciliation separately. It verifies that every pointer event
 reaches the highest z-index sibling and that selection produces non-empty text.
 
+## CUI reconciliation
+
+`cui_reconcile.ard` isolates keyed-tree updates from HTTP and terminal I/O.
+It mounts 250, 500, and 1,000 three-node rows, then performs twenty selection
+updates with headless flushes. It verifies that the final selected row is
+painted in the viewport. Run it separately from the retained-layout suite:
+
+```sh
+ard build benchmarks/cui_reconcile.ard --out /tmp/cui-reconcile
+/tmp/cui-reconcile
+COOPER_CPU_PROFILE=/tmp/cui.pprof /tmp/cui-reconcile
+go tool pprof -top -cum /tmp/cui-reconcile /tmp/cui.pprof
+```
+
+The first profile at the Hacker News checkpoint found duplicate-key validation
+dominating CPU time: it decoded every sibling for every key. Validation now
+uses a sibling-local key set; matching indexes previous keyed children, and
+retirement indexes prepared children by retained node identity. Unkeyed
+children still match by position, and retirement traverses the original order.
+
+On the development orb with Ard 0.42, three sequential runs gave these median
+totals for twenty selection updates (no profiler enabled):
+
+| Rows | Before indexing | After indexing |
+| --- | ---: | ---: |
+| 250 | 299 ms | 110 ms |
+| 500 | 1,084 ms | 219 ms |
+| 1,000 | 4,299 ms | 584 ms |
+
+The before binary used the renderer from the
+[Hacker News checkpoint](https://github.com/akonwi/cooper/commit/76beb08beb6b7853a5127bf8b9451487f8dbe9e5).
+The same 1,034-item HTTP/PTY workload's remaining 1,004 items fell from 24.7s
+to 6.4s in single runs; twelve keys with 40ms pacing fell from 2.5s to 0.59s.
+RSS was about 58 MiB before and 64 MiB after in those runs: this is a latency
+optimization, not evidence of reduced memory use. These are development
+measurements, not portable performance guarantees or CI thresholds.
+
+These changes do not virtualize or skip rendering components. Indexed re-adds
+in `Node.add`, full-tree property application, and allocation remain targets
+for subsequent profiling. Compare repeated runs of the same compiled workload
+without other builds or tests competing for CPU. The end-to-end counterpart is
+`HN_STRESS_COMMENTS=1000 python3 examples/test_cui_hackernews.py`; its timing
+also includes fixture HTTP latency and explicit key pacing.
+
 ## Main-branch baseline and profiling
 
 See [the recorded baseline](../docs/layout-profiling-baseline.md) for revisions,

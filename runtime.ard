@@ -5,6 +5,7 @@ use go:context
 use cooper/animation
 use cooper/clipboard
 use cooper/core/focus
+use cooper/core/graphics
 use cooper/core/node
 use cooper/core/paint
 use cooper/core/pointer
@@ -183,6 +184,7 @@ private struct State {
   dispatch: fn(fn()) Void!event::DispatchError,
   cancellation: Receiver<Void>,
   terminal: (mut vaxis::Vaxis)?,
+  graphics: mut graphics::Renderer,
   notification_action: fn(Str, Str?) Bool,
   terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
   terminal_title_action: fn(Str),
@@ -326,6 +328,7 @@ private fn state(
     dispatch: dispatch,
     cancellation: cancellation_signal.receiver(),
     terminal: terminal,
+    graphics: graphics::new(),
     notification_action: notification_action,
     terminal_progress_action: terminal_progress_action,
     terminal_title_action: terminal_title_action,
@@ -554,7 +557,7 @@ impl State {
     self.nodes.push(created)
     created
   }
-  
+
   private fn mut release_node(destroyed_id: Int) {
     let retained = mut List::new<mut node::Node>()
     for current in self.nodes {
@@ -564,22 +567,22 @@ impl State {
     }
     self.nodes = retained.@
   }
-  
+
   fn mut node_count() Int {
     self.nodes.size()
   }
-  
+
   fn mut is_retained_destroyed() Bool {
     self.lifecycle.Lock()
     let destroyed = self.retained_destroyed
     self.lifecycle.Unlock()
     destroyed
   }
-  
+
   fn mut is_destroyed() Bool {
     self.is_retained_destroyed()
   }
-  
+
   private fn mut begin_run() {
     self.lifecycle.Lock()
     let available = (not self.retained_destroyed) and not self.retained_running
@@ -591,17 +594,17 @@ impl State {
       panic("retained Runtime is not available to run")
     }
   }
-  
+
   private fn mut end_run() {
     self.lifecycle.Lock()
     self.retained_running = false
     self.lifecycle.Unlock()
   }
-  
+
   fn mut measure_text(text: Str) Int {
     self.width_measurer(text)
   }
-  
+
   fn mut compute_layout(root: mut node::Renderable, width: Int, height: Int) {
     self.lifecycle.Lock()
     let destroyed = self.retained_destroyed
@@ -617,7 +620,7 @@ impl State {
     }
     root.node().compute(width, height)
   }
-  
+
   fn mut destroy_retained() {
     self.lifecycle.Lock()
     let running = self.retained_running
@@ -637,7 +640,7 @@ impl State {
       }
     }
   }
-  
+
   fn mut destroy_detached() {
     self.lifecycle.Lock()
     let detached = self.detached
@@ -650,7 +653,7 @@ impl State {
       self.stop_resources()
     }
   }
-  
+
   private fn mut now_ms() Int64 {
     if self.headless {
       self.test_now_ms
@@ -658,7 +661,7 @@ impl State {
       time::Since(self.clock_started).Milliseconds()
     }
   }
-  
+
   private fn mut animation_wake() fn() {
     let wake = self.animation_control_wake
     fn() {
@@ -668,7 +671,7 @@ impl State {
       }
     }
   }
-  
+
   fn mut timeline(duration: Int, loop: Bool?, alternate: Bool?, on_complete: fn()?) mut animation::Timeline {
     if duration <= 0 {
       panic("Timeline duration must be positive")
@@ -690,7 +693,7 @@ impl State {
     self.timelines.push(created)
     created
   }
-  
+
   fn mut spring(
     value: Float64,
     update: fn(animation::SpringFrame),
@@ -731,7 +734,7 @@ impl State {
     }
     self.springs = springs.@
   }
-  
+
   private fn mut animations_active() Bool {
     mut active = false
     for timeline in self.timelines {
@@ -746,26 +749,26 @@ impl State {
     }
     active
   }
-  
+
   private fn mut reset_animation_clock() {
     self.animation_clock_initialized = false
     self.animation_last_ms = 0
   }
-  
+
   private fn mut wake_animations_after_failed_suspend(previous_phase: Int) {
     if previous_phase == 1 {
       (self.animation_wake())()
       (self.request_render())()
     }
   }
-  
+
   private fn mut request_animation_clock_reset() {
     self.lifecycle.Lock()
     self.animation_clock_generation =+ 1
     self.lifecycle.Unlock()
     (self.animation_wake())()
   }
-  
+
   private fn mut apply_animation_clock_reset() {
     self.lifecycle.Lock()
     let generation = self.animation_clock_generation
@@ -775,7 +778,7 @@ impl State {
       self.reset_animation_clock()
     }
   }
-  
+
   private fn mut schedule_animation_frame() {
     if (not self.animation_frame_pending) and self.animations_active() {
       self.animation_frame_pending = true
@@ -799,7 +802,7 @@ impl State {
       })
     }
   }
-  
+
   private fn mut claim_animation_frame() Int? {
     self.lifecycle.Lock()
     let generation = match self.phase == 1 {
@@ -809,14 +812,14 @@ impl State {
     self.lifecycle.Unlock()
     generation
   }
-  
+
   private fn mut animation_frame_valid(generation: Int) Bool {
     self.lifecycle.Lock()
     let valid = self.phase == 1 and self.animation_execution_generation == generation
     self.lifecycle.Unlock()
     valid
   }
-  
+
   private fn mut advance_animations(now: Int64, allow: fn() Bool) Bool {
     mut changed = false
     if allow() {
@@ -830,7 +833,7 @@ impl State {
       }
       self.animation_clock_initialized = true
       self.animation_last_ms = now
-      
+
       let initial_size = self.timelines.size()
       let candidates = self.timelines
       let spring_candidates = self.springs
@@ -873,7 +876,7 @@ impl State {
     }
     changed
   }
-  
+
   private fn mut destroy_animations() {
     let retained = self.timelines
     self.timelines = []
@@ -888,14 +891,14 @@ impl State {
     self.animation_frame_pending = false
     self.reset_animation_clock()
   }
-  
+
   fn mut mouse_cursor() event::MouseCursor {
     self.terminal_io.Lock()
     let cursor = self.pointer_cursor
     self.terminal_io.Unlock()
     cursor
   }
-  
+
   private fn mut update_pointer_cursor(root: mut node::Renderable) Bool {
     self.terminal_io.Lock()
     let next = self.pointer.mouse_cursor(root)
@@ -914,7 +917,7 @@ impl State {
     self.terminal_io.Unlock()
     changed
   }
-  
+
   fn mut failed_suspend_animation_wake_test() Bool {
     self.require_phase(2)
     let controls = self.animation_control_wake.receiver()
@@ -938,7 +941,7 @@ impl State {
     }
     animation_woken and redraw_woken
   }
-  
+
   fn mut advance_time_test(delta_ms: Int) {
     self.lifecycle.Lock()
     let phase = self.phase
@@ -961,7 +964,7 @@ impl State {
       })
     }
   }
-  
+
   fn mut bind_root(root: mut node::Node) {
     if self.root_node.is_some() {
       panic("application runtime Root is already bound")
@@ -971,14 +974,14 @@ impl State {
     }
     self.root_node = Maybe::new<mut node::Node>(root)
   }
-  
+
   private fn mut owns_root(root: mut node::Renderable) Bool {
     match self.root_node {
       bound => bound == root.node() and root.node().context_token == self.context_token,
       _ => false,
     }
   }
-  
+
   private fn mut require_root(root: mut node::Renderable) Void!Error {
     if self.owns_root(root) and not self.is_retained_destroyed() {
       Result::ok(())
@@ -986,7 +989,7 @@ impl State {
       Result::err(Error::new("application Root does not belong to this Runtime"))
     }
   }
-  
+
   private fn mut focus_node(target_id: Int) Bool {
     match self.root_node {
       root => {
@@ -998,7 +1001,7 @@ impl State {
       _ => false,
     }
   }
-  
+
   private fn mut blur_node(target_id: Int) {
     match self.focused.focused() {
       target => {
@@ -1009,19 +1012,19 @@ impl State {
       _ => (),
     }
   }
-  
+
   fn mut focus_request() fn(Int) Bool {
     fn(target_id: Int) Bool {
       self.focus_node(target_id)
     }
   }
-  
+
   fn mut blur_request() fn(Int) {
     fn(target_id: Int) {
       self.blur_node(target_id)
     }
   }
-  
+
   private fn mut start_selection_node(target_id: Int, local_x: Int, local_y: Int) Bool {
     match self.root_node {
       root => {
@@ -1045,7 +1048,7 @@ impl State {
       _ => false,
     }
   }
-  
+
   private fn mut update_selection_node(target_id: Int, local_x: Int, local_y: Int, finish: Bool) Bool {
     match self.root_node {
       root => {
@@ -1077,7 +1080,7 @@ impl State {
       _ => false,
     }
   }
-  
+
   private fn mut selection_owned_by(target_id: Int) Bool {
     match self.root_node {
       root => {
@@ -1089,31 +1092,31 @@ impl State {
       _ => false,
     }
   }
-  
+
   fn mut selection_start_request() fn(Int, Int, Int) Bool {
     fn(target_id: Int, local_x: Int, local_y: Int) Bool {
       self.start_selection_node(target_id, local_x, local_y)
     }
   }
-  
+
   fn mut selection_update_request() fn(Int, Int, Int, Bool) Bool {
     fn(target_id: Int, local_x: Int, local_y: Int, finish: Bool) Bool {
       self.update_selection_node(target_id, local_x, local_y, finish)
     }
   }
-  
+
   fn mut selection_owns_request() fn(Int) Bool {
     fn(target_id: Int) Bool {
       self.selection_owned_by(target_id)
     }
   }
-  
+
   fn mut selection_clear_request() fn() {
     fn() {
       self.clear_selection()
     }
   }
-  
+
   fn mut commit_construction() {
     self.lifecycle.Lock()
     if self.phase != 0 or self.construction_committed {
@@ -1123,7 +1126,7 @@ impl State {
     self.construction_committed = true
     self.lifecycle.Unlock()
   }
-  
+
   private fn mut close_cancellation() {
     self.lifecycle.Lock()
     let close = not self.cancellation_closed
@@ -1135,7 +1138,7 @@ impl State {
       self.cancellation_signal.close()
     }
   }
-  
+
   private fn mut publish_startup(error: Error?) {
     self.lifecycle.Lock()
     let publish = not self.startup_published
@@ -1148,7 +1151,7 @@ impl State {
       self.startup_done.close()
     }
   }
-  
+
   private fn mut startup_result() Void!Error {
     self.startup_done.recv()
     self.lifecycle.Lock()
@@ -1159,7 +1162,7 @@ impl State {
       _ => Result::ok(()),
     }
   }
-  
+
   private fn mut publish_completion(error: Error?) {
     self.lifecycle.Lock()
     let publish = not self.completion_published
@@ -1172,7 +1175,7 @@ impl State {
       self.completion_done.close()
     }
   }
-  
+
   private fn mut completion_result() Void!Error {
     self.completion_done.recv()
     self.lifecycle.Lock()
@@ -1183,7 +1186,7 @@ impl State {
       _ => Result::ok(()),
     }
   }
-  
+
   fn mut rollback_construction() {
     self.lifecycle.Lock()
     let should_stop = self.phase == 0 and (not self.construction_committed) and (not self.resources_stopped)
@@ -1192,7 +1195,7 @@ impl State {
       self.resources_stopped = true
     }
     self.lifecycle.Unlock()
-    
+
     if should_stop {
       self.updates.stop()
       self.key_listeners = []
@@ -1219,7 +1222,7 @@ impl State {
       self.publish_completion(Maybe::new<Error>())
     }
   }
-  
+
   private fn mut begin_phase(expected_terminal: Bool, next_phase: Int) {
     self.lifecycle.Lock()
     let valid = self.phase == 0 and self.construction_committed and self.terminal.is_some() == expected_terminal
@@ -1231,7 +1234,7 @@ impl State {
       panic("application runtime is not available to start")
     }
   }
-  
+
   private fn mut require_phase(expected: Int) {
     self.lifecycle.Lock()
     let valid = self.phase == expected
@@ -1240,7 +1243,7 @@ impl State {
       panic("application runtime is not active")
     }
   }
-  
+
   private fn mut request_live_destroy() Bool {
     self.lifecycle.Lock()
     mut finish_now = false
@@ -1259,7 +1262,7 @@ impl State {
       stop_dispatch = true
     }
     self.lifecycle.Unlock()
-    
+
     if stop_dispatch {
       self.clipboard.internal_cancel()
       self.updates.stop()
@@ -1272,7 +1275,7 @@ impl State {
     }
     finish_now
   }
-  
+
   private fn mut claim_test_destroy() Bool {
     self.lifecycle.Lock()
     mut finish_now = false
@@ -1293,28 +1296,28 @@ impl State {
     }
     finish_now
   }
-  
+
   private fn mut test_stopping() Bool {
     self.lifecycle.Lock()
     let stopping = self.phase == 4
     self.lifecycle.Unlock()
     stopping
   }
-  
+
   private fn mut test_active() Bool {
     self.lifecycle.Lock()
     let active = self.phase == 2
     self.lifecycle.Unlock()
     active
   }
-  
+
   private fn mut callbacks_active() Bool {
     self.lifecycle.Lock()
     let active = self.phase == 1 or self.phase == 2
     self.lifecycle.Unlock()
     active
   }
-  
+
   private fn mut begin_test_flush() {
     self.lifecycle.Lock()
     let valid = self.phase == 2 and not self.test_flushing
@@ -1326,7 +1329,7 @@ impl State {
       panic("headless application runtime cannot flush")
     }
   }
-  
+
   private fn mut end_test_flush() Bool {
     self.lifecycle.Lock()
     self.test_flushing = false
@@ -1334,27 +1337,27 @@ impl State {
     self.lifecycle.Unlock()
     finish_destroy
   }
-  
+
   private fn mut live_rendering() Bool {
     self.lifecycle.Lock()
     let active = self.phase == 1
     self.lifecycle.Unlock()
     active
   }
-  
+
   private fn mut live_stopping() Bool {
     self.lifecycle.Lock()
     let stopping = self.phase == 4
     self.lifecycle.Unlock()
     stopping
   }
-  
+
   private fn mut finish_test(root: mut node::Renderable) {
     root.node().unmount_root()
     self.end_run()
     self.stop_resources()
   }
-  
+
   private fn mut stop_resources(error: Error?) {
     self.lifecycle.Lock()
     let should_stop = not self.resources_stopped
@@ -1363,7 +1366,7 @@ impl State {
       self.phase = 3
     }
     self.lifecycle.Unlock()
-    
+
     if should_stop {
       self.updates.stop()
       self.key_listeners = []
@@ -1377,14 +1380,14 @@ impl State {
       self.close_cancellation()
       self.destroy_animations()
     }
-    
+
     let final_error = self.release_terminal(error)
     if should_stop {
       self.destroy_retained()
       self.publish_completion(final_error)
     }
   }
-  
+
   private fn mut release_terminal(error: Error?) Error? {
     mut final_error = error
     self.terminal_io.Lock()
@@ -1410,6 +1413,8 @@ impl State {
           }
           if close_terminal {
             self.clear_terminal_progress_locked()
+            self.graphics.clear()
+            self.last_frame.images = []
             terminal.Close()
             self.terminal_closed = true
           }
@@ -1419,7 +1424,7 @@ impl State {
     }
     let terminal_finished = self.terminal_closed
     self.terminal_io.Unlock()
-    
+
     if terminal_finished {
       match self.signal_watcher {
         watcher => watcher.Close(),
@@ -1428,7 +1433,7 @@ impl State {
     }
     final_error
   }
-  
+
   private fn mut terminal_cleanup_pending() Bool {
     self.lifecycle.Lock()
     let cleanup_started = self.resources_stopped or self.phase == 4 and (not self.pump_started)
@@ -1438,7 +1443,7 @@ impl State {
     self.terminal_io.Unlock()
     pending
   }
-  
+
   private fn mut take_redraw_request() Bool {
     let pending = self.wake.receiver()
     select {
@@ -1446,7 +1451,7 @@ impl State {
       _ => false,
     }
   }
-  
+
   private fn mut drain_redraw_requests() {
     let pending = self.wake.receiver()
     mut draining = true
@@ -1457,7 +1462,7 @@ impl State {
       }
     }
   }
-  
+
   private fn mut apply_pending_resize_locked(terminal: mut vaxis::Vaxis) Bool {
     self.lifecycle.Lock()
     let cols = self.pending_resize_cols
@@ -1480,8 +1485,14 @@ impl State {
       false
     }
   }
-  
-  private fn mut draw(root: mut node::Renderable, width: Int, height: Int) mut paint::Buffer {
+
+  private fn mut draw(
+    root: mut node::Renderable,
+    width: Int,
+    height: Int,
+    cell_width: Int?,
+    cell_height: Int?,
+  ) mut paint::Buffer {
     self.compute_layout(root, width, height)
     self.focused.reconcile(root)
     let focus_changed = self.focused.take_reveal_request()
@@ -1508,13 +1519,16 @@ impl State {
       )
     }
     let buffer = paint::new_buffer(width, height)
+    if cell_width.or(0) > 0 and cell_height.or(0) > 0 {
+      buffer.enable_images(cell_width.or(0), cell_height.or(0))
+    }
     root.node().paint(buffer)
     self.last_frame = buffer
     self.has_frame = true
     self.drain_redraw_requests()
     buffer
   }
-  
+
   private fn mut present(terminal: mut vaxis::Vaxis, buffer: mut paint::Buffer) {
     let window = terminal.Window()
     window.Clear()
@@ -1548,9 +1562,10 @@ impl State {
       },
       _ => (),
     }
+    self.graphics.present(terminal, buffer)
     terminal.Render()
   }
-  
+
   private fn mut post_frame_pointer(root: mut node::Renderable) {
     let outcome = self.pointer.reconcile(root, self.focused)
     self.apply_outcome(outcome)
@@ -1562,7 +1577,7 @@ impl State {
       self.post_frame_quit = true
     }
   }
-  
+
   private fn mut post_frame_selection() {
     mut deferred = false
     if self.pending_selection.is_some() and self.take_redraw_request() {
@@ -1598,21 +1613,28 @@ impl State {
       }
     }
   }
-  
+
   private fn mut paint_live(root: mut node::Renderable) {
     let terminal = self.terminal.expect("live application terminal")
     self.terminal_io.Lock()
     mut width = 0
     mut height = 0
+    mut cell_width = 0
+    mut cell_height = 0
     let active = self.live_rendering()
     if active {
       let window = terminal.Window()
       width = window.Width
       height = window.Height
+      if terminal.SupportsKittyGraphics() {
+        let size = terminal.Size()
+        cell_width = size.XPixel / size.Cols
+        cell_height = size.YPixel / size.Rows
+      }
     }
     self.terminal_io.Unlock()
     if active {
-      let buffer = self.draw(root, width, height)
+      let buffer = self.draw(root, width, height, cell_width, cell_height)
       self.terminal_io.Lock()
       let present = self.live_rendering()
       if present {
@@ -1625,19 +1647,19 @@ impl State {
       }
     }
   }
-  
+
   private fn mut paint_test(root: mut node::Renderable) {
     let _ = self.draw(root, self.headless_width, self.headless_height)
     self.post_frame_pointer(root)
     self.post_frame_selection()
   }
-  
+
   private fn mut apply_outcome(outcome: router::Outcome) {
     if outcome.preserve_focus_scroll {
       self.suppress_focus_reveal = true
     }
   }
-  
+
   private fn mut drain_updates() Int {
     mut drained = 0
     mut draining = true
@@ -1663,7 +1685,7 @@ impl State {
       self.phase = 4
     }
     self.lifecycle.Unlock()
-    
+
     if defer_app_cleanup {
       self.updates.stop()
       self.clipboard.internal_stop()
@@ -1673,7 +1695,7 @@ impl State {
       self.destroy_live()
     }
   }
-  
+
   fn mut start_signal_monitor() {
     match self.signal_watcher {
       watcher => {
@@ -1716,11 +1738,11 @@ impl State {
       _ => (),
     }
   }
-  
+
   fn mut request_render() fn() {
     self.render_request
   }
-  
+
   fn mut open_url(target: Str) Void!Error {
     self.lifecycle.Lock()
     defer self.lifecycle.Unlock()
@@ -1731,7 +1753,7 @@ impl State {
       Result::err(Error::new("cannot open a URL from a destroyed Runtime"))
     }
   }
-  
+
   fn mut set_title(value: Str) Bool {
     let normalized = sanitize_terminal_title(value)
     self.terminal_io.Lock()
@@ -1747,7 +1769,7 @@ impl State {
     }
     accepted
   }
-  
+
   fn mut notify(message: Str, title: Str?) Bool {
     mut normalized = title
     match title {
@@ -1767,7 +1789,7 @@ impl State {
     }
     accepted
   }
-  
+
   fn mut progress(progress_state: terminal_progress::State, percent: Int?) Bool {
     match percent {
       value => {
@@ -1809,19 +1831,19 @@ impl State {
     }
     accepted
   }
-  
+
   private fn mut clear_terminal_progress_locked() {
     if self.terminal_progress_state != terminal_progress::State::remove {
       self.terminal_progress_action(terminal_progress::State::remove)
     }
   }
-  
+
   private fn mut restore_terminal_progress_locked() {
     if self.terminal_progress_state != terminal_progress::State::remove {
       self.terminal_progress_action(self.terminal_progress_state, self.terminal_progress_percent)
     }
   }
-  
+
   private fn mut restore_terminal_progress_and_commit_phase(
     transition: Int,
     target: Int,
@@ -1839,7 +1861,7 @@ impl State {
     }
     committed
   }
-  
+
   private fn mut next_listener() Int {
     self.lifecycle.Lock()
     let prestart_shutdown = self.phase == 4 and (not self.pump_started) and (not self.resources_stopped)
@@ -1855,7 +1877,7 @@ impl State {
     }
     id
   }
-  
+
   fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
     let id = self.next_listener()
     self.key_listeners.push(KeyListener{id: id, handler: handler})
@@ -1863,7 +1885,7 @@ impl State {
       self.remove_key_listener(id)
     }
   }
-  
+
   private fn mut remove_key_listener(id: Int) {
     let retained = mut List::new<KeyListener>()
     for listener in self.key_listeners {
@@ -1873,7 +1895,7 @@ impl State {
     }
     self.key_listeners = retained.@
   }
-  
+
   fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
     let id = self.next_listener()
     self.paste_listeners.push(PasteListener{id: id, handler: handler})
@@ -1881,7 +1903,7 @@ impl State {
       self.remove_paste_listener(id)
     }
   }
-  
+
   private fn mut remove_paste_listener(id: Int) {
     let retained = mut List::new<PasteListener>()
     for listener in self.paste_listeners {
@@ -1891,11 +1913,11 @@ impl State {
     }
     self.paste_listeners = retained.@
   }
-  
+
   fn mut terminal_focus() event::TerminalFocus? {
     self.terminal_focus_state
   }
-  
+
   fn mut on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
     let id = self.next_listener()
     self.terminal_focus_listeners.push(TerminalFocusListener{id: id, handler: handler})
@@ -1903,7 +1925,7 @@ impl State {
       self.remove_terminal_focus_listener(id)
     }
   }
-  
+
   private fn mut remove_terminal_focus_listener(id: Int) {
     let retained = mut List::new<TerminalFocusListener>()
     for listener in self.terminal_focus_listeners {
@@ -1913,7 +1935,7 @@ impl State {
     }
     self.terminal_focus_listeners = retained.@
   }
-  
+
   private fn mut set_terminal_focus(value: event::TerminalFocus) {
     mut changed = true
     match self.terminal_focus_state {
@@ -1928,11 +1950,11 @@ impl State {
       }
     }
   }
-  
+
   fn mut current_selection() public_selection::Selection? {
     self.selection.current()
   }
-  
+
   fn mut clear_selection() {
     if self.selection_notifying {
       self.selection_clear_queued = true
@@ -1940,7 +1962,7 @@ impl State {
       (self.request_render())()
     }
   }
-  
+
   fn mut on_selection_change(handler: fn(public_selection::Selection?)) fn() {
     let id = self.next_listener()
     self.selection_listeners.push(SelectionListener{id: id, handler: handler})
@@ -1948,7 +1970,7 @@ impl State {
       self.remove_selection_listener(id)
     }
   }
-  
+
   private fn mut remove_selection_listener(id: Int) {
     let retained = mut List::new<SelectionListener>()
     for listener in self.selection_listeners {
@@ -1958,7 +1980,7 @@ impl State {
     }
     self.selection_listeners = retained.@
   }
-  
+
   private fn mut emit_key(received: mut event::KeyEvent) {
     let listeners = self.key_listeners
     for listener in listeners {
@@ -1967,7 +1989,7 @@ impl State {
       }
     }
   }
-  
+
   private fn mut emit_paste(received: mut event::PasteEvent) {
     let listeners = self.paste_listeners
     for listener in listeners {
@@ -1976,7 +1998,7 @@ impl State {
       }
     }
   }
-  
+
   private fn mut route_live_paste(root: mut node::Renderable, received: mut event::PasteEvent) router::Outcome {
     self.emit_paste(received)
     self.focused.reconcile(root)
@@ -1989,7 +2011,7 @@ impl State {
       }
     }
   }
-  
+
   fn mut suspend_live() Void!Error {
     self.terminal_io.Lock()
     self.lifecycle.Lock()
@@ -2020,7 +2042,7 @@ impl State {
       available = false
     }
     self.lifecycle.Unlock()
-    
+
     mut outcome: Void!Error = Result::ok(())
     if available and not already_suspended {
       if not self.clipboard.internal_suspend() {
@@ -2039,6 +2061,7 @@ impl State {
       } else {
         let terminal = self.terminal.expect("live application terminal")
         self.clear_terminal_progress_locked()
+        self.graphics.clear()
         terminal.SetMouseShape(vaxis::MouseShapeDefault)
         terminal.Render()
         outcome = terminal.Suspend()
@@ -2082,14 +2105,14 @@ impl State {
       }
     }
     self.terminal_io.Unlock()
-    
+
     if not available {
       Result::err(Error::new("application runtime is not available to suspend"))
     } else {
       outcome
     }
   }
-  
+
   fn mut resume_live() Void!Error {
     self.terminal_io.Lock()
     self.lifecycle.Lock()
@@ -2114,7 +2137,7 @@ impl State {
       available = false
     }
     self.lifecycle.Unlock()
-    
+
     mut outcome: Void!Error = Result::ok(())
     if available and not already_active {
       let terminal = self.terminal.expect("live application terminal")
@@ -2143,14 +2166,14 @@ impl State {
       }
     }
     self.terminal_io.Unlock()
-    
+
     if not available {
       Result::err(Error::new("application runtime is not available to resume"))
     } else {
       outcome
     }
   }
-  
+
   fn mut start_live(root: mut node::Renderable) Void!Error {
     try self.require_root(root)
     self.terminal_io.Lock()
@@ -2174,7 +2197,7 @@ impl State {
     }
     self.lifecycle.Unlock()
     self.terminal_io.Unlock()
-    
+
     if not available {
       if finish_shutdown {
         self.stop_resources()
@@ -2189,7 +2212,7 @@ impl State {
       self.startup_result()
     }
   }
-  
+
   fn mut wait_live() Void!Error {
     self.lifecycle.Lock()
     let available = self.pump_started
@@ -2200,12 +2223,12 @@ impl State {
       self.completion_result()
     }
   }
-  
+
   fn mut run(root: mut node::Renderable) Void!Error {
     try self.start_live(root)
     self.wait_live()
   }
-  
+
   private fn mut live_pump(root: mut node::Renderable) {
     self.begin_run()
     defer self.stop_resources()
@@ -2213,7 +2236,7 @@ impl State {
     defer self.publish_startup(Maybe::new<Error>(Error::new("application startup did not complete")))
     root.node().mount_root(self.dispatch)
     defer root.node().unmount_root()
-    
+
     self.terminal_io.Lock()
     self.lifecycle.Lock()
     mut started = false
@@ -2227,7 +2250,7 @@ impl State {
       started = true
     }
     self.lifecycle.Unlock()
-    
+
     if active {
       let terminal = self.terminal.expect("live application terminal")
       if self.live_rendering() {
@@ -2240,7 +2263,7 @@ impl State {
     if active {
       self.paint_live(root)
     }
-    
+
     self.lifecycle.Lock()
     let startup_valid = started and self.phase != 4 and self.phase != 3
     self.lifecycle.Unlock()
@@ -2252,12 +2275,12 @@ impl State {
         Maybe::new<Error>(Error::new("application was destroyed during startup")),
       )
     }
-    
+
     if not self.live_stopping() {
       let _ = self.request_live_destroy()
     }
   }
-  
+
   private fn mut live_event_loop(root: mut node::Renderable) {
     let terminal = self.terminal.expect("live application terminal")
     let events = terminal.Events()
@@ -2474,14 +2497,14 @@ impl State {
       }
     }
   }
-  
+
   fn mut destroy_live() {
     let finish_now = self.request_live_destroy()
     if finish_now or self.terminal_cleanup_pending() {
       self.stop_resources()
     }
   }
-  
+
   fn mut start_test(root: mut node::Renderable) {
     if not self.owns_root(root) or self.is_retained_destroyed() {
       panic("application Root does not belong to this Runtime")
@@ -2490,12 +2513,12 @@ impl State {
     self.begin_run()
     root.node().mount_root(self.dispatch)
   }
-  
+
   fn mut render_test(root: mut node::Renderable) {
     self.require_phase(2)
     self.paint_test(root)
   }
-  
+
   fn mut key_test(root: mut node::Renderable, received: mut event::KeyEvent) {
     self.require_phase(2)
     self.emit_key(received)
@@ -2515,7 +2538,7 @@ impl State {
       self.paint_test(root)
     }
   }
-  
+
   fn mut paste_test(root: mut node::Renderable, received: mut event::PasteEvent) {
     self.require_phase(2)
     self.emit_paste(received)
@@ -2535,7 +2558,7 @@ impl State {
       self.paint_test(root)
     }
   }
-  
+
   fn mut mouse_test(root: mut node::Renderable, received: mut event::MouseEvent) {
     self.require_phase(2)
     mut precommit = not self.has_frame
@@ -2561,7 +2584,7 @@ impl State {
       self.paint_test(root)
     }
   }
-  
+
   fn mut terminal_focus_test(root: mut node::Renderable, value: event::TerminalFocus) {
     self.require_phase(2)
     self.set_terminal_focus(value)
@@ -2569,7 +2592,7 @@ impl State {
       self.paint_test(root)
     }
   }
-  
+
   fn mut flush_test(root: mut node::Renderable, limit: Int) Int {
     self.require_phase(2)
     if limit < 0 {
@@ -2605,7 +2628,7 @@ impl State {
     }
     drained
   }
-  
+
   fn mut suspend_test() Bool {
     self.terminal_io.Lock()
     defer self.terminal_io.Unlock()
@@ -2621,7 +2644,7 @@ impl State {
     }
     available
   }
-  
+
   fn mut resume_test() Bool {
     self.terminal_io.Lock()
     defer self.terminal_io.Unlock()
@@ -2639,7 +2662,7 @@ impl State {
       self.restore_terminal_progress_and_commit_phase(15, 2, false)
     }
   }
-  
+
   fn mut resize_test(width: Int, height: Int) {
     self.require_phase(2)
     if width < 0 or height < 0 {
@@ -2651,11 +2674,11 @@ impl State {
       (self.request_render())()
     }
   }
-  
+
   fn mut frame() paint::Buffer {
     self.last_frame.@
   }
-  
+
   fn mut destroy_test(root: mut node::Renderable) {
     if self.claim_test_destroy() {
       self.finish_test(root)
@@ -2696,29 +2719,29 @@ impl Runtime {
   fn mut create_node(initial_style: style::Style) mut node::Node {
     internal_state(self).create_node(initial_style)
   }
-  
+
   fn mut node_count() Int {
     internal_state(self).node_count()
   }
-  
+
   fn mut is_destroyed() Bool {
     internal_state(self).is_destroyed()
   }
-  
+
   fn mut destroy_detached() {
     internal_state(self).destroy_detached()
   }
-  
+
   fn mut measure_text(text: Str) Int {
     internal_state(self).measure_text(text)
   }
-  
+
   fn mut timeline(duration: Int, loop: Bool?, alternate: Bool?, on_complete: fn()?) mut animation::Timeline {
     internal_state(
       self,
     ).timeline(duration, loop: loop, alternate: alternate, on_complete: on_complete)
   }
-  
+
   fn mut spring(
     value: Float64,
     update: fn(animation::SpringFrame),
@@ -2731,151 +2754,151 @@ impl Runtime {
   fn mut compute_layout(root: mut node::Renderable, width: Int, height: Int) {
     internal_state(self).compute_layout(root, width, height)
   }
-  
+
   fn mut open_url(target: Str) Void!Error {
     internal_state(self).open_url(target)
   }
-  
+
   fn mut notify(message: Str, title: Str?) Bool {
     internal_state(self).notify(message, title)
   }
-  
+
   fn mut set_title(value: Str) Bool {
     internal_state(self).set_title(value)
   }
-  
+
   fn mut progress(progress_state: terminal_progress::State, percent: Int?) Bool {
     internal_state(self).progress(progress_state, percent)
   }
-  
+
   fn mut bind_root(root: mut node::Node) {
     internal_state(self).bind_root(root)
   }
-  
+
   fn mut rollback_construction() {
     internal_state(self).rollback_construction()
   }
-  
+
   fn mut commit_construction() {
     internal_state(self).commit_construction()
   }
-  
+
   fn mut start_signal_monitor() {
     internal_state(self).start_signal_monitor()
   }
-  
+
   fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
     internal_state(self).on_key(handler)
   }
-  
+
   fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
     internal_state(self).on_paste(handler)
   }
-  
+
   fn mut terminal_focus() event::TerminalFocus? {
     internal_state(self).terminal_focus()
   }
-  
+
   fn mut on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
     internal_state(self).on_terminal_focus(handler)
   }
-  
+
   fn mut current_selection() public_selection::Selection? {
     internal_state(self).current_selection()
   }
-  
+
   fn mut clear_selection() {
     internal_state(self).clear_selection()
   }
-  
+
   fn mut on_selection_change(handler: fn(public_selection::Selection?)) fn() {
     internal_state(self).on_selection_change(handler)
   }
-  
+
   fn mut start_live(root: mut node::Renderable) Void!Error {
     internal_state(self).start_live(root)
   }
-  
+
   fn mut wait_live() Void!Error {
     internal_state(self).wait_live()
   }
-  
+
   fn mut run(root: mut node::Renderable) Void!Error {
     internal_state(self).run(root)
   }
-  
+
   fn mut suspend_live() Void!Error {
     internal_state(self).suspend_live()
   }
-  
+
   fn mut resume_live() Void!Error {
     internal_state(self).resume_live()
   }
-  
+
   fn mut destroy_live() {
     internal_state(self).destroy_live()
   }
-  
+
   fn mut mouse_cursor() event::MouseCursor {
     internal_state(self).mouse_cursor()
   }
-  
+
   fn mut advance_time_test(delta_ms: Int) {
     internal_state(self).advance_time_test(delta_ms)
   }
-  
+
   fn mut failed_suspend_animation_wake_test() Bool {
     internal_state(self).failed_suspend_animation_wake_test()
   }
-  
+
   fn mut animations_active_test() Bool {
     internal_state(self).animations_active()
   }
-  
+
   fn mut start_test(root: mut node::Renderable) {
     internal_state(self).start_test(root)
   }
-  
+
   fn mut render_test(root: mut node::Renderable) {
     internal_state(self).render_test(root)
   }
-  
+
   fn mut key_test(root: mut node::Renderable, received: mut event::KeyEvent) {
     internal_state(self).key_test(root, received)
   }
-  
+
   fn mut paste_test(root: mut node::Renderable, received: mut event::PasteEvent) {
     internal_state(self).paste_test(root, received)
   }
-  
+
   fn mut mouse_test(root: mut node::Renderable, received: mut event::MouseEvent) {
     internal_state(self).mouse_test(root, received)
   }
-  
+
   fn mut terminal_focus_test(root: mut node::Renderable, value: event::TerminalFocus) {
     internal_state(self).terminal_focus_test(root, value)
   }
-  
+
   fn mut flush_test(root: mut node::Renderable, limit: Int) Int {
     internal_state(self).flush_test(root, limit)
   }
-  
+
   fn mut suspend_test() Bool {
     internal_state(self).suspend_test()
   }
-  
+
   fn mut resume_test() Bool {
     internal_state(self).resume_test()
   }
-  
+
   fn mut resize_test(width: Int, height: Int) {
     internal_state(self).resize_test(width, height)
   }
-  
+
   fn mut frame() paint::Buffer {
     internal_state(self).frame()
   }
-  
+
   fn mut destroy_test(root: mut node::Renderable) {
     internal_state(self).destroy_test(root)
   }

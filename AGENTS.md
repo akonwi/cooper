@@ -111,5 +111,5 @@ python3 benchmarks/run.py
 - Terminal-mediated notifications: [`ADR 0009`](./docs/adrs/0009-define-terminal-mediated-notifications.md)
 - Terminal progress reporting: [`ADR 0010`](./docs/adrs/0010-define-terminal-progress-reporting.md)
 - Terminal title updates: [`ADR 0012`](./docs/adrs/0012-define-terminal-title-updates.md)
-- Vaxis source: `go.rockorager.dev/vaxis`
+- Vaxis source: `github.com/akonwi/vaxis` (Cooper distribution fork)
 - Ard docs: https://ard.run

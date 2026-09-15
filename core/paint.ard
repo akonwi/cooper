@@ -79,11 +79,30 @@ struct Cursor {
   y: Int,
 }
 
+// Image requests remain in paint order until the terminal presents the frame.
+// Later cell writes mask native images at whole-cell boundaries.
+struct ImagePlacement {
+  id: Int,
+  revision: Int,
+  order: Int,
+  width: Int,
+  height: Int,
+  rgba: [Byte],
+  destination: geometry::Rect,
+  clip: geometry::Rect,
+}
+
 struct Buffer {
   width: Int,
   height: Int,
   cells: [StoredCell],
   cursor: Cursor?,
+  native_images: Bool,
+  cell_pixel_width: Int,
+  cell_pixel_height: Int,
+  images: [ImagePlacement],
+  paint_order: Int,
+  cell_orders: [Int],
 }
 
 fn new_buffer(width: Int, height: Int) mut Buffer {
@@ -102,10 +121,39 @@ fn new_buffer(width: Int, height: Int) mut Buffer {
     height: height,
     cells: cells.@,
     cursor: Maybe::new<Cursor>(),
+    native_images: false,
+    cell_pixel_width: 1,
+    cell_pixel_height: 2,
+    images: [],
+    paint_order: 0,
+    cell_orders: [],
   })
 }
 
 impl Buffer {
+  fn mut enable_images(cell_width: Int, cell_height: Int) {
+    if cell_width <= 0 or cell_height <= 0 {
+      panic("native images require positive terminal cell pixel dimensions")
+    }
+    self.native_images = true
+    self.cell_pixel_width = cell_width
+    self.cell_pixel_height = cell_height
+    let orders = mut List::new<Int>(self.width * self.height)
+    mut index = 0
+    while index < self.width * self.height {
+      orders.set(index, 0)
+      index =+ 1
+    }
+    self.cell_orders = orders.@
+  }
+
+  fn mut add_image(image: ImagePlacement) {
+    self.paint_order =+ 1
+    let placed = mut image
+    placed.order = self.paint_order
+    self.images.push(placed.@)
+  }
+
   private fn index(x: Int, y: Int) Int? {
     if x >= 0 and y >= 0 and x < self.width and y < self.height {
       Maybe::new<Int>(y * self.width + x)
@@ -128,7 +176,13 @@ impl Buffer {
 
   private fn mut put(x: Int, y: Int, cell: StoredCell) {
     match self.index(x, y) {
-      index => self.cells.set(index, cell),
+      index => {
+        self.cells.set(index, cell)
+        if self.native_images {
+          self.paint_order =+ 1
+          self.cell_orders.set(index, self.paint_order)
+        }
+      },
       _ => (),
     }
   }
@@ -233,10 +287,15 @@ impl Buffer {
 
   fn mut clear() {
     self.cursor = Maybe::new<Cursor>()
+    self.images = []
+    self.paint_order = 0
     let blank = blank_cell()
     mut index = 0
     while index < self.cells.size() {
       self.cells.set(index, blank)
+      if self.native_images {
+        self.cell_orders.set(index, 0)
+      }
       index =+ 1
     }
   }

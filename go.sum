@@ -1,8 +1,14 @@
+github.com/akonwi/vaxis v0.0.0-20260913113926-34e520204135 h1:US8hF1zfS3O8cuze0K+LHcFGoUyi6mPoVSlcTk9fs9E=
+github.com/akonwi/vaxis v0.0.0-20260913113926-34e520204135/go.mod h1:dCX9sQeac0iqnwOA7tENMZfkTSqg8IyIRFUPD0wxWwk=
 github.com/rockorager/go-uucode v1.2.0 h1:xwUIndxE+z1PIrWALT7unu4L8x27qMsC/5X3aonJo6o=
 github.com/rockorager/go-uucode v1.2.0/go.mod h1:0BZXIGRvWIHt1ruBeViNGcuKyQ3+BRHQbgyXkqRCz38=
-go.rockorager.dev/vaxis v0.17.2-0.20260811162040-8a93a9a0e2e7 h1:J/bT1/gBMYl+g+U3O84/Bt1PjGgeeTp0BqcMWRy4GbE=
-go.rockorager.dev/vaxis v0.17.2-0.20260811162040-8a93a9a0e2e7/go.mod h1:5VpvRiT7INHD7fpN3G/z6c7A/tGwcIMaSyHdUwphKbI=
+github.com/rockorager/go-uucode v1.2.2 h1:bqVVrZtdwb8v4OB5BIw/aSAKXvGMbOjQwDTHsRC7XhU=
+github.com/rockorager/go-uucode v1.2.2/go.mod h1:0BZXIGRvWIHt1ruBeViNGcuKyQ3+BRHQbgyXkqRCz38=
+golang.org/x/image v0.46.0 h1:b1+oYj0Jbp6K5MDT4i4/eZpYlk3V8SJhhDKh6LBHAyQ=
+golang.org/x/image v0.46.0/go.mod h1:3B3W05VGVQyuXucLINLjXKrqISASfi4Xj+iCVkLMwew=
 golang.org/x/sys v0.10.0 h1:SqMFp9UcQJZa+pmYuAKjd9xq1f0j5rLcDIk0mj4qAsA=
 golang.org/x/sys v0.10.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=
+golang.org/x/sys v0.48.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
 golang.org/x/term v0.10.0 h1:3R7pNqamzBraeqj/Tj8qt1aQ2HpmlC+Cx/qL/7hn4/c=
 golang.org/x/term v0.10.0/go.mod h1:lpqdcUyK/oCiQxvxVrppt5ggO2KCZ5QblwqPnfZ6d5o=

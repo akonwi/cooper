@@ -3,5 +3,6 @@ ard = ">= 0.42.0"
 target = "go"
 
 [go.imports]
-vaxis = "go.rockorager.dev/vaxis"
+vaxis = "github.com/akonwi/vaxis"
 uucode = "github.com/rockorager/go-uucode"
+webp = "golang.org/x/image/webp"

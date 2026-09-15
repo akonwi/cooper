@@ -1,0 +1,327 @@
+use go:bytes
+use cooper/core/event_delivery
+use cooper/core/node
+use cooper/core/paint
+use cooper/runtime
+use cooper/ui/box
+use cooper/ui/color
+use cooper/ui/geometry
+use cooper/ui/style as layout_style
+use go:image as decoded_image
+use go:image/color as decoded_color
+use go:image/jpeg
+use go:image/png
+use go:webp
+
+// Original straight-alpha RGBA8 plus matte-composited RGB for cell fallback.
+struct ImageData {
+  width: Int,
+  height: Int,
+  pixels: [color::Color],
+  rgba: [Byte],
+}
+
+private fn valid_size(width: Int, height: Int) Bool {
+  width > 0 and height > 0 and width <= 4096 and height <= 4096
+}
+
+private fn require_rgb(value: color::Color) {
+  if value.index.is_some() or value.terminal_default {
+    panic("image pixels and matte must be RGB colors")
+  }
+}
+
+fn data(width: Int, height: Int, pixels: [color::Color]) ImageData {
+  if not valid_size(width, height) or pixels.size() != width * height {
+    panic("image data requires 1-4096 pixel dimensions and exactly width * height pixels")
+  }
+  let snapshot = mut List::new<color::Color>()
+  let rgba = mut List::new<Byte>()
+  for value in pixels {
+    require_rgb(value)
+    snapshot.push(value)
+    rgba.push(Byte::from(value.red))
+    rgba.push(Byte::from(value.green))
+    rgba.push(Byte::from(value.blue))
+    rgba.push(Byte::from(255))
+  }
+  ImageData{
+    width: width,
+    height: height,
+    pixels: snapshot.@,
+    rgba: rgba.@,
+  }
+}
+
+private fn copy_data(source: ImageData) ImageData {
+  let copied = mut data(source.width, source.height, source.pixels)
+  if source.rgba.size() != source.width * source.height * 4 {
+    panic("image source requires width * height * 4 RGBA bytes")
+  }
+  let bytes = mut List::new<Byte>()
+  for value in source.rgba {
+    bytes.push(value)
+  }
+  copied.rgba = bytes.@
+  copied.@
+}
+
+// Decode synchronously; callers own file/network acquisition and dispatch.
+// Native output preserves alpha; only cell fallback uses matte (default black).
+fn decode(encoded: [Byte], matte: color::Color?) ImageData!Str {
+  let background = matte.or(color::rgb(0, 0, 0))
+  require_rgb(background)
+  if encoded.size() > 64 * 1024 * 1024 {
+    Result::err("encoded image exceeds 64 MiB")
+  } else {
+    // Ard cannot represent image.Decode's three return values. Calling each
+    // decoder directly also registers only the formats this API supports.
+    match png::DecodeConfig(bytes::NewReader(mut encoded)) {
+      ok(config) => {
+        if not valid_size(config.Width, config.Height) {
+          Result::err("image dimensions must be between 1 and 4096 pixels")
+        } else {
+          match png::Decode(bytes::NewReader(mut encoded)) {
+            ok(value) => Result::ok(snapshot(value, background)),
+            err(_) => Result::err("invalid PNG image"),
+          }
+        }
+      },
+      err(_) => {
+        match jpeg::DecodeConfig(bytes::NewReader(mut encoded)) {
+          ok(config) => {
+            if not valid_size(config.Width, config.Height) {
+              Result::err("image dimensions must be between 1 and 4096 pixels")
+            } else {
+              match jpeg::Decode(bytes::NewReader(mut encoded)) {
+                ok(value) => Result::ok(snapshot(value, background)),
+                err(_) => Result::err("invalid JPEG image"),
+              }
+            }
+          },
+          err(_) => {
+            match webp::DecodeConfig(bytes::NewReader(mut encoded)) {
+              ok(config) => {
+                if not valid_size(config.Width, config.Height) {
+                  Result::err("image dimensions must be between 1 and 4096 pixels")
+                } else {
+                  match webp::Decode(bytes::NewReader(mut encoded)) {
+                    ok(value) => Result::ok(snapshot(value, background)),
+                    err(_) => Result::err("invalid WebP image"),
+                  }
+                }
+              },
+              err(_) => Result::err("expected a PNG, JPEG, or WebP image"),
+            }
+          },
+        }
+      },
+    }
+  }
+}
+
+private fn flatten(channel: Byte, alpha: Byte, matte: Uint8) Int {
+  let opacity = alpha.to_int()
+  (channel.to_int() * opacity + Byte::from(matte).to_int() * (255 - opacity) + 127) / 255
+}
+
+private fn snapshot(source: decoded_image::Image, background: color::Color) ImageData {
+  let bounds = source.Bounds()
+  let width = bounds.Max.X - bounds.Min.X
+  let height = bounds.Max.Y - bounds.Min.Y
+  let pixels = mut List::new<color::Color>()
+  let rgba = mut List::new<Byte>()
+  mut y = bounds.Min.Y
+  while y < bounds.Max.Y {
+    mut x = bounds.Min.X
+    while x < bounds.Max.X {
+      // RGBA() has four Go results; NRGBAModel exposes straight-alpha fields.
+      match decoded_color::NRGBAModel.Convert(source.At(x, y)) {
+        decoded_color::NRGBA(pixel) => {
+          rgba.push(pixel.R)
+          rgba.push(pixel.G)
+          rgba.push(pixel.B)
+          rgba.push(pixel.A)
+          pixels.push(
+            color::rgb(
+              flatten(pixel.R, pixel.A, background.red),
+              flatten(pixel.G, pixel.A, background.green),
+              flatten(pixel.B, pixel.A, background.blue),
+            ),
+          )
+        },
+        _ => panic("NRGBAModel must produce NRGBA pixels"),
+      }
+      x =+ 1
+    }
+    y =+ 1
+  }
+  ImageData{
+    width: width,
+    height: height,
+    pixels: pixels.@,
+    rgba: rgba.@,
+  }
+}
+
+// Use physical cell geometry for native output; cells default to a 1:2 ratio.
+private fn fitted(source: ImageData, bounds: geometry::Rect, cell_width: Int, cell_height: Int) geometry::Rect {
+  if bounds.width == 0 or bounds.height == 0 {
+    geometry::Rect{
+      x: bounds.x,
+      y: bounds.y,
+      width: 0,
+      height: 0,
+    }
+  } else {
+    mut width = bounds.width
+    mut height = bounds.height
+    if width * source.height * cell_width > height * cell_height * source.width {
+      width = height * cell_height * source.width / (source.height * cell_width)
+      if width == 0 {
+        width = 1
+      }
+    } else {
+      height = width * cell_width * source.height / (cell_height * source.width)
+      if height == 0 {
+        height = 1
+      }
+    }
+    geometry::Rect{
+      x: bounds.x + (bounds.width - width) / 2,
+      y: bounds.y + (bounds.height - height) / 2,
+      width: width,
+      height: height,
+    }
+  }
+}
+
+struct Image {
+  node_ref: mut node::Node,
+  source: ImageData?,
+  revision: Int,
+}
+
+fn new(ctx: mut runtime::Runtime, source: ImageData, styles: layout_style::Style?) mut Image {
+  let retained = ctx.create_node(styles.or(layout_style::new()))
+  let control = mut Image{
+    node_ref: retained,
+    source: Maybe::new<ImageData>(copy_data(source)),
+    revision: 1,
+  }
+  retained.bind(control)
+  if retained.style().border != layout_style::Border::none {
+    retained.set_border_width(1)
+  }
+  // Images are measured leaves, but have no intrinsic layout size. Applications
+  // allocate their rectangle with Style, just as in OpenTUI's image element.
+  retained.set_measure(fn(input: node::MeasureInput) node::MeasureSize {
+    node::MeasureSize{width: 0.0, height: 0.0}
+  })
+  retained.on_cleanup(fn() {
+    control.source = Maybe::new<ImageData>()
+  })
+  control
+}
+
+impl node::Renderable for Image {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn mount(ctx: node::MountContext) {}
+
+  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    event_delivery::Disposition::ignored
+  }
+
+  fn paint(ctx: mut paint::Context) {
+    box::paint_border(ctx, self.node_ref.style())
+    match self.source {
+      source => {
+        let content = self.node_ref.content_rect()
+        let destination = fitted(
+          source,
+          geometry::Rect{
+            x: ctx.bounds.x + content.x,
+            y: ctx.bounds.y + content.y,
+            width: content.width,
+            height: content.height,
+          },
+          ctx.buffer.cell_pixel_width,
+          ctx.buffer.cell_pixel_height,
+        )
+        let visible = geometry::intersect(destination, ctx.clip)
+        if ctx.buffer.native_images {
+          ctx.buffer.add_image(
+            paint::ImagePlacement{
+              id: self.node_ref.id,
+              revision: self.revision,
+              order: 0,
+              width: source.width,
+              height: source.height,
+              rgba: source.rgba,
+              destination: destination,
+              clip: visible,
+            },
+          )
+        } else {
+          mut y = visible.y
+          while y < visible.y + visible.height {
+            let top = (y - destination.y) * 2 * source.height / (destination.height * 2)
+            let bottom = ((y - destination.y) * 2 + 1) * source.height / (destination.height * 2)
+            mut x = visible.x
+            while x < visible.x + visible.width {
+              let column = (x - destination.x) * source.width / destination.width
+              let foreground = source.pixels.at(
+                top * source.width + column,
+              ).expect("image top pixel")
+              let background = source.pixels.at(
+                bottom * source.width + column,
+              ).expect("image bottom pixel")
+              ctx.write_overlay(
+                x - ctx.bounds.x,
+                y - ctx.bounds.y,
+                "▀",
+                text_style: paint::style(foreground: foreground, background: background),
+              )
+              x =+ 1
+            }
+            y =+ 1
+          }
+        }
+      },
+      _ => (),
+    }
+  }
+}
+
+impl Image {
+  fn mut set_source(source: ImageData) {
+    self.node_ref.require_live()
+    self.source = Maybe::new<ImageData>(copy_data(source))
+    self.revision =+ 1
+    self.node_ref.request_redraw()
+  }
+
+  fn style() layout_style::Style {
+    self.node_ref.style()
+  }
+
+  fn mut set_style(next: layout_style::Style) {
+    self.node_ref.apply_style(next)
+    mut width = 0
+    if next.border != layout_style::Border::none {
+      width = 1
+    }
+    self.node_ref.set_border_width(width)
+  }
+
+  fn layout() geometry::Geometry {
+    self.node_ref.layout()
+  }
+
+  fn mut destroy(recursive: Bool?) {
+    self.node_ref.destroy(recursive)
+  }
+}

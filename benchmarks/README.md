@@ -87,18 +87,20 @@ totals for twenty selection updates (no profiler enabled):
 
 The before binary used the renderer from the
 [Hacker News checkpoint](https://github.com/akonwi/cooper/commit/76beb08beb6b7853a5127bf8b9451487f8dbe9e5).
-The same 1,034-item HTTP/PTY workload's remaining 1,004 items fell from 24.7s
+Historically, the 1,034-item HTTP/PTY workload's remaining 1,004 items fell from 24.7s
 to 6.4s in single runs; twelve keys with 40ms pacing fell from 2.5s to 0.59s.
 RSS was about 58 MiB before and 64 MiB after in those runs: this is a latency
 optimization, not evidence of reduced memory use. These are development
-measurements, not portable performance guarantees or CI thresholds.
+measurements, not portable performance guarantees or CI thresholds. The load
+timings included HTTP latency and are not rendering measurements. That bulk
+fetch mode has been removed in favor of on-demand direct-reply loading.
 
 These changes do not virtualize or skip rendering components. Indexed re-adds
 in `Node.add`, full-tree property application, and allocation remain targets
 for subsequent profiling. Compare repeated runs of the same compiled workload
-without other builds or tests competing for CPU. The end-to-end counterpart is
-`HN_STRESS_COMMENTS=1000 python3 examples/test_cui_hackernews.py`; its timing
-also includes fixture HTTP latency and explicit key pacing.
+without other builds or tests competing for CPU. Run
+`python3 examples/test_cui_hackernews.py` to verify demand-driven fetching and
+terminal behavior; it does not measure rendering performance.
 
 ## Main-branch baseline and profiling
 

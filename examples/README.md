@@ -61,7 +61,22 @@ can also be hovered and clicked to open. Column headings show result counts.
 Open tabs retain their own section and loading/error state while hidden. Switching
 does not cancel work; closing does. Reopening a closed tab starts fresh. The board
 retains its filter and selection across tab switches.
-This is not a full clone: document search, issue editing, drag/drop, and session
+Drag a card at least two cells to move it between visible workflow columns.
+A floating card follows the grab point, the source remains a placeholder, and
+the destination gets a heavy header rule. Releasing in the source column or
+outside a column does nothing; Escape or terminal-focus loss cancels the gesture.
+Small pointer jitter still counts as a click. Wheel scrolling works over the
+ghost, including Shift+wheel for horizontal board scrolling.
+
+A successful drop appends the card to the destination and keeps it selected.
+The updated state appears in detail tabs and global search. A confirmation toast
+slides in over 250ms using `ctx.animate` and expires after three seconds. The
+toast owns its animation and expiration; replacing/unmounting it stops its work.
+Moves update this process's static data only; there is no server mutation or
+rollback. Run `python3 test_cui_tinear_drag.py` for pointer/animation PTY coverage;
+`TINEAR_CAPTURE_DIR` optionally records ANSI snapshots.
+
+This is not a full clone: document search, other issue editing, and session
 restoration across process restarts are not implemented.
 
 `?` opens global issue search from any page. Type a case-sensitive title or ID,
@@ -96,7 +111,6 @@ async scheduling, keyed lists, nested comments, focus reveal, and scrolling.
 ard run cui_hackernews.ard
 ard test hackernews
 python3 test_cui_hackernews.py
-HN_STRESS_COMMENTS=1000 python3 test_cui_hackernews.py
 ```
 
 Use 1/2/3/4 for Top/New/Ask/Show, j/k or arrows to select, Enter or a click to
@@ -106,8 +120,12 @@ including within comments taller than the viewport. Ctrl+C quits. Story URLs
 are terminal hyperlinks; comment markup is rendered as plain text, preserving
 paragraphs, Unicode, and link labels (not inline link destinations).
 
-Each page processes batches of 30 items; m requests another batch and r retries
-failures after current requests settle. Six workers per page and a shared
+Opening a story loads its first 30 top-level comments with their bodies visible
+and replies collapsed. Expanding a comment loads only its first 30 direct
+replies, never its whole subtree. Re-expansion reuses loaded items. Press m for
+another 30 stories in the feed, or another 30 direct replies of the selected
+expanded comment. Select the story header and press m for more top-level comments.
+Press r to retry failures after current requests settle. Six workers per page and a shared
 six-connection HTTP transport bound concurrency. Responses have a ten-second
 timeout and a 2 MiB size cap. Successful items are cached for this process's
 lifetime. Returning from a story retains the feed's selection and scroll;
@@ -125,13 +143,13 @@ The PTY test runs against a local HTTP fixture, not the public service. It check
 out-of-order completions, retries, cached expansion, deleted/dead comments,
 nested replies, stale feed/reader completions, compact layout, and clean exit.
 `HN_API_ROOT` overrides the API base URL for fixtures. `HN_CAPTURE_DIR` optionally
-records ANSI snapshots. The larger stress run loads 1,034 items, including a
-deep reply chain, and reports load time, process RSS on Linux, and paced key
-latency. These timings include HTTP and rendering, not isolated render costs.
-All loaded visible comments use ordinary retained nodes: no virtualization yet.
-Large threads expose noticeable rendering latency; use this fixture to measure
-future reconciliation/rendering improvements rather than treating it as a
-performance target already met.
+records ANSI snapshots. Request-count assertions check that opening, expanding,
+and paginating fetch only the requested level; collapsing hides replies but
+preserves the parent body. Collapsing does not cancel an already-requested batch.
+This fixture tests network behavior, not rendering performance. Use the
+[network-free CUI benchmark](../benchmarks/README.md#cui-reconciliation) to
+measure large-tree rendering. All loaded visible comments use ordinary retained
+nodes: no virtualization yet.
 
 ## Animation
 

@@ -10,9 +10,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from test_harness import Screen, binary_path, build, drain, resize, send, spawn, wait_exit, wait_for
 
-COMMENTS = int(os.environ.get('HN_STRESS_COMMENTS', '100'))
-
-
 class API(BaseHTTPRequestHandler):
     counts = collections.Counter()
     lock = threading.Lock()
@@ -51,11 +48,11 @@ class API(BaseHTTPRequestHandler):
                 if id < 5:
                     value.update(title=f'Story {id}: terminals &amp; components', score=123,
                                  url='https://example.com/article', descendants=123, text='',
-                                 kids=list(range(100, 120)) if id == 1 else [5000])
+                                 kids=list(range(100, 105)) if id == 1 else [5000])
                     if id in (2, 3):
                         time.sleep(0.1)
                 elif id == 100:
-                    value.update(by='parent-author', kids=list(range(200, 200 + COMMENTS)),
+                    value.update(by='parent-author', kids=list(range(200, 240)),
                                  text='Parent &lt;literal&gt; &amp; Unicode café 界.<p>'
                                       'A long paragraph about retained components and asynchronous requests. ' * 3)
                 elif id == 101:
@@ -69,14 +66,12 @@ class API(BaseHTTPRequestHandler):
                 elif id == 103:
                     value = dict(id=id, dead=True)
                 elif id == 200:
-                    value.update(by='nested-author', text='Nested reply with <i>emphasis</i>.')
+                    value.update(by='nested-author', kids=[6000], text='Nested reply with <i>emphasis</i>.')
                 elif id == 4000:
                     value.update(text='Reply survives deleted parent.')
                 elif id == 5000:
                     time.sleep(0.7)
                     value.update(kids=[5001], text='Late response must not reopen reader.')
-                elif id == 199 + COMMENTS:
-                    value.update(kids=[6000])
                 elif 6000 <= id < 6012:
                     value.update(kids=[id + 1] if id < 6011 else [], text=f'Deep reply {id}.')
             self.send_response(status)
@@ -122,56 +117,73 @@ def main():
         assert 'Story 1: terminals & components' in screen.text()
         assert screen.text().index('Story 1:') < screen.text().index('Story 2:') < screen.text().index('Story 3:')
         screen.save('feed')
-        started = time.monotonic()
         send(fd, '\r')
-        wait_for(fd, screen, '29 loaded · 0 requests')
-        print(f'Initial 30-item batch (one injected failure): {time.monotonic() - started:.3f}s')
-        wait_for(fd, screen, 'Nested reply with emphasis.')
+        wait_for(fd, screen, '5 loaded · 0 requests')
         assert 'Parent <literal> & Unicode café' in screen.text()
         assert '<p>' not in screen.text()
-        screen.save('reader')
-        send(fd, 'j\r')  # Collapse the parent, not the story.
-        wait_for(fd, screen, 'parent-author (collapsed)')
-        assert 'Nested reply' not in screen.text()
+        assert 'parent-author · 40 replies (collapsed)' in screen.text()
         assert '[deleted]' in screen.text()
         assert '[dead]' in screen.text()
         assert 'HTTP 500' in screen.text()
-        screen.save('collapsed')
+        screen.save('top-level')
+        with API.lock:
+            assert not any(API.counts[f'/item/{id}.json'] for id in range(200, 240)), 'reader eagerly fetched replies'
+            assert API.counts['/item/4000.json'] == 0, 'deleted parent eagerly fetched replies'
         send(fd, 'r')
         wait_for(fd, screen, 'Invalid JSON')
         send(fd, 'r')
         wait_for(fd, screen, 'Item 102 is unavailable')
         send(fd, 'r')
-        wait_for(fd, screen, '30 loaded · 0 requests')
+        wait_for(fd, screen, '6 loaded · 0 requests')
         assert API.counts['/item/102.json'] == 4
+
+        # Expand one branch: one bounded page of direct replies, no grandchildren.
+        send(fd, 'j\r')
+        wait_for(fd, screen, '36 loaded · 0 requests')
+        wait_for(fd, screen, 'Nested reply with emphasis.')
+        with API.lock:
+            assert all(API.counts[f'/item/{id}.json'] == 1 for id in range(200, 230))
+            assert API.counts['/item/230.json'] == 0, 'expansion exceeded one page'
+            assert API.counts['/item/6000.json'] == 0, 'expansion fetched grandchildren'
+            assert API.counts['/item/4000.json'] == 0, 'expansion fetched a sibling branch'
+        screen.save('expanded')
+        send(fd, '\r')
+        wait_for(fd, screen, 'parent-author · 40 replies (collapsed)')
+        assert 'Nested reply' not in screen.text()
+        assert 'Parent <literal>' in screen.text(), 'collapsing replies hid the comment body'
+        screen.save('collapsed')
         with API.lock:
             before = sum(API.counts.values())
+        send(fd, 'm')
+        drain(fd, screen, 0.2)
+        with API.lock:
+            assert sum(API.counts.values()) == before, 'more fetched replies of a collapsed comment'
         send(fd, '\r')
         wait_for(fd, screen, 'Nested reply with emphasis.')
         with API.lock:
             assert sum(API.counts.values()) == before, 'expansion refetched cached items'
-        total = COMMENTS + 34
-        load_started = time.monotonic()
-        send(fd, 'm' * ((total + 29) // 30))
-        wait_for(fd, screen, f'{total} loaded · 0 requests', timeout=60)
-        print(f'Remaining {total - 30} items: {time.monotonic() - load_started:.3f}s; peak HTTP concurrency={API.peak}')
+        send(fd, 'm')
+        wait_for(fd, screen, '46 loaded · 0 requests')
+        assert API.counts['/item/239.json'] == 1
+        assert API.counts['/item/6000.json'] == 0, 'more fetched a deeper level'
+        send(fd, 'j\r')
+        wait_for(fd, screen, '47 loaded · 0 requests')
+        wait_for(fd, screen, 'Deep reply 6000.')
+        assert API.counts['/item/6001.json'] == 0, 'nested expansion fetched the next level'
+        send(fd, 'j\r')
+        wait_for(fd, screen, '48 loaded · 0 requests')
+        wait_for(fd, screen, 'Deep reply 6001.')
+        assert API.counts['/item/6002.json'] == 0
         assert 1 < API.peak <= 6
-        assert API.counts['/item/6011.json'] == 1, 'deep descendants were not loaded'
-        memory = f'/proc/{pid}/status'
-        if os.path.exists(memory):
-            with open(memory) as file:
-                print(next(line.strip() for line in file if line.startswith('VmRSS:')))
 
-        # Selection navigation must remain usable with the larger retained tree.
+        # Compact scrolling remains independent of expansion and fetching.
         resize(fd, rows=18, cols=72)
         compact = Capture(18, 72)
         wait_for(fd, compact, 'HACKER NEWS')
-        navigation_started = time.monotonic()
         for _ in range(12):
             send(fd, 'j')
             drain(fd, compact, 0.04)
         wait_for(fd, compact, 'Comment 211:')
-        print(f'12 navigation keys including 40ms pacing: {time.monotonic() - navigation_started:.3f}s')
         compact.save('compact')
         send(fd, ' ')
         wait_for(fd, compact, 'Comment 216:')

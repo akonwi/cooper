@@ -236,6 +236,44 @@ The tinear example simulates detail loading (650ms), failure (250ms), retry, and
 board refresh (700ms). Press r to refresh/reload, or f in detail to inject a
 failure. No network calls occur; the issue data stays static.
 
+## Component-owned animations and dragging
+
+Start a one-shot animation from a lifecycle or event callback:
+
+```ard
+let cancel = ctx.animate(
+  250,
+  fn(frame: animation::Frame) {
+    self.offset = animation::lerp_int(40, 0, frame.progress)
+  },
+  ease: animation::out_quad,
+)
+```
+
+Import `cooper/animation` for frames, easing, and interpolation. Duration is
+positive milliseconds and easing defaults to linear. Frames run on the UI
+thread and invalidate CUI automatically. `cancel()` is idempotent; retaining it
+is optional because completion, component unmount, and renderer destruction
+release the animation's callbacks. Starting an animation on a retired context
+does nothing. Both `animate` and cancellation are UI-thread-only; workers must
+use `ctx.dispatch`. Animation time follows Runtime suspension, unlike a
+wall-clock async wait. Hidden components remain mounted and keep animating.
+
+The Tinear confirmation toast demonstrates animation state without a timer loop
+or manual unmount cleanup. Each replacement has a new key, so the old toast's
+animation and async expiration cannot affect the replacement.
+
+Drag handling uses ordinary `on_mouse` callbacks. Cooper captures left-button
+drags to their pressed retained node, sends `drag_end` to the source, and sends
+`drop` to the physical destination. CUI preserves that capture across matching
+renders. Keep the source attached until release; use refs and screen geometry
+when a floating overlay obscures the physical destination. App-specific drag
+thresholds, drop eligibility, and data mutation remain component state.
+
+Use `cui::text(..., selectable: false)` for draggable labels. Text is selectable
+by default, and text selection takes precedence over ordinary drag capture.
+The property can also be changed during reconciliation.
+
 ## Inputs, refs, and validation
 
 Use `focused: selected` on a box or input to describe focus with state, rather

@@ -32,9 +32,9 @@ struct Page {
   items: mut [Str: api::Item],
   errors: mut [Str: Str],
   collapsed: mut [Str: Bool],
+  pages: mut [Str: Int],
   next: Int,
   running: Int,
-  budget: Int,
   loaded: Int,
   selected: Int,
   visible: [Int],
@@ -52,9 +52,9 @@ private fn page(props: mut PageProps) mut Page {
     items: mut Map::new<api::Item>(),
     errors: mut Map::new<Str>(),
     collapsed: mut Map::new<Bool>(),
+    pages: mut Map::new<Int>(),
     next: 0,
     running: 0,
-    budget: 30,
     loaded: 0,
     selected: 0,
     visible: [],
@@ -74,17 +74,27 @@ impl Page {
     }
   }
 
+  fn mut request_page(ids: [Int], key: Str) {
+    let offset = self.pages.get(key).or(0)
+    for id, index in ids {
+      if index >= offset and index < offset + 30 {
+        self.enqueue([id])
+      }
+    }
+    self.pages.set(key, offset + 30)
+  }
+
   fn mut received(id: Int, value: api::Item) {
     self.props.cache.set(id.to_str(), value)
     self.items.set(id.to_str(), value)
     self.loaded =+ 1
-    if self.props.story != 0 {
-      self.enqueue(value.kids.or([]))
+    if id == self.props.story {
+      self.request_page(value.kids.or([]), id.to_str())
     }
   }
 
   fn mut pump(ctx: cui::Context) {
-    while self.running < 6 and self.next < self.queue.size() and self.next < self.budget {
+    while self.running < 6 and self.next < self.queue.size() {
       let _ = self.queue.at(
         self.next,
       ).map(fn(id: Int) {
@@ -135,7 +145,7 @@ impl Page {
             err(error) => { self.error = error },
             ok(ids) => {
               self.roots = ids
-              self.enqueue(ids)
+              self.request_page(ids, "feed")
               self.pump(ctx)
             },
           }
@@ -150,11 +160,9 @@ impl Page {
         self.start(ctx)
       } else {
         let pending = mut List::new<Int>()
-        mut failures = 0
         for id in self.queue {
           if self.errors.get(id.to_str()).is_some() {
             pending.push(id)
-            failures =+ 1
           }
         }
         for id, index in self.queue {
@@ -162,7 +170,6 @@ impl Page {
             pending.push(id)
           }
         }
-        self.budget = self.budget - self.next + failures
         self.next = 0
         self.queue = pending.@
         self.errors = mut Map::new<Str>()
@@ -192,12 +199,29 @@ impl Page {
     })
   }
 
-  fn mut activate(id: Int) {
+  fn mut load_more(ctx: cui::Context) {
+    if self.props.story == 0 {
+      self.request_page(self.roots, "feed")
+    } else if self.selected == self.props.story or self.collapsed.get(self.selected.to_str()).or(true) == false {
+      let _ = self.items.get(
+        self.selected.to_str(),
+      ).map(fn(item: api::Item) {
+        self.request_page(item.kids.or([]), self.selected.to_str())
+      })
+    }
+    self.pump(ctx)
+  }
+
+  fn mut activate(id: Int, ctx: cui::Context) {
     self.selected = id
     if self.props.story == 0 {
       self.props.open(id)
-    } else {
-      self.collapsed.set(id.to_str(), not self.collapsed.get(id.to_str()).or(false))
+    } else if id != self.props.story {
+      let closed = not self.collapsed.get(id.to_str()).or(true)
+      self.collapsed.set(id.to_str(), closed)
+      if closed == false and self.pages.get(id.to_str()).or(0) == 0 {
+        self.load_more(ctx)
+      }
     }
   }
 
@@ -217,7 +241,7 @@ impl Page {
             self.selected = id
           }
           self.visible.push(id)
-          let closed = self.collapsed.get(id.to_str()).or(false)
+          let closed = id != self.props.story and self.collapsed.get(id.to_str()).or(true)
           mut label = item.by.or("unknown")
           mut content = item.text.or("")
           if self.props.story == 0 or id == self.props.story {
@@ -230,10 +254,13 @@ impl Page {
           if item.dead.or(false) {
             content = "[dead]"
           }
-          if closed {
-            label = "▸ {label} (collapsed)"
-          } else {
-            label = "▾ {label}"
+          if self.props.story != 0 and id != self.props.story and item.kids.or([]).size() != 0 {
+            let count = item.kids.or([]).size()
+            if closed {
+              label = "▸ {label} · {count} replies (collapsed)"
+            } else {
+              label = "▾ {label} · {count} replies"
+            }
           }
           mut indent = depth * 2
           if indent > 20 {
@@ -250,18 +277,16 @@ impl Page {
               text_style: ui::text_style(foreground: ui::indexed(208)),
             ),
           )
-          if not closed {
-            body.push(
-              cui::text(content, styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0)),
-            )
-            if id == self.props.story {
-              if not item.text.or("").is_empty() {
-                body.push(cui::text(item.text.or("")))
-              }
-              let url = item.url.or("https://news.ycombinator.com/item?id={id}")
-              if (url.starts_with("https://") or url.starts_with("http://")) and (not url.contains("\n")) and (not url.contains("\t")) {
-                body.push(cui::text(ui::styled_text([ui::span(url, link: url)])))
-              }
+          body.push(
+            cui::text(content, styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0)),
+          )
+          if id == self.props.story {
+            if not item.text.or("").is_empty() {
+              body.push(cui::text(item.text.or("")))
+            }
+            let url = item.url.or("https://news.ycombinator.com/item?id={id}")
+            if (url.starts_with("https://") or url.starts_with("http://")) and (not url.contains("\n")) and (not url.contains("\t")) {
+              body.push(cui::text(ui::styled_text([ui::span(url, link: url)])))
             }
           }
           mut background = ui::indexed(0)
@@ -281,7 +306,7 @@ impl Page {
               ),
               on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
                 if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
-                  self.activate(id)
+                  self.activate(id, ctx)
                   mouse.prevent_default()
                 }
               },
@@ -314,7 +339,10 @@ impl cui::Component for Page {
     for id in self.roots {
       self.row(id, 0, rows, visited)
     }
-    mut status = "{self.loaded} loaded · {self.running} requests · m load 30 more · r retry"
+    mut status = "{self.loaded} loaded · {self.running} requests · m more in selected branch · r retry"
+    if self.props.story == 0 {
+      status = "{self.loaded} loaded · {self.running} requests · m more stories · r retry"
+    }
     if self.loading_feed {
       status = "Loading {self.props.feed} stories…"
     }
@@ -348,7 +376,7 @@ impl cui::Component for Page {
             self.move(-1)
             key.prevent_default()
           } else if key.matches("enter") or key.matches("return") {
-            self.activate(self.selected)
+            self.activate(self.selected, ctx)
             key.prevent_default()
           } else if key.matches("space") or key.matches("pagedown") {
             let _ = self.scroll.current.map(fn(scroll) {
@@ -361,8 +389,7 @@ impl cui::Component for Page {
             })
             key.prevent_default()
           } else if key.matches("m") {
-            self.budget =+ 30
-            self.pump(ctx)
+            self.load_more(ctx)
             key.prevent_default()
           } else if key.matches("r") {
             self.retry(ctx)

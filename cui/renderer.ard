@@ -430,6 +430,7 @@ impl State {
 
   private fn mut context(scope: mut scopes::MountScope) context::Context {
     context::internal_new(
+      self.runtime,
       fn(work: fn()) Void!event::DispatchError {
         self.runtime.dispatch(work)
       },
@@ -514,6 +515,7 @@ impl State {
         text.set_text_style(description.text_style)
         text.set_wrap(description.wrap)
         text.set_overflow(description.overflow)
+        text.set_selectable(description.selectable)
       },
       view::Kind::input => {
         let field = input(mounted.control)

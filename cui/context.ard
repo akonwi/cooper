@@ -1,14 +1,30 @@
+use cooper/animation
 use cooper/core/runtime as scopes
 use cooper/event
+use cooper/runtime
 
 // Capture this value before starting a worker. Only dispatched callbacks may
 // access mutable component state. Cancellation is signaled before unmounting.
 struct Context {
   dispatch: fn(fn()) Void!event::DispatchError,
   cancellation: Receiver<Void>,
+  internal_animate: fn(Int, fn(animation::Frame), animation::Easing) fn(),
+}
+
+impl Context {
+  // UI-thread-only, including the returned idempotent cancellation function.
+  // Duration is positive milliseconds. Frames automatically invalidate CUI.
+  // An unmounted context cannot start new work. Completion releases callbacks.
+  fn animate(duration: Int, update: fn(animation::Frame), ease: animation::Easing?) fn() {
+    if duration <= 0 {
+      panic("animation duration must be positive")
+    }
+    (self.internal_animate)(duration, update, ease.or(animation::linear))
+  }
 }
 
 fn internal_new(
+  runtime: mut runtime::Runtime,
   base: fn(fn()) Void!event::DispatchError,
   scope: mut scopes::MountScope,
   invalidate: fn(),
@@ -22,5 +38,30 @@ fn internal_new(
       })
     },
     cancellation: scope.cancellation(),
+    internal_animate: fn(duration: Int, update: fn(animation::Frame), ease: animation::Easing) fn() {
+      if scope.is_cancelled() {
+        fn() {}
+      } else {
+        let timeline = runtime.timeline(duration)
+        scope.own_animation(timeline)
+        timeline.add(
+          duration,
+          fn(frame: animation::Frame) {
+            if not scope.is_cancelled() {
+              update(frame)
+              invalidate()
+            }
+          },
+          ease: ease,
+          on_complete: fn() {
+            timeline.destroy()
+          },
+        )
+        let _ = timeline.play()
+        fn() {
+          timeline.destroy()
+        }
+      }
+    },
   }
 }

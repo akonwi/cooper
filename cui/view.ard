@@ -76,6 +76,7 @@ struct Description {
   text_style: ui::TextStyle,
   wrap: ui::TextWrap,
   overflow: ui::TextOverflow,
+  selectable: Bool,
   title: Str,
   value: Str,
   placeholder: Str,
@@ -104,6 +105,7 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     text_style: ui::text_style(),
     wrap: ui::TextWrap::word,
     overflow: ui::TextOverflow::clip,
+    selectable: true,
     title: "",
     value: "",
     placeholder: "",
@@ -126,12 +128,14 @@ fn text(
   text_style: ui::TextStyle?,
   wrap: ui::TextWrap?,
   overflow: ui::TextOverflow?,
+  selectable: Bool?,
 ) View {
   let result = mut base(Kind::text, key, styles)
   result.content = content
   result.text_style = text_style.or(ui::text_style())
   result.wrap = wrap.or(ui::TextWrap::word)
   result.overflow = overflow.or(ui::TextOverflow::clip)
+  result.selectable = selectable.or(true)
   View{internal: result.@}
 }
 

@@ -1,0 +1,186 @@
+use ard/testing
+
+use cooper/animation
+use cooper/cui
+use cooper/testing as headless
+
+struct Model {
+  visible: Bool,
+  frames: [animation::Frame],
+  renders: Int,
+  context: cui::Context?,
+  cancel: fn(),
+}
+struct Props {
+  model: mut Model,
+}
+struct Animated {
+  model: mut Model,
+}
+private fn animated(props: mut Props) mut Animated {
+  (mut Animated{model: props.model})
+}
+impl cui::Component for Animated {
+  fn mut render() cui::View {
+    self.model.renders =+ 1
+    cui::text("frames: {self.model.frames.size()}")
+  }
+}
+impl cui::Lifecycle for Animated {
+  fn mut mounted(ctx: cui::Context) {
+    self.model.context = Maybe::new(ctx)
+    self.model.cancel = ctx.animate(
+      100,
+      fn(frame: animation::Frame) {
+        self.model.frames.push(frame)
+      },
+      ease: animation::in_quad,
+    )
+  }
+
+  fn mut unmounting(ctx: cui::Context) {
+    // Starting work during cleanup must not revive the retired scope.
+    let cancel = ctx.animate(100, fn(frame: animation::Frame) {
+      self.model.frames.push(frame)
+    })
+    cancel()
+    cancel()
+  }
+}
+struct Parent {
+  model: mut Model,
+}
+private fn parent(props: mut Props) mut Parent {
+  (mut Parent{model: props.model})
+}
+impl cui::Component for Parent {
+  fn mut render() cui::View {
+    if self.model.visible {
+      cui::child(animated, Props{model: self.model}, key: "animation")
+    } else {
+      cui::text("removed")
+    }
+  }
+}
+private fn model() mut Model {
+  (mut Model{
+    visible: true,
+    frames: [],
+    renders: 0,
+    context: Maybe::new<cui::Context>(),
+    cancel: fn() {},
+  })
+}
+
+test fn scoped_animation_starts_eases_invalidates_and_completes() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{model: data}))
+  defer renderer.destroy()
+  app.flush()
+  let before = data.renders
+  try testing::assert(app.animations_active(), "mounted animation starts automatically")
+  app.advance_time(0)
+  app.flush()
+  try testing::assert(data.frames.size() == 1, "initial frame delivered")
+  try testing::assert(data.renders == before + 1, "frame invalidates component")
+  app.advance_time(25)
+  app.flush()
+  let quarter = data.frames.at(1).expect("quarter frame")
+  try testing::assert(quarter.progress == 0.0625 and quarter.linear_progress == 0.25, "requested easing")
+  try testing::assert(quarter.elapsed == 25 and quarter.delta == 25, "millisecond timing")
+  app.advance_time(90)
+  app.flush()
+  let end = data.frames.at(2).expect("completion frame")
+  try testing::assert(end.progress == 1.0 and end.elapsed == 100, "completion clamped to duration")
+  try testing::assert(data.renders == before + 3, "completion invalidates too")
+  try testing::assert(not app.animations_active(), "completion releases timeline")
+  (data.cancel)()
+  (data.cancel)()
+  app.advance_time(100)
+  testing::assert(data.frames.size() == 3, "no callbacks after completion")
+}
+
+test fn scoped_animation_cancellation_is_idempotent_and_default_easing_is_linear() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{model: data}))
+  defer renderer.destroy()
+  (data.cancel)()
+  (data.cancel)()
+  let ctx = data.context.expect("mounted context")
+  let cancel = ctx.animate(80, fn(frame: animation::Frame) {
+    data.frames.push(frame)
+  })
+  app.advance_time(0)
+  app.advance_time(20)
+  try testing::assert(data.frames.at(1).expect("frame").progress == 0.25, "linear default")
+  cancel()
+  cancel()
+  app.flush()
+  let renders = data.renders
+  app.advance_time(200)
+  app.flush()
+  try testing::assert(
+    data.frames.size() == 2 and data.renders == renders,
+    "cancel suppresses callbacks and invalidation",
+  )
+  testing::assert(not app.animations_active(), "cancel stops runtime work")
+}
+
+test fn scoped_animation_unmount_and_renderer_teardown_suppress_late_work() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{model: data}))
+  app.advance_time(0)
+  let old = data.context.expect("mounted context")
+  renderer.update(fn() {
+    data.visible = false
+  })
+  app.flush()
+  try testing::assert(not app.animations_active(), "unmount destroys timeline before cleanup")
+  let late = old.animate(100, fn(frame: animation::Frame) {
+    data.frames.push(frame)
+  })
+  late()
+  late()
+  app.advance_time(100)
+  try testing::assert(data.frames.size() == 1, "unmounted context cannot revive work")
+  renderer.update(fn() {
+    data.visible = true
+  })
+  app.flush()
+  try testing::assert(app.animations_active(), "new keyed mount starts fresh work")
+  app.advance_time(0)
+  let frames = data.frames.size()
+  renderer.destroy()
+  renderer.destroy()
+  app.flush()
+  app.advance_time(100)
+  try testing::assert(data.frames.size() == frames, "renderer teardown suppresses pending frames")
+  testing::assert(not app.animations_active(), "renderer teardown destroys timelines")
+}
+
+test fn renderer_destroyed_inside_frame_suppresses_other_timelines_in_same_tick() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{model: data}))
+  (data.cancel)()
+  let ctx = data.context.expect("mounted context")
+  let cancel = ctx.animate(100, fn(frame: animation::Frame) {
+    renderer.destroy()
+  })
+  let other = ctx.animate(100, fn(frame: animation::Frame) {
+    data.frames.push(frame)
+  })
+  app.advance_time(0)
+  app.flush()
+  cancel()
+  other()
+  try testing::assert(data.frames.size() == 0, "teardown invalidates runtime tick candidates immediately")
+  testing::assert(not app.animations_active(), "no timeline survives reentrant teardown")
+}

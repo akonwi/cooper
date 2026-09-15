@@ -968,7 +968,9 @@ impl State {
       match child.description.focused {
         focused => {
           if focused {
-            let _ = child.control.node().focus()
+            if not child.control.node().is_focused() {
+              let _ = child.control.node().focus()
+            }
           } else {
             child.control.node().blur()
           }

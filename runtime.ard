@@ -1534,7 +1534,12 @@ impl State {
     self.settle_layout(root, width, height)
     self.focused.reconcile(root)
     let focus_changed = self.focused.take_reveal_request()
-    if focus_changed or not self.suppress_focus_reveal {
+    // Manual scrolling remains authoritative across release events and later
+    // paints. An explicit focus request resumes automatic focus reveal.
+    if focus_changed {
+      self.suppress_focus_reveal = false
+    }
+    if not self.suppress_focus_reveal {
       match self.focused.focused() {
         target => {
           if focus::reveal(root, target) {
@@ -1544,7 +1549,6 @@ impl State {
         _ => (),
       }
     }
-    self.suppress_focus_reveal = false
     if root.node().reconcile_overlay_layout() {
       // Absolute Root overlays do not affect owner geometry. Settle their new
       // bounds in this frame before selection, painting, and hit reconciliation.

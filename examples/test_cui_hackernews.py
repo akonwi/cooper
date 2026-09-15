@@ -197,6 +197,12 @@ def main():
         wait_for(fd, compact, 'Comment 239:')
         drain(fd, compact, 0.15)
         compact.save('virtual-far')
+        # Drag to the start without changing selection. Release and subsequent
+        # frames must not pull the selected comment 239 back into view.
+        send(fd, '\x1b[<0;72;17M\x1b[<32;72;3M\x1b[<0;72;3m')
+        wait_for(fd, compact, 'Story 1: terminals')
+        drain(fd, compact, 0.2)
+        assert 'Comment 239:' not in compact.text(), 'thumb drag snapped back to selection'
         send(fd, 'k' * 28)
         wait_for(fd, compact, 'Comment 211:')
         with API.lock:

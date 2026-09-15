@@ -297,6 +297,50 @@ test fn focused_row_is_pinned_until_focus_moves() Void!Str {
   testing::assert(not list.invalidate_item("100"), "Retired list rejects invalidation")
 }
 
+test fn thumb_drag_overrides_described_focus_until_explicit_focus_request() Void!Str {
+  let app = headless::new(30, 8)
+  defer app.destroy()
+  let field = cui::input_ref()
+  let ref = cui::virtual_list_ref()
+  let renderer = cui::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      items(200),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        if id == 0 {
+          cui::input("editable", ref: field, focused: true)
+        } else {
+          row(id)
+        }
+      },
+      ref: ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let list = ref.current.expect("list")
+  let input = field.current.expect("input")
+  app.drag(29, 0, 29, 7)
+  app.flush()
+  try testing::assert(list.visible_range().start > 100, "Thumb drag can move the focused row offscreen")
+  app.render()
+  app.render()
+  try testing::assert(list.visible_range().start > 100, "Later paints do not reveal the old focused row")
+  try testing::assert(input.is_focused(), "Dragging preserves keyboard focus")
+  try testing::assert(
+    list.mounted_count() < 40,
+    "Focused row remains pinned without mounting intervening rows",
+  )
+  try testing::assert(input.focus(), "Explicit focus can request reveal even on the same control")
+  app.render()
+  testing::assert(list.visible_range().start == 0, "Explicit focus restores visibility")
+}
+
 test fn virtual_visible_cells_match_eager_layout_after_key_jumps() Void!Str {
   let lazy = headless::new(30, 8)
   defer lazy.destroy()

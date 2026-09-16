@@ -1,6 +1,7 @@
 use ard/testing
 
 use cooper/cui
+use cooper/cui/renderer
 use cooper/event
 use cooper/testing as headless
 use cooper/ui
@@ -160,7 +161,7 @@ test fn selects_control_commit_without_resetting_navigation_or_popup() Void!Str 
     defer app.destroy()
     let data = model()
     data.tabs = tabs
-    let renderer = cui::mount(app.context, app.root, cui::child(form, Props{model: data}))
+    let renderer = renderer::mount(app.context, app.root, cui::child(form, Props{model: data}))
     defer renderer.destroy()
     app.flush()
     let menu = data.menu.current.expect("select")
@@ -248,7 +249,7 @@ test fn textarea_normalized_controlled_edits_reorder_and_context_cleanup() Void!
   let app = headless::new(32, 12)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(form, Props{model: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(form, Props{model: data}))
   defer renderer.destroy()
   app.flush()
   let area = data.area.current.expect("area")
@@ -312,7 +313,7 @@ test fn new_control_refs_reject_duplicates_and_foreign_ownership_before_mutation
   let app = headless::new(32, 12)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(form, Props{model: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(form, Props{model: data}))
   defer renderer.destroy()
   app.flush()
   let menu = data.menu.current.expect("menu")
@@ -331,7 +332,7 @@ test fn new_control_refs_reject_duplicates_and_foreign_ownership_before_mutation
     "validation leaves existing popup intact",
   )
   let foreign = unsafe {
-    let other = cui::mount(app.context, app.root, cui::text_area("foreign", ref: data.area))
+    let other = renderer::mount(app.context, app.root, cui::text_area("foreign", ref: data.area))
     other.destroy()
   }
   match foreign {
@@ -339,7 +340,7 @@ test fn new_control_refs_reject_duplicates_and_foreign_ownership_before_mutation
     err(message) => try testing::assert(message.contains("outside this renderer"), message),
   }
   let foreign_select = unsafe {
-    let other = cui::mount(app.context, app.root, cui::select_input([], ref: data.menu))
+    let other = renderer::mount(app.context, app.root, cui::select_input([], ref: data.menu))
     other.destroy()
   }
   match foreign_select {
@@ -348,7 +349,7 @@ test fn new_control_refs_reject_duplicates_and_foreign_ownership_before_mutation
   }
   let duplicate_area = unsafe {
     let ref = cui::text_area_ref()
-    let other = cui::mount(
+    let other = renderer::mount(
       app.context,
       app.root,
       cui::box([cui::text_area("a", ref: ref), cui::text_area("b", ref: ref)]),

@@ -517,11 +517,7 @@ impl cui::Component for News {
 fn main() {
   let application = cooper::app().expect("create Hacker News example")
   defer application.destroy()
-  let renderer = cui::mount(
-    application.context,
-    application.root,
-    cui::child(news, AppProps{client: api::client()}),
-  )
+  let renderer = cui::mount(application, cui::child(news, AppProps{client: api::client()}))
   defer renderer.destroy()
   application.run().expect("run Hacker News example")
 }

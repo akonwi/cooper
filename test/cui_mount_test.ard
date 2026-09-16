@@ -1,9 +1,32 @@
 use ard/async
 use ard/testing
 
+use cooper
 use cooper/cui
+use cooper/cui/renderer
 use cooper/testing as headless
 use cooper/ui
+
+test fn public_mount_uses_application_runtime_and_root() Void!Str {
+  let terminal = headless::new(24, 4)
+  defer terminal.destroy()
+  let app = cooper::App{context: terminal.context, root: terminal.root}
+  let ref = cui::box_ref()
+  let mounted = cui::mount(app, cui::box([cui::text("app-backed view")], ref: ref))
+  defer mounted.destroy()
+  terminal.flush()
+  try testing::assert(
+    terminal.frame().text().contains("app-backed view"),
+    "Mount paints into the supplied app",
+  )
+  try testing::assert(ref.current.is_some(), "Mount populates control refs")
+  mounted.destroy()
+  terminal.flush()
+  testing::assert(
+    ref.current.is_none() and not terminal.frame().text().contains("app-backed view"),
+    "Renderer teardown clears refs and detaches the view",
+  )
+}
 
 struct Model {
   visible: Bool,
@@ -83,7 +106,7 @@ test fn background_dispatch_queues_state_changes_and_coalesces_rendering() Void!
   let app = headless::new(30, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model: data}))
   defer renderer.destroy()
   app.flush()
   let before = data.renders
@@ -111,7 +134,7 @@ test fn unmount_drops_already_queued_work_and_old_context_never_revives() Void!S
   let app = headless::new(30, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model: data}))
   defer renderer.destroy()
   app.flush()
   let old = data.context.expect("first mount")
@@ -161,8 +184,8 @@ test fn mount_cancellation_isolated_between_renderers_and_closed_on_runtime_tear
   defer app.destroy()
   let first = model()
   let second = model()
-  let one = cui::mount(app.context, app.root, cui::child(screen, Props{model: first}))
-  let two = cui::mount(app.context, app.root, cui::child(screen, Props{model: second}))
+  let one = renderer::mount(app.context, app.root, cui::child(screen, Props{model: first}))
+  let two = renderer::mount(app.context, app.root, cui::child(screen, Props{model: second}))
   app.flush()
   let ctx = first.context.expect("first")
   let other = second.context.expect("second")
@@ -201,7 +224,7 @@ test fn hidden_page_retains_context_until_removed() Void!Str {
   let app = headless::new(30, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model: data}))
   defer renderer.destroy()
   app.flush()
   let original = data.context.expect("mounted")

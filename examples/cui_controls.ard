@@ -137,7 +137,7 @@ impl cui::Component for Form {
 fn main() {
   let application = cooper::app().expect("create controls example")
   defer application.destroy()
-  let renderer = cui::mount(application.context, application.root, cui::child(form, Props{}))
+  let renderer = cui::mount(application, cui::child(form, Props{}))
   defer renderer.destroy()
   application.run().expect("run controls example")
 }

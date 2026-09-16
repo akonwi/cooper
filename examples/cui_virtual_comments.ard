@@ -124,7 +124,7 @@ fn main() {
     list: cui::virtual_list_ref(),
   }
   model.project()
-  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+  let renderer = cui::mount(app, cui::child(screen, Props{model: model}))
   defer renderer.destroy()
   let _ = app.context.dispatch(fn() {
     let _ = model.list.current.map(fn(list) {

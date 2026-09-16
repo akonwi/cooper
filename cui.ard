@@ -1,5 +1,6 @@
 use ard/unsafe
 
+use cooper
 use cooper/cui/context
 use cooper/cui/renderer
 use cooper/cui/view
@@ -24,7 +25,10 @@ type ScrollAlignment = virtual::Alignment
 
 let virtual_list_ref = virtual::ref
 
-let mount = renderer::mount
+fn mount(application: cooper::App, view: View) Renderer {
+  renderer::mount(application.context, application.root, view)
+}
+
 let input_ref = view::input_ref
 let text_area_ref = view::text_area_ref
 let select_ref = view::select_ref

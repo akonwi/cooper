@@ -1,6 +1,7 @@
 use ard/testing
 
 use cooper/cui
+use cooper/cui/renderer
 use cooper/testing as headless
 use cooper/ui
 
@@ -62,7 +63,7 @@ test fn variable_rows_are_lazy_and_reveal_settles_before_paint() Void!Str {
     builds: 0,
     ref: cui::virtual_list_ref(),
   }
-  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{data: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data: data}))
   defer renderer.destroy()
   app.flush()
   let list = data.ref.current.expect("mounted list")
@@ -102,7 +103,7 @@ test fn insert_reorder_remove_and_empty_preserve_a_keyed_anchor() Void!Str {
     builds: 0,
     ref: cui::virtual_list_ref(),
   }
-  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{data: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data: data}))
   defer renderer.destroy()
   app.flush()
   let list = data.ref.current.expect("list")
@@ -155,7 +156,7 @@ test fn bad_estimates_and_oversized_rows_converge_without_blank_frames() Void!St
   let app = headless::new(30, 80)
   defer app.destroy()
   let ref = cui::virtual_list_ref()
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::virtual_list(
@@ -178,7 +179,7 @@ test fn bad_estimates_and_oversized_rows_converge_without_blank_frames() Void!St
     "Severe overestimate fills the entire viewport in bounded passes",
   )
   renderer.destroy()
-  let tall = cui::mount(
+  let tall = renderer::mount(
     app.context,
     app.root,
     cui::virtual_list(
@@ -215,7 +216,7 @@ test fn width_changes_remeasure_and_preserve_the_visible_key() Void!Str {
   let app = headless::new(40, 8)
   defer app.destroy()
   let ref = cui::virtual_list_ref()
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::virtual_list(
@@ -256,7 +257,7 @@ test fn focused_row_is_pinned_until_focus_moves() Void!Str {
   defer app.destroy()
   let field = cui::input_ref()
   let ref = cui::virtual_list_ref()
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::virtual_list(
@@ -302,7 +303,7 @@ test fn thumb_drag_overrides_described_focus_until_explicit_focus_request() Void
   defer app.destroy()
   let field = cui::input_ref()
   let ref = cui::virtual_list_ref()
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::virtual_list(
@@ -353,13 +354,13 @@ test fn virtual_visible_cells_match_eager_layout_after_key_jumps() Void!Str {
     rows.push(row(id))
   }
   let size = ui::style(width: ui::percent(100.0), height: ui::percent(100.0))
-  let eager_renderer = cui::mount(
+  let eager_renderer = renderer::mount(
     eager.context,
     eager.root,
     cui::scroll_box(rows.@, ref: scroll, styles: size),
   )
   defer eager_renderer.destroy()
-  let lazy_renderer = cui::mount(
+  let lazy_renderer = renderer::mount(
     lazy.context,
     lazy.root,
     cui::virtual_list(
@@ -411,7 +412,7 @@ test fn fixed_rows_center_end_and_nearest_align_exactly() Void!Str {
   let app = headless::new(30, 8)
   defer app.destroy()
   let ref = cui::virtual_list_ref()
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::virtual_list(
@@ -488,7 +489,7 @@ test fn scrollbar_options_apply_update_hide_and_restore() Void!Str {
       ),
     ),
   }
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::child(styled_list, StyledListProps{state: data}),

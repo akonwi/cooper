@@ -1,4 +1,5 @@
 use cooper/cui
+use cooper/cui/renderer
 use cooper/testing
 use cooper/ui
 use go:fmt
@@ -107,7 +108,7 @@ fn main() {
     eager: eager,
   }
   let mounted = time::Now()
-  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model: model}))
   app.flush()
   let mount_us = time::Since(mounted).Microseconds()
   if not app.frame().text().contains("row=0") {

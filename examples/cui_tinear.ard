@@ -1662,8 +1662,7 @@ fn main() {
   let application = cooper::app().expect("create tinear example")
   defer application.destroy()
   let renderer = cui::mount(
-    application.context,
-    application.root,
+    application,
     cui::child(tinear_screen, ScreenProps{selected: "TIN-142"}),
   )
   defer renderer.destroy()

@@ -49,7 +49,7 @@ impl d::Component for Counter {
 }
 
 let view = d::child(counter, CounterProps{label: "Count"})
-let renderer = d::mount(application.context, application.root, view)
+let renderer = d::mount(application, view)
 defer renderer.destroy()
 ```
 
@@ -57,7 +57,7 @@ The central signatures are:
 
 ```ard
 fn child(create: fn(mut $P) mut $C, props: $P, key: Str?) View
-fn mount(runtime: mut Runtime, root: mut Root, view: View) Renderer
+fn mount(application: cooper::App, view: View) Renderer
 ```
 
 Both child types are inferred. Props are ordinary values, not framework wrappers.
@@ -65,6 +65,9 @@ The component stores the supplied `mut Props` reference so reconciliation can
 update it before each render. The constructor runs only when that component
 identity mounts. `mount` accepts either a primitive view or a child view as its
 root, renders synchronously, and attaches retained controls.
+
+`mount` takes the Runtime and Root from the application. Headless framework
+tests can use the lower-level `cooper/cui/renderer::mount(runtime, root, view)`.
 
 Treat props as read-only input. Ard requires `mut Props` for the shared reference,
 but does not enforce a read-only view of it. Keep state in separate component

@@ -2,6 +2,7 @@ use ard/testing
 
 use cooper/core/runtime as scopes
 use cooper/cui
+use cooper/cui/renderer
 use cooper/event
 use cooper/testing as headless
 use cooper/ui
@@ -129,7 +130,7 @@ test fn runtime_subscriptions_deliver_synchronously_and_invalidate_only_the_comp
   let app = headless::new(48, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{data: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{data: data}))
   defer renderer.destroy()
   app.flush()
   let ctx = data.context.expect("mounted")
@@ -193,7 +194,7 @@ test fn subscriptions_follow_mount_lifetime_including_hidden_components_and_remo
   let app = headless::new(48, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{data: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{data: data}))
   defer renderer.destroy()
   app.flush()
   let old = data.context.expect("mounted")
@@ -260,7 +261,7 @@ test fn unsubscribe_and_renderer_destruction_suppress_callbacks_in_runtime_snaps
   let app = headless::new(48, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{data: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{data: data}))
   defer renderer.destroy()
   app.flush()
   let ctx = data.context.expect("mounted")

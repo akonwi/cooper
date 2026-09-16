@@ -1,6 +1,7 @@
 use ard/testing
 
 use cooper/cui
+use cooper/cui/renderer
 use cooper/event
 use cooper/testing as headless
 
@@ -54,7 +55,11 @@ test fn box_refs_retain_focus_and_clear_on_teardown() Void!Str {
     enabled: true,
     calls: 0,
   }
-  let renderer = cui::mount(app.context, app.root, cui::child(screen, PanelProps{model: props}))
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::child(screen, PanelProps{model: props}),
+  )
   let panel = first.current.expect("attached")
   try testing::assert(panel.focus(), "handler makes a box focusable")
   try testing::assert(
@@ -101,10 +106,10 @@ test fn box_refs_reject_duplicate_and_cross_renderer_ownership_before_mutation()
   let app = headless::new(20, 4)
   defer app.destroy()
   let ref = cui::box_ref()
-  let renderer = cui::mount(app.context, app.root, cui::box([], ref: ref))
+  let renderer = renderer::mount(app.context, app.root, cui::box([], ref: ref))
   let original = ref.current.expect("original")
   let stolen = unsafe {
-    cui::mount(app.context, app.root, cui::box([], ref: ref))
+    renderer::mount(app.context, app.root, cui::box([], ref: ref))
   }
   match stolen {
     ok(_) => try testing::fail("must reject cross-renderer ownership"),
@@ -112,7 +117,7 @@ test fn box_refs_reject_duplicate_and_cross_renderer_ownership_before_mutation()
   }
   let duplicate = cui::box_ref()
   let failed = unsafe {
-    cui::mount(
+    renderer::mount(
       app.context,
       app.root,
       cui::box([cui::box([], ref: duplicate), cui::box([cui::box([], ref: duplicate)])]),

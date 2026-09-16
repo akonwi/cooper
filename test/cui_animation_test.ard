@@ -2,6 +2,7 @@ use ard/testing
 
 use cooper/animation
 use cooper/cui
+use cooper/cui/renderer
 use cooper/testing as headless
 
 struct Model {
@@ -76,7 +77,7 @@ test fn scoped_animation_starts_eases_invalidates_and_completes() Void!Str {
   let app = headless::new(30, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{model: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model: data}))
   defer renderer.destroy()
   app.flush()
   let before = data.renders
@@ -106,7 +107,7 @@ test fn scoped_animation_cancellation_is_idempotent_and_default_easing_is_linear
   let app = headless::new(30, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{model: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model: data}))
   defer renderer.destroy()
   (data.cancel)()
   (data.cancel)()
@@ -134,7 +135,7 @@ test fn scoped_animation_unmount_and_renderer_teardown_suppress_late_work() Void
   let app = headless::new(30, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{model: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model: data}))
   app.advance_time(0)
   let old = data.context.expect("mounted context")
   renderer.update(fn() {
@@ -168,7 +169,7 @@ test fn renderer_destroyed_inside_frame_suppresses_other_timelines_in_same_tick(
   let app = headless::new(30, 4)
   defer app.destroy()
   let data = model()
-  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{model: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model: data}))
   (data.cancel)()
   let ctx = data.context.expect("mounted context")
   let cancel = ctx.animate(100, fn(frame: animation::Frame) {

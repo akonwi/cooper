@@ -1,6 +1,7 @@
 use ard/testing
 
 use cooper/cui
+use cooper/cui/renderer
 use cooper/event
 use cooper/testing as headless
 use cooper/ui
@@ -47,7 +48,7 @@ test fn nonselectable_text_preserves_drag_capture_across_reconciliation() Void!S
     ends: 0,
     releases: 0,
   }
-  let renderer = cui::mount(app.context, app.root, cui::child(card, Props{model: model}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(card, Props{model: model}))
   defer renderer.destroy()
   app.flush()
   app.mouse_down(2, 0)

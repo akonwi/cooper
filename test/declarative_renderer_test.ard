@@ -1,6 +1,7 @@
 use ard/testing
 
 use cooper/cui as d
+use cooper/cui/renderer
 use cooper/event
 use cooper/testing as headless
 use cooper/ui
@@ -169,7 +170,7 @@ test fn keyed_collection_retains_state_focus_selection_and_latest_props_without_
     }},
   )
   try testing::assert(record.created == 0, "descriptions are lazy")
-  let renderer = d::mount(app.context, app.root, description)
+  let renderer = renderer::mount(app.context, app.root, description)
   app.flush()
   let field = model.right.current.expect("right")
   let id = field.node_ref.id
@@ -214,7 +215,7 @@ test fn committed_removal_reinsertion_resets_state_but_coalesced_absence_does_no
   defer app.destroy()
   let record = log()
   let model = rows()
-  let renderer = d::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     d::child(
@@ -294,14 +295,14 @@ test fn nested_teardown_cancels_all_descendant_events_before_bottom_up_cleanup_a
   defer app.destroy()
   let record = log()
   let model = rows()
-  let renderer = d::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     d::child(group, GroupProps{model: model, log: record}),
   )
   let other_record = log()
   let other_model = rows()
-  let other = d::mount(
+  let other = renderer::mount(
     app.context,
     app.root,
     d::child(group, GroupProps{model: other_model, log: other_record}),
@@ -344,7 +345,7 @@ test fn duplicate_keys_and_refs_across_components_preserve_existing_controls() V
     defer app.destroy()
     let record = log()
     let model = rows()
-    let renderer = d::mount(
+    let renderer = renderer::mount(
       app.context,
       app.root,
       d::child(
@@ -386,7 +387,7 @@ test fn keys_are_sibling_local_and_empty_keys_are_not_unkeyed() Void!Str {
   let positional = d::input_ref()
   let record = log()
   mut reordered = false
-  let renderer = d::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     d::child(
@@ -428,7 +429,7 @@ test fn keys_are_sibling_local_and_empty_keys_are_not_unkeyed() Void!Str {
     "unkeyed child follows index",
   )
   let failed = unsafe {
-    d::mount(app.context, app.root, d::box([d::text("a", key: ""), d::text("b", key: "")]))
+    renderer::mount(app.context, app.root, d::box([d::text("a", key: ""), d::text("b", key: "")]))
   }
   match failed {
     ok(_) => testing::fail("duplicate empty keys must reject"),
@@ -440,7 +441,7 @@ test fn normalized_and_rejected_controlled_values_preserve_selection_without_fee
   let app = headless::new(20, 1)
   defer app.destroy()
   let ref = d::input_ref()
-  let renderer = d::mount(app.context, app.root, d::input("a\tb\r\n", ref: ref))
+  let renderer = renderer::mount(app.context, app.root, d::input("a\tb\r\n", ref: ref))
   let field = ref.current.expect("field")
   let _ = field.focus()
   app.key(key("end"))
@@ -467,7 +468,7 @@ test fn unkeyed_state_follows_position_and_ref_reassignment_does_not_remount() V
   defer app.destroy()
   let record = log()
   let model = rows()
-  let renderer = d::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     d::child(
@@ -521,7 +522,7 @@ test fn same_key_different_component_type_replaces_even_when_output_control_kind
   defer app.destroy()
   let record = log()
   let model = rows()
-  let renderer = d::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     d::child(
@@ -567,10 +568,10 @@ test fn input_refs_cannot_be_stolen_by_another_renderer() Void!Str {
   let app = headless::new(20, 2)
   defer app.destroy()
   let ref = d::input_ref()
-  let renderer = d::mount(app.context, app.root, d::input("original", ref: ref))
+  let renderer = renderer::mount(app.context, app.root, d::input("original", ref: ref))
   let original = ref.current.expect("original")
   let failed = unsafe {
-    d::mount(app.context, app.root, d::input("stolen", ref: ref))
+    renderer::mount(app.context, app.root, d::input("stolen", ref: ref))
   }
   match failed {
     ok(_) => try testing::fail("cross-renderer ref reuse must reject"),

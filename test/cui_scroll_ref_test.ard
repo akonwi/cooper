@@ -1,6 +1,7 @@
 use ard/testing
 
 use cooper/cui
+use cooper/cui/renderer
 use cooper/testing as headless
 use cooper/ui
 
@@ -41,7 +42,7 @@ test fn scroll_ref_preserves_position_and_identity_on_reorder() Void!Str {
   defer app.destroy()
   let ref = cui::scroll_box_ref()
   let model = mut Model{ref: ref, reverse: false}
-  let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model: model}))
   app.flush()
   let panel = ref.current.expect("attached")
   let _ = panel.scroll_to_x(7)
@@ -70,11 +71,11 @@ test fn scroll_refs_reject_duplicate_and_foreign_ownership() Void!Str {
   let app = headless::new(30, 10)
   defer app.destroy()
   let ref = cui::scroll_box_ref()
-  let renderer = cui::mount(app.context, app.root, cui::scroll_box([], ref: ref))
+  let renderer = renderer::mount(app.context, app.root, cui::scroll_box([], ref: ref))
   defer renderer.destroy()
   let original = ref.current.expect("original")
   let stolen = unsafe {
-    cui::mount(app.context, app.root, cui::scroll_box([], ref: ref))
+    renderer::mount(app.context, app.root, cui::scroll_box([], ref: ref))
   }
   match stolen {
     ok(_) => try testing::fail("foreign ref must be rejected"),
@@ -82,7 +83,7 @@ test fn scroll_refs_reject_duplicate_and_foreign_ownership() Void!Str {
   }
   let duplicate = cui::scroll_box_ref()
   let failed = unsafe {
-    cui::mount(
+    renderer::mount(
       app.context,
       app.root,
       cui::scroll_box([cui::scroll_box([], ref: duplicate)], ref: duplicate),

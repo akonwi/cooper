@@ -1,4 +1,5 @@
 use cooper/cui
+use cooper/cui/renderer
 use cooper/testing
 use cooper/ui
 use go:fmt
@@ -60,7 +61,7 @@ fn main() {
     let app = testing::new(100, 30)
     let model = mut Model{count: count, selected: 0}
     let start = time::Now()
-    let renderer = cui::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+    let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model: model}))
     app.flush()
     let mount = time::Since(start)
     let update_start = time::Now()

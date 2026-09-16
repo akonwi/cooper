@@ -1,6 +1,7 @@
 use ard/testing
 
 use cooper/cui
+use cooper/cui/renderer
 use cooper/event
 use cooper/testing as headless
 use cooper/ui
@@ -101,7 +102,7 @@ test fn all_event_contexts_belong_to_nearest_component_without_lifecycle_hooks()
     value: "",
     calls: 0,
   }
-  let renderer = cui::mount(app.context, app.root, cui::child(parent, Props{model: model}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model: model}))
   app.flush()
   let field = model.field.current.expect("input")
   let _ = field.focus()
@@ -158,7 +159,7 @@ test fn primitive_root_event_context_has_renderer_lifetime() Void!Str {
   defer app.destroy()
   let contexts = mut List::new<cui::Context>()
   let field = cui::input_ref()
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::input("", ref: field, on_input: fn(value: Str, ctx: cui::Context) {

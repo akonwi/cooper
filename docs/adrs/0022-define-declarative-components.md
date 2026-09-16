@@ -25,7 +25,8 @@ and props types; props are supplied as an ordinary value, and the constructor's
 mutable props reference is updated before retained renders. Construction occurs
 only on mount.
 
-`mount(runtime, root, View)` accepts a primitive or component root. The renderer
+`mount(app, View)` accepts a primitive or component root and uses the App's
+Runtime and Root. The renderer
 automatically owns nested components found while expanding child lists. Within a
 retained parent, key plus concrete component type plus props type defines keyed
 identity; unkeyed position plus those types defines unkeyed identity. Factory

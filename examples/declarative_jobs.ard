@@ -174,8 +174,7 @@ fn main() {
   defer application.destroy()
   let initial_focus = d::input_ref()
   let renderer = d::mount(
-    application.context,
-    application.root,
+    application,
     d::child(jobs_screen, ScreenProps{initial_focus: initial_focus}),
   )
   defer renderer.destroy()

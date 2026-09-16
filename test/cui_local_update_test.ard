@@ -2,6 +2,7 @@ use ard/testing
 
 use cooper/animation
 use cooper/cui
+use cooper/cui/renderer
 use cooper/testing as headless
 
 struct Model {
@@ -72,7 +73,7 @@ test fn dispatch_and_animation_refresh_only_the_owning_subtree() Void!Str {
   let left = model("left", [leaf])
   let right = model("right", [])
   let root = model("root", [left, right])
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::child(component, Props{model: root, prefix: ""}),
@@ -134,7 +135,7 @@ test fn dirty_ancestors_cover_children_in_either_queue_order_and_global_updates_
   let branch = model("branch", [leaf])
   let sibling = model("sibling", [])
   let root = model("root", [branch, sibling])
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::child(component, Props{model: root, prefix: ""}),
@@ -201,7 +202,7 @@ test fn local_removal_retires_queued_children_and_reordering_preserves_contexts(
   let left = model("left", [])
   let right = model("right", [])
   let root = model("root", [left, right])
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::child(component, Props{model: root, prefix: ""}),
@@ -262,7 +263,7 @@ test fn sibling_updates_are_independent_and_cannot_steal_each_others_refs() Void
   let left = model("left", [])
   let right = model("right", [])
   let root = model("root", [left, right])
-  let renderer = cui::mount(
+  let renderer = renderer::mount(
     app.context,
     app.root,
     cui::child(component, Props{model: root, prefix: ""}),

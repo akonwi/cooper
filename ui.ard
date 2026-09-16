@@ -1,6 +1,7 @@
 use cooper/ui/box as box_control
 use cooper/ui/color as color_value
 use cooper/ui/geometry as geometry_value
+use cooper/ui/image as image_control
 use cooper/ui/input as input_control
 use cooper/ui/scroll_box as scroll_box_control
 use cooper/ui/scrollbar as scrollbar_control
@@ -33,6 +34,8 @@ type Selection = selection_value::Selection
 type SelectionRange = selection_value::Range
 
 type Box = box_control::Box
+type Image = image_control::Image
+type ImageData = image_control::ImageData
 type Input = input_control::Input
 type ScrollBox = scroll_box_control::ScrollBox
 type Scrollbar = scrollbar_control::Scrollbar
@@ -79,6 +82,9 @@ let edges = layout_style::edges
 let style = layout_style::new
 
 let box = box_control::new
+let image = image_control::new
+let image_data = image_control::data
+let decode_image = image_control::decode
 let input = input_control::new
 let scroll_box = scroll_box_control::new
 let scrollbar = scrollbar_control::new

@@ -274,6 +274,68 @@ Press 1–3 to choose text samples, Space to advance, E to toggle clipping and
 ellipsis, C to clear the selection, or Q to quit. Drag or double-click text to
 inspect the logical selection; link activation is intercepted by the gallery.
 
+## Image prototype
+
+`image.ard` renders a static pixel-art landscape using native Kitty graphics
+when available, or half-block cells otherwise. Use Up/Down to scroll, P to cover it with a popup, S to suspend/resume,
+and Q to quit. Resize the terminal to exercise contain fitting and clipping.
+
+```sh
+ard run image.ard
+# To supply a PNG/JPEG/WebP instead of the generated fixture:
+ard build image.ard --out ../ard-out/image
+../ard-out/image /path/to/photo.png
+python3 test_image.py
+python3 test_native_image.py
+```
+
+The provisional API separates source data from retained controls:
+
+```ard
+let source = ui::decode_image(encoded_bytes, matte: ui::rgb(20, 29, 46))
+  .expect("decode PNG/JPEG/WebP")
+let picture = ui::image(application.context, source, styles: ui::style(
+  width: ui::cells(40),
+  height: ui::cells(15),
+))
+application.root.add(picture)
+```
+
+`ui::image_data(width, height, pixels)` accepts row-major RGB `ui::Color` values
+for generated content. The resource constructor and the control's constructor
+and `set_source` snapshot their inputs. `set_style` changes layout without
+replacing the node; detach preserves its source, while idempotent destruction
+releases the node's copy. No separate resource disposal is required.
+
+This prototype uses centered contain fitting inside border/padding insets.
+On Kitty-compatible terminals such as Ghostty, it uploads original-resolution
+pixels with alpha and lets the terminal scale them using reported cell pixel
+dimensions. Ard computes clipping and excludes cells covered by later paint,
+including popups. Crops round outward to whole source pixels, so split placements
+can have small sampling seams. Uploads are reused until replacement, removal,
+or terminal refresh; suspend/resume recreates terminal resources.
+
+Other terminals and headless tests use `▀` with independent top/bottom RGB
+colors, nearest-neighbor sampling, and a 1:2 cell aspect ratio. Images may scale
+up or down. There is no intrinsic layout size: allocate both axes using ordinary
+cell, percentage, or flex styles. Cell rounding limits accuracy at small sizes.
+
+PNG/JPEG/WebP decoding is synchronous, with at most 64 MiB encoded input and 4096
+pixels per axis. Decode failures return `Result`; malformed raw dimensions,
+pixel counts, or non-RGB colors are programmer errors. PNG/WebP alpha is preserved
+for native rendering and flattened in sRGB onto the supplied matte (black by
+default) for cell fallback. File/network acquisition
+and dispatch remain application responsibilities. EXIF orientation, animation,
+color-profile conversion, and `cover`/`fill` modes are not implemented.
+
+Native rendering uses Cooper's pinned [`github.com/akonwi/vaxis`](https://github.com/akonwi/vaxis)
+fork, which adds exact cropped placements without moving Cooper's layout or
+stacking behavior into Go. Applications do not need a Vaxis `replace` directive.
+The backend extension is proposed in [upstream PR #51](https://github.com/rockorager/vaxis/pull/51).
+Uploads use inline protocol data rather than
+terminal-local files, making the transport suitable for SSH; a real SSH session
+has not been tested. Sixel and tmux passthrough are not implemented.
+
 ## Operations dashboard
 
 `dashboard.ard` is a live synthetic operations console built entirely from
@@ -422,6 +484,7 @@ directory.
 python3 test_animation.py
 python3 test_layout_playground.py
 python3 test_text_gallery.py
+python3 test_image.py
 python3 test_dashboard.py
 python3 test_stacking.py
 python3 test_input_lab.py

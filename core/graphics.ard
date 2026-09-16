@@ -1,0 +1,164 @@
+use cooper/core/paint
+use cooper/ui/geometry
+use go:vaxis
+
+// Merge equal horizontal runs across rows. This keeps a typical popup at four
+// placements rather than one placement per cell, while honoring every writer.
+fn regions(buffer: mut paint::Buffer, image: paint::ImagePlacement) [geometry::Rect] {
+  let visible = geometry::intersect(
+    image.clip,
+    geometry::Rect{
+      x: 0,
+      y: 0,
+      width: buffer.width,
+      height: buffer.height,
+    },
+  )
+  let result = mut List::new<geometry::Rect>()
+  mut y = visible.y
+  while y < visible.y + visible.height {
+    mut x = visible.x
+    while x < visible.x + visible.width {
+      if buffer.cell_orders.at(y * buffer.width + x).expect("image occlusion cell") > image.order {
+        x =+ 1
+      } else {
+        let start = x
+        mut scanning = true
+        while x < visible.x + visible.width and scanning {
+          if buffer.cell_orders.at(y * buffer.width + x).expect("image occlusion cell") <= image.order {
+            x =+ 1
+          } else {
+            scanning = false
+          }
+        }
+        let width = x - start
+        mut merged = false
+        for previous, index in result {
+          if previous.x == start and previous.width == width and previous.y + previous.height == y {
+            let extended = mut previous
+            extended.height =+ 1
+            result.set(index, extended.@)
+            merged = true
+          }
+        }
+        if not merged {
+          result.push(
+            geometry::Rect{
+              x: start,
+              y: y,
+              width: width,
+              height: 1,
+            },
+          )
+        }
+      }
+    }
+    y =+ 1
+  }
+  result.@
+}
+
+// Map both edges from the original destination, not from the clipped viewport.
+// Round outward so even an upscaled one-pixel source has a nonempty crop.
+fn source_rect(image: paint::ImagePlacement, region: geometry::Rect) geometry::Rect {
+  let x = (region.x - image.destination.x) * image.width / image.destination.width
+  let y = (region.y - image.destination.y) * image.height / image.destination.height
+  let right = ((region.x + region.width - image.destination.x) * image.width + image.destination.width - 1) / image.destination.width
+  let bottom = ((region.y + region.height - image.destination.y) * image.height + image.destination.height - 1) / image.destination.height
+  geometry::Rect{
+    x: x,
+    y: y,
+    width: right - x,
+    height: bottom - y,
+  }
+}
+
+struct Resource {
+  id: Int,
+  revision: Int,
+  image: mut vaxis::PixelImage,
+  seen: Bool,
+}
+
+struct Renderer {
+  resources: [mut Resource],
+}
+
+fn new() mut Renderer {
+  (mut Renderer{resources: []})
+}
+
+impl Renderer {
+  fn mut clear() {
+    for resource in self.resources {
+      resource.image.Destroy()
+    }
+    self.resources = []
+  }
+
+  private fn mut resource(terminal: mut vaxis::Vaxis, image: paint::ImagePlacement) mut Resource {
+    mut found = Maybe::new<mut Resource>()
+    for resource in self.resources {
+      if resource.id == image.id and resource.revision == image.revision {
+        found = Maybe::new<mut Resource>(resource)
+      }
+    }
+    match found {
+      resource => resource,
+      _ => {
+        let handle = terminal.NewPixelImage(
+          image.width,
+          image.height,
+          mut image.rgba,
+        ).expect("encode validated native image")
+        let resource = mut Resource{
+          id: image.id,
+          revision: image.revision,
+          image: handle,
+          seen: false,
+        }
+        self.resources.push(resource)
+        resource
+      },
+    }
+  }
+
+  fn mut present(terminal: mut vaxis::Vaxis, buffer: mut paint::Buffer) {
+    for resource in self.resources {
+      resource.seen = false
+    }
+    for image, index in buffer.images {
+      let visible = regions(buffer, image)
+      if visible.size() > 0 {
+        let resource = self.resource(terminal, image)
+        resource.seen = true
+        for region, placement in visible {
+          let source = source_rect(image, region)
+          resource.image.Draw(
+            vaxis::PixelPlacement{
+              ID: Uint32::from(placement + 1),
+              Column: region.x,
+              Row: region.y,
+              Columns: region.width,
+              Rows: region.height,
+              SourceX: source.x,
+              SourceY: source.y,
+              SourceWidth: source.width,
+              SourceHeight: source.height,
+              Z: index + 1,
+            },
+          )
+        }
+      }
+    }
+    let retained = mut List::new<mut Resource>()
+    for resource in self.resources {
+      if resource.seen {
+        retained.push(resource)
+      } else {
+        resource.image.Destroy()
+      }
+    }
+    self.resources = retained.@
+  }
+}

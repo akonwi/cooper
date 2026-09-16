@@ -5,6 +5,7 @@ use go:context
 use cooper/animation
 use cooper/clipboard
 use cooper/core/focus
+use cooper/core/graphics
 use cooper/core/node
 use cooper/core/paint
 use cooper/core/pointer
@@ -188,6 +189,7 @@ private struct State {
   dispatch: fn(fn()) Void!event::DispatchError,
   cancellation: Receiver<Void>,
   terminal: (mut vaxis::Vaxis)?,
+  graphics: mut graphics::Renderer,
   notification_action: fn(Str, Str?) Bool,
   terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
   terminal_title_action: fn(Str),
@@ -332,6 +334,7 @@ private fn state(
     dispatch: dispatch,
     cancellation: cancellation_signal.receiver(),
     terminal: terminal,
+    graphics: graphics::new(),
     notification_action: notification_action,
     terminal_progress_action: terminal_progress_action,
     terminal_title_action: terminal_title_action,
@@ -1419,6 +1422,8 @@ impl State {
           }
           if close_terminal {
             self.clear_terminal_progress_locked()
+            self.graphics.clear()
+            self.last_frame.images = []
             terminal.Close()
             self.terminal_closed = true
           }
@@ -1530,7 +1535,13 @@ impl State {
     }
   }
 
-  private fn mut draw(root: mut node::Renderable, width: Int, height: Int) mut paint::Buffer {
+  private fn mut draw(
+    root: mut node::Renderable,
+    width: Int,
+    height: Int,
+    cell_width: Int?,
+    cell_height: Int?,
+  ) mut paint::Buffer {
     self.settle_layout(root, width, height)
     self.focused.reconcile(root)
     let focus_changed = self.focused.take_reveal_request()
@@ -1563,6 +1574,9 @@ impl State {
       )
     }
     let buffer = paint::new_buffer(width, height)
+    if cell_width.or(0) > 0 and cell_height.or(0) > 0 {
+      buffer.enable_images(cell_width.or(0), cell_height.or(0))
+    }
     root.node().paint(buffer)
     self.last_frame = buffer
     self.has_frame = true
@@ -1603,6 +1617,7 @@ impl State {
       },
       _ => (),
     }
+    self.graphics.present(terminal, buffer)
     terminal.Render()
   }
 
@@ -1659,15 +1674,22 @@ impl State {
     self.terminal_io.Lock()
     mut width = 0
     mut height = 0
+    mut cell_width = 0
+    mut cell_height = 0
     let active = self.live_rendering()
     if active {
       let window = terminal.Window()
       width = window.Width
       height = window.Height
+      if terminal.SupportsKittyGraphics() {
+        let size = terminal.Size()
+        cell_width = size.XPixel / size.Cols
+        cell_height = size.YPixel / size.Rows
+      }
     }
     self.terminal_io.Unlock()
     if active {
-      let buffer = self.draw(root, width, height)
+      let buffer = self.draw(root, width, height, cell_width, cell_height)
       self.terminal_io.Lock()
       let present = self.live_rendering()
       if present {
@@ -2094,6 +2116,7 @@ impl State {
       } else {
         let terminal = self.terminal.expect("live application terminal")
         self.clear_terminal_progress_locked()
+        self.graphics.clear()
         terminal.SetMouseShape(vaxis::MouseShapeDefault)
         terminal.Render()
         outcome = terminal.Suspend()

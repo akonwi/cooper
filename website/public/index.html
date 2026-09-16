@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="An Ard-native retained-mode terminal UI library with an optional declarative component layer, CUI.">
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
+    <meta property="og:title" content="Cooper — Terminal UIs for Ard">
+    <meta property="og:description" content="An Ard-native retained-mode terminal UI library with an optional declarative component layer, CUI.">
+    <meta property="og:type" content="website">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@akonwi/mica@0.14.0/mica.css">
+    <link rel="stylesheet" href="style.css">
+    <title>Cooper — Terminal UIs for Ard</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <nav class="container navigation" aria-label="Main navigation">
+        <a class="brand" href="./" aria-label="Cooper home">Cooper</a>
+        <div class="nav-links">
+          <a href="https://github.com/akonwi/cooper/blob/main/docs/declarative.md">Guide <span aria-hidden="true">↗</span></a>
+          <a href="https://github.com/akonwi/cooper">GitHub <span aria-hidden="true">↗</span></a>
+        </div>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="container hero" aria-labelledby="hero-title">
+        <h1 id="hero-title">A library to build TUIs</h1>
+        <p class="hero-description">A retained-mode TUI library, written in Ard, with Yoga layouts and a declarative framework. Write rich and performant TUIs easily.</p>
+        <div class="actions">
+          <a class="btn" data-variant="primary" href="https://github.com/akonwi/cooper#installation">Get started <span aria-hidden="true">↗</span></a>
+          <a class="btn" href="https://github.com/akonwi/cooper/blob/main/examples/README.md">Examples</a>
+        </div>
+      </section>
+      <figure class="container showcase">
+        <div class="terminal-frame">
+          <div class="terminal-title" aria-hidden="true"><span class="terminal-dot"></span><span class="terminal-dot"></span><span class="terminal-dot"></span></div>
+          <a class="terminal-image-link" href="dashboard.gif" aria-label="View the dashboard terminal recording at full size">
+            <picture>
+              <source media="(prefers-reduced-motion: reduce)" srcset="dashboard.png">
+              <img src="dashboard.gif" width="1120" height="640" alt="Cooper’s operations dashboard running in a terminal, with service metrics, activity charts, and an event log." fetchpriority="high">
+            </picture>
+          </a>
+        </div>
+      </figure>
+      <section class="container code-section" aria-labelledby="code-heading">
+        <div class="code-intro">
+          <h2 id="code-heading">Example</h2>
+          <p>A complete CUI program.</p>
+          <a class="text-link" href="https://github.com/akonwi/cooper#installation">Setup instructions <span aria-hidden="true">↗</span></a>
+        </div>
+        <div>
+          <div class="code-panel">
+            <pre tabindex="0" aria-label="main.ard code example"><code>use cooper
+use cooper/cui
+use cooper/ui
+
+fn main() {
+  let app = cooper::app().expect("create app")
+  defer app.destroy()
+
+  let view = cui::box(
+    [cui::text("Hello, terminal."), cui::text("Made with Cooper + Ard.")],
+    styles: ui::style(gap: ui::cells(1)),
+  )
+
+  let renderer = cui::mount(app, view)
+  defer renderer.destroy()
+  app.run().expect("run app")
+}</code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="container site-footer">
+      <span>Cooper <span aria-hidden="true">·</span> Open source, built with Ard.</span>
+      <a href="https://ard.run">New to Ard? Meet the language <span aria-hidden="true">↗</span></a>
+      <a href="https://github.com/akonwi/cooper/blob/main/LICENSE">BSD 3-Clause</a>
+    </footer>
+  </body>
+</html>

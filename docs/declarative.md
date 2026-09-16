@@ -1,15 +1,8 @@
 # CUI: declarative components
 
-`cooper/cui` is an **experimental, opt-in framework layer** requiring Ard
-0.42.0. It reconciles view descriptions onto Cooper controls; the imperative API
+`cooper/cui` is an **experimental, opt-in framework layer**.
+It reconciles view descriptions onto Cooper controls; the imperative API
 and Cooper's layout, focus, editing, event, and terminal behavior are unchanged.
-
-Run the complete example from `examples`:
-
-```sh
-ard run declarative_jobs.ard
-python3 test_declarative_jobs.py
-```
 
 The larger `ard run cui_tinear.ard` example is a static-data slice of
 [tinear](https://github.com/akonwi/tinear): a three-column issue board, local
@@ -22,7 +15,7 @@ A component stores ordinary mutable state and the mutable props reference passed
 to its constructor, then implements one method:
 
 ```ard
-use cooper/cui as d
+use cooper/cui
 
 struct CounterProps {
   label: Str,
@@ -37,19 +30,19 @@ fn counter(props: mut CounterProps) mut Counter {
   (mut Counter{props: props, count: 0})
 }
 
-impl d::Component for Counter {
-  fn mut render() d::View {
-    d::box([
-      d::text("{self.props.label}: {self.count}"),
-      d::input("", on_submit: fn(value: Str, ctx: d::Context) {
+impl cui::Component for Counter {
+  fn mut render() cui::View {
+    cui::box([
+      cui::text("{self.props.label}: {self.count}"),
+      cui::input("", on_submit: fn(value: Str, ctx: cui::Context) {
         self.count =+ 1
       }),
     ])
   }
 }
 
-let view = d::child(counter, CounterProps{label: "Count"})
-let renderer = d::mount(application, view)
+let view = cui::child(counter, CounterProps{label: "Count"})
+let renderer = cui::mount(application, view)
 defer renderer.destroy()
 ```
 
@@ -97,11 +90,11 @@ control identity, including focus, selection, editor cursor, and scrolling.
 For a collection, build an ordinary list of views:
 
 ```ard
-let children = mut List::new<d::View>()
+let children = mut List::new<cui::View>()
 for job in self.jobs {
-  children.push(d::child(job_row, JobProps{job: job}, key: job.id))
+  children.push(cui::child(job_row, JobProps{job: job}, key: job.id))
 }
-d::box(children.@)
+cui::box(children.@)
 ```
 
 Keys must be unique among siblings. Prefer stable item IDs to indexes when items
@@ -187,15 +180,15 @@ including component render counts; no network requests).
 
 ## Lifecycle and resources
 
-`d::Lifecycle` is optional:
+`cui::Lifecycle` is optional:
 
 ```ard
-impl d::Lifecycle for Counter {
-  fn mut mounted(ctx: d::Context) {
+impl cui::Lifecycle for Counter {
+  fn mut mounted(ctx: cui::Context) {
     // Acquire this component's subscriptions or resources.
   }
 
-  fn mut unmounting(ctx: d::Context) {
+  fn mut unmounting(ctx: cui::Context) {
     // Release resources acquired by this component.
   }
 }
@@ -267,7 +260,7 @@ Components start ordinary `ard/async` workers; CUI provides no task runner or
 timer abstraction. For example, with an application-defined `fetch_issue`:
 
 ```ard
-fn mut mounted(ctx: d::Context) {
+fn mut mounted(ctx: cui::Context) {
   let issue_id = self.props.issue.id
   let dispatch = ctx.dispatch
   async::start(fn() {
@@ -400,18 +393,18 @@ kinds remounts the control; keyed reordering within one kind preserves it.
 Both new ref types follow the same exclusive ownership and cleanup rules as
 InputRef. All three controls accept `focused`, `on_key`, and `on_mouse`.
 
-Use `d::input_ref()` for imperative capabilities such as focus. A ref does not
+Use `cui::input_ref()` for imperative capabilities such as focus. A ref does not
 own its control, is populated before lifecycle mounting, and is cleared when the
 view retires. It cannot be attached to two expanded inputs simultaneously.
 
-`d::box_ref()` provides the same lifetime rules for a `box`. A box with an
+`cui::box_ref()` provides the same lifetime rules for a `box`. A box with an
 `on_key` handler is focusable; use `ref.current.map(fn(panel) { panel.focus() })`
 after mounting when imperative focus is needed. This lets a component own
 keyboard navigation without a dummy input or a global listener. Merely providing
 a ref does not make a box focusable. Removing both the handler and `focused`
 property removes focusability.
 
-`d::scroll_box_ref()` exposes a ScrollBox under the same ownership rules. Use
+`cui::scroll_box_ref()` exposes a ScrollBox under the same ownership rules. Use
 `ref.current.map(fn(panel) { panel.scroll_by(10) })` to scroll a preview without
 moving focus from a list. Reconciliation preserves scroll position; removal
 clears the ref and destroys the control. Duplicate and cross-renderer attachment

@@ -1,0 +1,7 @@
+---
+const { code, label = 'Ard', filename, showHeader = true } = Astro.props;
+---
+<div class="code-panel">
+  {showHeader && <div class="code-title"><span>{filename}</span><span>{label}</span></div>}
+  <pre tabindex="0" aria-label={`${filename || label} code example`}><code>{code.trim()}</code></pre>
+</div>

@@ -1,0 +1,5 @@
+name = "cooper-website-example"
+ard = ">= 0.42.0"
+
+[dependencies]
+cooper = { path = "../.." }

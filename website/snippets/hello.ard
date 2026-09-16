@@ -1,0 +1,17 @@
+use cooper
+use cooper/cui
+use cooper/ui
+
+fn main() {
+  let app = cooper::app().expect("create app")
+  defer app.destroy()
+
+  let view = cui::box(
+    [cui::text("Hello, terminal."), cui::text("Made with Cooper + Ard.")],
+    styles: ui::style(gap: ui::cells(1)),
+  )
+
+  let renderer = cui::mount(app, view)
+  defer renderer.destroy()
+  app.run().expect("run app")
+}

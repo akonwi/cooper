@@ -1,0 +1,15 @@
+---
+import Page from '../layouts/Page.astro';
+import { Content, getHeadings } from '../../../docs/declarative.md';
+const headings = getHeadings().filter(h => h.depth === 2);
+---
+<Page title="CUI component guide — Cooper" description="Learn Cooper’s declarative component framework: typed props, local state, identity, lifecycle, async work, and virtual lists.">
+  <div class="container guide-layout">
+    <aside class="guide-nav" aria-label="On this page">
+      <p class="eyebrow">CUI guide</p>
+      <nav aria-label="Guide sections">{headings.map(h => <a href={`#${h.slug}`}>{h.text}</a>)}</nav>
+      <a class="source-link" href="https://github.com/akonwi/cooper/blob/main/docs/declarative.md">View source <span aria-hidden="true">↗</span></a>
+    </aside>
+    <article class="prose guide-content"><Content /></article>
+  </div>
+</Page>

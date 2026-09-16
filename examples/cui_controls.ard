@@ -1,0 +1,143 @@
+use cooper
+use cooper/cui
+use cooper/ui
+
+struct Props {}
+struct Form {
+  focus: Int,
+  section: Int?,
+  priority: Int?,
+  notes: Str,
+  highlight: Str,
+  locked: Bool,
+  reverse: Bool,
+}
+private fn form(props: mut Props) mut Form {
+  (mut Form{
+    focus: 0,
+    section: Maybe::new(0),
+    priority: Maybe::new<Int>(),
+    notes: "Describe the issue here.\nLong lines wrap without losing the editing cursor.",
+    highlight: "Overview",
+    locked: false,
+    reverse: false,
+  })
+}
+impl cui::Component for Form {
+  fn mut render() cui::View {
+    let tabs = cui::tab_select(
+      [ui::select_option("Overview"), ui::select_option("Activity"), ui::select_option("Settings")],
+      selected_index: self.section,
+      config: ui::select_tab_config(tab_width: 16, show_description: false),
+      focused: self.focus == 0,
+      key: "tabs",
+      styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0),
+      on_change: fn(choice: ui::SelectSelection, ctx: cui::Context) {
+        self.section = Maybe::new(choice.index)
+      },
+      on_highlight: fn(choice: ui::SelectSelection, ctx: cui::Context) {
+        self.highlight = choice.option.label
+      },
+      on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+        if mouse.event_type == cooper::MouseEventType::down {
+          self.focus = 0
+        }
+      },
+    )
+    let priority = cui::select_input(
+      [
+        ui::select_option("Low", description: "When there is time"),
+        ui::select_option("Medium", description: "Plan for this cycle"),
+        ui::select_option("High", description: "Needs attention soon"),
+        ui::select_option("Urgent", description: "Blocks the team"),
+      ],
+      selected_index: self.priority,
+      config: ui::select_config(placeholder: "Choose priority", max_visible: 3),
+      key: "priority",
+      focused: self.focus == 1,
+      styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0),
+      on_change: fn(choice: ui::SelectSelection, ctx: cui::Context) {
+        self.priority = Maybe::new(choice.index)
+      },
+      on_highlight: fn(choice: ui::SelectSelection, ctx: cui::Context) {
+        self.highlight = choice.option.label
+      },
+      on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+        if mouse.event_type == cooper::MouseEventType::down {
+          self.focus = 1
+        }
+      },
+    )
+    let notes = cui::text_area(
+      self.notes,
+      key: "notes",
+      focused: self.focus == 2,
+      placeholder: "Write a multiline note…",
+      styles: ui::style(
+        width: ui::percent(100.0),
+        height: ui::cells(7),
+        flex_shrink: 0.0,
+        border: ui::Border::rounded,
+      ),
+      on_input: fn(value: Str, ctx: cui::Context) {
+        if not self.locked {
+          self.notes = value
+        }
+      },
+      on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+        if mouse.event_type == cooper::MouseEventType::down {
+          self.focus = 2
+        }
+      },
+    )
+    mut fields = [tabs, priority, notes]
+    if self.reverse {
+      fields = [tabs, notes, priority]
+    }
+    cui::box(
+      [
+        cui::text("CUI · Issue editor", text_style: ui::text_style(bold: true, foreground: ui::indexed(4))),
+        cui::text("Tab focus · arrows navigate · Enter choose / newline"),
+        cui::box(fields, styles: ui::style(width: ui::percent(100.0), gap: ui::cells(1))),
+        cui::text(
+          "section={self.section.or(-1)} priority={self.priority.or(-1)} highlight={self.highlight}",
+        ),
+        cui::text("F2 reject edits: {self.locked} · F3 reorder · F4 clear · Ctrl+C quit"),
+      ],
+      styles: ui::style(
+        width: ui::percent(100.0),
+        height: ui::percent(100.0),
+        padding: ui::edges(ui::cells(1)),
+        gap: ui::cells(1),
+      ),
+      on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+        if key.event_type == cooper::KeyEventType::press {
+          if key.matches("tab") {
+            self.focus = (self.focus + 1) % 3
+            key.prevent_default()
+          } else if key.matches("tab", shift: true) {
+            self.focus = (self.focus + 2) % 3
+            key.prevent_default()
+          } else if key.matches("f2") {
+            self.locked = not self.locked
+            key.prevent_default()
+          } else if key.matches("f3") {
+            self.reverse = not self.reverse
+            key.prevent_default()
+          } else if key.matches("f4") {
+            self.priority = Maybe::new<Int>()
+            self.notes = ""
+            key.prevent_default()
+          }
+        }
+      },
+    )
+  }
+}
+fn main() {
+  let application = cooper::app().expect("create controls example")
+  defer application.destroy()
+  let renderer = cui::mount(application, cui::child(form, Props{}))
+  defer renderer.destroy()
+  application.run().expect("run controls example")
+}

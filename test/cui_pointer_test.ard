@@ -1,0 +1,90 @@
+use ard/testing
+
+use cooper/cui
+use cooper/cui/renderer
+use cooper/event
+use cooper/testing as headless
+use cooper/ui
+
+struct Model {
+  selectable: Bool?,
+  drags: Int,
+  ends: Int,
+  releases: Int,
+}
+struct Props {
+  model: mut Model,
+}
+struct Card {
+  model: mut Model,
+}
+private fn card(props: mut Props) mut Card {
+  (mut Card{model: props.model})
+}
+impl cui::Component for Card {
+  fn mut render() cui::View {
+    cui::box(
+      [cui::text("drag this label", selectable: self.model.selectable)],
+      styles: ui::style(width: ui::cells(16), height: ui::cells(2)),
+      on_mouse: fn(mouse: mut event::MouseEvent, ctx: cui::Context) {
+        if mouse.event_type == event::MouseEventType::drag {
+          self.model.drags =+ 1
+        } else if mouse.event_type == event::MouseEventType::drag_end {
+          self.model.ends =+ 1
+        } else if mouse.event_type == event::MouseEventType::up {
+          self.model.releases =+ 1
+        }
+      },
+    )
+  }
+}
+
+test fn nonselectable_text_preserves_drag_capture_across_reconciliation() Void!Str {
+  let app = headless::new(40, 4)
+  defer app.destroy()
+  let model = mut Model{
+    selectable: Maybe::new(false),
+    drags: 0,
+    ends: 0,
+    releases: 0,
+  }
+  let renderer = renderer::mount(app.context, app.root, cui::child(card, Props{model: model}))
+  defer renderer.destroy()
+  app.flush()
+  app.mouse_down(2, 0)
+  app.flush()
+  app.mouse(
+    event::mouse(
+      event::MouseEventType::drag,
+      event::MouseButton::left,
+      30,
+      2,
+      event::Modifiers{
+        shift: false,
+        ctrl: false,
+        alt: false,
+        super: false,
+      },
+    ),
+  )
+  app.flush()
+  app.mouse_up(30, 2)
+  app.flush()
+  try testing::assert(
+    model.drags == 1 and model.ends == 1 and model.releases == 1,
+    "capture reaches source outside card after render",
+  )
+  try testing::assert(not app.selection().is_some(), "dragging label must not select text")
+  renderer.update(fn() {
+    model.selectable = Maybe::new<Bool>()
+  })
+  app.flush()
+  app.drag(1, 0, 7, 0)
+  app.flush()
+  try testing::assert(app.selection().is_some(), "omitted option restores default text selection")
+  renderer.update(fn() {
+    model.selectable = Maybe::new(false)
+  })
+  app.flush()
+  testing::assert(not app.selection().is_some(), "disabling selection clears existing selection")
+}

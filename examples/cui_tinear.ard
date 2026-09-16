@@ -1,0 +1,1670 @@
+use ard/async
+
+use cooper
+use cooper/animation
+use cooper/cui
+use cooper/ui
+use go:time
+
+struct Issue {
+  id: Str,
+  title: Str,
+  state: Str,
+  priority: Str,
+  assignee: Str,
+  cycle: Str,
+  project: Str,
+  team: Str,
+}
+
+private fn issues() [Issue] {
+  [
+    Issue{
+      id: "TIN-142",
+      title: "Polish command palette search",
+      state: "Todo",
+      priority: "◆ High",
+      assignee: "Maya",
+      cycle: "Cycle 18",
+      project: "Desktop",
+      team: "Tinear",
+    },
+    Issue{
+      id: "TIN-137",
+      title: "Keep issue tabs between sessions",
+      state: "Todo",
+      priority: "◇ Medium",
+      assignee: "Noah",
+      cycle: "Cycle 18",
+      project: "Core",
+      team: "Tinear",
+    },
+    Issue{
+      id: "TIN-128",
+      title: "Add keyboard shortcut reference",
+      state: "Todo",
+      priority: "○ Low",
+      assignee: "Iris",
+      cycle: "Backlog",
+      project: "Desktop",
+      team: "Tinear",
+    },
+    Issue{
+      id: "TIN-119",
+      title: "Render board cards without flicker",
+      state: "In Progress",
+      priority: "◆ Urgent",
+      assignee: "Maya",
+      cycle: "Cycle 18",
+      project: "Performance",
+      team: "Tinear",
+    },
+    Issue{
+      id: "TIN-115",
+      title: "Improve filtered board navigation",
+      state: "In Progress",
+      priority: "◇ Medium",
+      assignee: "Theo",
+      cycle: "Cycle 18",
+      project: "Core",
+      team: "Tinear",
+    },
+    Issue{
+      id: "TIN-104",
+      title: "Document terminal color themes",
+      state: "Done",
+      priority: "○ Low",
+      assignee: "Iris",
+      cycle: "Cycle 17",
+      project: "Docs",
+      team: "Tinear",
+    },
+    Issue{
+      id: "TIN-099",
+      title: "Ship compact issue detail layout",
+      state: "Done",
+      priority: "◆ High",
+      assignee: "Noah",
+      cycle: "Cycle 17",
+      project: "Desktop",
+      team: "Tinear",
+    },
+  ]
+}
+
+private fn line() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
+}
+
+private fn blue(selected: Bool) ui::TextStyle {
+  if selected {
+    ui::text_style(foreground: ui::indexed(15), background: ui::indexed(4), bold: true)
+  } else {
+    ui::text_style(foreground: ui::indexed(4), bold: true)
+  }
+}
+
+private fn page_style(active: Bool) ui::Style {
+  mut display = ui::Display::none
+  if active {
+    display = ui::Display::flex
+  }
+  ui::style(
+    display: display,
+    width: ui::percent(100.0),
+    height: ui::percent(100.0),
+    min_height: ui::cells(0),
+  )
+}
+
+private fn tab(label: Str, active: Bool, activate: fn(), close: fn()?) cui::View {
+  mut ink = ui::text_style(dim: true)
+  mut minimum = 10
+  if label == "Inbox" {
+    minimum = 6
+  }
+  if active {
+    ink = blue(false)
+  }
+  let children = mut List::new<cui::View>()
+  children.push(
+    cui::text(label, styles: ui::style(flex_grow: 1.0, height: ui::cells(1)), text_style: ink),
+  )
+  let _ = close.map(fn(close) {
+    children.push(
+      cui::box(
+        [cui::text(" × ", styles: line(), text_style: ui::text_style(dim: true))],
+        styles: ui::style(width: ui::cells(3), height: ui::cells(1), flex_shrink: 0.0),
+        on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+          if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
+            close()
+            mouse.prevent_default()
+            mouse.stop_propagation()
+          }
+        },
+      ),
+    )
+  })
+  cui::box(
+    children.@,
+    key: label,
+    styles: ui::style(
+      width: ui::cells(13),
+      height: ui::cells(1),
+      min_width: ui::cells(minimum),
+      flex_direction: ui::FlexDirection::row,
+    ),
+    on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+      if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
+        activate()
+        mouse.prevent_default()
+        mouse.stop_propagation()
+      }
+    },
+  )
+}
+
+struct CardProps {
+  issue: Issue,
+  selected: Bool,
+  focused: Bool,
+  hovered: Bool,
+  dragging: Bool,
+  mouse: fn(mut cooper::MouseEvent, cui::Context),
+  hover: fn(Bool),
+}
+struct IssueCard {
+  props: mut CardProps,
+}
+private fn issue_card(props: mut CardProps) mut IssueCard {
+  (mut IssueCard{props: props})
+}
+impl cui::Component for IssueCard {
+  fn mut render() cui::View {
+    let item = self.props.issue
+    mut ink = ui::text_style()
+    mut metadata = ui::text_style(dim: true)
+    let card_style = mut ui::style(width: ui::cells(38), height: ui::cells(5), flex_shrink: 0.0)
+    if self.props.selected {
+      ink = ui::text_style(foreground: ui::indexed(15), bold: true)
+      metadata = ui::text_style(foreground: ui::indexed(15))
+      card_style.background = Maybe::new(ui::indexed(4))
+    } else if self.props.hovered {
+      card_style.background = Maybe::new(ui::indexed(8))
+    }
+    mut title = item.title
+    mut label = "{item.priority}  {item.id}"
+    mut detail = "{item.cycle} · {item.project}"
+    if self.props.dragging {
+      label = "↳ {item.id} · drop on a column"
+      title = ""
+      detail = ""
+      ink = ui::text_style(dim: true)
+    }
+    cui::box(
+      [
+        cui::text(label, styles: line(), text_style: ink, selectable: false),
+        cui::text(
+          title,
+          styles: ui::style(width: ui::percent(100.0), height: ui::cells(2), flex_shrink: 0.0),
+          text_style: ink,
+          selectable: false,
+        ),
+        cui::text(detail, styles: line(), text_style: metadata, selectable: false),
+      ],
+      styles: card_style.@,
+      focused: self.props.focused,
+      on_mouse: fn(received: mut cooper::MouseEvent, ctx: cui::Context) {
+        self.props.mouse(received, ctx)
+        if received.event_type == cooper::MouseEventType::over {
+          self.props.hover(true)
+        } else if received.event_type == cooper::MouseEventType::out {
+          self.props.hover(false)
+        }
+      },
+    )
+  }
+}
+
+struct DetailProps {
+  issue: Issue,
+  active: Bool,
+  close: fn(),
+}
+struct IssueDetail {
+  props: mut DetailProps,
+  section: Str,
+  request: Int,
+  status: Str,
+}
+private fn issue_detail(props: mut DetailProps) mut IssueDetail {
+  (mut IssueDetail{
+    props: props,
+    section: "description",
+    request: 0,
+    status: "loading",
+  })
+}
+impl cui::Lifecycle for IssueDetail {
+  fn mut mounted(ctx: cui::Context) {
+    self.load(ctx, false)
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+
+impl IssueDetail {
+  fn mut load(ctx: cui::Context, fail: Bool) {
+    self.request =+ 1
+    let request = self.request
+    self.status = "loading"
+    mut delay = 650
+    if fail {
+      delay = 250
+    }
+    let milliseconds = delay
+    async::start(fn() {
+      select {
+        ctx.cancellation.recv() => (),
+        time::After(time::Duration::from(milliseconds) * time::Millisecond).recv() => {
+          let _ = ctx.dispatch(fn() {
+            if self.request == request {
+              if fail {
+                self.status = "error"
+              } else {
+                self.status = "ready"
+              }
+            }
+          })
+        },
+      }
+    })
+  }
+}
+
+impl cui::Component for IssueDetail {
+  fn mut render() cui::View {
+    let item = self.props.issue
+    mut body = "Make the interaction feel immediate and predictable. This is static demo data."
+    if self.section == "comments" {
+      body = "Maya  Yesterday  Ready for review.\nNoah  Today      Keyboard pass looks good."
+    }
+    if self.status == "loading" {
+      body = "Loading issue details… (simulated)"
+    } else if self.status == "error" {
+      body = "Simulated load failed. Press r to retry."
+    }
+    cui::box(
+      [
+        cui::text("{item.id}  {item.title}", styles: line(), text_style: blue(true)),
+        cui::text("{item.state}  ·  {item.priority}", styles: line()),
+        cui::text(
+          "Assignee {item.assignee}  ·  {item.cycle}",
+          styles: line(),
+          text_style: ui::text_style(dim: true),
+        ),
+        cui::text(
+          "Project {item.project}  ·  Team {item.team}",
+          styles: line(),
+          text_style: ui::text_style(dim: true),
+        ),
+        cui::text(
+          "────────────────────────────────────────────────────────────────",
+          styles: line(),
+          text_style: ui::text_style(dim: true),
+        ),
+        cui::text(
+          "Description [d]   Comments [c]   ·   active: {self.section}",
+          styles: line(),
+          text_style: blue(false),
+        ),
+        cui::text(
+          "r reload/retry · f simulate failure · Esc back",
+          styles: line(),
+          text_style: ui::text_style(dim: true),
+        ),
+        cui::text(
+          body,
+          styles: ui::style(width: ui::percent(100.0), height: ui::cells(5), flex_shrink: 0.0),
+        ),
+      ],
+      styles: ui::style(
+        width: ui::percent(100.0),
+        height: ui::percent(100.0),
+        padding: ui::edges(ui::cells(1)),
+      ),
+      focused: self.props.active,
+      on_key: fn(received: mut cooper::KeyEvent, ctx: cui::Context) {
+        if received.event_type == cooper::KeyEventType::press and (received.matches("r") or received.matches("f")) {
+          self.load(ctx, received.matches("f"))
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and received.matches("d") {
+          self.section = "description"
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and received.matches("c") {
+          self.section = "comments"
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and received.matches("escape") {
+          self.props.close()
+          received.prevent_default()
+          received.stop_propagation()
+        }
+      },
+    )
+  }
+}
+
+struct Notice {
+  issue: Issue,
+  activity: Str,
+}
+
+private fn notices() [Notice] {
+  let result = mut List::new<Notice>()
+  for issue in issues() {
+    if issue.id == "TIN-142" {
+      result.push(Notice{issue: issue, activity: "Maya mentioned you"})
+    } else if issue.id == "TIN-119" {
+      result.push(Notice{issue: issue, activity: "Noah requested a review"})
+    } else if issue.id == "TIN-104" {
+      result.push(Notice{issue: issue, activity: "Iris completed this issue"})
+    }
+  }
+  result.@
+}
+
+struct InboxProps {
+  active: Bool,
+  open: fn(Issue),
+}
+struct Inbox {
+  props: mut InboxProps,
+  items: [Notice],
+  selected: Int,
+  preview: Issue?,
+  loaded: [Str],
+  request: Int,
+  refreshing: Bool,
+  scroll: mut cui::ScrollBoxRef,
+}
+private fn inbox(props: mut InboxProps) mut Inbox {
+  (mut Inbox{
+    props: props,
+    items: notices(),
+    selected: 0,
+    preview: Maybe::new<Issue>(),
+    loaded: [],
+    request: 0,
+    refreshing: false,
+    scroll: cui::scroll_box_ref(),
+  })
+}
+impl cui::Lifecycle for Inbox {
+  fn mut mounted(ctx: cui::Context) {
+    self.choose(0, ctx)
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+impl Inbox {
+  fn mut choose(index: Int, ctx: cui::Context) {
+    mut next = index
+    if next >= self.items.size() {
+      next = self.items.size() - 1
+    }
+    if next < 0 {
+      next = 0
+    }
+    self.selected = next
+    self.request =+ 1
+    self.preview = Maybe::new<Issue>()
+    let _ = self.scroll.current.map(fn(scroll) {
+      scroll.scroll_to(0)
+    })
+    let request = self.request
+    let _ = self.items.at(
+      next,
+    ).map(fn(notice) Void {
+      let item = notice.issue
+      mut cached = false
+      for id in self.loaded {
+        if id == item.id {
+          cached = true
+        }
+      }
+      if cached {
+        self.preview = Maybe::new(item)
+      } else {
+        mut delay = 180
+        if item.id == "TIN-142" {
+          delay = 500
+        }
+        let milliseconds = delay
+        async::start(fn() {
+          select {
+            ctx.cancellation.recv() => (),
+            time::After(time::Duration::from(milliseconds) * time::Millisecond).recv() => {
+              let _ = ctx.dispatch(fn() {
+                if self.request == request {
+                  self.preview = Maybe::new(item)
+                  self.loaded.push(item.id)
+                }
+              })
+            },
+          }
+        })
+      }
+    })
+  }
+
+  fn mut archive(ctx: cui::Context) {
+    let kept = mut List::new<Notice>()
+    for item, index in self.items {
+      if index != self.selected {
+        kept.push(item)
+      }
+    }
+    self.items = kept.@
+    self.choose(self.selected, ctx)
+  }
+
+  fn mut refresh(ctx: cui::Context) {
+    if not self.refreshing {
+      self.refreshing = true
+      async::start(fn() {
+        select {
+          ctx.cancellation.recv() => (),
+          time::After(600 * time::Millisecond).recv() => {
+            let _ = ctx.dispatch(fn() {
+              self.refreshing = false
+            })
+          },
+        }
+      })
+    }
+  }
+}
+impl cui::Component for Inbox {
+  fn mut render() cui::View {
+    let rows = mut List::new<cui::View>()
+    mut heading = "Inbox · {self.items.size()} notifications"
+    if self.refreshing {
+      heading = "Refreshing inbox…"
+    }
+    rows.push(cui::text(heading, styles: line(), text_style: blue(false)))
+    for notice, index in self.items {
+      mut ink = ui::text_style()
+      let row_style = mut ui::style(
+        width: ui::percent(100.0),
+        height: ui::cells(3),
+        flex_shrink: 0.0,
+      )
+      if index == self.selected {
+        ink = ui::text_style(foreground: ui::indexed(15))
+        row_style.background = Maybe::new(ui::indexed(4))
+      }
+      rows.push(
+        cui::box(
+          [
+            cui::text(notice.issue.title, styles: line(), text_style: ink),
+            cui::text("{notice.activity} · {notice.issue.id}", styles: line(), text_style: ink),
+          ],
+          key: notice.issue.id,
+          styles: row_style.@,
+          focused: self.props.active and index == self.selected,
+          on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+            if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
+              self.choose(index, ctx)
+              mouse.prevent_default()
+              mouse.stop_propagation()
+            }
+          },
+        ),
+      )
+    }
+    let detail = mut List::new<cui::View>()
+    if self.items.size() == 0 {
+      rows.push(cui::text("You're all caught up.", styles: line()))
+      detail.push(cui::text("No notifications to preview.", styles: line()))
+    } else {
+      match self.preview {
+        item => {
+          detail.push(cui::text("Preview: {item.id}", styles: line(), text_style: blue(false)))
+          detail.push(
+            cui::text(item.title, styles: ui::style(height: ui::cells(2), flex_shrink: 0.0)),
+          )
+          for value in [
+            "State     {item.state}",
+            "Assignee  {item.assignee}",
+            "Priority  {item.priority}",
+            "Team      {item.team}",
+            "Project   {item.project}",
+            "Cycle     {item.cycle}",
+            "",
+            "Description",
+            "This is the static preview for {item.id}.",
+            "Keep the interaction immediate and predictable.",
+            "",
+            "Activity",
+          ] {
+            detail.push(cui::text(value, styles: line()))
+          }
+          let _ = self.items.at(
+            self.selected,
+          ).map(fn(notice) {
+            detail.push(cui::text(notice.activity, styles: line()))
+          })
+          for value in [
+            "",
+            "Comments",
+            "Maya · Yesterday",
+            "Ready for review.",
+            "",
+            "Noah · Today",
+            "Keyboard pass looks good.",
+            "",
+            "State history",
+            "Created in Todo",
+            "Latest state: {item.state}",
+            "",
+            "End of {item.id} preview",
+          ] {
+            detail.push(cui::text(value, styles: line()))
+          }
+        },
+        _ => detail.push(cui::text("Loading preview…", styles: line())),
+      }
+    }
+    cui::box(
+      [
+        cui::scroll_box(
+          rows.@,
+          styles: ui::style(width: ui::percent(35.0), height: ui::percent(100.0), flex_shrink: 0.0),
+        ),
+        cui::box(
+          [],
+          styles: ui::style(
+            width: ui::cells(1),
+            height: ui::percent(100.0),
+            background: ui::indexed(8),
+            flex_shrink: 0.0,
+          ),
+        ),
+        cui::scroll_box(
+          detail.@,
+          ref: self.scroll,
+          styles: ui::style(
+            flex_grow: 1.0,
+            height: ui::percent(100.0),
+            min_width: ui::cells(0),
+            padding: ui::edges(ui::cells(1)),
+          ),
+        ),
+      ],
+      styles: ui::style(
+        width: ui::percent(100.0),
+        height: ui::percent(100.0),
+        flex_direction: ui::FlexDirection::row,
+      ),
+      focused: self.props.active and self.items.size() == 0,
+      on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+        if key.event_type == cooper::KeyEventType::press {
+          mut handled = true
+          if key.matches("j") or key.matches("down") {
+            self.choose(self.selected + 1, ctx)
+          } else if key.matches("k") or key.matches("up") {
+            self.choose(self.selected - 1, ctx)
+          } else if key.matches("enter") or key.matches("return") {
+            let _ = self.items.at(
+              self.selected,
+            ).map(fn(notice) {
+              self.props.open(notice.issue)
+            })
+          } else if key.matches("backspace") {
+            self.archive(ctx)
+          } else if key.matches("r") {
+            self.refresh(ctx)
+          } else if key.matches("l") or key.matches("right") {
+            let _ = self.scroll.current.map(fn(scroll) {
+              scroll.scroll_by(1)
+            })
+          } else if key.matches("h") or key.matches("left") {
+            let _ = self.scroll.current.map(fn(scroll) {
+              scroll.scroll_by(-1)
+            })
+          } else if key.matches("space") {
+            let _ = self.scroll.current.map(fn(scroll) {
+              scroll.scroll_by(10)
+            })
+          } else if key.matches("space", shift: true) {
+            let _ = self.scroll.current.map(fn(scroll) {
+              scroll.scroll_by(-10)
+            })
+          } else {
+            handled = false
+          }
+          if handled {
+            key.prevent_default()
+            key.stop_propagation()
+          }
+        }
+      },
+    )
+  }
+}
+
+struct SearchProps {
+  items: [Issue],
+  open: fn(Issue),
+  close: fn(),
+}
+struct Search {
+  props: mut SearchProps,
+  query: Str,
+  results: [Issue],
+  selected: Int,
+  request: Int,
+  waiting: Bool,
+  scroll: mut cui::ScrollBoxRef,
+}
+private fn search(props: mut SearchProps) mut Search {
+  (mut Search{
+    props: props,
+    query: "",
+    results: [],
+    selected: 0,
+    request: 0,
+    waiting: false,
+    scroll: cui::scroll_box_ref(),
+  })
+}
+impl Search {
+  fn mut find(value: Str, ctx: cui::Context) {
+    self.query = value
+    self.request =+ 1
+    self.results = []
+    self.selected = 0
+    let _ = self.scroll.current.map(fn(scroll) {
+      scroll.scroll_to(0)
+    })
+    let query = value.trim()
+    self.waiting = not query.is_empty()
+    if self.waiting {
+      let request = self.request
+      async::start(fn() {
+        select {
+          ctx.cancellation.recv() => (),
+          time::After(300 * time::Millisecond).recv() => {
+            let _ = ctx.dispatch(fn() {
+              if request == self.request {
+                let matches = mut List::new<Issue>()
+                for item in self.props.items {
+                  if item.id.contains(query) or item.title.contains(query) {
+                    matches.push(item)
+                  }
+                }
+                self.results = matches.@
+                self.waiting = false
+              }
+            })
+          },
+        }
+      })
+    }
+  }
+
+  fn mut move(amount: Int) {
+    mut next = self.selected + amount
+    if next >= self.results.size() {
+      next = self.results.size() - 1
+    }
+    if next < 0 {
+      next = 0
+    }
+    self.selected = next
+    let _ = self.scroll.current.map(fn(scroll) {
+      scroll.scroll_to(next)
+    })
+  }
+
+  fn open_selected() {
+    if not self.waiting {
+      let _ = self.results.at(
+        self.selected,
+      ).map(fn(item) {
+        self.props.open(item)
+      })
+    }
+  }
+}
+impl cui::Component for Search {
+  fn mut render() cui::View {
+    let rows = mut List::new<cui::View>()
+    for item, index in self.results {
+      let styles = mut ui::style(
+        width: ui::percent(100.0),
+        height: ui::cells(1),
+        flex_shrink: 0.0,
+        flex_direction: ui::FlexDirection::row,
+        gap: ui::cells(1),
+      )
+      mut ink = ui::text_style()
+      if index == self.selected {
+        styles.background = Maybe::new(ui::indexed(4))
+        ink = ui::text_style(foreground: ui::indexed(15), bold: true)
+      }
+      rows.push(
+        cui::box(
+          [
+            cui::text(
+              item.id,
+              styles: ui::style(width: ui::cells(11), height: ui::cells(1), flex_shrink: 0.0),
+              text_style: ink,
+            ),
+            cui::text(
+              item.title,
+              styles: ui::style(flex_grow: 1.0, height: ui::cells(1), min_width: ui::cells(0)),
+              text_style: ink,
+            ),
+            cui::text(
+              item.state,
+              styles: ui::style(width: ui::cells(15), height: ui::cells(1), flex_shrink: 0.0),
+              text_style: ink,
+            ),
+          ],
+          key: item.id,
+          styles: styles.@,
+          on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+            if mouse.event_type == cooper::MouseEventType::over {
+              self.selected = index
+            } else if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
+              self.selected = index
+              self.open_selected()
+              mouse.prevent_default()
+            }
+            mouse.stop_propagation()
+          },
+        ),
+      )
+    }
+    mut status = "{self.results.size()} results"
+    if self.query.trim().is_empty() {
+      status = "Type an issue title or ID (case-sensitive)."
+    } else if self.waiting {
+      status = "Searching…"
+    } else if self.results.size() == 0 {
+      status = "No results."
+    }
+    cui::box(
+      [
+        cui::box(
+          [
+            cui::text("Search all issues", styles: line(), text_style: blue(false)),
+            cui::input(
+              self.query,
+              focused: true,
+              styles: line(),
+              placeholder: "Title or TIN-…",
+              on_input: fn(value: Str, ctx: cui::Context) {
+                self.find(value, ctx)
+              },
+            ),
+            cui::text(status, styles: line(), text_style: ui::text_style(dim: true)),
+            cui::scroll_box(
+              rows.@,
+              ref: self.scroll,
+              styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
+            ),
+            cui::text(
+              "↑/↓ select · Enter open · Esc cancel",
+              styles: line(),
+              text_style: ui::text_style(dim: true),
+            ),
+          ],
+          styles: ui::style(
+            width: ui::percent(85.0),
+            height: ui::percent(75.0),
+            border: ui::Border::rounded,
+            border_color: ui::indexed(4),
+            background: ui::indexed(0),
+            padding: ui::edges(ui::cells(1)),
+          ),
+          on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+            if key.event_type == cooper::KeyEventType::press {
+              if key.matches("escape") {
+                self.props.close()
+                key.prevent_default()
+              } else if key.matches("down") {
+                self.move(1)
+                key.prevent_default()
+              } else if key.matches("up") {
+                self.move(-1)
+                key.prevent_default()
+              } else if key.matches("enter") or key.matches("return") {
+                self.open_selected()
+                key.prevent_default()
+              } else if key.matches("tab") or key.matches("tab", shift: true) {
+                key.prevent_default()
+              }
+            }
+            key.stop_propagation()
+          },
+          on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+            mouse.stop_propagation()
+          },
+        ),
+      ],
+      styles: ui::style(
+        position: ui::Position::absolute,
+        left: ui::cells(0),
+        top: ui::cells(0),
+        width: ui::percent(100.0),
+        height: ui::percent(100.0),
+        z_index: 100,
+        align_items: ui::Align::center,
+        justify_content: ui::Justify::center,
+      ),
+      on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+        mouse.prevent_default()
+        mouse.stop_propagation()
+      },
+    )
+  }
+}
+
+struct ToastProps {
+  message: Str,
+  close: fn(),
+}
+struct Toast {
+  props: mut ToastProps,
+  offset: Int,
+}
+private fn toast(props: mut ToastProps) mut Toast {
+  (mut Toast{props: props, offset: 40})
+}
+impl cui::Lifecycle for Toast {
+  fn mut mounted(ctx: cui::Context) {
+    let _ = ctx.animate(
+      250,
+      fn(frame: animation::Frame) {
+        self.offset = animation::lerp_int(40, 0, frame.progress)
+      },
+      ease: animation::out_quad,
+    )
+    async::start(fn() {
+      select {
+        ctx.cancellation.recv() => (),
+        time::After(3 * time::Second).recv() => {
+          let _ = ctx.dispatch(fn() {
+            self.props.close()
+            // close changes the parent's notice, not the toast's local state.
+            ctx.invalidate_root()
+          })
+        },
+      }
+    })
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+impl cui::Component for Toast {
+  fn mut render() cui::View {
+    cui::box(
+      [
+        cui::box(
+          [cui::text(self.props.message, selectable: false)],
+          styles: ui::style(
+            position: ui::Position::absolute,
+            left: ui::cells(self.offset),
+            top: ui::cells(0),
+            width: ui::cells(40),
+            height: ui::cells(3),
+            border: ui::Border::rounded,
+            border_color: ui::indexed(4),
+            background: ui::indexed(0),
+          ),
+        ),
+      ],
+      styles: ui::style(
+        position: ui::Position::absolute,
+        right: ui::cells(0),
+        bottom: ui::cells(1),
+        width: ui::cells(40),
+        height: ui::cells(3),
+        overflow: ui::Overflow::hidden,
+        z_index: 60,
+      ),
+    )
+  }
+}
+
+struct ScreenProps {
+  selected: Str,
+}
+struct TinearScreen {
+  items: [Issue],
+  board: mut cui::ScrollBoxRef,
+  columns: mut [Str: mut cui::ScrollBoxRef],
+  pressed: Str,
+  dragging: Bool,
+  start_x: Int,
+  start_y: Int,
+  grab_x: Int,
+  grab_y: Int,
+  ghost_x: Int,
+  ghost_y: Int,
+  target: Str,
+  notice: Str,
+  notice_revision: Int,
+  selected: Str,
+  hovered: Str,
+  tabs: [Issue],
+  active_tab: Str,
+  global_search: Bool,
+  searching: Bool,
+  query: Str,
+  refreshing: Bool,
+  revision: Int,
+}
+private fn tinear_screen(props: mut ScreenProps) mut TinearScreen {
+  let columns = mut Map::new<mut cui::ScrollBoxRef>()
+  for state in ["Todo", "In Progress", "Done"] {
+    columns.set(state, cui::scroll_box_ref())
+  }
+  (mut TinearScreen{
+    items: issues(),
+    board: cui::scroll_box_ref(),
+    columns: columns,
+    pressed: "",
+    dragging: false,
+    start_x: 0,
+    start_y: 0,
+    grab_x: 0,
+    grab_y: 0,
+    ghost_x: 0,
+    ghost_y: 0,
+    target: "",
+    notice: "",
+    notice_revision: 0,
+    selected: props.selected,
+    hovered: "",
+    tabs: [],
+    active_tab: "",
+    global_search: false,
+    searching: false,
+    query: "",
+    refreshing: false,
+    revision: 0,
+  })
+}
+
+private fn visible(items: [Issue], state: Str, query: Str) [Issue] {
+  let result = mut List::new<Issue>()
+  for item in items {
+    if item.state == state and (query.is_empty() or item.title.contains(query) or item.id.contains(query)) {
+      result.push(item)
+    }
+  }
+  result.@
+}
+
+impl TinearScreen {
+  fn mut cancel_drag() {
+    self.pressed = ""
+    self.dragging = false
+    self.target = ""
+  }
+
+  fn destination(x: Int, y: Int) Str {
+    mut target = ""
+    let _ = self.board.current.map(fn(board) Void {
+      let viewport = board.layout().screen
+      if ui::contains(viewport, x, y) {
+        for state, ref in self.columns {
+          let _ = ref.current.map(fn(column) Void {
+            if ui::contains(ui::intersect(viewport, column.layout().screen), x, y) {
+              target = state
+            }
+          })
+        }
+      }
+    })
+    target
+  }
+
+  fn mut card_mouse(item: Issue, mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+    if mouse.button == cooper::MouseButton::left {
+      if mouse.event_type == cooper::MouseEventType::down {
+        self.pressed = item.id
+        self.selected = item.id
+        self.start_x = mouse.x
+        self.start_y = mouse.y
+        self.grab_x = mouse.local_x
+        self.grab_y = mouse.local_y
+        mouse.prevent_default()
+      } else if mouse.event_type == cooper::MouseEventType::drag and self.pressed == item.id {
+        let dx = mouse.x - self.start_x
+        let dy = mouse.y - self.start_y
+        if dx >= 2 or dx <= -2 or dy >= 2 or dy <= -2 {
+          self.dragging = true
+        }
+        if self.dragging {
+          self.target = self.destination(mouse.x, mouse.y)
+          if self.target == item.state {
+            self.target = ""
+          }
+          self.ghost_x = mouse.x - self.grab_x
+          self.ghost_y = mouse.y - self.grab_y
+          let _ = self.board.current.map(fn(board) Void {
+            let bounds = board.layout().screen
+            if self.ghost_x > bounds.x + bounds.width - 38 {
+              self.ghost_x = bounds.x + bounds.width - 38
+            }
+            if self.ghost_x < bounds.x {
+              self.ghost_x = bounds.x
+            }
+            if self.ghost_y > bounds.y + bounds.height - 5 {
+              self.ghost_y = bounds.y + bounds.height - 5
+            }
+            if self.ghost_y < bounds.y {
+              self.ghost_y = bounds.y
+            }
+          })
+        }
+        mouse.prevent_default()
+      } else if (mouse.event_type == cooper::MouseEventType::drag_end or mouse.event_type == cooper::MouseEventType::up) and self.pressed == item.id {
+        if self.dragging {
+          let target = self.destination(mouse.x, mouse.y)
+          if (not target.is_empty()) and target != item.state {
+            let kept = mut List::new<Issue>()
+            let moved = mut item
+            moved.state = target
+            for existing in self.items {
+              if existing.id != item.id {
+                kept.push(existing)
+              }
+            }
+            kept.push(moved.@)
+            self.items = kept.@
+            for tab, index in self.tabs {
+              if tab.id == item.id {
+                self.tabs.set(index, moved.@)
+              }
+            }
+            self.notice = "Moved {item.id} to {target}"
+            self.notice_revision =+ 1
+          }
+        } else {
+          self.open_issue(item)
+        }
+        self.cancel_drag()
+        mouse.prevent_default()
+      }
+      mouse.stop_propagation()
+    }
+  }
+
+  fn mut activate(id: Str) {
+    self.cancel_drag()
+    self.active_tab = id
+    self.global_search = false
+    self.searching = false
+    self.hovered = ""
+  }
+
+  fn mut open_issue(item: Issue) {
+    mut found = false
+    for tab in self.tabs {
+      if tab.id == item.id {
+        found = true
+      }
+    }
+    if not found {
+      for current in self.items {
+        if current.id == item.id {
+          self.tabs.push(current)
+        }
+      }
+    }
+    self.activate(item.id)
+  }
+
+  fn mut close_issue(id: Str) {
+    let kept = mut List::new<Issue>()
+    for tab in self.tabs {
+      if tab.id != id {
+        kept.push(tab)
+      }
+    }
+    self.tabs = kept.@
+    if self.active_tab == id {
+      self.activate("")
+    }
+  }
+
+  fn mut cycle_tab(backward: Bool) {
+    let ids = mut List::new<Str>()
+    ids.push("inbox")
+    ids.push("")
+    for item in self.tabs {
+      ids.push(item.id)
+    }
+    for id, index in ids {
+      if id == self.active_tab {
+        mut next = index + 1
+        if backward {
+          next = index - 1
+        }
+        if next < 0 {
+          next = ids.size() - 1
+        } else if next >= ids.size() {
+          next = 0
+        }
+        let _ = ids.at(
+          next,
+        ).map(fn(id) {
+          self.activate(id)
+        })
+        break
+      }
+    }
+  }
+
+  fn mut select_first_visible() {
+    let todo = visible(self.items, "Todo", self.query)
+    let active = visible(self.items, "In Progress", self.query)
+    let done = visible(self.items, "Done", self.query)
+    if todo.size() > 0 {
+      let _ = todo.at(
+        0,
+      ).map(fn(item) {
+        self.selected = item.id
+      })
+    } else if active.size() > 0 {
+      let _ = active.at(
+        0,
+      ).map(fn(item) {
+        self.selected = item.id
+      })
+    } else if done.size() > 0 {
+      let _ = done.at(
+        0,
+      ).map(fn(item) {
+        self.selected = item.id
+      })
+    }
+  }
+
+  fn mut vertical(amount: Int) {
+    let selected = self.selected
+    for state in ["Todo", "In Progress", "Done"] {
+      let column = visible(self.items, state, self.query)
+      mut index = 0
+      for item in column {
+        if item.id == selected {
+          mut next = index + amount
+          if next < 0 {
+            next = 0
+          }
+          if next >= column.size() {
+            next = column.size() - 1
+          }
+          let _ = column.at(
+            next,
+          ).map(fn(next_issue) {
+            self.selected = next_issue.id
+          })
+        }
+        index = index + 1
+      }
+    }
+  }
+
+  fn mut horizontal(amount: Int) {
+    let states = ["Todo", "In Progress", "Done"]
+    mut current = 0
+    mut row = 0
+    mut found = false
+    mut index = 0
+    for state in states {
+      for item, item_index in visible(self.items, state, self.query) {
+        if item.id == self.selected {
+          current = index
+          row = item_index
+          found = true
+        }
+      }
+      index = index + 1
+    }
+    if found {
+      mut target = current + amount
+      while target >= 0 and target < states.size() {
+        let state = states.at(target)
+        target = target + amount
+        let _ = state.map(fn(state) {
+          let column = visible(self.items, state, self.query)
+          mut next_row = row
+          if next_row >= column.size() {
+            next_row = column.size() - 1
+          }
+          let _ = column.at(
+            next_row,
+          ).map(fn(item) {
+            self.selected = item.id
+            target = states.size()
+          })
+        })
+      }
+    }
+  }
+}
+
+impl cui::Lifecycle for TinearScreen {
+  fn mut mounted(ctx: cui::Context) {
+    let _ = ctx.on_terminal_focus(fn(focus: cooper::TerminalFocus) {
+      if focus == cooper::TerminalFocus::lost {
+        self.cancel_drag()
+      }
+    })
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+
+impl cui::Component for TinearScreen {
+  fn mut render() cui::View {
+    mut chosen = Maybe::new<Issue>()
+    mut has_selection = false
+    for state in ["Todo", "In Progress", "Done"] {
+      for item in visible(self.items, state, self.query) {
+        if item.id == self.selected {
+          chosen = Maybe::new(item)
+          has_selection = true
+        }
+      }
+    }
+    let columns = mut List::new<cui::View>()
+    for state in ["Todo", "In Progress", "Done"] {
+      let cards = mut List::new<cui::View>()
+      let items = visible(self.items, state, self.query)
+      mut heading = ui::text_style(dim: true)
+      let _ = chosen.map(fn(item) Void {
+        if item.state == state {
+          heading = blue(false)
+        }
+      })
+      mut rule = "──────────────────────────────────────"
+      if self.dragging and self.target == state {
+        heading = blue(false)
+        rule = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      }
+      cards.push(cui::text("{state}  {items.size()}", styles: line(), text_style: heading))
+      cards.push(cui::text(rule, styles: line(), text_style: ui::text_style(dim: true)))
+      for item in items {
+        cards.push(
+          cui::child(
+            issue_card,
+            CardProps{
+              issue: item,
+              selected: item.id == self.selected,
+              focused: item.id == self.selected and not self.searching and self.active_tab.is_empty() and (not self.global_search),
+              hovered: item.id == self.hovered,
+              dragging: self.dragging and self.pressed == item.id,
+              mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+                self.card_mouse(item, mouse, ctx)
+              },
+              hover: fn(over: Bool) {
+                if over {
+                  self.hovered = item.id
+                } else if self.hovered == item.id {
+                  self.hovered = ""
+                }
+              },
+            },
+            key: item.id,
+          ),
+        )
+      }
+      columns.push(
+        cui::scroll_box(
+          cards.@,
+          key: state,
+          ref: self.columns.get(state),
+          styles: ui::style(width: ui::cells(38), height: ui::percent(100.0), flex_shrink: 0.0),
+        ),
+      )
+    }
+    let content = cui::scroll_box(
+      [
+        cui::box(
+          columns.@,
+          styles: ui::style(
+            width: ui::cells(118),
+            height: ui::percent(100.0),
+            flex_shrink: 0.0,
+            flex_direction: ui::FlexDirection::row,
+            gap: ui::cells(2),
+          ),
+        ),
+      ],
+      ref: self.board,
+      styles: ui::style(
+        width: ui::percent(100.0),
+        height: ui::percent(100.0),
+        min_height: ui::cells(0),
+      ),
+    )
+    mut status = "Static snapshot {self.revision} · ? search · Tab / Shift+Tab switch · 1 Inbox · 2 My Issues"
+    if self.refreshing {
+      status = "Refreshing board… · Tab / Shift+Tab switch · 1 Inbox · 2 My Issues · Esc close tab"
+    }
+    mut footer_id = "no matches"
+    if has_selection {
+      footer_id = self.selected
+    }
+    let pages = mut List::new<cui::View>()
+    pages.push(
+      cui::box(
+        [
+          cui::child(
+            inbox,
+            InboxProps{
+              active: self.active_tab == "inbox" and not self.global_search,
+              open: fn(item: Issue) {
+                self.open_issue(item)
+              },
+            },
+            key: "inbox",
+          ),
+        ],
+        key: "inbox",
+        styles: page_style(self.active_tab == "inbox"),
+      ),
+    )
+    pages.push(
+      cui::box(
+        [
+          cui::input(
+            self.query,
+            key: "search",
+            styles: line(),
+            placeholder: "Search issues…",
+            focused: self.searching and not self.global_search,
+            on_input: fn(value: Str, ctx: cui::Context) {
+              if self.searching {
+                self.query = value
+                self.select_first_visible()
+              }
+            },
+            on_key: fn(received: mut cooper::KeyEvent, ctx: cui::Context) {
+              if received.event_type == cooper::KeyEventType::press and (received.matches("enter") or received.matches("return")) {
+                self.searching = false
+                received.prevent_default()
+                received.stop_propagation()
+              } else if received.event_type == cooper::KeyEventType::press and received.matches("escape") {
+                self.searching = false
+                self.query = ""
+                self.select_first_visible()
+                received.prevent_default()
+                received.stop_propagation()
+              }
+            },
+          ),
+          content,
+        ],
+        key: "board",
+        styles: page_style(self.active_tab.is_empty()),
+      ),
+    )
+    let tabs = mut List::new<cui::View>()
+    tabs.push(
+      cui::text(
+        " TINEAR  ",
+        styles: ui::style(width: ui::cells(9), height: ui::cells(1), flex_shrink: 0.0),
+        text_style: blue(false),
+      ),
+    )
+    tabs.push(
+      tab("Inbox", self.active_tab == "inbox", fn() {
+        self.activate("inbox")
+      }),
+    )
+    tabs.push(
+      tab("My Issues", self.active_tab.is_empty(), fn() {
+        self.activate("")
+      }),
+    )
+    for item in self.tabs {
+      let active = self.active_tab == item.id
+      tabs.push(
+        tab(
+          item.id,
+          active,
+          fn() {
+            self.activate(item.id)
+          },
+          close: fn() {
+            self.close_issue(item.id)
+          },
+        ),
+      )
+      pages.push(
+        cui::box(
+          [
+            cui::child(
+              issue_detail,
+              DetailProps{
+                issue: item,
+                active: active and not self.global_search,
+                close: fn() {
+                  self.close_issue(item.id)
+                },
+              },
+              key: item.id,
+            ),
+          ],
+          key: item.id,
+          styles: page_style(active),
+        ),
+      )
+    }
+    mut hints = "selected: {footer_id} · j/k cards · h/l columns · / filter · Enter open · r refresh"
+    if self.active_tab == "inbox" {
+      hints = "j/k notifications · Enter open · Backspace archive · h/l scroll · Space page · r refresh"
+    } else if not self.active_tab.is_empty() {
+      hints = "{self.active_tab} · d description · c comments · r reload · f fail · Esc close"
+    } else if self.searching {
+      hints = "selected: {footer_id} · Type to filter · Enter accept · Esc clear"
+    }
+    let shell = cui::box(
+      [
+        cui::box(
+          tabs.@,
+          styles: ui::style(
+            width: ui::percent(100.0),
+            height: ui::cells(1),
+            flex_shrink: 0.0,
+            flex_direction: ui::FlexDirection::row,
+            gap: ui::cells(0),
+          ),
+        ),
+        cui::text(status, styles: line(), text_style: ui::text_style(dim: true)),
+        cui::box(
+          pages.@,
+          styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
+        ),
+        cui::text(hints, styles: line(), text_style: ui::text_style(dim: true)),
+      ],
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+      focused: not has_selection and not self.searching and self.active_tab.is_empty() and (not self.global_search),
+      on_key: fn(received: mut cooper::KeyEvent, ctx: cui::Context) {
+        if received.event_type == cooper::KeyEventType::press {
+          self.hovered = ""
+        }
+        if self.dragging {
+          if received.event_type == cooper::KeyEventType::press and received.matches("escape") {
+            self.cancel_drag()
+          }
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and (received.matches("?") or received.matches("?", shift: true) or received.matches("/", shift: true)) {
+          self.global_search = true
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and (received.matches("tab") or received.matches("tab", shift: true)) {
+          self.cycle_tab(received.modifiers.shift)
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and received.matches("1") and (not self.searching) {
+          self.activate("inbox")
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and received.matches("2") and (not self.searching) {
+          self.activate("")
+          received.prevent_default()
+          received.stop_propagation()
+        } else if self.searching or not self.active_tab.is_empty() {
+          // Search editing and detail navigation belong to the focused child.
+        } else if received.event_type == cooper::KeyEventType::press and received.matches("r") {
+          if not self.refreshing {
+            self.refreshing = true
+            async::start(fn() {
+              select {
+                ctx.cancellation.recv() => (),
+                time::After(700 * time::Millisecond).recv() => {
+                  let _ = ctx.dispatch(fn() {
+                    self.refreshing = false
+                    self.revision =+ 1
+                  })
+                },
+              }
+            })
+          }
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and received.matches("/") {
+          self.searching = true
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and received.matches("escape") {
+          self.query = ""
+          self.select_first_visible()
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and (received.matches("j") or received.matches("down")) {
+          self.vertical(1)
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and (received.matches("k") or received.matches("up")) {
+          self.vertical(-1)
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and (received.matches("l") or received.matches("right")) {
+          self.horizontal(1)
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and (received.matches("h") or received.matches("left")) {
+          self.horizontal(-1)
+          received.prevent_default()
+          received.stop_propagation()
+        } else if received.event_type == cooper::KeyEventType::press and (received.matches("enter") or received.matches("return")) and has_selection {
+          let _ = chosen.map(fn(item) {
+            self.open_issue(item)
+          })
+          received.prevent_default()
+          received.stop_propagation()
+        }
+      },
+    )
+    let children = mut List::new<cui::View>()
+    children.push(shell)
+    if self.dragging {
+      for item in self.items {
+        if item.id == self.pressed {
+          children.push(
+            cui::box(
+              [
+                cui::text("{item.priority}  {item.id}", styles: line(), selectable: false),
+                cui::text(item.title, styles: ui::style(height: ui::cells(2)), selectable: false),
+                cui::text("{item.cycle} · {item.project}", styles: line(), selectable: false),
+              ],
+              key: "drag-ghost",
+              styles: ui::style(
+                position: ui::Position::absolute,
+                left: ui::cells(self.ghost_x),
+                top: ui::cells(self.ghost_y),
+                width: ui::cells(38),
+                height: ui::cells(5),
+                background: ui::indexed(4),
+                z_index: 50,
+              ),
+              on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+                if mouse.event_type == cooper::MouseEventType::scroll {
+                  if mouse.modifiers.shift or mouse.scroll_x != 0 {
+                    let _ = self.board.current.map(fn(board) {
+                      board.scroll_by_x(3 * (mouse.scroll_x + mouse.scroll_y))
+                    })
+                  } else {
+                    let _ = self.columns.get(
+                      self.destination(mouse.x, mouse.y),
+                    ).map(fn(ref) Void {
+                      let _ = ref.current.map(fn(column) {
+                        column.scroll_by(3 * mouse.scroll_y)
+                      })
+                    })
+                  }
+                  mouse.prevent_default()
+                  mouse.stop_propagation()
+                }
+              },
+            ),
+          )
+        }
+      }
+    }
+    if not self.notice.is_empty() {
+      children.push(
+        cui::child(
+          toast,
+          ToastProps{message: self.notice, close: fn() {
+            self.notice = ""
+          }},
+          key: "notice-{self.notice_revision}",
+        ),
+      )
+    }
+    if self.global_search {
+      children.push(
+        cui::child(
+          search,
+          SearchProps{
+            items: self.items,
+            open: fn(item: Issue) {
+              self.open_issue(item)
+            },
+            close: fn() {
+              self.global_search = false
+            },
+          },
+          key: "global-search",
+        ),
+      )
+    }
+    cui::box(children.@, styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)))
+  }
+}
+
+fn main() {
+  let application = cooper::app().expect("create tinear example")
+  defer application.destroy()
+  let renderer = cui::mount(
+    application,
+    cui::child(tinear_screen, ScreenProps{selected: "TIN-142"}),
+  )
+  defer renderer.destroy()
+  application.run().expect("run tinear example")
+}

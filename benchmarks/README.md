@@ -56,6 +56,52 @@ The interaction benchmark reports stacking-aware hit traversal and global
 selection reconciliation separately. It verifies that every pointer event
 reaches the highest z-index sibling and that selection produces non-empty text.
 
+## CUI reconciliation
+
+`cui_reconcile.ard` isolates keyed-tree updates from HTTP and terminal I/O.
+It mounts 250, 500, and 1,000 three-node rows, then performs twenty selection
+updates with headless flushes. It verifies that the final selected row is
+painted in the viewport. Run it separately from the retained-layout suite:
+
+```sh
+ard build benchmarks/cui_reconcile.ard --out /tmp/cui-reconcile
+/tmp/cui-reconcile
+COOPER_CPU_PROFILE=/tmp/cui.pprof /tmp/cui-reconcile
+go tool pprof -top -cum /tmp/cui-reconcile /tmp/cui.pprof
+```
+
+The first profile at the Hacker News checkpoint found duplicate-key validation
+dominating CPU time: it decoded every sibling for every key. Validation now
+uses a sibling-local key set; matching indexes previous keyed children, and
+retirement indexes prepared children by retained node identity. Unkeyed
+children still match by position, and retirement traverses the original order.
+
+On the development orb with Ard 0.42, three sequential runs gave these median
+totals for twenty selection updates (no profiler enabled):
+
+| Rows | Before indexing | After indexing |
+| --- | ---: | ---: |
+| 250 | 299 ms | 110 ms |
+| 500 | 1,084 ms | 219 ms |
+| 1,000 | 4,299 ms | 584 ms |
+
+The before binary used the renderer from the
+[Hacker News checkpoint](https://github.com/akonwi/cooper/commit/76beb08beb6b7853a5127bf8b9451487f8dbe9e5).
+Historically, the 1,034-item HTTP/PTY workload's remaining 1,004 items fell from 24.7s
+to 6.4s in single runs; twelve keys with 40ms pacing fell from 2.5s to 0.59s.
+RSS was about 58 MiB before and 64 MiB after in those runs: this is a latency
+optimization, not evidence of reduced memory use. These are development
+measurements, not portable performance guarantees or CI thresholds. The load
+timings included HTTP latency and are not rendering measurements. That bulk
+fetch mode has been removed in favor of on-demand direct-reply loading.
+
+These changes do not virtualize or skip rendering components. Indexed re-adds
+in `Node.add`, full-tree property application, and allocation remain targets
+for subsequent profiling. Compare repeated runs of the same compiled workload
+without other builds or tests competing for CPU. Run
+`python3 examples/test_cui_hackernews.py` to verify demand-driven fetching and
+terminal behavior; it does not measure rendering performance.
+
 ## Main-branch baseline and profiling
 
 See [the recorded baseline](../docs/layout-profiling-baseline.md) for revisions,
@@ -175,3 +221,11 @@ cadence, coalescing, diffing and I/O on all sides.
 See [commands and pinned dependencies](bubbletea_pager/README.md) and
 [the three-way results](../docs/bubbletea-pager-benchmark.md). Bubble Tea lives in
 an isolated benchmark Go module; production dependencies are unchanged.
+
+## CUI virtualization
+
+Run `python3 benchmarks/cui_virtual_list.py --samples 10 --warmups 2` from
+the repository root to compare eager and virtual lists with 1,000 and 4,000
+already-loaded variable-height rows. It reports mount, jump, and scroll timings,
+isolated-process peak RSS, and row construction counts. Compilation and network
+requests are excluded. See [method and results](../docs/cui-virtual-list-benchmark.md).

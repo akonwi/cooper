@@ -1,0 +1,187 @@
+use ard/testing
+
+use cooper/cui
+use cooper/cui/renderer
+use cooper/event
+use cooper/testing as headless
+use cooper/ui
+
+struct Model {
+  view: cui::View,
+}
+struct Draw {
+  model: mut Model,
+}
+struct Screen {
+  props: mut Draw,
+}
+private fn screen(props: mut Draw) mut Screen {
+  (mut Screen{props: props})
+}
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    self.props.model.view
+  }
+}
+
+test fn described_focus_is_applied_after_attachment_and_reconciled() Void!Str {
+  let app = headless::new(24, 8)
+  defer app.destroy()
+  let panel = cui::box_ref()
+  let field = cui::input_ref()
+  let model = mut Model{
+    view: cui::box(
+      [
+        cui::box([], key: "panel", ref: panel, focused: true),
+        cui::input("hello", key: "field", ref: field, focused: false),
+      ],
+    ),
+  }
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  app.flush()
+  let original = panel.current.expect("attached panel")
+  try testing::assert(original.is_focused(), "focus without a key listener or lifecycle hook")
+  renderer.update(fn() {
+    model.view = cui::box(
+      [
+        cui::input("hello", key: "field", ref: field, focused: true),
+        cui::box([], key: "panel", ref: panel, focused: false),
+      ],
+    )
+  })
+  app.flush()
+  try testing::assert(field.current.expect("field").is_focused(), "focus moves to reordered input")
+  try testing::assert(not original.is_focused(), "false clears only that control's focus")
+  try testing::assert(
+    panel.current.expect("retained").node_ref.id == original.node_ref.id,
+    "identity retained",
+  )
+  renderer.update(fn() {
+    model.view = cui::box(
+      [cui::input("hello", key: "field", ref: field), cui::box([], key: "panel", ref: panel)],
+    )
+  })
+  app.flush()
+  try testing::assert(
+    field.current.expect("uncontrolled").is_focused(),
+    "omitting focus leaves it unmanaged",
+  )
+  renderer.destroy()
+  testing::assert(
+    not field.current.is_some() and not panel.current.is_some(),
+    "teardown clears refs",
+  )
+}
+
+test fn described_focus_reveals_nested_scroll_content() Void!Str {
+  let app = headless::new(24, 8)
+  defer app.destroy()
+  let target = cui::box_ref()
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::scroll_box(
+      [
+        cui::box(
+          [
+            cui::box([], styles: ui::style(width: ui::cells(40), height: ui::cells(5), flex_shrink: 0.0)),
+            cui::scroll_box(
+              [
+                cui::box([], styles: ui::style(height: ui::cells(20), flex_shrink: 0.0)),
+                cui::box(
+                  [cui::text("selected")],
+                  ref: target,
+                  focused: true,
+                  styles: ui::style(height: ui::cells(3), flex_shrink: 0.0),
+                ),
+              ],
+              styles: ui::style(width: ui::cells(18), height: ui::cells(6), flex_shrink: 0.0),
+            ),
+          ],
+          styles: ui::style(
+            width: ui::cells(60),
+            height: ui::cells(6),
+            flex_direction: ui::FlexDirection::row,
+            flex_shrink: 0.0,
+          ),
+        ),
+      ],
+      styles: ui::style(width: ui::cells(24), height: ui::cells(8)),
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let panel = target.current.expect("target")
+  try testing::assert(panel.is_focused(), "nested target focused")
+  let bounds = panel.layout().screen
+  testing::assert(
+    bounds.x >= 0 and bounds.x + bounds.width <= 24 and bounds.y >= 0 and bounds.y + bounds.height <= 8,
+    "whole target revealed in both axes",
+  )
+}
+
+test fn keys_bubble_once_and_keep_prevention_separate_from_propagation() Void!Str {
+  let app = headless::new(24, 8)
+  defer app.destroy()
+  let calls = mut List::new<Str>()
+  let field = cui::input_ref()
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::box(
+      [
+        cui::child(
+          screen,
+          Draw{
+            model: mut Model{
+              view: cui::input(
+                "",
+                focused: true,
+                ref: field,
+                on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+                  calls.push("child")
+                  if key.matches("a") {
+                    key.stop_propagation()
+                  }
+                },
+                on_input: fn(value: Str, ctx: cui::Context) {
+                  calls.push(value)
+                },
+              ),
+            },
+          },
+        ),
+      ],
+      on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+        calls.push("parent")
+        key.prevent_default()
+      },
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  for name in ["a", "b"] {
+    app.key(
+      event::key(
+        name,
+        name,
+        event::KeyEventType::press,
+        event::Modifiers{
+          shift: false,
+          ctrl: false,
+          alt: false,
+          super: false,
+        },
+      ),
+    )
+  }
+  try testing::assert(calls.size() == 4, "one route per key and only one input default")
+  try testing::assert(
+    calls.at(0).or("") == "child" and calls.at(1).or("") == "a",
+    "stop propagation still permits editing",
+  )
+  testing::assert(
+    calls.at(2).or("") == "child" and calls.at(3).or("") == "parent",
+    "bubble crosses component boundary before default",
+  )
+}

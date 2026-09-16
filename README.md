@@ -72,6 +72,21 @@ standalone programs. Only `destroy()` is final; call `wait()` after requesting
 destruction before a standalone process exits. `suspend()` and `resume()`
 temporarily release and reacquire the terminal while retaining the tree.
 
+## Experimental declarative components
+
+`cooper/cui` adds persistent component structs, ordinary mutable state,
+optional lifecycle methods, and keyed view reconciliation without hooks or
+generated glue. `d.child(factory, props, key:)` supplies ordinary typed props and
+automatically retains nested components by view identity. This
+opt-in layer requires Ard v0.42.0 and leaves the imperative API unchanged.
+
+See the [framework guide](./docs/declarative.md) and run
+`ard run declarative_jobs.ard` from `examples` for editable, reorderable components.
+`ard run cui_tinear.ard` runs a larger static-data issue board with filtering and
+keyboard-driven detail components, modeled on [tinear](https://github.com/akonwi/tinear).
+The initial primitives are text, input, box, and scroll box. The renderer owns
+the expanded component tree; lifecycle hooks manage each component's own resources.
+
 ## Animation
 
 Runtime-owned timelines apply typed update closures on Cooper's UI thread and

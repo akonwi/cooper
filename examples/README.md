@@ -22,6 +22,173 @@ ard run quickstart.ard
 
 Use Left and Right to change the counter, or press Q to quit.
 
+## Declarative jobs
+
+`declarative_jobs.ard` exercises the experimental `cooper/cui` framework
+and requires Ard v0.42.0. Row factories receive ordinary typed props; persistent
+components own editable notes and expandable details, while keyed reordering
+preserves their component state, editor state, and focus.
+
+```sh
+ard run declarative_jobs.ard
+python3 test_declarative_jobs.py
+```
+
+Type a note in Alpha, press F2 to expand details, F3 to reorder, and F4 to
+remove/reinsert Beta. Press Ctrl+C to quit. See the
+[framework guide](../docs/declarative.md) for identity and lifecycle contracts.
+
+## CUI controls
+
+`cui_controls.ard` is a declarative issue editor using TabSelect, Select, and
+TextArea. Tab/Shift+Tab changes focus; arrows navigate choices; Enter commits a
+choice or inserts a newline in the editor. F2 rejects edits through controlled
+state, F3 reorders keyed fields without replacing them, and F4 clears selection
+and text. Ctrl+C quits.
+
+```sh
+ard run cui_controls.ard
+python3 test_cui_controls.py
+```
+
+The PTY test checks popup navigation across rerenders, controlled multiline
+editing, keyed reorder, and compact layout. Set `CUI_CAPTURE_DIR` to record ANSI
+snapshots. This example requires Ard v0.42.0.
+
+## CUI Tinear
+
+`cui_tinear.ard` is a static-data adaptation of [tinear](https://github.com/akonwi/tinear).
+It uses keyed issue cards, component-owned detail state, and declarative focus.
+The Inbox uses a ScrollBoxRef for preview scrolling without changing focus.
+Run `ard run cui_tinear.ard` or `python3 test_cui_tinear.py` here.
+
+Use j/k or arrows for cards, h/l for columns, Enter to open/reuse an issue tab,
+d/c for Description/Comments, and Escape to close the active issue tab.
+Tab/Shift+Tab cycle through Inbox, My Issues, and open issue tabs; `1` opens Inbox
+and `2` returns to My Issues.
+Click tab labels to switch or their × to close. Closing an inactive tab leaves
+the current page alone. Footer hints follow the active page.
+
+`/` focuses the case-sensitive local
+title/identifier filter; Enter accepts it, then Enter opens the selected result.
+Escape clears the filter. Ctrl+C quits. A 126-column terminal shows all three
+columns. Horizontal navigation preserves the row, clamps in shorter columns,
+and skips empty columns. Selection scrolls fully into view on both axes; cards
+can also be hovered and clicked to open. Column headings show result counts.
+Open tabs retain their own section and loading/error state while hidden. Switching
+does not cancel work; closing does. Reopening a closed tab starts fresh. The board
+retains its filter and selection across tab switches.
+Drag a card at least two cells to move it between visible workflow columns.
+A floating card follows the grab point, the source remains a placeholder, and
+the destination gets a heavy header rule. Releasing in the source column or
+outside a column does nothing; Escape or terminal-focus loss cancels the gesture.
+Small pointer jitter still counts as a click. Wheel scrolling works over the
+ghost, including Shift+wheel for horizontal board scrolling.
+
+A successful drop appends the card to the destination and keeps it selected.
+The updated state appears in detail tabs and global search. A confirmation toast
+slides in over 250ms using `ctx.animate` and expires after three seconds. The
+toast owns its animation and expiration; replacing/unmounting it stops its work.
+Moves update this process's static data only; there is no server mutation or
+rollback. Run `python3 test_cui_tinear_drag.py` for pointer/animation PTY coverage;
+`TINEAR_CAPTURE_DIR` optionally records ANSI snapshots.
+
+This is not a full clone: document search, other issue editing, and session
+restoration across process restarts are not implemented.
+
+`?` opens global issue search from any page. Type a case-sensitive title or ID,
+use ↑/↓ to select, and Enter or a click to open/reuse its issue tab. Escape
+closes the dialog and restores the previous page's focus. Search debounces for
+300ms with simulated async work; changing the query clears old results, and
+closing the dialog cancels pending work. The dialog blocks background clicks
+and tab navigation. Global search is independent of the board's local filter.
+
+Inbox has three static notifications in a 35% list / preview split. Use j/k or
+arrows to select, Enter to open the selected issue, Backspace to archive locally,
+and r to simulate refresh (archived notices stay archived). Click a row to select
+it. h/l scroll the preview one row, Space/Shift+Space page by ten rows. Preview
+loads are simulated, cached, and ignore stale responses. Selection resets preview
+scrolling; switching tabs preserves the Inbox. Empty Inbox remains navigable.
+
+Detail loading is simulated with a 650ms delay. Press r to reload/retry, f to
+simulate a failed request, or Escape while loading to exercise automatic
+component cancellation. On the board, r simulates a 700ms refresh while leaving
+the static issue data unchanged. Repeated refreshes are single-flight; detail
+reloads ignore superseded responses using a request counter. Components use
+ordinary `async::start` workers, select on mount cancellation, and deliver state
+changes through `ctx.dispatch`. No networking is involved.
+
+## CUI Hacker News
+
+`cui_hackernews.ard` is a read-only client for the official Hacker News Firebase
+API, requiring Ard v0.42.0. It exercises real HTTP requests, component-owned
+async scheduling, keyed lists, nested comments, focus reveal, and scrolling.
+
+```sh
+ard run cui_hackernews.ard
+ard test hackernews
+python3 test_cui_hackernews.py
+```
+
+Use 1/2/3/4 for Top/New/Ask/Show, j/k or arrows to select, Enter or a click to
+open a story or collapse/expand a comment, and Escape to return to the feed.
+Space/PageDown and Shift+Space/PageUp scroll ten rows without moving selection,
+including within comments taller than the viewport. Ctrl+C quits. Story URLs
+are terminal hyperlinks; comment markup is rendered as plain text, preserving
+paragraphs, Unicode, and link labels (not inline link destinations).
+
+Opening a story loads its first 30 top-level comments with their bodies visible
+and replies collapsed. Expanding a comment loads only its first 30 direct
+replies, never its whole subtree. Re-expansion reuses loaded items. Press m for
+another 30 stories in the feed, or another 30 direct replies of the selected
+expanded comment. Select the story header and press m for more top-level comments.
+Press r to retry failures after current requests settle. Six workers per page and a shared
+six-connection HTTP transport bound concurrency. Responses have a ten-second
+timeout and a 2 MiB size cap. Successful items are cached for this process's
+lifetime. Returning from a story retains the feed's selection and scroll;
+switching feeds or closing a reader retires that component. The next read uses
+the cache, but collapse state resets after closing a reader. Deleted/dead
+comments retain their replies. Deep nesting caps visual indentation at 20 cells.
+
+Ard 0.42 has no native HTTP/JSON modules, so those platform operations are
+isolated in `hackernews/api.ard`. Workers use `ctx.dispatch`; unmount prevents
+late UI updates and follow-on scheduling. **Already-running HTTP requests are
+not actively aborted**: they finish or time out. This is not request cancellation.
+The client is read-only: no authentication, voting, posting, or persistent cache.
+
+The PTY test runs against a local HTTP fixture, not the public service. It checks
+out-of-order completions, retries, cached expansion, deleted/dead comments,
+nested replies, stale feed/reader completions, compact layout, and clean exit.
+`HN_API_ROOT` overrides the API base URL for fixtures. `HN_CAPTURE_DIR` optionally
+records ANSI snapshots. Request-count assertions check that opening, expanding,
+and paginating fetch only the requested level; collapsing hides replies but
+preserves the parent body. Collapsing does not cancel an already-requested batch.
+Feeds and expanded comments use `cui::virtual_list`: only viewport/overscan rows
+and the focused row retain controls. The page model keeps cached data, expansion,
+and selection independently of mounted rows. Scrollbar dragging can leave the
+selection offscreen; keyboard selection reveals it again. The fixture checks
+that navigating across the mounted window does not fetch additional items.
+Use the [network-free virtualization benchmark](../docs/cui-virtual-list-benchmark.md)
+to measure rendering latency and peak RSS separately from fetching.
+
+## CUI virtual comments
+
+`cui_virtual_comments.ard` exercises 4,000 already-loaded comments with variable
+heights, nesting, and width-dependent wrapping. It makes no network requests.
+Its blank scrollbar track and cyan block thumb demonstrate consumer-provided
+`scrollbar_options`; they do not change Cooper's defaults.
+
+```sh
+ard run cui_virtual_comments.ard
+python3 test_cui_virtual_comments.py
+```
+
+Use arrows/PageUp/PageDown to scroll, e to collapse/expand the top visible comment,
+g to jump to comment 2000, t to return to the top, and Ctrl+C to quit. The PTY test
+covers paging, jumps, rewrapping, and collapse/expansion. `CUI_CAPTURE_DIR` enables
+ANSI captures. See the [virtual-list API](../docs/declarative.md#virtual-lists)
+for row lifetime, stable keys, defaults, and scrollbar customization.
+
 ## Animation
 
 `animation.ard` moves one retained Text control through a Runtime-owned typed

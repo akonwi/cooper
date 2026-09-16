@@ -1,0 +1,137 @@
+use ard/testing
+
+use cooper/cui
+use cooper/cui/renderer
+use cooper/event
+use cooper/testing as headless
+
+struct Panels {
+  first: mut cui::BoxRef,
+  second: mut cui::BoxRef,
+  reverse: Bool,
+  enabled: Bool,
+  calls: Int,
+}
+
+struct PanelScreen {
+  props: mut Panels,
+}
+
+struct PanelProps {
+  model: mut Panels,
+}
+
+private fn screen(props: mut PanelProps) mut PanelScreen {
+  (mut PanelScreen{props: props.model})
+}
+
+impl cui::Component for PanelScreen {
+  fn mut render() cui::View {
+    mut handler = Maybe::new<fn(mut event::KeyEvent, cui::Context)>()
+    if self.props.enabled {
+      handler = Maybe::new(fn(key: mut event::KeyEvent, ctx: cui::Context) {
+        self.props.calls =+ 1
+      })
+    }
+    let first = cui::box([], key: "first", ref: self.props.first, on_key: handler)
+    let second = cui::box([], key: "second", ref: self.props.second)
+    if self.props.reverse {
+      cui::box([second, first])
+    } else {
+      cui::box([first, second])
+    }
+  }
+}
+
+test fn box_refs_retain_focus_and_clear_on_teardown() Void!Str {
+  let app = headless::new(20, 4)
+  defer app.destroy()
+  let first = cui::box_ref()
+  let second = cui::box_ref()
+  let props = mut Panels{
+    first: first,
+    second: second,
+    reverse: false,
+    enabled: true,
+    calls: 0,
+  }
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::child(screen, PanelProps{model: props}),
+  )
+  let panel = first.current.expect("attached")
+  try testing::assert(panel.focus(), "handler makes a box focusable")
+  try testing::assert(
+    not second.current.expect("passive").focus(),
+    "ref alone does not make it focusable",
+  )
+  renderer.update(fn() {
+    props.reverse = true
+  })
+  app.flush()
+  try testing::assert(
+    first.current.expect("retained").node_ref.id == panel.node_ref.id and panel.is_focused(),
+    "keyed reorder retains focused box",
+  )
+  app.key(
+    event::key(
+      "x",
+      "x",
+      event::KeyEventType::press,
+      event::Modifiers{
+        shift: false,
+        ctrl: false,
+        alt: false,
+        super: false,
+      },
+    ),
+  )
+  app.flush()
+  try testing::assert(props.calls == 1, "reconciliation does not duplicate listeners")
+  renderer.update(fn() {
+    props.enabled = false
+  })
+  app.flush()
+  try testing::assert(
+    not panel.is_focused() and not panel.focus(),
+    "removing handler removes focusability",
+  )
+  renderer.destroy()
+  try testing::assert(not first.current.is_some() and not second.current.is_some(), "both refs clear")
+  testing::assert(panel.node_ref.is_destroyed(), "renderer owns controls")
+}
+
+test fn box_refs_reject_duplicate_and_cross_renderer_ownership_before_mutation() Void!Str {
+  let app = headless::new(20, 4)
+  defer app.destroy()
+  let ref = cui::box_ref()
+  let renderer = renderer::mount(app.context, app.root, cui::box([], ref: ref))
+  let original = ref.current.expect("original")
+  let stolen = unsafe {
+    renderer::mount(app.context, app.root, cui::box([], ref: ref))
+  }
+  match stolen {
+    ok(_) => try testing::fail("must reject cross-renderer ownership"),
+    err(message) => try testing::assert(message.contains("outside this renderer"), message),
+  }
+  let duplicate = cui::box_ref()
+  let failed = unsafe {
+    renderer::mount(
+      app.context,
+      app.root,
+      cui::box([cui::box([], ref: duplicate), cui::box([cui::box([], ref: duplicate)])]),
+    )
+  }
+  match failed {
+    ok(_) => try testing::fail("must reject nested duplicate refs"),
+    err(message) => try testing::assert(message.contains("two views"), message),
+  }
+  try testing::assert(not duplicate.current.is_some(), "validation precedes attachment")
+  try testing::assert(
+    ref.current.expect("preserved").node_ref.id == original.node_ref.id,
+    "original owner unchanged",
+  )
+  renderer.destroy()
+  testing::assert(not ref.current.is_some(), "original renderer still owns cleanup")
+}

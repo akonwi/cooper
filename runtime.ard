@@ -154,6 +154,11 @@ struct SelectionListener {
   handler: fn(public_selection::Selection?),
 }
 
+private struct LayoutHook {
+  active: Bool,
+  handler: fn() Bool,
+}
+
 struct PendingSelection {
   revision: Int,
   value: public_selection::Selection?,
@@ -264,6 +269,7 @@ private struct State {
   terminal_focus_state: event::TerminalFocus?,
   terminal_focus_listeners: [TerminalFocusListener],
   selection_listeners: [SelectionListener],
+  layout_hooks: [mut LayoutHook],
   painted_selection: public_selection::Selection?,
   pending_selection: PendingSelection?,
   selection_notifying: Bool,
@@ -404,6 +410,7 @@ private fn state(
     terminal_focus_state: Maybe::new<event::TerminalFocus>(),
     terminal_focus_listeners: [],
     selection_listeners: [],
+    layout_hooks: [],
     painted_selection: Maybe::new<public_selection::Selection>(),
     pending_selection: Maybe::new<PendingSelection>(),
     selection_notifying: false,
@@ -1202,6 +1209,7 @@ impl State {
       self.paste_listeners = []
       self.terminal_focus_listeners = []
       self.selection_listeners = []
+      self.layout_hooks = []
       self.pointer.clear()
       self.selection.destroy()
       self.clipboard.internal_stop()
@@ -1374,6 +1382,7 @@ impl State {
       self.live_paste_buffer.reset()
       self.terminal_focus_listeners = []
       self.selection_listeners = []
+      self.layout_hooks = []
       self.pointer.clear()
       self.selection.destroy()
       self.clipboard.internal_stop()
@@ -1486,6 +1495,46 @@ impl State {
     }
   }
 
+  // Internal retained-layout participants may materialize children after layout,
+  // never during measurement or paint. Settle their geometry before presenting.
+  fn mut internal_on_layout(handler: fn() Bool) fn() {
+    let _ = self.next_listener()
+    let retained = mut List::new<mut LayoutHook>()
+    for hook in self.layout_hooks {
+      if hook.active {
+        retained.push(hook)
+      }
+    }
+    let hook = mut LayoutHook{active: true, handler: handler}
+    retained.push(hook)
+    self.layout_hooks = retained.@
+    fn() {
+      hook.active = false
+      hook.handler = fn() Bool {
+        false
+      }
+    }
+  }
+
+  private fn mut settle_layout(root: mut node::Renderable, width: Int, height: Int) {
+    mut changed = true
+    mut passes = 0
+    while changed {
+      if passes == 32 {
+        panic("retained layout did not converge")
+      }
+      passes =+ 1
+      self.compute_layout(root, width, height)
+      changed = false
+      let hooks = self.layout_hooks
+      for hook in hooks {
+        if hook.active and hook.handler() {
+          changed = true
+        }
+      }
+    }
+  }
+
   private fn mut draw(
     root: mut node::Renderable,
     width: Int,
@@ -1493,18 +1542,24 @@ impl State {
     cell_width: Int?,
     cell_height: Int?,
   ) mut paint::Buffer {
-    self.compute_layout(root, width, height)
+    self.settle_layout(root, width, height)
     self.focused.reconcile(root)
     let focus_changed = self.focused.take_reveal_request()
-    if focus_changed or not self.suppress_focus_reveal {
+    // Manual scrolling remains authoritative across release events and later
+    // paints. An explicit focus request resumes automatic focus reveal.
+    if focus_changed {
+      self.suppress_focus_reveal = false
+    }
+    if not self.suppress_focus_reveal {
       match self.focused.focused() {
         target => {
-          let _ = focus::reveal(root, target)
+          if focus::reveal(root, target) {
+            self.settle_layout(root, width, height)
+          }
         },
         _ => (),
       }
     }
-    self.suppress_focus_reveal = false
     if root.node().reconcile_overlay_layout() {
       // Absolute Root overlays do not affect owner geometry. Settle their new
       // bounds in this frame before selection, painting, and hit reconciliation.
@@ -2753,6 +2808,14 @@ impl Runtime {
 
   fn mut compute_layout(root: mut node::Renderable, width: Int, height: Int) {
     internal_state(self).compute_layout(root, width, height)
+  }
+
+  fn mut internal_on_layout(handler: fn() Bool) fn() {
+    internal_state(self).internal_on_layout(handler)
+  }
+
+  fn mut internal_preserve_focus_scroll() {
+    internal_state(self).suppress_focus_reveal = true
   }
 
   fn mut open_url(target: Str) Void!Error {

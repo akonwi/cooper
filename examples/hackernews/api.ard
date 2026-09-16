@@ -1,0 +1,120 @@
+use go:encoding/json
+use go:html
+use go:io
+use go:net/http
+use go:os
+use go:strings
+use go:time
+
+// Platform boundary: Ard 0.42 has no native HTTP, JSON, or HTML entity APIs.
+
+struct Item {
+  id: Int?,
+  title: Str?,
+  by: Str?,
+  text: Str?,
+  url: Str?,
+  score: Int?,
+  descendants: Int?,
+  kids: [Int]?,
+  deleted: Bool?,
+  dead: Bool?,
+}
+
+struct Client {
+  root: Str,
+  http: mut http::Client,
+}
+
+fn client() Client {
+  let transport = mut http::Transport{MaxConnsPerHost: 6}
+  Client{
+    root: os::LookupEnv("HN_API_ROOT").or("https://hacker-news.firebaseio.com/v0"),
+    http: mut http::Client{Timeout: 10 * time::Second, Transport: transport},
+  }
+}
+
+private fn read(client: Client, path: Str, target: mut $T) Void!Str {
+  match client.http.Get("{client.root}/{path}.json") {
+    err(error) => Result::err("Request failed: {error}"),
+    ok(response) => {
+      defer response.Body.Close()
+      if response.StatusCode != 200 {
+        Result::err("HTTP {response.StatusCode}; press r to retry")
+      } else {
+        // Read one extra byte to distinguish an oversized response from EOF.
+        match io::ReadAll(io::LimitReader(response.Body, 2097153)) {
+          err(error) => Result::err("Read failed: {error}"),
+          ok(bytes) => {
+            if bytes.size() > 2097152 {
+              Result::err("Response exceeds 2 MiB")
+            } else {
+              match json::Unmarshal(mut bytes, target) {
+                ok(_) => Result::ok(()),
+                err(_) => Result::err("Invalid JSON; press r to retry"),
+              }
+            }
+          },
+        }
+      }
+    },
+  }
+}
+
+impl Client {
+  fn feed(name: Str) [Int]!Str {
+    mut ids: [Int] = []
+    try read(self, "{name}stories", mut ids)
+    Result::ok(ids)
+  }
+
+  fn item(id: Int) Item!Str {
+    let value = mut Item{}
+    try read(self, "item/{id}", value)
+    if value.id.or(0) != id {
+      Result::err("Item {id} is unavailable")
+    } else {
+      value.title = value.title.map(plain)
+      value.text = value.text.map(plain)
+      value.by = value.by.map(plain)
+      value.url = value.url.map(plain)
+      Result::ok(value.@)
+    }
+  }
+}
+
+// HN supplies a small HTML subset. Preserve paragraphs and link text, then
+// decode entities after stripping tags so escaped '<' remains literal text.
+fn plain(value: Str) Str {
+  let result = mut List::new<Str>()
+  mut tag = ""
+  mut inside = false
+  for rune in value {
+    let ch = rune.to_str()
+    if ch == "<" {
+      inside = true
+      tag = ""
+    } else if ch == ">" and inside {
+      inside = false
+      if tag == "p" or tag == "/p" or tag == "br" or tag == "br/" or tag == "br /" {
+        result.push("\n")
+      }
+    } else if inside {
+      if tag.size() < 8 {
+        tag = tag + ch
+      }
+    } else {
+      result.push(ch)
+    }
+  }
+  // Strip terminal control characters from untrusted content after decoding.
+  let safe = mut List::new<Str>()
+  for rune in html::UnescapeString(strings::Join(result, "")) {
+    let ch = rune.to_str()
+    // U+00A0 is the first scalar after the C1 control block.
+    if ch == "\n" or ch == "\t" or rune >= ' ' and rune <= '~' or rune >= '\u00a0' {
+      safe.push(ch)
+    }
+  }
+  strings::TrimSpace(strings::Join(safe, ""))
+}

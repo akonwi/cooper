@@ -1,0 +1,246 @@
+use ard/testing
+
+use cooper/core/virtual_extent
+
+private fn assert_panics(action: fn(), expected: Str) Void!Str {
+  let outcome = unsafe {
+    action()
+  }
+  match outcome {
+    ok(_) => testing::fail("expected panic containing {expected}"),
+    err(message) => testing::assert(message.contains(expected), "expected {expected}, got {message}"),
+  }
+}
+
+private fn assert_reference(index: mut virtual_extent::Index, heights: [Int]) Void!Str {
+  try testing::assert(index.count() == heights.size(), "reference count")
+  mut sum = 0
+  for height, row in heights {
+    try testing::assert(index.prefix(row) == sum, "prefix at {row}")
+    // Every offset, including both sides of every boundary, has an independent oracle.
+    for mut within = 0; within < height; within =+ 1 {
+      try testing::assert(index.index_at(sum + within) == row, "offset {sum + within}, row {row}")
+    }
+    sum =+ height
+  }
+  try testing::assert(index.prefix(heights.size()) == sum, "final prefix")
+  try testing::assert(index.total() == sum, "reference total")
+  try testing::assert(index.index_at(sum) == heights.size(), "end sentinel")
+  try testing::assert(index.index_at(sum + 17) == heights.size(), "beyond sentinel")
+  testing::assert(index.index_at(-19) == 0, "negative offset clamps")
+}
+
+test fn virtual_extent_asymmetric_boundaries_and_updates() Void!Str {
+  let index = virtual_extent::new(["a", "b", "c", "d", "e"], 3)
+  try testing::assert(index.set_height(0, 2), "first update")
+  try testing::assert(index.set_height(1, 7), "second update")
+  try testing::assert(index.set_height(2, 1), "third update")
+  try testing::assert(index.set_height(3, 4), "fourth update")
+  try testing::assert(not index.set_height(4, 3), "unchanged estimate")
+  try assert_reference(index, [2, 7, 1, 4, 3])
+  try testing::assert(index.key(3) == "d" and index.position("b").or(-1) == 1, "key lookup")
+  try testing::assert(not index.position("missing").is_some(), "missing key")
+  try testing::assert(index.set_height(1, 1), "shrink")
+  try testing::assert(not index.set_height(1, 1), "repeat measurement")
+  try testing::assert(index.set_height(4, 9), "grow last")
+  assert_reference(index, [2, 1, 1, 4, 9])
+}
+
+test fn virtual_extent_replacement_retains_only_surviving_measurements() Void!Str {
+  let index = virtual_extent::new(["a", "b", "c", "d"], 5)
+  let _ = index.set_height(0, 9)
+  let _ = index.set_height(2, 2)
+  try testing::assert(not index.set_height(3, 5), "measurement equal to estimate")
+  index.replace(["d", "c", "new", "b"], 7)
+  try assert_reference(index, [5, 2, 7, 7])
+  try testing::assert(index.position("c").or(-1) == 1 and index.key(0) == "d", "reordered positions")
+  try testing::assert(not index.position("a").is_some(), "removed position")
+  index.replace(["a", "b", "d", "c"], 3)
+  try assert_reference(index, [3, 3, 5, 2])
+  index.reset(4)
+  try assert_reference(index, [4, 4, 4, 4])
+  try testing::assert(index.key(2) == "d" and index.position("c").or(-1) == 3, "reset preserves keys")
+  index.replace(["c", "d", "b", "a"], 6)
+  assert_reference(index, [6, 6, 6, 6])
+}
+
+test fn virtual_extent_empty_and_single_row() Void!Str {
+  let index = virtual_extent::new([], 2)
+  try assert_reference(index, [])
+  try testing::assert(not index.position("").is_some(), "empty positions")
+  index.reset(7)
+  index.replace([""], 4)
+  try assert_reference(index, [4])
+  try testing::assert(index.position("").or(-1) == 0, "empty string is a valid key")
+  let _ = index.set_height(0, 8)
+  index.replace([], 1)
+  index.replace([""], 3)
+  assert_reference(index, [3])
+}
+
+test fn virtual_extent_contract_panics_preserve_state() Void!Str {
+  try assert_panics(
+    fn() {
+      let _ = virtual_extent::new([], 0)
+    },
+    "estimate",
+  )
+  try assert_panics(
+    fn() {
+      let _ = virtual_extent::new(["a"], -1)
+    },
+    "estimate",
+  )
+  try assert_panics(
+    fn() {
+      let _ = virtual_extent::new(["a", "a"], 2)
+    },
+    "unique",
+  )
+  let index = virtual_extent::new(["a", "b"], 3)
+  let _ = index.set_height(1, 5)
+  try assert_panics(
+    fn() {
+      let _ = index.key(-1)
+    },
+    "bounds",
+  )
+  try assert_panics(
+    fn() {
+      let _ = index.key(2)
+    },
+    "bounds",
+  )
+  try assert_panics(
+    fn() {
+      let _ = index.prefix(-1)
+    },
+    "bounds",
+  )
+  try assert_panics(
+    fn() {
+      let _ = index.prefix(3)
+    },
+    "bounds",
+  )
+  try assert_panics(
+    fn() {
+      let _ = index.set_height(-1, 1)
+    },
+    "bounds",
+  )
+  try assert_panics(
+    fn() {
+      let _ = index.set_height(2, 1)
+    },
+    "bounds",
+  )
+  try assert_panics(
+    fn() {
+      let _ = index.set_height(0, 0)
+    },
+    "height",
+  )
+  try assert_panics(
+    fn() {
+      let _ = index.set_height(0, -2)
+    },
+    "height",
+  )
+  try assert_panics(
+    fn() {
+      index.replace(["b", "b"], 1)
+    },
+    "unique",
+  )
+  try assert_panics(
+    fn() {
+      index.replace([], 0)
+    },
+    "estimate",
+  )
+  try assert_panics(
+    fn() {
+      index.reset(-1)
+    },
+    "estimate",
+  )
+  try assert_reference(index, [3, 5])
+  index.replace(["b", "a"], 2)
+  assert_reference(index, [5, 2])
+}
+
+test fn virtual_extent_overflow_is_checked_before_mutation() Void!Str {
+  let limit = 9223372036854775807
+  try assert_panics(
+    fn() {
+      let _ = virtual_extent::new(["a", "b"], limit)
+    },
+    "overflow",
+  )
+  let index = virtual_extent::new(["a", "b", "c"], 1)
+  let _ = index.set_height(1, limit - 2)
+  try testing::assert(index.total() == limit and index.prefix(2) == limit - 1, "maximum total")
+  try testing::assert(index.index_at(limit - 2) == 1, "near maximum interior")
+  try testing::assert(index.index_at(limit - 1) == 2, "near maximum boundary")
+  try testing::assert(index.index_at(limit) == 3, "maximum sentinel")
+  try assert_panics(
+    fn() {
+      let _ = index.set_height(0, 2)
+    },
+    "overflow",
+  )
+  try assert_panics(
+    fn() {
+      index.replace(["a", "b", "c", "d"], 1)
+    },
+    "overflow",
+  )
+  try assert_panics(
+    fn() {
+      index.reset(limit)
+    },
+    "overflow",
+  )
+  try testing::assert(index.count() == 3 and index.total() == limit, "failed changes preserve state")
+  let _ = index.set_height(1, 2)
+  try assert_reference(index, [1, 2, 1])
+  index.replace(["a", "b", "c"], 7)
+  assert_reference(index, [7, 2, 7])
+}
+
+test fn virtual_extent_large_deterministic_reference() Void!Str {
+  let keys = mut List::new<Str>()
+  let heights = mut List::new<Int>()
+  for mut row = 0; row < 2053; row =+ 1 {
+    keys.push("key-{row}")
+    heights.push(4)
+  }
+  let index = virtual_extent::new(keys.@, 4)
+  for mut turn = 0; turn < 7000; turn =+ 1 {
+    let row = (turn * 1297 + 53) % 2053
+    let remainder = (turn * 43 + row * 7) % 29
+    let height = remainder + 1
+    let previous = heights.at(row).expect("reference height")
+    try testing::assert(index.set_height(row, height) == (previous != height), "changed flag at {turn}")
+    heights.set(row, height)
+    if turn % 1000 == 0 {
+      try assert_reference(index, heights.@)
+    }
+  }
+  try assert_reference(index, heights.@)
+  let reordered = mut List::new<Str>()
+  let reversed_heights = mut List::new<Int>()
+  for mut row = 0; row < 2053; row =+ 1 {
+    let old = 2052 - row
+    reordered.push(keys.at(old).expect("reference key"))
+    reversed_heights.push(heights.at(old).expect("reference height"))
+  }
+  index.replace(reordered.@, 31)
+  try assert_reference(index, reversed_heights.@)
+  for mut row = 0; row < 2053; row =+ 1 {
+    let key = reordered.at(row).expect("reference key")
+    try testing::assert(index.key(row) == key and index.position(key).or(-1) == row, "reordered key {row}")
+  }
+  testing::assert(index.count() == 2053, "large count")
+}

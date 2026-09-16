@@ -109,7 +109,6 @@ fn config(
 struct TabConfig {
   tab_width: Int,
   show_description: Bool,
-  show_underline: Bool,
   show_arrows: Bool,
   wrap_selection: Bool,
 }
@@ -117,7 +116,6 @@ struct TabConfig {
 fn TabConfig::new(
   tab_width: Int?,
   show_description: Bool?,
-  show_underline: Bool?,
   show_arrows: Bool?,
   wrap_selection: Bool?,
 ) TabConfig {
@@ -128,23 +126,15 @@ fn TabConfig::new(
   TabConfig{
     tab_width: width,
     show_description: show_description.or(true),
-    show_underline: show_underline.or(true),
     show_arrows: show_arrows.or(true),
     wrap_selection: wrap_selection.or(false),
   }
 }
 
-fn tab_config(
-  tab_width: Int?,
-  show_description: Bool?,
-  show_underline: Bool?,
-  show_arrows: Bool?,
-  wrap_selection: Bool?,
-) TabConfig {
+fn tab_config(tab_width: Int?, show_description: Bool?, show_arrows: Bool?, wrap_selection: Bool?) TabConfig {
   TabConfig::new(
     tab_width: tab_width,
     show_description: show_description,
-    show_underline: show_underline,
     show_arrows: show_arrows,
     wrap_selection: wrap_selection,
   )
@@ -169,7 +159,6 @@ struct Appearance {
   selected_description: text::SpanStyle?,
   indicator: text::SpanStyle?,
   marker: Str?,
-  underline_glyph: Str?,
   left_arrow: Str?,
   right_arrow: Str?,
   closed_arrow: Str?,
@@ -186,7 +175,6 @@ fn appearance(
   selected_description: text::SpanStyle?,
   indicator: text::SpanStyle?,
   marker: Str?,
-  underline_glyph: Str?,
   left_arrow: Str?,
   right_arrow: Str?,
   closed_arrow: Str?,
@@ -202,7 +190,6 @@ fn appearance(
     selected_description: selected_description,
     indicator: indicator,
     marker: marker,
-    underline_glyph: underline_glyph,
     left_arrow: left_arrow,
     right_arrow: right_arrow,
     closed_arrow: closed_arrow,
@@ -743,9 +730,6 @@ private fn scroll_menu_from_track(model: mut Model, config: SelectConfig, height
 
 private fn tab_height(config: TabConfig) Int {
   mut height = 1
-  if config.show_underline {
-    height =+ 1
-  }
   if config.show_description {
     height =+ 1
   }
@@ -839,7 +823,7 @@ private fn popup_anchor(popup: mut Popup) PopupAnchor {
   if width < 0 {
     width = 0
   }
-  
+
   let desired = popup_height(popup.model)
   mut below = root_bounds.y + root_bounds.height - (owner.y + owner.height)
   mut above = owner.y - root_bounds.y
@@ -1036,14 +1020,13 @@ private fn validate_appearance(value: Appearance, measure_width: fn(Str) Int) {
     panic("Select marker must occupy at least one terminal cell")
   }
   for glyph in [
-    value.underline_glyph.or("▬"),
     value.left_arrow.or("‹"),
     value.right_arrow.or("›"),
     value.closed_arrow.or("▾"),
     value.open_arrow.or("▴"),
   ] {
     if glyph == "" or measure_width(glyph) != 1 {
-      panic("Select underline and arrow glyphs must each occupy one terminal cell")
+      panic("Select arrow glyphs must each occupy one terminal cell")
     }
   }
 }
@@ -1432,26 +1415,15 @@ private fn paint_tabs(
               fit(current.label, tab_width - 2, measure_width),
               paint_style(rendered_style),
             )
-            if index == model.highlighted and config.show_underline and height > 1 {
-              let glyph = model.appearance.underline_glyph.or("▬")
-              mut underline_x = 0
-              while underline_x < tab_width {
-                ctx.write(x + underline_x, 1, glyph, paint_style(rendered_style))
-                underline_x =+ 1
-              }
-            }
           }
         },
         _ => (),
       }
       slot =+ 1
     }
-    
+
     if config.show_description {
-      mut description_y = 1
-      if config.show_underline {
-        description_y = 2
-      }
+      let description_y = 1
       if description_y < height {
         match model.options.at(model.highlighted) {
           current => {
@@ -1466,7 +1438,7 @@ private fn paint_tabs(
         }
       }
     }
-    
+
     if config.show_arrows and model.options.size() > visible {
       let chrome = paint_style(indicator_style(model))
       if offset > 0 {
@@ -1536,9 +1508,9 @@ impl node::Renderable for Popup {
   fn node() mut node::Node {
     self.node_ref
   }
-  
+
   fn mount(ctx: node::MountContext) {}
-  
+
   fn paint(ctx: mut paint::Context) {
     let background = patched(
       text::style(
@@ -1575,7 +1547,7 @@ impl node::Renderable for Popup {
       _ => (),
     }
   }
-  
+
   fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
     if ctx.is_default_prevented() {
       event_delivery::Disposition::ignored
@@ -1662,9 +1634,9 @@ impl node::Renderable for Select {
   fn node() mut node::Node {
     self.node_ref
   }
-  
+
   fn mount(ctx: node::MountContext) {}
-  
+
   fn paint(ctx: mut paint::Context) {
     let shared = internal_state(self.internal)
     let model = shared.model
@@ -1685,7 +1657,7 @@ impl node::Renderable for Select {
       TabConfig => paint_tabs(ctx, model, it, self.node_ref.is_focused(), shared.measure_width),
     }
   }
-  
+
   fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
     if ctx.is_default_prevented() {
       event_delivery::Disposition::ignored
@@ -1713,29 +1685,29 @@ impl Select {
   private fn require_live() {
     self.node_ref.require_live()
   }
-  
+
   fn options() [Option] {
     copy_options(internal_state(self.internal).model.options)
   }
-  
+
   fn presentation() Presentation {
     internal_state(self.internal).model.presentation
   }
-  
+
   fn appearance() Appearance {
     internal_state(self.internal).model.appearance
   }
-  
+
   fn highlighted() Selection? {
     let model = internal_state(self.internal).model
     selection_at(model, model.highlighted)
   }
-  
+
   fn selected() Selection? {
     let model = internal_state(self.internal).model
     selection_at(model, model.selected)
   }
-  
+
   fn highlighted_index() Int? {
     let index = internal_state(self.internal).model.highlighted
     if index < 0 {
@@ -1744,7 +1716,7 @@ impl Select {
       Maybe::new<Int>(index)
     }
   }
-  
+
   fn selected_index() Int? {
     let index = internal_state(self.internal).model.selected
     if index < 0 {
@@ -1753,7 +1725,23 @@ impl Select {
       Maybe::new<Int>(index)
     }
   }
-  
+
+  // Synchronize a value without committing a user action or moving highlight.
+  // Like construction, indexes clamp to the option range; none clears selection.
+  fn mut set_selected_index(index: Int?) Bool {
+    self.require_live()
+    let model = internal_state(self.internal).model
+    let next = initial_selection(index, model.options.size())
+    if model.selected == next {
+      false
+    } else {
+      model.selected = next
+      advance_revision(model)
+      self.node_ref.request_redraw()
+      true
+    }
+  }
+
   fn mut set_options(values: [Option]) {
     self.require_live()
     let model = internal_state(self.internal).model
@@ -1782,15 +1770,15 @@ impl Select {
     sync_owner_style(self.node_ref, model)
     self.node_ref.request_redraw()
   }
-  
+
   fn mut set_config(value: SelectConfig) {
     self.set_presentation(Presentation::menu(value))
   }
-  
+
   fn mut set_tab_config(value: TabConfig) {
     self.set_presentation(Presentation::tabs(value))
   }
-  
+
   fn mut set_presentation(value: Presentation) {
     self.require_live()
     validate_presentation(value)
@@ -1802,7 +1790,7 @@ impl Select {
     let _ = sync_popup(shared.popup)
     shared.popup.scrollbar.set_options(bar_options(shared.model))
   }
-  
+
   fn mut set_appearance(value: Appearance) {
     self.require_live()
     let shared = internal_state(self.internal)
@@ -1812,19 +1800,19 @@ impl Select {
     shared.popup.scrollbar.set_options(bar_options(shared.model))
     self.node_ref.request_redraw()
   }
-  
+
   fn is_open() Bool {
     internal_state(self.internal).model.open
   }
-  
+
   fn scroll_offset() Int {
     internal_state(self.internal).model.menu_offset
   }
-  
+
   fn visible_option_count() Int {
     internal_state(self.internal).model.menu_visible
   }
-  
+
   fn mut open() Bool {
     self.require_live()
     let shared = internal_state(self.internal)
@@ -1868,7 +1856,7 @@ impl Select {
       }
     }
   }
-  
+
   fn mut close() Bool {
     self.require_live()
     let shared = internal_state(self.internal)
@@ -1882,7 +1870,7 @@ impl Select {
       false
     }
   }
-  
+
   fn mut set_highlighted_index(index: Int) Bool {
     self.require_live()
     let model = internal_state(self.internal).model
@@ -1900,7 +1888,7 @@ impl Select {
       changed
     }
   }
-  
+
   fn mut select(index: Int) Bool {
     self.require_live()
     let model = internal_state(self.internal).model
@@ -1926,7 +1914,7 @@ impl Select {
       }
     }
   }
-  
+
   fn mut move_by(delta: Int) Bool {
     self.require_live()
     let changed = move_highlight(internal_state(self.internal).model, delta)
@@ -1935,7 +1923,7 @@ impl Select {
     }
     changed
   }
-  
+
   fn mut submit() Bool {
     self.require_live()
     let model = internal_state(self.internal).model
@@ -1962,7 +1950,7 @@ impl Select {
       _ => false,
     }
   }
-  
+
   private fn mut next_listener() Int {
     let model = internal_state(self.internal).model
     if model.next_listener_id == math::MaxInt {
@@ -1972,7 +1960,7 @@ impl Select {
     model.next_listener_id =+ 1
     id
   }
-  
+
   fn mut on_highlight(handler: fn(Selection)) fn() {
     self.require_live()
     let model = internal_state(self.internal).model
@@ -1988,7 +1976,7 @@ impl Select {
       model.highlight_listeners = retained.@
     }
   }
-  
+
   fn mut on_change(handler: fn(Selection)) fn() {
     self.require_live()
     let model = internal_state(self.internal).model
@@ -2004,7 +1992,7 @@ impl Select {
       model.change_listeners = retained.@
     }
   }
-  
+
   fn mut on_submit(handler: fn(Selection)) fn() {
     self.require_live()
     let model = internal_state(self.internal).model
@@ -2020,11 +2008,11 @@ impl Select {
       model.submit_listeners = retained.@
     }
   }
-  
+
   fn style() layout_style::Style {
     internal_state(self.internal).model.layout_style
   }
-  
+
   fn mut set_style(value: layout_style::Style) {
     self.require_live()
     let shared = internal_state(self.internal)
@@ -2033,43 +2021,43 @@ impl Select {
     shared.model.layout_style = value
     sync_owner_style(self.node_ref, shared.model)
   }
-  
+
   fn mut focus() Bool {
     self.node_ref.focus()
   }
-  
+
   fn mut blur() {
     self.node_ref.blur()
   }
-  
+
   fn is_focused() Bool {
     self.node_ref.is_focused()
   }
-  
+
   fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
     self.node_ref.on_key(handler)
   }
-  
+
   fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
     self.node_ref.on_paste(handler)
   }
-  
+
   fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
-  
+
   fn mut on_focus(handler: fn()) fn() {
     self.node_ref.on_focus(handler)
   }
-  
+
   fn mut on_blur(handler: fn()) fn() {
     self.node_ref.on_blur(handler)
   }
-  
+
   fn layout() geometry::Geometry {
     self.node_ref.layout()
   }
-  
+
   private fn mut handled(ctx: mut event_delivery::Context, changed: Bool) event_delivery::Disposition {
     if changed {
       ctx.preserve_focus_scroll()
@@ -2079,7 +2067,7 @@ impl Select {
       event_delivery::Disposition::ignored
     }
   }
-  
+
   private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
     if key.event_type == event::KeyEventType::release {
       event_delivery::Disposition::ignored
@@ -2137,7 +2125,7 @@ impl Select {
       }
     }
   }
-  
+
   private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
     let model = internal_state(self.internal).model
     match model.presentation {
@@ -2233,7 +2221,7 @@ impl Select {
       },
     }
   }
-  
+
   fn mut destroy(recursive: Bool?) {
     if not self.node_ref.is_destroyed() {
       let shared = internal_state(self.internal)

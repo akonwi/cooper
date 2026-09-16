@@ -56,11 +56,14 @@ so a stale pointer route cannot activate replaced or reparented data.
 
 ### Keep TabSelect
 
-Keep horizontal `TabSelect` with fixed-width tabs, optional underline and
-highlighted description, overflow arrows, wrapping, keyboard navigation, and
+Keep horizontal `TabSelect` with fixed-width tabs, optional highlighted
+description, overflow arrows, wrapping, keyboard navigation, and
 mouse activation. `select_control::tabs` and `ui::tab_select` construct it.
 Select and TabSelect share the Ard-owned option/state engine internally, while
 remaining distinct public control names.
+
+TabSelect does not draw a dedicated underline or reserve an indicator row.
+Consumers own additional decoration through text appearance or surrounding views.
 
 An always-expanded ListBox and an editable Combobox are not built-in controls.
 
@@ -116,7 +119,7 @@ framework defaults
 → focused/highlighted/selected interaction state
 ```
 
-Select validates marker width, one-cell trigger/underline/arrow glyphs,
+Select validates marker width, one-cell trigger/arrow glyphs,
 positive visible-menu size, positive tab width and fast step, and bounded
 non-negative item spacing.
 

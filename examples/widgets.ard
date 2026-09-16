@@ -19,7 +19,6 @@ struct TabDemo {
   root: mut ui::Box,
   control: mut ui::Select,
   status: mut ui::Text,
-  show_underline: Bool,
   show_description: Bool,
   show_arrows: Bool,
   wrap: Bool,
@@ -279,9 +278,7 @@ private fn tab_page_style(show: Bool) ui::Style {
 private fn control_options(values: [Choice]) [ui::SelectOption] {
   let options = mut List::new<ui::SelectOption>()
   for value in values {
-    options.push(
-      ui::select_option(value.name, description: value.description, value: value.value),
-    )
+    options.push(ui::select_option(value.name, description: value.description, value: value.value))
   }
   options.@
 }
@@ -319,10 +316,6 @@ private fn render_tabs(demo: mut TabDemo) {
     focus_text = "Tab selector is FOCUSED"
     focus_color = ui::hex("#00FF00")
   }
-  mut underline_text = "off"
-  if demo.show_underline {
-    underline_text = "on"
-  }
   mut description_text = "off"
   mut description_notice = "Descriptions hidden — press P\n"
   if demo.show_description {
@@ -348,7 +341,7 @@ private fn render_tabs(demo: mut TabDemo) {
         ui::span("{description_notice}", style: ui::span_style(foreground: ui::hex("#CBD5E1"))),
         ui::span("{focus_text}\n", style: ui::span_style(foreground: focus_color)),
         ui::span(
-          "Underline: {underline_text} | Description: {description_text} | Scroll arrows: {arrows_text} | Wrap: {wrap_text}",
+          "Description: {description_text} | Scroll arrows: {arrows_text} | Wrap: {wrap_text}",
           style: ui::span_style(foreground: ui::hex("#CCCCCC")),
         ),
       ],
@@ -361,7 +354,6 @@ private fn apply_tab_config(demo: mut TabDemo) {
     ui::select_tab_config(
       tab_width: 12,
       show_description: demo.show_description,
-      show_underline: demo.show_underline,
       show_arrows: demo.show_arrows,
       wrap_selection: demo.wrap,
     ),
@@ -424,7 +416,7 @@ private fn make_tab_demo(ctx: mut cooper::Runtime) mut TabDemo {
   legend_panel.add(
     ui::text(
       ctx,
-      content: "←/→ or [/]: Navigate tabs\nEnter: Select tab\nF: Toggle focus\nU: Toggle underline\nP: Toggle description\nS: Toggle scroll arrows\nW: Toggle wrap selection",
+      content: "←/→ or [/]: Navigate tabs\nEnter: Select tab\nF: Toggle focus\nP: Toggle description\nS: Toggle scroll arrows\nW: Toggle wrap selection",
       selectable: false,
       text_style: ui::text_style(foreground: ui::hex("#AAAAAA")),
     ),
@@ -457,7 +449,6 @@ private fn make_tab_demo(ctx: mut cooper::Runtime) mut TabDemo {
     root: root,
     control: control,
     status: status,
-    show_underline: true,
     show_description: true,
     show_arrows: true,
     wrap: false,
@@ -874,17 +865,7 @@ private fn make_slider_page(ctx: mut cooper::Runtime) SliderDemo {
       overflow: ui::Overflow::hidden,
     ),
   )
-  let h1 = make_horizontal_slider(
-    ctx,
-    "H1",
-    "1h×48w (0-50)",
-    25,
-    0,
-    50,
-    1,
-    1,
-    ui::hex("#E0AF68"),
-  )
+  let h1 = make_horizontal_slider(ctx, "H1", "1h×48w (0-50)", 25, 0, 50, 1, 1, ui::hex("#E0AF68"))
   let h2 = make_horizontal_slider(
     ctx,
     "H2",
@@ -1166,10 +1147,6 @@ fn main() {
           } else {
             tab_demo.control.focus()
           }
-        } else if received.matches("u") {
-          tab_demo.show_underline = not tab_demo.show_underline
-          apply_tab_config(tab_demo)
-          action.set_content("TAB SELECT toggled underline")
         } else if received.matches("p") {
           tab_demo.show_description = not tab_demo.show_description
           apply_tab_config(tab_demo)

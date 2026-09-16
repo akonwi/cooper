@@ -1,0 +1,318 @@
+use ard/testing
+
+use cooper/core/runtime as scopes
+use cooper/cui
+use cooper/cui/renderer
+use cooper/event
+use cooper/testing as headless
+use cooper/ui
+
+struct Model {
+  visible: Bool,
+  hidden: Bool,
+  roots: Int,
+  renders: Int,
+  mounts: Int,
+  focus: Int,
+  keys: Int,
+  pasted: Str,
+  selected: Str,
+  context: cui::Context?,
+  remove_focus: fn(),
+  cleanup_cancelled: Bool,
+}
+private fn model() mut Model {
+  (mut Model{
+    visible: true,
+    hidden: false,
+    roots: 0,
+    renders: 0,
+    mounts: 0,
+    focus: 0,
+    keys: 0,
+    pasted: "",
+    selected: "",
+    context: Maybe::new<cui::Context>(),
+    remove_focus: fn() {},
+    cleanup_cancelled: false,
+  })
+}
+struct Props {
+  data: mut Model,
+}
+struct Child {
+  data: mut Model,
+}
+private fn child(props: mut Props) mut Child {
+  (mut Child{data: props.data})
+}
+impl cui::Component for Child {
+  fn mut render() cui::View {
+    self.data.renders =+ 1
+    cui::text("focus={self.data.focus} keys={self.data.keys} paste={self.data.pasted}")
+  }
+}
+impl cui::Lifecycle for Child {
+  fn mut mounted(ctx: cui::Context) {
+    self.data.context = Maybe::new(ctx)
+    self.data.mounts =+ 1
+    self.data.remove_focus = ctx.on_terminal_focus(fn(value: event::TerminalFocus) {
+      self.data.focus =+ 1
+    })
+    let _ = ctx.on_key(fn(key: mut event::KeyEvent) {
+      self.data.keys =+ 1
+      key.prevent_default()
+      key.stop_propagation()
+    })
+    let _ = ctx.on_paste(fn(paste: mut event::PasteEvent) {
+      self.data.pasted = paste.text
+      paste.prevent_default()
+      paste.stop_propagation()
+    })
+    let _ = ctx.on_selection_change(fn(value: ui::Selection?) {
+      self.data.selected = value.map(fn(selection) Str {
+        selection.selected_text
+      }).or("")
+    })
+  }
+
+  fn mut unmounting(ctx: cui::Context) {
+    self.data.cleanup_cancelled = select {
+      ctx.cancellation.recv() => true,
+      _ => false,
+    }
+    let _ = ctx.on_terminal_focus(fn(value: event::TerminalFocus) {
+      self.data.focus =+ 1000
+    })
+  }
+}
+struct Parent {
+  data: mut Model,
+}
+private fn parent(props: mut Props) mut Parent {
+  (mut Parent{data: props.data})
+}
+impl cui::Component for Parent {
+  fn mut render() cui::View {
+    self.data.roots =+ 1
+    let children = mut List::new<cui::View>()
+    children.push(cui::text("Hello World", styles: ui::style(height: ui::cells(1))))
+    if self.data.visible {
+      mut display = ui::Display::flex
+      if self.data.hidden {
+        display = ui::Display::none
+      }
+      children.push(
+        cui::box(
+          [cui::child(child, Props{data: self.data}, key: "child")],
+          styles: ui::style(display: display),
+        ),
+      )
+    }
+    cui::box(children.@)
+  }
+}
+private fn key() mut event::KeyEvent {
+  event::key(
+    "x",
+    "x",
+    event::KeyEventType::press,
+    event::Modifiers{
+      shift: false,
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
+}
+
+test fn runtime_subscriptions_deliver_synchronously_and_invalidate_only_the_component() Void!Str {
+  let app = headless::new(48, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{data: data}))
+  defer renderer.destroy()
+  app.flush()
+  let ctx = data.context.expect("mounted")
+  let roots = data.roots
+  try testing::assert(
+    ctx.terminal_focus().is_none() and ctx.current_selection().is_none(),
+    "Queries preserve initially unknown/empty states; subscribing does not replay",
+  )
+  app.set_terminal_focus(event::TerminalFocus::lost)
+  app.set_terminal_focus(event::TerminalFocus::lost)
+  app.flush()
+  try testing::assert(
+    data.focus == 1 and ctx.terminal_focus().or(event::TerminalFocus::gained) == event::TerminalFocus::lost,
+    "Runtime focus deduplication and query are preserved",
+  )
+  try testing::assert(
+    app.frame().text().contains("focus=1") and data.roots == roots,
+    "Delivery invalidates only owning component",
+  )
+  (data.remove_focus)()
+  (data.remove_focus)()
+  let renders = data.renders
+  app.set_terminal_focus(event::TerminalFocus::gained)
+  app.flush()
+  try testing::assert(
+    data.focus == 1 and data.renders == renders,
+    "Early unsubscribe is idempotent and does not invalidate",
+  )
+  let pressed = key()
+  app.key(pressed)
+  let pasted = event::paste("abc")
+  app.paste(pasted)
+  app.flush()
+  try testing::assert(
+    data.keys == 1 and data.pasted == "abc",
+    "Key and paste subscriptions receive original events",
+  )
+  try testing::assert(
+    pressed.is_default_prevented() and pressed.is_propagation_stopped() and pasted.is_default_prevented() and pasted.is_propagation_stopped(),
+    "Mutable event prevention is synchronous",
+  )
+  app.drag(0, 0, 4, 0)
+  app.flush()
+  try testing::assert(
+    data.selected == "Hello" and ctx.current_selection().expect("selection").selected_text == "Hello",
+    "Selection events and snapshot use existing Runtime values",
+  )
+  app.clear_selection()
+  app.flush()
+  try testing::assert(
+    data.selected == "" and ctx.current_selection().is_none(),
+    "Selection clear is delivered",
+  )
+  testing::assert(
+    data.roots == roots,
+    "Key, paste, and selection subscription updates do not render ancestors",
+  )
+}
+
+test fn subscriptions_follow_mount_lifetime_including_hidden_components_and_remounts() Void!Str {
+  let app = headless::new(48, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{data: data}))
+  defer renderer.destroy()
+  app.flush()
+  let old = data.context.expect("mounted")
+  renderer.update(fn() {
+    data.hidden = true
+  })
+  app.flush()
+  app.set_terminal_focus(event::TerminalFocus::lost)
+  try testing::assert(
+    data.focus == 1 and data.mounts == 1,
+    "Hidden components stay subscribed without duplicate registration",
+  )
+  renderer.update(fn() {
+    data.visible = false
+  })
+  app.flush()
+  app.set_terminal_focus(event::TerminalFocus::gained)
+  app.key(key())
+  app.paste(event::paste("retired"))
+  app.drag(0, 0, 4, 0)
+  app.flush()
+  try testing::assert(
+    data.cleanup_cancelled and data.focus == 1 and data.keys == 0 and data.pasted == "" and data.selected == "",
+    "Every listener is retired before cleanup, including registrations attempted by cleanup",
+  )
+  let _ = old.on_key(fn(key: mut event::KeyEvent) {
+    data.keys =+ 1000
+  })
+  let _ = old.on_paste(fn(paste: mut event::PasteEvent) {
+    data.pasted = "late"
+  })
+  let _ = old.on_selection_change(fn(value: ui::Selection?) {
+    data.selected = "late"
+  })
+  renderer.update(fn() {
+    data.visible = true
+    data.hidden = false
+  })
+  app.flush()
+  app.set_terminal_focus(event::TerminalFocus::lost)
+  app.key(key())
+  app.paste(event::paste("fresh"))
+  app.clear_selection()
+  app.flush()
+  try testing::assert(
+    data.mounts == 2 and data.focus == 2 and data.keys == 1 and data.pasted == "fresh" and data.selected == "",
+    "Remount gets exactly one fresh set of listeners",
+  )
+  app.destroy()
+  let remove = data.context.expect(
+    "fresh context",
+  ).on_terminal_focus(fn(value: event::TerminalFocus) {
+    data.focus =+ 1000
+  })
+  remove()
+  (data.remove_focus)()
+  testing::assert(
+    old.terminal_focus().is_none() and old.current_selection().is_none() and data.cleanup_cancelled,
+    "Retired contexts cannot access services or register after Runtime teardown",
+  )
+}
+
+test fn unsubscribe_and_renderer_destruction_suppress_callbacks_in_runtime_snapshots() Void!Str {
+  let app = headless::new(48, 4)
+  defer app.destroy()
+  let data = model()
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{data: data}))
+  defer renderer.destroy()
+  app.flush()
+  let ctx = data.context.expect("mounted")
+  (data.remove_focus)()
+  mut calls = 0
+  let first = ctx.on_terminal_focus(fn(value: event::TerminalFocus) {
+    (data.remove_focus)()
+  })
+  data.remove_focus = ctx.on_terminal_focus(fn(value: event::TerminalFocus) {
+    calls =+ 1
+  })
+  app.set_terminal_focus(event::TerminalFocus::lost)
+  try testing::assert(calls == 0, "Removal suppresses listener already copied into Runtime snapshot")
+  first()
+  let _ = ctx.on_terminal_focus(fn(value: event::TerminalFocus) {
+    renderer.destroy()
+  })
+  let _ = ctx.on_terminal_focus(fn(value: event::TerminalFocus) {
+    calls =+ 100
+  })
+  app.set_terminal_focus(event::TerminalFocus::gained)
+  app.flush()
+  testing::assert(
+    calls == 0 and data.cleanup_cancelled and (not renderer.is_active()),
+    "Destroying renderer inside delivery suppresses remaining scoped listeners",
+  )
+}
+
+test fn subscription_ownership_releases_removers_once_and_prunes_retired_handles() Void!Str {
+  let scope = scopes::new_mount_scope()
+  let first = scope.subscription()
+  mut calls = 0
+  first.remove_listener = fn() {
+    calls =+ 1
+  }
+  first.cancel()
+  first.cancel()
+  let second = scope.subscription()
+  second.remove_listener = fn() {
+    calls =+ 10
+  }
+  try testing::assert(
+    calls == 1 and scope.subscriptions.size() == 1,
+    "Early cancellation runs remover once and future registration prunes handle",
+  )
+  scope.stop()
+  scope.stop()
+  second.cancel()
+  let late = scope.subscription()
+  testing::assert(
+    calls == 11 and scope.subscriptions.size() == 0 and (not late.active),
+    "Unmount releases and clears remaining removers exactly once; late subscription is inactive",
+  )
+}

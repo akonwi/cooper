@@ -1,0 +1,31 @@
+use ard/testing
+
+use go:encoding/json
+use examples/hackernews/api
+use go:strings
+
+test fn html_preserves_paragraphs_literals_and_unicode_without_terminal_controls() Void!Str {
+  testing::assert(
+    api::plain(
+      "<p>Café &amp; 界</p><p>&lt;literal&gt; <a href='https://example.com'>link</a>&#27;&#127;&#155;</p>",
+    ) == "Café & 界\n\n<literal> link›",
+    "strip tags before decoding; exclude C0/DEL and preserve HTML's numeric entity mapping",
+  )
+}
+
+test fn deleted_item_keeps_children_and_absent_fields() Void!Str {
+  let item = mut api::Item{}
+  let input = strings::NewReader("{{\"id\":42,\"deleted\":true,\"kids\":[91,12]}}")
+  match json::NewDecoder(input).Decode(item) {
+    err(_) => testing::fail("decode deleted item"),
+    ok(_) => {
+      try testing::assert(item.deleted.or(false), "deleted flag")
+      try testing::assert(item.by.is_none(), "missing author")
+      let kids = item.kids.or([])
+      testing::assert(
+        kids.size() == 2 and kids.at(0).or(0) == 91 and kids.at(1).or(0) == 12,
+        "ranked child order",
+      )
+    },
+  }
+}

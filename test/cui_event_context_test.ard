@@ -1,0 +1,178 @@
+use ard/testing
+
+use cooper/cui
+use cooper/cui/renderer
+use cooper/event
+use cooper/testing as headless
+use cooper/ui
+
+struct Model {
+  visible: Bool,
+  field: mut cui::InputRef,
+  panel: mut cui::BoxRef,
+  child_contexts: [cui::Context],
+  parent_contexts: [cui::Context],
+  value: Str,
+  calls: Int,
+}
+struct Props {
+  model: mut Model,
+}
+struct Child {
+  model: mut Model,
+}
+private fn child(props: mut Props) mut Child {
+  (mut Child{model: props.model})
+}
+// Deliberately no Lifecycle: event context ownership cannot depend on hooks.
+impl cui::Component for Child {
+  fn mut render() cui::View {
+    cui::scroll_box(
+      [
+        cui::input(
+          self.model.value,
+          ref: self.model.field,
+          styles: ui::style(width: ui::cells(20), height: ui::cells(1)),
+          on_input: fn(value: Str, ctx: cui::Context) {
+            self.model.value = value
+            self.model.child_contexts.push(ctx)
+          },
+          on_submit: fn(value: Str, ctx: cui::Context) {
+            self.model.child_contexts.push(ctx)
+          },
+          on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+            self.model.child_contexts.push(ctx)
+          },
+          on_mouse: fn(mouse: mut event::MouseEvent, ctx: cui::Context) {
+            self.model.child_contexts.push(ctx)
+          },
+        ),
+      ],
+      styles: ui::style(width: ui::cells(20), height: ui::cells(2)),
+      on_mouse: fn(mouse: mut event::MouseEvent, ctx: cui::Context) {
+        self.model.child_contexts.push(ctx)
+      },
+    )
+  }
+}
+struct Parent {
+  model: mut Model,
+}
+private fn parent(props: mut Props) mut Parent {
+  (mut Parent{model: props.model})
+}
+impl cui::Component for Parent {
+  fn mut render() cui::View {
+    mut content = cui::text("removed")
+    if self.model.visible {
+      content = cui::child(child, Props{model: self.model})
+    }
+    cui::box(
+      [content],
+      ref: self.model.panel,
+      on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+        self.model.parent_contexts.push(ctx)
+      },
+    )
+  }
+}
+private fn key(name: Str, text: Str) mut event::KeyEvent {
+  event::key(
+    name,
+    text,
+    event::KeyEventType::press,
+    event::Modifiers{
+      shift: false,
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
+}
+
+test fn all_event_contexts_belong_to_nearest_component_without_lifecycle_hooks() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let model = mut Model{
+    visible: true,
+    field: cui::input_ref(),
+    panel: cui::box_ref(),
+    child_contexts: [],
+    parent_contexts: [],
+    value: "",
+    calls: 0,
+  }
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model: model}))
+  app.flush()
+  let field = model.field.current.expect("input")
+  let _ = field.focus()
+  field.set_value("edit")
+  app.flush()
+  try testing::assert(model.child_contexts.size() == 1, "input callback context")
+  app.key(key("return", ""))
+  app.flush()
+  try testing::assert(model.child_contexts.size() == 3, "key and submit callback contexts")
+  let _ = model.panel.current.expect("parent panel").focus()
+  app.key(key("f2", ""))
+  app.flush()
+  try testing::assert(model.parent_contexts.size() > 0, "parent receives its own event context")
+  let before = model.child_contexts.size()
+  app.mouse_down(1, 0)
+  app.flush()
+  try testing::assert(model.child_contexts.size() >= before + 2, "input and scroll mouse contexts")
+  let child_ctx = model.child_contexts.at(0).expect("context")
+  let _ = child_ctx.dispatch(fn() {
+    model.calls =+ 1
+  })
+  app.flush()
+  try testing::assert(model.calls == 1, "event context dispatch works while mounted")
+  renderer.update(fn() {
+    model.visible = false
+  })
+  let _ = child_ctx.dispatch(fn() {
+    model.calls =+ 100
+  })
+  app.flush()
+  for ctx in model.child_contexts {
+    try testing::assert(
+      ctx.dispatch(fn() {
+        model.calls =+ 100
+      }).is_err(),
+      "every child event context retires with child",
+    )
+  }
+  let parent_ctx = model.parent_contexts.at(0).expect("parent context")
+  try testing::assert(
+    parent_ctx.dispatch(fn() {
+      model.calls =+ 10
+    }).is_ok(),
+    "parent lifetime survives child removal",
+  )
+  app.flush()
+  try testing::assert(model.calls == 11, "queued child result dropped, parent delivered")
+  renderer.destroy()
+  testing::assert(parent_ctx.dispatch(fn() {}).is_err(), "parent context retires too")
+}
+
+test fn primitive_root_event_context_has_renderer_lifetime() Void!Str {
+  let app = headless::new(20, 2)
+  defer app.destroy()
+  let contexts = mut List::new<cui::Context>()
+  let field = cui::input_ref()
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::input("", ref: field, on_input: fn(value: Str, ctx: cui::Context) {
+      contexts.push(ctx)
+    }),
+  )
+  field.current.expect("input").set_value("x")
+  let ctx = contexts.at(0).expect("root event context")
+  try testing::assert(ctx.dispatch(fn() {}).is_ok(), "primitive context live")
+  renderer.destroy()
+  app.flush()
+  testing::assert(
+    ctx.dispatch(fn() {}).is_err(),
+    "primitive context retired on renderer destruction",
+  )
+}

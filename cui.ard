@@ -1,0 +1,113 @@
+use ard/unsafe
+
+use cooper
+use cooper/cui/context
+use cooper/cui/renderer
+use cooper/cui/view
+use cooper/cui/virtual_list as virtual
+use cooper/event
+use cooper/ui
+
+type Component = view::Component
+type Lifecycle = view::Lifecycle
+type Renderer = renderer::Renderer
+type View = view::View
+type InputRef = view::InputRef
+type TextAreaRef = view::TextAreaRef
+type SelectRef = view::SelectRef
+type BoxRef = view::BoxRef
+type ScrollBoxRef = view::ScrollBoxRef
+type Context = context::Context
+type VirtualList = virtual::VirtualList
+type VirtualListRef = virtual::Ref
+type VirtualRange = virtual::Range
+type ScrollAlignment = virtual::Alignment
+
+let virtual_list_ref = virtual::ref
+
+fn mount(application: cooper::App, view: View) Renderer {
+  renderer::mount(application.context, application.root, view)
+}
+
+let input_ref = view::input_ref
+let text_area_ref = view::text_area_ref
+let select_ref = view::select_ref
+let box_ref = view::box_ref
+let scroll_box_ref = view::scroll_box_ref
+let box = view::box
+let scroll_box = view::scroll_box
+let text = view::text
+let input = view::input
+let text_area = view::text_area
+let select_input = view::select_input
+let tab_select = view::tab_select
+
+// Items are data; only the active range is turned into views. Heights and
+// overscan are terminal cells, not item counts. Keys are stable and unique.
+fn virtual_list(
+  items: [$T],
+  item_key: fn($T) Str,
+  render_item: fn($T) View,
+  estimated_height: Int?,
+  overscan: Int?,
+  row_height: Int?,
+  scrollbar_options: ui::ScrollbarOptions?,
+  key: Str?,
+  styles: ui::Style?,
+  ref: (mut VirtualListRef)?,
+  on_key: fn(mut event::KeyEvent, Context)?,
+  on_mouse: fn(mut event::MouseEvent, Context)?,
+) View {
+  let estimate = estimated_height.or(6)
+  let extra = overscan.or(12)
+  if estimate <= 0 or extra < 0 or row_height.or(1) <= 0 {
+    panic("VirtualList heights must be positive and overscan non-negative")
+  }
+  let keys = mut List::new<Str>()
+  let snapshot = mut List::new<$T>()
+  for item in items {
+    keys.push(item_key(item))
+    snapshot.push(item)
+  }
+  let source = mut virtual::Source{
+    keys: keys.@,
+    build: fn(index: Int) View {
+      render_item(snapshot.at(index).expect("virtual row index"))
+    },
+    estimate: estimate,
+    overscan: extra,
+    row_height: row_height,
+    scrollbar_options: scrollbar_options.or(ui::scrollbar_options()),
+    styles: styles.or(ui::style(flex_grow: 1.0)),
+    ref: ref,
+    on_key: on_key,
+    on_mouse: on_mouse,
+  }
+  child(virtual::new, virtual::Props{source: source}, key: key)
+}
+
+// Both types are inferred from the ordinary constructor and props value.
+fn child(create: fn(mut $P) mut $C, props: $P, key: Str?) View {
+  view::child(
+    view::Specification{
+      props: props,
+      matches: fn(instance: Any, previous_props: Any) Bool {
+        unsafe::cast<mut $C>(instance).is_some() and unsafe::cast<$P>(previous_props).is_some()
+      },
+      create: fn() mut view::Instance {
+        mut current = props
+        let concrete = create(mut current)
+        let component = unsafe::cast<mut Component>(concrete).expect("child must implement Component")
+        (mut view::Instance{
+          concrete: concrete,
+          component: component,
+          receive: fn(next: Any) {
+            current = unsafe::cast<$P>(next).expect("matching component props")
+          },
+          mounted: false,
+        })
+      },
+    },
+    key,
+  )
+}

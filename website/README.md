@@ -1,6 +1,7 @@
 # Cooper website
 
-A fully static Astro site. The output is plain HTML, CSS, images, and local fonts;
+A fully static Astro site styled with `@akonwi/mica`. The output is plain HTML,
+CSS, and images, using system fonts and Mica's light/dark color roles;
 no server adapter, browser JavaScript, API, or external font service is required.
 
 ## Develop

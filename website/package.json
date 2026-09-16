@@ -9,8 +9,8 @@
     "test": "node --test scripts/site.test.mjs"
   },
   "dependencies": {
+    "@akonwi/mica": "0.14.0",
     "@astrojs/markdown-remark": "^7.3.1",
-    "@fontsource-variable/dm-sans": "^5.3.0",
     "astro": "7.3.2"
   },
   "engines": {

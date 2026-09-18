@@ -408,13 +408,62 @@ The property can also be changed during reconciliation.
 
 ## Inputs, refs, and validation
 
-Use `focused: selected` on a box or input to describe focus with state, rather
-than assigning refs just to focus controls. `true` requests focus after the tree
-is attached and lifecycle hooks run; `false` blurs that control only. Omit the
-property to leave focus unmanaged. Declare at most one true target per active
-screen. A box with a `focused` property is focusable even without a key handler.
-Focus also reveals the control through nested scroll containers after layout.
-Startup retries focus when the Runtime starts accepting requests.
+Choose focus according to intent:
+
+| Intent | API | Behavior |
+| --- | --- | --- |
+| Maintain focus from state | `focused: selected` | Reapplied whenever this subtree is reconciled |
+| Focus a newly mounted control once | `autofocus: true` | One attempt after attachment and Runtime startup |
+| Move focus once from an event or completion | `ref.focus(ctx)` | One attempt after pending commits, before painting |
+
+`focused: true` retakes focus if the user moved it elsewhere; `focused: false`
+blurs that control on reconciliation. **Omitted is not false:** omitting the
+property leaves focus unmanaged. In a controlled form, update the selected field
+in state when handling Tab or other navigation, then describe each participant's
+`focused` value. Imperatively focusing another control will not override a
+continuously asserted `focused: true`. Local updates reconcile only the owning
+subtree, not all components. Declare at most one true target per active screen.
+
+`box`, `input`, `text_area`, `select_input`, and `tab_select` accept optional
+`autofocus` (default false). It belongs to the retained control's mount, not the
+parent component's mount, so it works when an async result first introduces a
+field. Rerenders and keyed reorders do not repeat it; committed removal followed
+by reinsertion creates a new attempt. Changing `autofocus` to true on an existing
+control does not request focus. Combining `autofocus: true` with either explicit
+`focused` value is a contract violation.
+
+```ard
+cui::input(self.title, autofocus: true, on_input: fn(value, ctx) {
+  self.title = value
+})
+```
+
+For an explicit jump, store a ref and request focus from a UI-thread callback:
+
+```ard
+// The next render includes the field with ref: self.editor.
+self.editing = true
+let _ = self.editor.focus(ctx)
+```
+
+`InputRef`, `TextAreaRef`, `SelectRef`, `BoxRef`, and `ScrollBoxRef` expose
+`focus(ctx)`. The request resolves the ref after pending commits, rather than
+reading `ref.current` immediately. It also works for an already-mounted target.
+It returns an optional-to-use, idempotent cancellation function. Unmounting the
+requesting context or destroying its renderer cancels delivery. Workers must
+dispatch to the UI thread before requesting focus.
+
+Both one-shot APIs attempt focus once in the layout phase before painting. A
+missing, hidden, removed, or non-focusable target consumes the attempt; requests
+do not linger for a future appearance. Call `ref.focus(ctx)` again when a hidden
+target becomes visible. Avoid mixing competing controlled and one-shot targets;
+a subsequent controlled-focus commit can take focus back.
+
+A box with `focused`, `autofocus: true`, or an `on_key` handler is focusable.
+Merely supplying a ref does not make it focusable. Focus also reveals the control
+through nested scroll containers after layout. Existing `focused` users need no
+migration; replace pending-focus flags and dispatch-based resets with `autofocus`
+when their intent is initial focus only.
 
 CUI key callbacks run from the focused view outward through its declared
 ancestors, including across component boundaries. Each callback receives its
@@ -463,7 +512,7 @@ not reset an open menu or its navigation during rerenders. Changed configuration
 uses the retained control's close/reset behavior. Switching between constructor
 kinds remounts the control; keyed reordering within one kind preserves it.
 Both new ref types follow the same exclusive ownership and cleanup rules as
-InputRef. All three controls accept `focused`, `on_key`, and `on_mouse`.
+InputRef. All three controls accept `focused`, `autofocus`, `on_key`, and `on_mouse`.
 
 Use `cui::input_ref()` for imperative capabilities such as focus. A ref does not
 own its control, is populated before lifecycle mounting, and is cleared when the
@@ -473,8 +522,8 @@ view retires. It cannot be attached to two expanded inputs simultaneously.
 `on_key` handler is focusable; use `ref.current.map(fn(panel) { panel.focus() })`
 after mounting when imperative focus is needed. This lets a component own
 keyboard navigation without a dummy input or a global listener. Merely providing
-a ref does not make a box focusable. Removing both the handler and `focused`
-property removes focusability.
+a ref does not make a box focusable. Removing the handler and `focused`
+property, with `autofocus` false or omitted, removes focusability.
 
 `cui::scroll_box_ref()` exposes a ScrollBox under the same ownership rules. Use
 `ref.current.map(fn(panel) { panel.scroll_by(10) })` to scroll a preview without

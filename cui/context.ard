@@ -23,6 +23,8 @@ struct Context {
   // Framework-only: settle lazy descendants between layout and painting.
   internal_layout: fn(fn() Bool) fn(),
   internal_animate: fn(Int, fn(animation::Frame), animation::Easing) fn(),
+  // Framework-only: one UI-thread attempt after pending commits, before painting.
+  internal_focus: fn(fn()) fn(),
 }
 
 impl Context {
@@ -54,6 +56,22 @@ fn internal_new(
       })
     },
     cancellation: scope.cancellation(),
+    internal_focus: fn(work: fn()) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = runtime.internal_on_layout(fn() Bool {
+          if subscription.active {
+            subscription.cancel()
+            work()
+          }
+          false
+        })
+        invalidate()
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
     internal_layout: fn(work: fn() Bool) fn() {
       let subscription = scope.subscription()
       if subscription.active {

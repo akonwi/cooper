@@ -3,11 +3,14 @@ use ard/testing
 use cooper/cui
 use cooper/cui/renderer
 use cooper/event
+use cooper/root
+use cooper/runtime
 use cooper/testing as headless
 use cooper/ui
 
 struct Model {
   view: cui::View,
+  context: cui::Context?,
 }
 struct Draw {
   model: mut Model,
@@ -24,12 +27,21 @@ impl cui::Component for Screen {
   }
 }
 
+impl cui::Lifecycle for Screen {
+  fn mut mounted(ctx: cui::Context) {
+    self.props.model.context = Maybe::new(ctx)
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+
 test fn described_focus_is_applied_after_attachment_and_reconciled() Void!Str {
   let app = headless::new(24, 8)
   defer app.destroy()
   let panel = cui::box_ref()
   let field = cui::input_ref()
   let model = mut Model{
+    context: Maybe::new<cui::Context>(),
     view: cui::box(
       [
         cui::box([], key: "panel", ref: panel, focused: true),
@@ -134,6 +146,7 @@ test fn keys_bubble_once_and_keep_prevention_separate_from_propagation() Void!St
           screen,
           Draw{
             model: mut Model{
+              context: Maybe::new<cui::Context>(),
               view: cui::input(
                 "",
                 focused: true,
@@ -183,5 +196,263 @@ test fn keys_bubble_once_and_keep_prevention_separate_from_propagation() Void!St
   testing::assert(
     calls.at(2).or("") == "child" and calls.at(3).or("") == "parent",
     "bubble crosses component boundary before default",
+  )
+}
+
+test fn autofocus_runs_once_per_control_mount_including_late_mounts() Void!Str {
+  let app = headless::new(24, 8)
+  defer app.destroy()
+  let first = cui::input_ref()
+  let second = cui::input_ref()
+  let model = mut Model{
+    context: Maybe::new<cui::Context>(),
+    view: cui::box(
+      [
+        cui::input("first", key: "first", ref: first, autofocus: true),
+        cui::input("second", key: "second", ref: second),
+      ],
+    ),
+  }
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  defer mounted.destroy()
+  app.flush()
+  let original = first.current.expect("first attached")
+  try testing::assert(original.is_focused(), "initial autofocus")
+  try testing::assert(second.current.expect("second").focus(), "user moves focus")
+  mounted.update(fn() {
+    model.view = cui::box(
+      [
+        cui::input("second", key: "second", ref: second),
+        cui::input("first", key: "first", ref: first, autofocus: true),
+      ],
+    )
+  })
+  app.flush()
+  try testing::assert(
+    first.current.expect("retained").node_ref.id == original.node_ref.id,
+    "keyed identity",
+  )
+  try testing::assert(second.current.expect("second").is_focused(), "reorder does not steal focus")
+  mounted.update(fn() {
+    model.view = cui::box([cui::input("second", key: "second", ref: second)])
+  })
+  app.flush()
+  mounted.update(fn() {
+    model.view = cui::box(
+      [
+        cui::input("second", key: "second", ref: second),
+        cui::input("first", key: "first", ref: first, autofocus: true),
+      ],
+    )
+  })
+  app.flush()
+  try testing::assert(first.current.expect("remounted").node_ref.id != original.node_ref.id, "new mount")
+  testing::assert(
+    first.current.expect("late target").is_focused(),
+    "late mount gets its own autofocus",
+  )
+}
+
+test fn explicit_false_blurs_but_omitted_focus_leaves_user_focus_alone() Void!Str {
+  let app = headless::new(24, 8)
+  defer app.destroy()
+  let field = cui::input_ref()
+  let model = mut Model{context: Maybe::new<cui::Context>(), view: cui::input("field", ref: field, focused: false)}
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  defer mounted.destroy()
+  app.flush()
+  try testing::assert(field.current.expect("field").focus(), "imperative focus succeeds until commit")
+  mounted.invalidate()
+  app.flush()
+  try testing::assert(not field.current.expect("field").is_focused(), "false explicitly blurs")
+  mounted.update(fn() {
+    model.view = cui::input("field", ref: field)
+  })
+  app.flush()
+  let _ = field.current.expect("field").focus()
+  mounted.invalidate()
+  app.flush()
+  testing::assert(field.current.expect("field").is_focused(), "omitted focus does not blur")
+}
+
+test fn deferred_ref_focus_resolves_after_commit_and_expires_when_absent() Void!Str {
+  let app = headless::new(24, 8)
+  defer app.destroy()
+  let target = cui::input_ref()
+  let other = cui::input_ref()
+  let model = mut Model{
+    context: Maybe::new<cui::Context>(),
+    view: cui::box([cui::input("other", key: "other", ref: other, autofocus: true)]),
+  }
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  defer mounted.destroy()
+  app.flush()
+  let ctx = model.context.expect("mounted context")
+  // Request before the update is even queued, when the ref is still empty.
+  let _ = target.focus(ctx)
+  mounted.update(fn() {
+    model.view = cui::box(
+      [
+        cui::input("other", key: "other", ref: other, autofocus: true),
+        cui::input("target", key: "target", ref: target),
+      ],
+    )
+  })
+  app.flush()
+  try testing::assert(
+    target.current.expect("late target").is_focused(),
+    "request resolves after attachment",
+  )
+  let _ = other.current.expect("other").focus()
+  mounted.invalidate()
+  app.flush()
+  try testing::assert(other.current.expect("other").is_focused(), "request runs only once")
+  let cancel = target.focus(ctx)
+  cancel()
+  cancel()
+  app.flush()
+  try testing::assert(other.current.expect("other").is_focused(), "explicit cancellation is idempotent")
+  let _ = target.focus(ctx)
+  app.flush()
+  try testing::assert(
+    target.current.expect("target").is_focused(),
+    "existing target can be requested again",
+  )
+  mounted.update(fn() {
+    model.view = cui::box([cui::input("other", key: "other", ref: other)])
+  })
+  app.flush()
+  let _ = other.current.expect("other").focus()
+  let _ = target.focus(ctx)
+  app.flush()
+  mounted.update(fn() {
+    model.view = cui::box(
+      [
+        cui::input("other", key: "other", ref: other),
+        cui::input("target", key: "target", ref: target),
+      ],
+    )
+  })
+  app.flush()
+  testing::assert(
+    other.current.expect("other").is_focused(),
+    "expired request cannot affect a future mount",
+  )
+}
+
+test fn deferred_focus_is_cancelled_with_requesting_component_or_renderer() Void!Str {
+  let app = headless::new(24, 8)
+  defer app.destroy()
+  let target = cui::input_ref()
+  let owner = mut Model{view: cui::text("worker"), context: Maybe::new<cui::Context>()}
+  let outer = mut Model{
+    context: Maybe::new<cui::Context>(),
+    view: cui::box(
+      [
+        cui::child(screen, Draw{model: owner}, key: "owner"),
+        cui::input("target", key: "target", ref: target),
+      ],
+    ),
+  }
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: outer}))
+  defer mounted.destroy()
+  app.flush()
+  let ctx = owner.context.expect("child context")
+  let _ = target.focus(ctx)
+  mounted.update(fn() {
+    outer.view = cui::box([cui::input("target", key: "target", ref: target)])
+  })
+  app.flush()
+  try testing::assert(not target.current.expect("surviving target").is_focused(), "requester unmounted")
+  let _ = target.focus(ctx)
+  app.flush()
+  try testing::assert(
+    not target.current.expect("target").is_focused(),
+    "retired context cannot request focus",
+  )
+  // Keep the target alive in another renderer to distinguish cancellation from removal.
+  let survivor = cui::input_ref()
+  let other = renderer::mount(app.context, app.root, cui::input("survivor", ref: survivor))
+  defer other.destroy()
+  app.flush()
+  let _ = survivor.focus(outer.context.expect("outer context"))
+  mounted.destroy()
+  app.flush()
+  testing::assert(
+    not survivor.current.expect("survivor").is_focused(),
+    "renderer destruction cancels pending request",
+  )
+}
+
+test fn autofocus_waits_for_runtime_startup_and_supports_all_focusable_constructors() Void!Str {
+  let app = runtime::new_detached()
+  let root = root::new(app)
+  let field = cui::input_ref()
+  let mounted = renderer::mount(app, root, cui::input("startup", ref: field, autofocus: true))
+  try testing::assert(not field.current.expect("attached").is_focused(), "runtime not started")
+  app.start_test(root)
+  defer app.destroy_test(root)
+  defer mounted.destroy()
+  app.flush_test(root, 1024)
+  app.render_test(root)
+  try testing::assert(field.current.expect("started").is_focused(), "autofocus waits for startup")
+  mounted.destroy()
+  let panel = cui::box_ref()
+  let area = cui::text_area_ref()
+  let choice = cui::select_ref()
+  for view in [
+    cui::box([], ref: panel, autofocus: true),
+    cui::text_area("area", ref: area, autofocus: true),
+    cui::select_input([ui::select_option("one")], ref: choice, autofocus: true),
+    cui::tab_select([ui::select_option("two")], ref: choice, autofocus: true),
+  ] {
+    let current = renderer::mount(app, root, view)
+    app.flush_test(root, 1024)
+    let panel_focused = panel.current.map(fn(value) Bool {
+      value.is_focused()
+    }).or(false)
+    let area_focused = area.current.map(fn(value) Bool {
+      value.is_focused()
+    }).or(false)
+    let choice_focused = choice.current.map(fn(value) Bool {
+      value.is_focused()
+    }).or(false)
+    try testing::assert(panel_focused or area_focused or choice_focused, "constructor supports autofocus")
+    current.destroy()
+  }
+  testing::assert(
+    panel.current.is_none() and area.current.is_none() and choice.current.is_none(),
+    "teardown clears refs",
+  )
+}
+
+test fn autofocus_rejects_controlled_focus_and_does_not_wait_for_visibility() Void!Str {
+  let app = headless::new(24, 8)
+  defer app.destroy()
+  for focused in [true, false] {
+    let result = unsafe {
+      renderer::mount(
+        app.context,
+        app.root,
+        cui::input("invalid", focused: focused, autofocus: true),
+      )
+    }
+    try testing::assert(result.is_err(), "controlled focus and autofocus conflict")
+  }
+  let target = cui::input_ref()
+  let model = mut Model{
+    context: Maybe::new<cui::Context>(),
+    view: cui::input("hidden", ref: target, autofocus: true, styles: ui::style(display: ui::Display::none)),
+  }
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  defer mounted.destroy()
+  app.flush()
+  mounted.update(fn() {
+    model.view = cui::input("visible", ref: target, autofocus: true)
+  })
+  app.flush()
+  testing::assert(
+    not target.current.expect("visible").is_focused(),
+    "hidden mount consumes the attempt",
   )
 }

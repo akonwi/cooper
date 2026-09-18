@@ -44,12 +44,36 @@ struct InputRef {
   current: (mut ui::Input)?,
 }
 
+impl InputRef {
+  // UI-thread-only. Resolve once after pending commits; cancelled on ctx unmount.
+  fn mut focus(ctx: context::Context) fn() {
+    (ctx.internal_focus)(
+      fn() {
+        self.current.map(fn(control) {
+          let _ = control.focus()
+        })
+      },
+    )
+  }
+}
+
 fn input_ref() mut InputRef {
   (mut InputRef{current: Maybe::new<mut ui::Input>()})
 }
 
 struct TextAreaRef {
   current: (mut ui::TextArea)?,
+}
+impl TextAreaRef {
+  fn mut focus(ctx: context::Context) fn() {
+    (ctx.internal_focus)(
+      fn() {
+        self.current.map(fn(control) {
+          let _ = control.focus()
+        })
+      },
+    )
+  }
 }
 fn text_area_ref() mut TextAreaRef {
   (mut TextAreaRef{current: Maybe::new<mut ui::TextArea>()})
@@ -59,6 +83,17 @@ fn text_area_ref() mut TextAreaRef {
 struct SelectRef {
   current: (mut ui::Select)?,
 }
+impl SelectRef {
+  fn mut focus(ctx: context::Context) fn() {
+    (ctx.internal_focus)(
+      fn() {
+        self.current.map(fn(control) {
+          let _ = control.focus()
+        })
+      },
+    )
+  }
+}
 fn select_ref() mut SelectRef {
   (mut SelectRef{current: Maybe::new<mut ui::Select>()})
 }
@@ -67,12 +102,36 @@ struct BoxRef {
   current: (mut ui::Box)?,
 }
 
+impl BoxRef {
+  fn mut focus(ctx: context::Context) fn() {
+    (ctx.internal_focus)(
+      fn() {
+        self.current.map(fn(control) {
+          let _ = control.focus()
+        })
+      },
+    )
+  }
+}
+
 fn box_ref() mut BoxRef {
   (mut BoxRef{current: Maybe::new<mut ui::Box>()})
 }
 
 struct ScrollBoxRef {
   current: (mut ui::ScrollBox)?,
+}
+
+impl ScrollBoxRef {
+  fn mut focus(ctx: context::Context) fn() {
+    (ctx.internal_focus)(
+      fn() {
+        self.current.map(fn(control) {
+          let _ = control.focus()
+        })
+      },
+    )
+  }
 }
 
 fn scroll_box_ref() mut ScrollBoxRef {
@@ -110,6 +169,7 @@ struct Description {
   on_change: fn(ui::SelectSelection, context::Context)?,
   on_select_submit: fn(ui::SelectSelection, context::Context)?,
   focused: Bool?,
+  autofocus: Bool,
   on_input: fn(Str, context::Context)?,
   on_submit: fn(Str, context::Context)?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
@@ -152,6 +212,7 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     on_change: Maybe::new<fn(ui::SelectSelection, context::Context)>(),
     on_select_submit: Maybe::new<fn(ui::SelectSelection, context::Context)>(),
     focused: Maybe::new<Bool>(),
+    autofocus: false,
     on_input: Maybe::new<fn(Str, context::Context)>(),
     on_submit: Maybe::new<fn(Str, context::Context)>(),
     on_key: Maybe::new<fn(mut event::KeyEvent, context::Context)>(),
@@ -189,6 +250,7 @@ fn box(
   styles: ui::Style?,
   title: Str?,
   focused: Bool?,
+  autofocus: Bool?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut BoxRef)?,
@@ -197,6 +259,7 @@ fn box(
   result.children = children
   result.title = title.or("")
   result.focused = focused
+  result.autofocus = autofocus.or(false)
   result.on_key = on_key
   result.on_mouse = on_mouse
   result.box_ref = ref
@@ -227,6 +290,7 @@ fn input(
   styles: ui::Style?,
   placeholder: Str?,
   focused: Bool?,
+  autofocus: Bool?,
   on_input: fn(Str, context::Context)?,
   on_submit: fn(Str, context::Context)?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
@@ -237,6 +301,7 @@ fn input(
   result.value = value
   result.placeholder = placeholder.or("")
   result.focused = focused
+  result.autofocus = autofocus.or(false)
   result.on_input = on_input
   result.on_submit = on_submit
   result.on_key = on_key
@@ -256,6 +321,7 @@ fn text_area(
   selectable: Bool?,
   scrollbar_options: ui::ScrollbarOptions?,
   focused: Bool?,
+  autofocus: Bool?,
   on_input: fn(Str, context::Context)?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
@@ -270,6 +336,7 @@ fn text_area(
   result.selectable = selectable.or(true)
   result.scrollbar_options = scrollbar_options.or(ui::scrollbar_options())
   result.focused = focused
+  result.autofocus = autofocus.or(false)
   result.on_input = on_input
   result.on_key = on_key
   result.on_mouse = on_mouse
@@ -286,6 +353,7 @@ fn select_input(
   key: Str?,
   styles: ui::Style?,
   focused: Bool?,
+  autofocus: Bool?,
   on_highlight: fn(ui::SelectSelection, context::Context)?,
   on_change: fn(ui::SelectSelection, context::Context)?,
   on_submit: fn(ui::SelectSelection, context::Context)?,
@@ -300,6 +368,7 @@ fn select_input(
   result.select_config = config.or(ui::select_config())
   result.appearance = appearance.or(ui::select_appearance())
   result.focused = focused
+  result.autofocus = autofocus.or(false)
   result.on_highlight = on_highlight
   result.on_change = on_change
   result.on_select_submit = on_submit
@@ -318,6 +387,7 @@ fn tab_select(
   key: Str?,
   styles: ui::Style?,
   focused: Bool?,
+  autofocus: Bool?,
   on_highlight: fn(ui::SelectSelection, context::Context)?,
   on_change: fn(ui::SelectSelection, context::Context)?,
   on_submit: fn(ui::SelectSelection, context::Context)?,
@@ -334,6 +404,7 @@ fn tab_select(
       key: key,
       styles: styles,
       focused: focused,
+      autofocus: autofocus,
       on_highlight: on_highlight,
       on_change: on_change,
       on_submit: on_submit,

@@ -19,6 +19,7 @@ private struct Mounted {
   scope: (mut scopes::MountScope)?,
   active: Bool,
   applying: Bool,
+  autofocus_pending: Bool,
   requested_value: Str,
   effective_value: Str,
   remove_key: fn(),
@@ -150,6 +151,9 @@ private fn validate(children: [view::View], refs: mut [mut view::InputRef]) {
   let keys = mut Map::new<Bool>()
   for child_view in children {
     let child = view::describe(child_view)
+    if child.autofocus and child.focused.is_some() {
+      panic("autofocus cannot be combined with focused")
+    }
     match child.key {
       key => {
         if keys.get(key).or(false) {
@@ -699,6 +703,7 @@ impl State {
       scope: scope,
       active: true,
       applying: false,
+      autofocus_pending: description.autofocus,
       requested_value: description.value,
       effective_value: effective_value,
       remove_key: fn() {},
@@ -866,7 +871,9 @@ impl State {
     if description.kind == view::Kind::box {
       box(
         mounted.control,
-      ).set_focusable(description.on_key.is_some() or description.focused.is_some())
+      ).set_focusable(
+        description.on_key.is_some() or description.focused.is_some() or description.autofocus,
+      )
       match description.box_ref {
         ref => { ref.current = Maybe::new(box(mounted.control)) },
         _ => (),
@@ -966,6 +973,16 @@ impl State {
 
   private fn mut apply_focus(children: [mut Mounted]) {
     for child in children {
+      if child.autofocus_pending {
+        child.autofocus_pending = false
+        let _ = (child.context.internal_focus)(
+          fn() {
+            if self.active and live(child) {
+              let _ = child.control.node().focus()
+            }
+          },
+        )
+      }
       match child.description.focused {
         focused => {
           if focused {

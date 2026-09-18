@@ -179,6 +179,71 @@ test fn unmount_drops_already_queued_work_and_old_context_never_revives() Void!S
   testing::assert(data.calls == 1, "only new incarnation updates")
 }
 
+test fn renderer_dispatch_survives_child_unmount_while_component_dispatch_drops() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let data = model()
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Props{model: data}))
+  defer mounted.destroy()
+  app.flush()
+  let child_context = data.context.expect("mounted child")
+  // Queue reconciliation first, so both callbacks arrive after child retirement.
+  mounted.update(fn() {
+    data.visible = false
+  })
+  try testing::assert(
+    child_context.dispatch(fn() {
+      data.calls =+ 100
+    }).is_ok(),
+    "Child callback was accepted before unmount",
+  )
+  try testing::assert(
+    mounted.dispatch(fn() {
+      data.calls =+ 10
+      data.visible = true
+    }).is_ok(),
+    "Owner callback was accepted before child unmount",
+  )
+  app.flush()
+  try testing::assert(
+    data.cleanup_cancelled and data.mounts == 2,
+    "Child retired before owner recreated it",
+  )
+  try testing::assert(data.calls == 10, "Only renderer-owned completion ran")
+  testing::assert(
+    app.frame().text().contains("completed: 10"),
+    "Renderer dispatch refreshed owner state",
+  )
+}
+
+test fn renderer_destruction_drops_queued_completion_without_stopping_runtime() Void!Str {
+  let app = headless::new(30, 4)
+  defer app.destroy()
+  let data = model()
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Props{model: data}))
+  defer mounted.destroy()
+  app.flush()
+  try testing::assert(
+    mounted.dispatch(fn() {
+      data.calls =+ 100
+    }).is_ok(),
+    "Renderer accepted work before destruction",
+  )
+  try testing::assert(
+    app.context.dispatch(fn() {
+      data.calls =+ 1
+    }).is_ok(),
+    "Runtime accepted independent work",
+  )
+  mounted.destroy()
+  app.flush()
+  try testing::assert(data.calls == 1, "Runtime drains while destroyed renderer suppresses its callback")
+  testing::assert(
+    data.cleanup_cancelled and not mounted.is_active(),
+    "Renderer and child remain retired",
+  )
+}
+
 test fn mount_cancellation_isolated_between_renderers_and_closed_on_runtime_teardown() Void!Str {
   let app = headless::new(30, 4)
   defer app.destroy()

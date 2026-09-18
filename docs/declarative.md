@@ -143,10 +143,28 @@ renderer.invalidate()
 ```
 
 `update` runs work and schedules rendering; `invalidate` only schedules. Both are
-UI-thread operations. `dispatch(fn() { ... })` is background-safe: Runtime queues
-the closure onto the UI thread and a render follows it. Cancellation covers only
-the renderer lifetime, not individual components. Component workers should use
-the mount-scoped `ctx.dispatch` supplied to their lifecycle hook instead.
+UI-thread operations. Dispatch is background-safe and queues a closure onto the
+UI thread. Choose its lifetime according to the owner of the state being updated,
+not the component that happens to start the worker:
+
+| API | Delivery lifetime | Automatic CUI invalidation |
+| --- | --- | --- |
+| `app.context.dispatch` | Runtime | None |
+| `renderer.dispatch` | Renderer | Entire renderer tree |
+| `ctx.dispatch` | Component mount | Owning component subtree |
+
+Use component dispatch for local loading state or results that no longer matter
+after that component disappears. Use renderer dispatch for shared application
+state that must survive a child unmount. Runtime dispatch is appropriate for work
+owned by the Runtime independently of a renderer; it does not schedule CUI
+reconciliation by itself.
+
+**A successful dispatch means queued, not guaranteed delivery.** Component
+dispatch rejects new posts after unmount and silently skips already-queued work
+if the component unmounts before delivery. Renderer dispatch silently skips work
+if its renderer is destroyed before delivery. Runtime shutdown discards pending
+callbacks, including those from either CUI tier. No tier guarantees that a
+completion or cleanup callback will run.
 
 Constructors and `render` must be deterministic and effect-free. Rendering may
 describe callbacks but must not subscribe, acquire resources, or mutate renderer
@@ -204,6 +222,13 @@ renderer destruction or Runtime teardown; suspension does not unmount it.
 The framework owns component children, dispatch lifetimes, animations, and
 context subscriptions. Components own their workers and other external resources.
 Cleanup functions should remain idempotent.
+
+Release component-owned resources directly in `unmounting`, not by dispatching
+from it: its context is already cancelled. Release worker-owned resources in the
+worker itself, for example with `defer`. A shared operation guard must remain held
+until the operation actually finishes; releasing it on component unmount could
+allow another operation to start while the first request is still running.
+Neither release should depend on a queued UI completion being delivered.
 
 ## Component-scoped Runtime subscriptions
 
@@ -280,6 +305,53 @@ subtree render after delivery. A successful return means queued, not guaranteed 
 The mount is checked both when posting and when executing: unmount suppresses
 already-queued callbacks as well as rejecting new posts. Old handles never become
 valid again after reinsertion. Renderer and Runtime destruction also retire them.
+
+### Completion owned by a longer-lived view
+
+When completion must update shared state after the initiating child disappears,
+provide a callback through the child's props. The owner binds that callback to
+its own dispatch lifetime. For example, these application fragments use a
+renderer-owned model and an application-defined `fetch_issue` returning `Str`:
+
+```ard
+// Owner: capture this before passing on_complete in the child's props.
+let dispatch = renderer.dispatch
+let on_complete = fn(result: Str) {
+  let _ = dispatch(fn() {
+    model.result = result
+  })
+}
+```
+
+```ard
+// Child: props includes on_complete: fn(Str).
+fn mut mounted(ctx: cui::Context) {
+  let issue_id = self.props.issue.id
+  let on_complete = self.props.on_complete
+  let dispatch = ctx.dispatch
+  async::start(fn() {
+    let result = fetch_issue(issue_id)
+    on_complete(result)
+    let _ = dispatch(fn() {
+      self.loading = false
+    })
+  })
+}
+```
+
+The owner callback queues through the renderer directly, rather than being called
+inside the child's dispatch. Thus child unmount suppresses only the local loading
+update, not the owner's completion. Mutable owner state is still accessed only
+on the UI thread. If the owner can start overlapping requests or dispose the
+target record, check the request generation or record validity inside that
+owner-dispatched callback before applying the result. The callback still cannot
+outlive its renderer or Runtime. For an ancestor-component owner instead, bind
+the callback to that ancestor's context and its lifetime.
+
+Calling `ctx.invalidate_root()` cannot extend a callback's lifetime: it changes
+which components rerender, not whether the callback is delivered.
+
+### Cancellation and suspension
 
 `ctx.cancellation` is a receiver closed before unmount cleanup. Workers may select
 on it to stop waiting, or adapt it to a network client's cancellation mechanism.

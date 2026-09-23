@@ -2,9 +2,10 @@
 
 ## Status
 
-Accepted. Backend and Cooper integration are implemented locally and exercised
-with headless and PTY tests. Distribution remains pending a published Vaxis
-revision and replacement of the local development module overrides.
+Accepted. Backend and Cooper integration are implemented and exercised with
+headless and PTY tests. Cooper pins the published Vaxis fork revision
+[`38e1209`](https://github.com/akonwi/vaxis/commit/38e1209421b34ff49aa26d8a7108c0074cf41bf1)
+without local development module overrides.
 
 This supersedes ADR 0002's requirement that Root always fill the
 terminal: Root instead fills the App's rendering surface. Existing fullscreen

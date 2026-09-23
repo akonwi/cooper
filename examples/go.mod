@@ -7,7 +7,7 @@ replace github.com/akonwi/cooper => ..
 // Ard source imports Cooper and Vaxis directly through the Go backend.
 require (
 	github.com/akonwi/cooper v0.0.0
-	github.com/akonwi/vaxis v0.0.0-20260913113926-34e520204135
+	github.com/akonwi/vaxis v0.0.0-20260923174554-38e1209421b3
 )
 
 require (
@@ -16,5 +16,3 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.10.0 // indirect
 )
-
-replace github.com/akonwi/vaxis => ../../vaxis

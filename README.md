@@ -100,8 +100,8 @@ reserves a fresh surface after intervening output. See the
 [screen modes contract](./docs/adrs/0023-define-terminal-screen-modes.md) and
 [`screen_modes.ard`](./examples/screen_modes.ard).
 
-Development currently uses the sibling Vaxis checkout through local Go module
-replacements. A published Vaxis revision must be pinned before distribution.
+Cooper pins the Vaxis fork revision that supports these modes; no sibling
+Vaxis checkout or local module override is required.
 
 ## Experimental declarative components
 

@@ -38,8 +38,8 @@ python3 test_screen_modes.py
 The PTY test uses Vaxis's terminal model for cursor, mouse, resize, and history
 assertions. A separate protocol peer checks positioning failures and cleanup.
 Set `COOPER_SCREEN_CAPTURE_DIR` to an existing directory to export readable SVG
-captures of the emulator's text cells. These tests currently require the local
-Vaxis development replacement documented in the root README.
+captures of the emulator's text cells. These tests use the pinned Vaxis fork
+dependency; no sibling Vaxis checkout is required.
 
 ## Declarative jobs
 

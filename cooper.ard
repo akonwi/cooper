@@ -1,6 +1,7 @@
 use cooper/event
 use cooper/root as application_root
 use cooper/runtime as application_runtime
+use cooper/screen
 use cooper/ui/selection as selection_value
 
 type Runtime = application_runtime::Runtime
@@ -22,8 +23,13 @@ struct App {
   root: mut Root,
 }
 
-fn app(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?) App!Error {
-  let runtime = try application_runtime::new_live(exit_on_ctrl_c.or(true), auto_focus.or(true), use_mouse.or(true))
+fn app(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?, screen: screen::Config?) App!Error {
+  let runtime = try application_runtime::new_live(
+    exit_on_ctrl_c.or(true),
+    auto_focus.or(true),
+    use_mouse.or(true),
+    screen,
+  )
   defer runtime.rollback_construction()
   let root = application_root::new(runtime)
   runtime.commit_construction()

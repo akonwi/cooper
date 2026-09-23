@@ -22,6 +22,25 @@ ard run quickstart.ard
 
 Use Left and Right to change the counter, or press Q to quit.
 
+## Terminal screen modes
+
+`screen_modes.ard` runs an editable retained UI in `alt`, `main`, `inline`, or
+`split` mode. The default is a four-row split footer. Ctrl+O appends managed
+output in bounded modes, Ctrl+S suspends for external output and resumes the
+same controls, and Escape quits. Inline preserves the final UI; the other modes
+use their default clear/restore policies.
+
+```sh
+COOPER_SCREEN_MODE=split COOPER_SCREEN_HEIGHT=6 ard run screen_modes.ard
+python3 test_screen_modes.py
+```
+
+The PTY test uses Vaxis's terminal model for cursor, mouse, resize, and history
+assertions. A separate protocol peer checks positioning failures and cleanup.
+Set `COOPER_SCREEN_CAPTURE_DIR` to an existing directory to export readable SVG
+captures of the emulator's text cells. These tests currently require the local
+Vaxis development replacement documented in the root README.
+
 ## Declarative jobs
 
 `declarative_jobs.ard` exercises the experimental `cooper/cui` framework

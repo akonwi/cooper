@@ -1,0 +1,78 @@
+enum Mode {
+  alt,
+  main,
+  inline,
+  split,
+}
+
+struct Config {
+  mode: Mode,
+  height: Int?,
+  clear_on_exit: Bool,
+}
+
+fn config(mode: Mode, height: Int?, clear_on_exit: Bool?) Config {
+  let value = Config{
+    mode: mode,
+    height: height,
+    clear_on_exit: clear_on_exit.or(mode != Mode::inline),
+  }
+  value.internal_validate()
+  value
+}
+
+impl Config {
+  fn internal_bounded() Bool {
+    self.mode == Mode::inline or self.mode == Mode::split
+  }
+
+  fn internal_validate() {
+    if self.internal_bounded() {
+      if self.height.or(0) <= 0 {
+        panic("inline and split screens require a positive height")
+      }
+    } else if self.height.is_some() {
+      panic("alt and main screens do not accept a height")
+    }
+    if self.mode == Mode::alt and not self.clear_on_exit {
+      panic("alt screens require clear_on_exit")
+    }
+  }
+
+  fn internal_height(terminal_height: Int) Int {
+    if self.internal_bounded() and self.height.or(0) < terminal_height {
+      self.height.or(0)
+    } else {
+      terminal_height
+    }
+  }
+}
+
+fn internal_output(text: Str) Str {
+  mut output = ""
+  mut carriage = false
+  mut newline = false
+  for character in text {
+    if carriage and character != '\n' {
+      output = "{output} "
+    }
+    carriage = character == '\r'
+    newline = character == '\n'
+    if newline {
+      output = "{output}\n"
+    } else if not carriage {
+      if character < ' ' or character >= '\x7f' and character <= '\u009f' {
+        output = "{output} "
+      } else {
+        output = "{output}{character}"
+      }
+    }
+  }
+  if carriage {
+    output = "{output} "
+  }
+  if output != "" and not newline {
+    output = "{output}\n"
+  }
+  output
+}

@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted. Backend and Cooper implementation are pending.
+Accepted. Backend and Cooper integration are implemented locally and exercised
+with headless and PTY tests. Distribution remains pending a published Vaxis
+revision and replacement of the local development module overrides.
 
 This supersedes ADR 0002's requirement that Root always fill the
 terminal: Root instead fills the App's rendering surface. Existing fullscreen

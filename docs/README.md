@@ -69,6 +69,9 @@ findings and design rationale here; generated benchmark data belongs outside Git
   shared-edge cell rounding contract; implementation pending.
 - [ADR 0021](./adrs/0021-define-spring-animations.md) — accepted
   Ard-owned scalar springs, momentum-preserving retargeting, and Runtime lifecycle semantics.
+- [ADR 0023](./adrs/0023-define-terminal-screen-modes.md) — accepted
+  alternate-screen, main-screen, inline, and split-footer configuration, output
+  ownership, and lifecycle contract; backend and Cooper implementation are pending.
 
 ## Architecture Decision Records
 
@@ -98,6 +101,7 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
 | [0020](./adrs/0020-define-layout-cell-rounding.md) | Accepted | Define layout cell rounding |
 | [0021](./adrs/0021-define-spring-animations.md) | Accepted | Define spring animations |
 | [0022](./adrs/0022-define-declarative-components.md) | Proposed | Define declarative components |
+| [0023](./adrs/0023-define-terminal-screen-modes.md) | Accepted | Define terminal screen modes |
 
 ### Add an ADR
 

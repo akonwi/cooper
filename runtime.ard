@@ -17,7 +17,9 @@ use cooper/event
 use go:cooper/ffi/numberbridge as numbers
 use go:cooper/ffi/signalwatch
 use go:cooper/ffi/urlopen
+use go:cooper/ffi/vaxisbridge
 use cooper/notification
+use cooper/screen
 use cooper/terminal_progress
 use cooper/ui/color
 use cooper/ui/selection as public_selection
@@ -189,6 +191,10 @@ private struct State {
   dispatch: fn(fn()) Void!event::DispatchError,
   cancellation: Receiver<Void>,
   terminal: (mut vaxis::Vaxis)?,
+  screen_config: screen::Config,
+  pending_output: [Str],
+  output_history: [Str],
+  render_error: Error?,
   graphics: mut graphics::Renderer,
   notification_action: fn(Str, Str?) Bool,
   terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
@@ -294,7 +300,10 @@ private fn state(
   construction_committed: Bool,
   headless: Bool,
   detached: Bool,
+  screen_config: screen::Config?,
 ) mut State {
+  let presentation = screen_config.or(screen::config(screen::Mode::alt))
+  presentation.internal_validate()
   let terminal_io = mut sync::Mutex{}
   let lifecycle = mut sync::Mutex{}
   let updates = mut dispatch_runtime::new_dispatch_queue()
@@ -334,6 +343,10 @@ private fn state(
     dispatch: dispatch,
     cancellation: cancellation_signal.receiver(),
     terminal: terminal,
+    screen_config: presentation,
+    pending_output: [],
+    output_history: [],
+    render_error: Maybe::new<Error>(),
     graphics: graphics::new(),
     notification_action: notification_action,
     terminal_progress_action: terminal_progress_action,
@@ -361,8 +374,8 @@ private fn state(
     animation_execution_generation: 0,
     timelines: [],
     springs: [],
-    pending_resize_cols: 0,
-    pending_resize_rows: 0,
+    pending_resize_cols: -1,
+    pending_resize_rows: -1,
     lifecycle: lifecycle,
     phase: 0,
     resources_stopped: false,
@@ -402,7 +415,7 @@ private fn state(
     clock_started: time::Now(),
     headless_width: width,
     headless_height: height,
-    last_frame: paint::new_buffer(width, height),
+    last_frame: paint::new_buffer(width, presentation.internal_height(height)),
     next_listener_id: 1,
     key_listeners: [],
     paste_listeners: [],
@@ -418,9 +431,35 @@ private fn state(
   })
 }
 
-private fn new_live_state(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Bool) (mut State)!Error {
+private fn new_live_state(
+  exit_on_ctrl_c: Bool,
+  auto_focus: Bool,
+  use_mouse: Bool,
+  screen_config: screen::Config?,
+) (mut State)!Error {
+  let presentation = screen_config.or(screen::config(screen::Mode::alt))
+  presentation.internal_validate()
+  let options = match presentation.mode {
+    screen::Mode::alt => vaxis::Options{DisableMouse: not use_mouse, NoSignals: true},
+    _ => {
+      let mode = match presentation.mode {
+        screen::Mode::main => vaxis::PrimaryMain,
+        screen::Mode::split => vaxis::PrimarySplit,
+        _ => vaxis::PrimaryInline,
+      }
+      vaxis::Options{
+        DisableMouse: not use_mouse,
+        NoSignals: true,
+        PrimaryScreen: mut vaxis::PrimaryScreenOptions{
+          Mode: mode,
+          RegionHeight: presentation.height.or(0),
+          ClearOnExit: presentation.clear_on_exit,
+        },
+      }
+    },
+  }
   let watcher = signalwatch::New()
-  match vaxis::New(vaxis::Options{DisableMouse: not use_mouse, NoSignals: true}) {
+  match vaxis::New(options) {
     ok(terminal) => {
       let clipboard = clipboard::internal_terminal(
         fn(ctx: context::Context) Str!Error {
@@ -470,6 +509,7 @@ private fn new_live_state(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Boo
         false,
         false,
         false,
+        presentation,
       )
       Result::ok(created)
     },
@@ -487,6 +527,7 @@ private fn new_headless_state(
   notification_action: fn(Str, Str?) Bool,
   terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
   terminal_title_action: fn(Str),
+  screen_config: screen::Config?,
 ) mut State {
   if width < 0 or height < 0 {
     panic("headless application dimensions must be non-negative")
@@ -509,6 +550,7 @@ private fn new_headless_state(
     true,
     true,
     false,
+    screen_config,
   )
   created
 }
@@ -1400,6 +1442,15 @@ impl State {
   private fn mut release_terminal(error: Error?) Error? {
     mut final_error = error
     self.terminal_io.Lock()
+    if not final_error.is_some() {
+      final_error = self.render_error
+    }
+    if not self.terminal_suspended {
+      match self.drain_output_locked() {
+        ok(_) => (),
+        err(failure) => { final_error = Maybe::new<Error>(failure) },
+      }
+    }
     self.pointer_cursor = event::MouseCursor::default_cursor
     self.pointer_cursor_initialized = false
     if self.headless {
@@ -1409,7 +1460,7 @@ impl State {
       mut close_terminal = true
       match self.terminal {
         terminal => {
-          if self.terminal_suspended {
+          if self.terminal_suspended and self.screen_config.mode == screen::Mode::alt {
             match terminal.Resume() {
               ok(_) => { self.terminal_suspended = false },
               err(resume_error) => {
@@ -1421,7 +1472,9 @@ impl State {
             }
           }
           if close_terminal {
-            self.clear_terminal_progress_locked()
+            if not self.terminal_suspended {
+              self.clear_terminal_progress_locked()
+            }
             self.graphics.clear()
             self.last_frame.images = []
             terminal.Close()
@@ -1476,10 +1529,10 @@ impl State {
     self.lifecycle.Lock()
     let cols = self.pending_resize_cols
     let rows = self.pending_resize_rows
-    self.pending_resize_cols = 0
-    self.pending_resize_rows = 0
+    self.pending_resize_cols = -1
+    self.pending_resize_rows = -1
     self.lifecycle.Unlock()
-    if cols > 0 and rows > 0 {
+    if cols >= 0 and rows >= 0 {
       let current = terminal.Size()
       terminal.Resize(
         vaxis::Resize{
@@ -1584,7 +1637,7 @@ impl State {
     buffer
   }
 
-  private fn mut present(terminal: mut vaxis::Vaxis, buffer: mut paint::Buffer) {
+  private fn mut present(terminal: mut vaxis::Vaxis, buffer: mut paint::Buffer) Void!Error {
     let window = terminal.Window()
     window.Clear()
     terminal.HideCursor()
@@ -1618,7 +1671,15 @@ impl State {
       _ => (),
     }
     self.graphics.present(terminal, buffer)
-    terminal.Render()
+    if buffer.width > 0 and buffer.height > 0 {
+      self.submit_output_locked()
+    }
+    if self.screen_config.mode == screen::Mode::alt {
+      terminal.Render()
+      Result::ok(())
+    } else {
+      terminal.RenderFrame()
+    }
   }
 
   private fn mut post_frame_pointer(root: mut node::Renderable) {
@@ -1683,8 +1744,10 @@ impl State {
       height = window.Height
       if terminal.SupportsKittyGraphics() {
         let size = terminal.Size()
-        cell_width = size.XPixel / size.Cols
-        cell_height = size.YPixel / size.Rows
+        if size.Cols > 0 and size.Rows > 0 {
+          cell_width = size.XPixel / size.Cols
+          cell_height = size.YPixel / size.Rows
+        }
       }
     }
     self.terminal_io.Unlock()
@@ -1692,11 +1755,21 @@ impl State {
       let buffer = self.draw(root, width, height, cell_width, cell_height)
       self.terminal_io.Lock()
       let present = self.live_rendering()
+      mut failed = false
       if present {
-        self.present(terminal, buffer)
+        match self.present(terminal, buffer) {
+          ok(_) => (),
+          err(error) => {
+            self.render_error = Maybe::new<Error>(error)
+            self.publish_startup(Maybe::new<Error>(error))
+            failed = true
+          },
+        }
       }
       self.terminal_io.Unlock()
-      if present {
+      if failed {
+        let _ = self.request_live_destroy()
+      } else if present {
         self.post_frame_pointer(root)
         self.post_frame_selection()
       }
@@ -1704,7 +1777,13 @@ impl State {
   }
 
   private fn mut paint_test(root: mut node::Renderable) {
-    let _ = self.draw(root, self.headless_width, self.headless_height)
+    let height = self.screen_config.internal_height(self.headless_height)
+    let _ = self.draw(root, self.headless_width, height)
+    if self.headless_width > 0 and height > 0 {
+      self.terminal_io.Lock()
+      self.submit_output_locked()
+      self.terminal_io.Unlock()
+    }
     self.post_frame_pointer(root)
     self.post_frame_selection()
   }
@@ -1807,6 +1886,61 @@ impl State {
     } else {
       Result::err(Error::new("cannot open a URL from a destroyed Runtime"))
     }
+  }
+
+  fn mut append_output(text: Str) Bool {
+    let normalized = screen::internal_output(text)
+    self.terminal_io.Lock()
+    defer self.terminal_io.Unlock()
+    self.lifecycle.Lock()
+    defer self.lifecycle.Unlock()
+    let active = self.phase == 2 or self.phase == 1 and self.startup_published
+    let accepted = active and self.screen_config.internal_bounded() and (not self.resources_stopped)
+    if accepted and normalized != "" {
+      self.pending_output.push(normalized)
+      (self.request_render())()
+    }
+    accepted
+  }
+
+  // The terminal-I/O lock protects the whole output queue and its test recorder.
+  private fn mut submit_output_locked() {
+    for block in self.pending_output {
+      if self.headless {
+        self.output_history.push(block)
+      } else {
+        self.terminal.expect("managed output terminal").AppendString(block)
+      }
+    }
+    self.pending_output = []
+  }
+
+  private fn mut drain_output_locked() Void!Error {
+    if self.pending_output.size() == 0 {
+      Result::ok(())
+    } else if self.headless {
+      self.submit_output_locked()
+      Result::ok(())
+    } else {
+      let terminal = self.terminal.expect("managed output terminal")
+      let window = terminal.Window()
+      if window.Width <= 0 or window.Height <= 0 {
+        Result::err(Error::new("cannot drain output while the terminal has zero size"))
+      } else {
+        self.submit_output_locked()
+        terminal.RenderFrame()
+      }
+    }
+  }
+
+  fn mut output_blocks_test() [Str] {
+    self.terminal_io.Lock()
+    defer self.terminal_io.Unlock()
+    let result = mut List::new<Str>()
+    for block in self.output_history {
+      result.push(block)
+    }
+    result.@
   }
 
   fn mut set_title(value: Str) Bool {
@@ -2115,11 +2249,20 @@ impl State {
         )
       } else {
         let terminal = self.terminal.expect("live application terminal")
-        self.clear_terminal_progress_locked()
-        self.graphics.clear()
-        terminal.SetMouseShape(vaxis::MouseShapeDefault)
-        terminal.Render()
-        outcome = terminal.Suspend()
+        outcome = self.drain_output_locked()
+        if outcome.is_ok() {
+          self.clear_terminal_progress_locked()
+          self.graphics.clear()
+          terminal.SetMouseShape(vaxis::MouseShapeDefault)
+          if self.screen_config.mode == screen::Mode::alt {
+            terminal.Render()
+          } else if self.has_frame {
+            outcome = terminal.RenderFrame()
+          }
+        }
+        if outcome.is_ok() {
+          outcome = terminal.Suspend()
+        }
         match outcome {
           ok(_) => {
             self.terminal_suspended = true
@@ -2197,10 +2340,19 @@ impl State {
     if available and not already_active {
       let terminal = self.terminal.expect("live application terminal")
       outcome = terminal.Resume()
+      if outcome.is_ok() {
+        self.terminal_suspended = false
+        let _ = self.apply_pending_resize_locked(terminal)
+        if resumed == 1 and self.screen_config.mode != screen::Mode::alt {
+          outcome = terminal.RenderFrame()
+          if outcome.is_err() {
+            let _ = terminal.Suspend()
+            self.terminal_suspended = true
+          }
+        }
+      }
       match outcome {
         ok(_) => {
-          self.terminal_suspended = false
-          let _ = self.apply_pending_resize_locked(terminal)
           self.request_animation_clock_reset()
           let committed = self.restore_terminal_progress_and_commit_phase(transition, resumed, true)
           if committed {
@@ -2264,7 +2416,14 @@ impl State {
           self.live_pump(root)
         })
       }
-      self.startup_result()
+      match self.startup_result() {
+        ok(_) => Result::ok(()),
+        err(error) => {
+          // Failure is not returned until the pump has restored the terminal.
+          let _ = self.completion_result()
+          Result::err(error)
+        },
+      }
     }
   }
 
@@ -2333,6 +2492,28 @@ impl State {
 
     if not self.live_stopping() {
       let _ = self.request_live_destroy()
+    }
+  }
+
+  private fn mut surface_mouse(mouse: vaxis::Mouse) (mut event::MouseEvent)? {
+    self.terminal_io.Lock()
+    defer self.terminal_io.Unlock()
+    let converted = terminal_events::mouse(mouse)
+    if self.screen_config.mode == screen::Mode::alt {
+      Maybe::new<mut event::MouseEvent>(converted)
+    } else {
+      let position = vaxisbridge::ScreenPosition(self.terminal.expect("mouse terminal"))
+      if position.Valid and mouse.SurfaceGeneration == position.Generation {
+        converted.y = converted.y - position.Row
+        Maybe::new<mut event::MouseEvent>(converted)
+      } else if converted.event_type == event::MouseEventType::up {
+        // A stale release must end capture without clicking a new placement.
+        converted.x = -1
+        converted.y = -1
+        Maybe::new<mut event::MouseEvent>(converted)
+      } else {
+        Maybe::new<mut event::MouseEvent>()
+      }
     }
   }
 
@@ -2452,22 +2633,26 @@ impl State {
                             }
                           },
                           vaxis::Mouse(mouse) => {
-                            let converted = terminal_events::mouse(mouse)
-                            let outcome = self.pointer.process(
-                              root,
-                              converted,
-                              self.focused,
-                              self.selection,
-                              self.auto_focus,
-                              self.now_ms(),
-                            )
-                            self.apply_outcome(outcome)
-                            let cursor_changed = self.update_pointer_cursor(root)
-                            if outcome.redraw or cursor_changed or self.take_redraw_request() {
-                              self.paint_live(root)
-                            }
-                            if outcome.quit or self.post_frame_quit {
-                              running = false
+                            match self.surface_mouse(mouse) {
+                              converted => {
+                                let outcome = self.pointer.process(
+                                  root,
+                                  converted,
+                                  self.focused,
+                                  self.selection,
+                                  self.auto_focus,
+                                  self.now_ms(),
+                                )
+                                self.apply_outcome(outcome)
+                                let cursor_changed = self.update_pointer_cursor(root)
+                                if outcome.redraw or cursor_changed or self.take_redraw_request() {
+                                  self.paint_live(root)
+                                }
+                                if outcome.quit or self.post_frame_quit {
+                                  running = false
+                                }
+                              },
+                              _ => (),
                             }
                           },
                           vaxis::Key(key) => {
@@ -2694,6 +2879,7 @@ impl State {
     }
     self.lifecycle.Unlock()
     if available {
+      self.submit_output_locked()
       self.clear_terminal_progress_locked()
       self.terminal_suspended = true
     }
@@ -2741,8 +2927,8 @@ impl State {
   }
 }
 
-fn new_live(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Bool) (mut Runtime)!Error {
-  let state = try new_live_state(exit_on_ctrl_c, auto_focus, use_mouse)
+fn new_live(exit_on_ctrl_c: Bool, auto_focus: Bool, use_mouse: Bool, screen_config: screen::Config?) (mut Runtime)!Error {
+  let state = try new_live_state(exit_on_ctrl_c, auto_focus, use_mouse, screen_config)
   Result::ok(public_runtime(state))
 }
 
@@ -2753,6 +2939,7 @@ fn new_headless(
   notification_action: fn(Str, Str?) Bool,
   terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
   terminal_title_action: fn(Str),
+  screen_config: screen::Config?,
 ) mut Runtime {
   public_runtime(
     new_headless_state(
@@ -2762,6 +2949,7 @@ fn new_headless(
       notification_action,
       terminal_progress_action,
       terminal_title_action,
+      screen_config,
     ),
   )
 }
@@ -2771,6 +2959,14 @@ fn new_detached(request_render: fn()?, width_measurer: (fn(Str) Int)?) mut Runti
 }
 
 impl Runtime {
+  fn mut append_output(text: Str) Bool {
+    internal_state(self).append_output(text)
+  }
+
+  fn mut output_blocks_test() [Str] {
+    internal_state(self).output_blocks_test()
+  }
+
   fn mut create_node(initial_style: style::Style) mut node::Node {
     internal_state(self).create_node(initial_style)
   }

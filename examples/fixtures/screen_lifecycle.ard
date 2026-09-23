@@ -1,0 +1,34 @@
+use cooper
+use cooper/screen
+use cooper/ui
+use go:fmt
+use go:os
+
+fn main() {
+  let scenario = os::Getenv("COOPER_SCREEN_LIFECYCLE")
+  let app = cooper::app(
+    screen: screen::config(screen::Mode::split, height: 3),
+  ).expect("create screen lifecycle")
+  app.root.add(ui::text(app.context, content: "LIVE REGION"))
+  if scenario == "startup-failure" {
+    if app.start().is_ok() {
+      panic("startup must report missing cursor position")
+    }
+  } else if scenario != "prestart" {
+    app.start().expect("start screen lifecycle")
+    app.suspend().expect("suspend screen lifecycle")
+    fmt::Println("EXTERNAL OUTPUT")
+    if scenario == "resume-failure" {
+      if app.resume().is_ok() {
+        panic("resume must report missing cursor position")
+      }
+      if app.context.append_output("rejected") {
+        panic("failed resume must remain suspended")
+      }
+    }
+  }
+  app.destroy()
+  let _ = app.wait()
+  app.destroy()
+  fmt::Println("LIFECYCLE RESTORED")
+}

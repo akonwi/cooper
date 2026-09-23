@@ -1,0 +1,93 @@
+use ard/async
+
+use cooper
+use cooper/screen
+use cooper/ui
+use go:fmt
+use go:os
+use go:strconv
+
+private struct Output {
+  count: Int,
+}
+
+fn main() {
+  let name = os::Getenv("COOPER_SCREEN_MODE")
+  let mode = match name {
+    "alt" => screen::Mode::alt,
+    "main" => screen::Mode::main,
+    "inline" => screen::Mode::inline,
+    _ => screen::Mode::split,
+  }
+  let requested_height = os::Getenv("COOPER_SCREEN_HEIGHT")
+  let height = match requested_height {
+    "" => 4,
+    _ => strconv::Atoi(requested_height).expect("positive screen height"),
+  }
+  let configuration = match mode {
+    screen::Mode::alt => screen::config(mode),
+    screen::Mode::main => screen::config(mode),
+    _ => screen::config(mode, height: height),
+  }
+  let app = cooper::app(screen: configuration).expect("create screen example")
+  defer app.destroy()
+  let output = mut Output{count: 0}
+  let status = ui::text(
+    app.context,
+    content: "SCREEN READY",
+    styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+  )
+  let input = ui::input(
+    app.context,
+    value: "edit me",
+    styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+  )
+  let help = ui::text(
+    app.context,
+    content: "Ctrl+O output | Ctrl+S suspend | Esc quit",
+    styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+  )
+  app.root.add(status)
+  app.root.add(input)
+  app.root.add(help)
+  if app.context.append_output("before start") {
+    panic("output must be rejected before start")
+  }
+  let _ = app.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type == cooper::KeyEventType::press {
+      if received.matches("escape") {
+        let _ = app.context.append_output("final output")
+        app.destroy()
+        received.stop_propagation()
+      } else if received.matches("o", ctrl: true) {
+        output.count =+ 1
+        if app.context.append_output("output {output.count}") {
+          status.set_content("OUTPUT {output.count}")
+        } else {
+          status.set_content("OUTPUT UNAVAILABLE")
+        }
+        received.stop_propagation()
+      } else if received.matches("s", ctrl: true) {
+        received.stop_propagation()
+        async::start(fn() {
+          app.suspend().expect("suspend screen example")
+          if app.context.append_output("while suspended") {
+            panic("output must be rejected while suspended")
+          }
+          fmt::Println("external output")
+          app.resume().expect("resume screen example")
+          app.context.dispatch(fn() {
+            status.set_content("RESUMED")
+          }).expect("update resumed screen")
+        })
+      }
+    }
+  })
+  app.start().expect("start screen example")
+  app.context.dispatch(fn() {
+    let _ = input.focus()
+  }).expect("focus input")
+  app.wait().expect("wait for screen example")
+  app.destroy()
+  fmt::Println("SHELL RESTORED")
+}

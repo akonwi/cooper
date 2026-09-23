@@ -64,13 +64,44 @@ fn main() {
 is the view-construction namespace for controls, layout, colors, geometry,
 selection, and rich text. Focused modules remain available for specialized APIs.
 
-App exposes its Runtime as `application.context` and its permanent terminal-sized Root. Controls
+App exposes its Runtime as `application.context` and its permanent surface-sized Root. Controls
 are persistent references: construct them once, add them to the tree, and
 mutate them through setters. `start()` launches the event pump and returns,
 `wait()` is its completion barrier, and `run()` is the blocking convenience for
 standalone programs. Only `destroy()` is final; call `wait()` after requesting
 destruction before a standalone process exits. `suspend()` and `resume()`
 temporarily release and reacquire the terminal while retaining the tree.
+
+## Terminal screen modes
+
+The default `alt` mode uses the alternate screen. Import `cooper/screen` to choose
+`main` (full-height normal buffer), `inline` (a trailing live block), or `split`
+(a footer that advances with output, then stays at the bottom):
+
+```ard
+use cooper
+use cooper/screen
+
+let application = cooper::app(
+  screen: screen::config(screen::Mode::split, height: 6),
+).expect("create app")
+```
+
+`inline` and `split` require a positive height, clamped to the terminal; Root and
+all controls use that surface's dimensions. They accept complete plain-text
+output blocks through `application.context.append_output("Build finished")`.
+The call is background-safe and returns false outside an active bounded session.
+It normalizes line endings and control characters; it does not execute ANSI or
+capture stdout/stderr. Suspend the App before another program writes to the terminal.
+
+Inline preserves its final text by default; main and split clear their owned
+surface. Set `clear_on_exit` to override this in normal-buffer modes. Resume
+reserves a fresh surface after intervening output. See the
+[screen modes contract](./docs/adrs/0023-define-terminal-screen-modes.md) and
+[`screen_modes.ard`](./examples/screen_modes.ard).
+
+Cooper pins the Vaxis fork revision that supports these modes; no sibling
+Vaxis checkout or local module override is required.
 
 ## Experimental declarative components
 

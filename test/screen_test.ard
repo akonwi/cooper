@@ -1,0 +1,265 @@
+use ard/async
+use ard/testing
+
+use cooper
+use cooper/event
+use cooper/screen
+use cooper/testing as headless
+use cooper/ui
+
+private fn rejects(action: fn(), message: Str) Void!Str {
+  let result = unsafe {
+    action()
+  }
+  match result {
+    ok(_) => testing::fail("expected invalid screen configuration"),
+    err(error) => testing::assert(error.contains(message), "unexpected error: {error}"),
+  }
+}
+
+test fn screen_configuration_validates_before_terminal_acquisition() Void!Str {
+  try testing::assert(screen::config(screen::Mode::alt).clear_on_exit, "alt cleanup")
+  try testing::assert(screen::config(screen::Mode::main).clear_on_exit, "main cleanup")
+  try testing::assert(
+    not screen::config(screen::Mode::inline, height: 3).clear_on_exit,
+    "inline preservation",
+  )
+  try testing::assert(screen::config(screen::Mode::split, height: 3).clear_on_exit, "split cleanup")
+  for mode in [screen::Mode::alt, screen::Mode::main] {
+    try rejects(
+      fn() {
+        let _ = screen::config(mode, height: 1)
+      },
+      "do not accept a height",
+    )
+  }
+  for mode in [screen::Mode::inline, screen::Mode::split] {
+    try rejects(
+      fn() {
+        let _ = screen::config(mode)
+      },
+      "positive height",
+    )
+    try rejects(
+      fn() {
+        let _ = screen::config(mode, height: 0)
+      },
+      "positive height",
+    )
+    try rejects(
+      fn() {
+        let _ = screen::config(mode, height: -2)
+      },
+      "positive height",
+    )
+  }
+  try rejects(
+    fn() {
+      let _ = screen::config(screen::Mode::alt, clear_on_exit: false)
+    },
+    "require clear_on_exit",
+  )
+  let invalid = screen::Config{
+    mode: screen::Mode::split,
+    height: Maybe::new<Int>(0),
+    clear_on_exit: true,
+  }
+  try rejects(
+    fn() {
+      let _ = cooper::app(screen: invalid)
+    },
+    "positive height",
+  )
+  rejects(
+    fn() {
+      let _ = headless::new(12, 8, screen: invalid)
+    },
+    "positive height",
+  )
+}
+
+test fn screen_surface_clamps_then_grows_without_replacing_controls() Void!Str {
+  for mode in [screen::Mode::inline, screen::Mode::split] {
+    let app = headless::new(17, 2, screen: screen::config(mode, height: 4))
+    let field = ui::input(app.context, value: "retained")
+    app.root.add(field)
+    app.render()
+    let identity = field.node().id
+    try testing::assert(app.frame().width() == 17 and app.frame().height() == 2, "initial clamp")
+    app.resize(13, 9)
+    try testing::assert(app.frame().width() == 13 and app.frame().height() == 4, "restore requested height")
+    try testing::assert(
+      field.node().id == identity and field.value() == "retained",
+      "retained control identity",
+    )
+    try testing::assert(app.suspend() and app.resume(), "suspend and resume")
+    app.render()
+    try testing::assert(
+      field.node().id == identity and app.frame().height() == 4,
+      "resume retains surface tree",
+    )
+    app.destroy()
+  }
+  for mode in [screen::Mode::alt, screen::Mode::main] {
+    let app = headless::new(17, 7, screen: screen::config(mode))
+    app.render()
+    try testing::assert(app.frame().height() == 7, "full-height mode")
+    try testing::assert(not app.context.append_output("rejected"), "full-height output rejected")
+    app.destroy()
+  }
+  Result::ok(())
+}
+
+test fn screen_output_is_normalized_ordered_and_wakes_an_unchanged_tree() Void!Str {
+  let app = headless::new(18, 8, screen: screen::config(screen::Mode::split, height: 3))
+  app.render()
+  try testing::assert(app.context.append_output("A\r\nB\rC\t\x1b[31m\u0085é\n"), "accept controls")
+  try testing::assert(app.context.append_output("tail\r"), "accept bare trailing carriage return")
+  try testing::assert(app.context.append_output(""), "empty accepted no-op")
+  try testing::assert(app.output_blocks().size() == 0, "acceptance is not commitment")
+  let _ = app.flush()
+  let blocks = app.output_blocks()
+  try testing::assert(blocks.size() == 2, "two whole blocks")
+  try testing::assert(
+    blocks.at(0).expect("first") == "A\nB C  [31m é\n",
+    "normalize without executing controls",
+  )
+  try testing::assert(blocks.at(1).expect("second") == "tail \n", "newline termination")
+  app.render()
+  try testing::assert(app.output_blocks().size() == 2, "frames do not duplicate output")
+  app.destroy()
+  testing::assert(app.output_blocks().size() == 2, "history survives destruction")
+}
+
+test fn screen_output_defers_zero_size_and_drains_before_release() Void!Str {
+  let app = headless::new(10, 5, screen: screen::config(screen::Mode::inline, height: 3))
+  app.resize(0, 0)
+  try testing::assert(app.context.append_output("zero"), "accept while temporarily zero sized")
+  let _ = app.flush()
+  try testing::assert(app.output_blocks().size() == 0, "defer zero-sized presentation")
+  app.resize(10, 5)
+  try testing::assert(app.output_blocks().at(0).expect("zero block") == "zero\n", "commit after resize")
+  try testing::assert(app.context.append_output("suspend"), "accept before suspend")
+  try testing::assert(app.suspend(), "suspend")
+  try testing::assert(
+    app.output_blocks().at(1).expect("suspend block") == "suspend\n",
+    "drain before suspend",
+  )
+  try testing::assert(not app.context.append_output("forbidden"), "reject suspended output")
+  try testing::assert(app.resume(), "resume")
+  try testing::assert(app.context.append_output("destroy"), "accept before destroy")
+  app.destroy()
+  app.destroy()
+  try testing::assert(not app.context.append_output("forbidden"), "reject destroyed output")
+  testing::assert(
+    app.output_blocks().at(2).expect("destroy block") == "destroy\n",
+    "drain exactly once on destroy",
+  )
+}
+
+test fn screen_output_acceptance_races_with_suspend_and_destroy_without_loss() Void!Str {
+  for mut i = 0; i < 16; i =+ 1 {
+    let app = headless::new(10, 5, screen: screen::config(screen::Mode::split, height: 2))
+    let accepted = Chan::new<Bool>(1)
+    async::start(fn() {
+      accepted.send(app.context.append_output("first\nsecond"))
+    })
+    if i % 2 == 0 {
+      let _ = app.suspend()
+    } else {
+      app.destroy()
+    }
+    let committed = accepted.receiver().recv().or(false)
+    let blocks = app.output_blocks()
+    if committed {
+      try testing::assert(
+        blocks.size() == 1 and blocks.at(0).expect("atomic block") == "first\nsecond\n",
+        "drain every accepted call",
+      )
+    } else {
+      try testing::assert(blocks.size() == 0, "rejection has no output side effect")
+    }
+    app.destroy()
+  }
+  Result::ok(())
+}
+
+test fn screen_outside_scroll_does_not_fall_back_to_focus_but_drag_releases() Void!Str {
+  let app = headless::new(12, 12, screen: screen::config(screen::Mode::split, height: 3))
+  defer app.destroy()
+  let viewport = ui::scroll_box(
+    app.context,
+    styles: ui::style(width: ui::cells(5), height: ui::cells(3)),
+  )
+  for text in ["zero", "one", "two", "three", "four", "five"] {
+    viewport.add(
+      ui::text(
+        app.context,
+        content: text,
+        styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+      ),
+    )
+  }
+  app.root.add(viewport)
+  app.render()
+  try testing::assert(viewport.focus(), "focus scroll viewport")
+  app.scroll(8, -1, 1)
+  app.scroll(8, 3, 1)
+  try testing::assert(viewport.scroll_top() == 0, "outside surface must not scroll focused viewport")
+  app.scroll(8, 1, 1)
+  try testing::assert(viewport.scroll_top() > 0, "inside surface retains focus fallback")
+
+  let source = ui::box(
+    app.context,
+    styles: ui::style(
+      position: ui::Position::absolute,
+      left: ui::cells(6),
+      top: ui::cells(0),
+      width: ui::cells(3),
+      height: ui::cells(1),
+    ),
+  )
+  app.root.add(source)
+  let releases = mut List::new<event::MouseEventType>()
+  let _ = source.on_mouse(fn(received: mut event::MouseEvent) {
+    if received.event_type == event::MouseEventType::up or received.event_type == event::MouseEventType::drag_end {
+      releases.push(received.event_type)
+    }
+  })
+  app.drag(7, 0, 7, -1)
+  try testing::assert(releases.size() == 2, "outside release ends captured drag")
+  testing::assert(
+    releases.at(0).expect("drag end") == event::MouseEventType::drag_end and releases.at(1).expect("up") == event::MouseEventType::up,
+    "capture cleanup order",
+  )
+}
+
+test fn screen_popup_uses_surface_edge_not_physical_terminal_edge() Void!Str {
+  let app = headless::new(20, 15, screen: screen::config(screen::Mode::inline, height: 4))
+  defer app.destroy()
+  let control = ui::select_input(
+    app.context,
+    [ui::select_option("first"), ui::select_option("second")],
+    config: ui::select_config(show_descriptions: false, max_visible: 2),
+    appearance: ui::select_appearance(marker: "* "),
+    styles: ui::style(
+      position: ui::Position::absolute,
+      left: ui::cells(2),
+      top: ui::cells(3),
+      width: ui::cells(10),
+    ),
+  )
+  app.root.add(control)
+  app.render()
+  let _ = control.open()
+  app.render()
+  try testing::assert(
+    app.frame().cell(2, 1).expect("popup above anchor").grapheme == "*",
+    "popup flips at the bounded surface edge",
+  )
+  app.click(3, 2)
+  testing::assert(
+    control.selected().expect("second option").index == 1,
+    "popup hit coordinates remain surface-local",
+  )
+}

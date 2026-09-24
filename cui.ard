@@ -6,6 +6,7 @@ use cooper/cui/renderer
 use cooper/cui/view
 use cooper/cui/virtual_list as virtual
 use cooper/event
+use cooper/keymap
 use cooper/ui
 
 type Component = view::Component
@@ -87,7 +88,15 @@ fn virtual_list(
 }
 
 // Both types are inferred from the ordinary constructor and props value.
-fn child(create: fn(mut $P) mut $C, props: $P, key: Str?) View {
+fn child(
+  create: fn(mut $P) mut $C,
+  props: $P,
+  key: Str?,
+  commands: [keymap::Command]?,
+  bindings: [keymap::Binding]?,
+  binding_scope: keymap::ScopeMode?,
+  binding_priority: Int?,
+) View {
   view::child(
     view::Specification{
       props: props,
@@ -109,5 +118,9 @@ fn child(create: fn(mut $P) mut $C, props: $P, key: Str?) View {
       },
     },
     key,
+    commands: commands,
+    bindings: bindings,
+    binding_scope: binding_scope,
+    binding_priority: binding_priority,
   )
 }

@@ -1,0 +1,310 @@
+use cooper/core/node
+use cooper/event
+use cooper/keymap
+
+struct Entry {
+  layer: mut keymap::Layer,
+  active: Bool,
+  serial: Int,
+}
+
+private struct Candidate {
+  entry: mut Entry,
+  snapshot: keymap::Layer,
+  distance: Int,
+}
+
+struct Listener {
+  active: Bool,
+  run: fn(),
+}
+
+struct Registry {
+  token: mut node::ContextToken,
+  entries: [mut Entry],
+  listeners: [mut Listener],
+  serial: Int,
+  stopped: Bool,
+  notifying: Bool,
+}
+
+fn new(token: mut node::ContextToken) mut Registry {
+  (mut Registry{
+    token: token,
+    entries: [],
+    listeners: [],
+    serial: 0,
+    stopped: false,
+    notifying: false,
+  })
+}
+
+fn same_target(left: (mut node::Node)?, right: (mut node::Node)?) Bool {
+  match left {
+    target => {
+      match right {
+        other => target == other,
+        _ => false,
+      }
+    },
+    _ => right.is_none(),
+  }
+}
+
+private fn distance(scope: keymap::Scope, focused: (mut node::Node)?, root: (mut node::Node)?) Int {
+  if scope.mode == keymap::ScopeMode::application {
+    2147483647
+  } else {
+    mut found = -1
+    mut depth = 0
+    mut current = focused
+    mut reached_root = false
+    while current.is_some() {
+      let owner = current.expect("focus path")
+      if (not owner.is_mounted()) or not owner.pointer_route_visible() {
+        break
+      }
+      if same_target(keymap::internal_target(scope), current) and (scope.mode == keymap::ScopeMode::focus_within or depth == 0) {
+        found = depth * 2
+        if scope.mode == keymap::ScopeMode::focus_within {
+          found =+ 1
+        }
+      }
+      if same_target(current, root) {
+        reached_root = true
+        break
+      }
+      current = owner.parent
+      depth =+ 1
+    }
+    if reached_root {
+      found
+    } else {
+      -1
+    }
+  }
+}
+
+private fn before(left: Candidate, right: Candidate) Bool {
+  if left.snapshot.priority != right.snapshot.priority {
+    left.snapshot.priority > right.snapshot.priority
+  } else if left.distance != right.distance {
+    left.distance < right.distance
+  } else {
+    left.entry.serial > right.entry.serial
+  }
+}
+
+impl Registry {
+  fn mut changed() {
+    if (not self.stopped) and not self.notifying {
+      self.notifying = true
+      let snapshot = self.listeners
+      for listener in snapshot {
+        if listener.active {
+          listener.run()
+        }
+      }
+      self.notifying = false
+    }
+  }
+
+  fn mut on_change(handler: fn()) fn() {
+    let listener = mut Listener{active: not self.stopped, run: handler}
+    if listener.active {
+      self.listeners.push(listener)
+    }
+    fn() {
+      listener.active = false
+      listener.run = fn() {}
+      let kept = mut List::new<mut Listener>()
+      for item in self.listeners {
+        if item.active {
+          kept.push(item)
+        }
+      }
+      self.listeners = kept.@
+    }
+  }
+
+  fn mut register(layer: mut keymap::Layer) fn() {
+    if self.stopped {
+      fn() {}
+    } else {
+      match keymap::internal_target(layer.scope) {
+        target => {
+          if target.context_token != self.token {
+            panic("keymap target belongs to another Runtime")
+          }
+          if target.is_destroyed() {
+            panic("cannot register a keymap on a destroyed target")
+          }
+        },
+        _ => {
+          if layer.scope.mode != keymap::ScopeMode::application {
+            panic("focus keymap requires a target")
+          }
+        },
+      }
+      let ids = mut List::new<Str>()
+      for command in layer.commands {
+        for id in ids.@ {
+          if id == command.id() {
+            panic("duplicate command id in layer")
+          }
+        }
+        ids.push(command.id())
+      }
+      self.serial =+ 1
+      let entry = mut Entry{
+        layer: layer,
+        active: true,
+        serial: self.serial,
+      }
+      self.entries.push(entry)
+      let remove = fn() {
+        if entry.active {
+          entry.active = false
+          let kept = mut List::new<mut Entry>()
+          for item in self.entries {
+            if item.active {
+              kept.push(item)
+            }
+          }
+          self.entries = kept.@
+          self.changed()
+        }
+      }
+      match keymap::internal_target(layer.scope) {
+        target => target.on_cleanup(remove),
+        _ => (),
+      }
+      self.changed()
+      remove
+    }
+  }
+
+  private fn ordered(root: (mut node::Node)?, focused: (mut node::Node)?, include_inactive: Bool) [Candidate] {
+    let result = mut List::new<Candidate>()
+    for entry in self.entries {
+      if entry.active {
+        let snapshot = entry.layer.@
+        let rank = distance(snapshot.scope, focused, root)
+        if include_inactive or rank >= 0 and (snapshot.enabled)() {
+          let candidate = Candidate{
+            entry: entry,
+            snapshot: snapshot,
+            distance: rank,
+          }
+          result.push(candidate)
+        }
+      }
+    }
+    result.sort(before)
+    result.@
+  }
+
+  fn dispatch(
+    root: (mut node::Node)?,
+    focused: (mut node::Node)?,
+    received: mut event::KeyEvent,
+    current: fn() (mut node::Node)?,
+  ) Bool {
+    mut handled = false
+    let candidates = self.ordered(root, focused, false)
+    let version = self.token.attachment_version
+    for candidate in candidates {
+      if self.stopped or self.token.attachment_version != version or (not same_target(current(), focused)) or received.is_propagation_stopped() or received.is_default_prevented() {
+        break
+      }
+      if candidate.entry.active {
+        for binding in candidate.snapshot.bindings {
+          if (not candidate.entry.active) or self.stopped or (not same_target(current(), focused)) or self.token.attachment_version != version {
+            break
+          }
+          if binding.key.matches(received.@) and keymap::matches_trigger(binding.trigger, received.event_type) {
+            handled = binding.invocation.invoke()
+            (candidate.snapshot.internal_after_run)()
+            if handled {
+              received.prevent_default()
+              break
+            }
+          }
+        }
+      }
+      if handled {
+        break
+      }
+    }
+    handled
+  }
+
+  fn shortcuts(root: (mut node::Node)?, focused: (mut node::Node)?, reserved_ctrl_c: Bool) [keymap::Shortcut] {
+    let result = mut List::new<keymap::Shortcut>()
+    for candidate in self.ordered(root, focused, true) {
+      let active = candidate.distance >= 0 and (candidate.snapshot.enabled)()
+      for binding in candidate.snapshot.bindings {
+        let reserved = reserved_ctrl_c and binding.key.name == "c" and binding.key.modifiers.ctrl and (not binding.key.modifiers.shift) and (not binding.key.modifiers.alt) and (not binding.key.modifiers.super) and binding.trigger != keymap::Trigger::release
+        let eligible = active and binding.invocation.command.enabled() and (not reserved)
+        mut shadowed = false
+        for prior in result.@ {
+          if prior.eligible and keymap::same_key(prior.key, binding.key) and (prior.trigger == binding.trigger or prior.trigger == keymap::Trigger::press_or_repeat and binding.trigger == keymap::Trigger::press) {
+            shadowed = true
+          }
+        }
+        result.push(
+          keymap::Shortcut{
+            key: binding.key,
+            trigger: binding.trigger,
+            command: binding.invocation.command,
+            scope: candidate.snapshot.scope,
+            priority: candidate.snapshot.priority,
+            eligible: eligible,
+            shadowed: shadowed,
+          },
+        )
+      }
+    }
+    result.@
+  }
+
+  fn commands() [keymap::Command] {
+    let result = mut List::new<keymap::Command>()
+    for entry in self.entries {
+      if entry.active {
+        let ids = mut List::new<Str>()
+        for command in entry.layer.commands {
+          result.push(command)
+          ids.push(command.id())
+        }
+        for binding in entry.layer.bindings {
+          let command = binding.invocation.command
+          mut found = false
+          for id in ids.@ {
+            if id == command.id() {
+              found = true
+            }
+          }
+          if not found {
+            result.push(command)
+            ids.push(command.id())
+          }
+        }
+      }
+    }
+    result.@
+  }
+
+  fn mut destroy() {
+    self.stopped = true
+    for entry in self.entries {
+      entry.active = false
+    }
+    for listener in self.listeners {
+      listener.active = false
+      listener.run = fn() {}
+    }
+    self.entries = []
+    self.listeners = []
+  }
+}

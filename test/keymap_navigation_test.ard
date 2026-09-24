@@ -1,0 +1,72 @@
+use ard/testing
+
+use cooper/keymap
+use cooper/testing as cooper_testing
+use cooper/ui/scroll_box
+use cooper/ui/scrollbar
+use cooper/ui/select as select_control
+use cooper/ui/style
+use cooper/ui/text
+
+private fn options() [select_control::Option] {
+  [select_control::option("zero"), select_control::option("one"), select_control::option("two")]
+}
+
+test fn select_and_tabs_expose_typed_direct_actions() Void!Str {
+  let application = cooper_testing::new(12, 4)
+  let menu = select_control::new(application.context, options())
+  let tabs = select_control::tabs(application.context, options())
+  application.root.add(menu)
+  application.root.add(tabs)
+  application.render()
+
+  try testing::assert(menu.perform(select_control::Action::open), "Open action changes menu")
+  try testing::assert(menu.perform(select_control::Action::next), "Next action moves highlight")
+  try testing::assert(menu.highlighted_index().or(-1) == 1, "Menu moved forward")
+  try testing::assert(menu.perform(select_control::Action::previous), "Previous action moves highlight")
+  try testing::assert(menu.perform(select_control::Action::previous), "Bounded movement is handled")
+  try testing::assert(tabs.perform(select_control::Action::next), "Tab action moves independently")
+
+  menu.set_key_bindings(
+    keymap::bindings([keymap::mapping(keymap::key("x"), select_control::Action::next)]),
+  )
+  try testing::assert(menu.key_bindings().entries.size() == 1, "Replacement bindings are retained")
+  application.destroy()
+  testing::assert(menu.node_ref.is_destroyed(), "Select cleanup")
+}
+
+test fn scroll_controls_expose_asymmetric_actions_and_noops() Void!Str {
+  let application = cooper_testing::new(4, 2)
+  let viewport = scroll_box::new(
+    application.context,
+    styles: style::new(width: style::cells(4), height: style::cells(2)),
+  )
+  for value in ["0", "1", "2", "3"] {
+    viewport.add(
+      text::new(
+        application.context,
+        content: value,
+        styles: style::new(height: style::cells(1), flex_shrink: 0.0),
+      ),
+    )
+  }
+  let bar = scrollbar::new(
+    application.context,
+    scrollbar::Orientation::vertical,
+    state: scrollbar::state(viewport_size: 2, content_size: 5),
+    options: scrollbar::options(visibility: scrollbar::Visibility::always),
+  )
+  application.root.add(viewport)
+  application.root.add(bar)
+  application.render()
+
+  try testing::assert(viewport.perform(scroll_box::Action::down), "ScrollBox down moves")
+  try testing::assert(not viewport.perform(scroll_box::Action::left), "Unavailable axis is a no-op")
+  try testing::assert(bar.perform(scrollbar::Action::forward), "Scrollbar forward moves")
+  try testing::assert(bar.perform(scrollbar::Action::end), "Scrollbar end moves")
+  try testing::assert(bar.perform(scrollbar::Action::forward), "Recognized bound action is handled")
+  bar.set_key_bindings(keymap::bindings([]))
+  try testing::assert(bar.key_bindings().entries.size() == 0, "Scrollbar bindings replace defaults")
+  application.destroy()
+  testing::assert(viewport.node_ref.is_destroyed(), "Scroll controls cleanup")
+}

@@ -114,11 +114,17 @@ def main():
     screen = Capture(30, 110)
     try:
         wait_for(fd, screen, '3 loaded · 0 requests')
+        wait_for(fd, screen, 'J/K select · Enter open/collapse · Space scroll')
+        assert 'Esc back' not in screen.text(), 'disabled Back leaked into shortcut help'
         assert 'Story 1: terminals & components' in screen.text()
         assert screen.text().index('Story 1:') < screen.text().index('Story 2:') < screen.text().index('Story 3:')
         screen.save('feed')
+        # Modifiers must match exactly: Shift+Down must not select story 2.
+        send(fd, '\x1b[1;2B')
         send(fd, '\r')
         wait_for(fd, screen, '5 loaded · 0 requests')
+        wait_for(fd, screen, 'Esc back')
+        assert screen.text().count('J/K select') == 1, 'hidden feed duplicated reader shortcuts'
         assert 'Parent <literal> & Unicode café' in screen.text()
         assert '<p>' not in screen.text()
         assert 'parent-author · 40 replies (collapsed)' in screen.text()
@@ -190,6 +196,10 @@ def main():
         wait_for(fd, compact, 'Comment 216:')
         send(fd, '\x1b[5~')  # PageUp scrolls without changing selection.
         wait_for(fd, compact, 'Comment 211:')
+        send(fd, '\x1b[6~')  # PageDown is an alias for the same typed scroll command.
+        wait_for(fd, compact, 'Comment 216:')
+        send(fd, '\x1b[5~')
+        wait_for(fd, compact, 'Comment 211:')
         # Selection can cross the mounted window without fetching more data.
         with API.lock:
             before_navigation = sum(API.counts.values())
@@ -209,7 +219,8 @@ def main():
             assert sum(API.counts.values()) == before_navigation, 'virtual scrolling fetched data'
         send(fd, '\x1b')
         wait_for(fd, compact, '3 loaded · 0 requests')
-        send(fd, 'j\r')
+        # Arrow alias + lazy activation must use the newly selected story.
+        send(fd, '\x1b[B\r')
         wait_for(fd, compact, '1 loaded · 1 requests')
         send(fd, '\x1b')
         wait_for(fd, compact, '3 loaded · 0 requests')
@@ -227,6 +238,9 @@ def main():
         assert API.counts['/item/4.json'] == 0, 'stale feed completion scheduled items'
         send(fd, '4')
         wait_for(fd, compact, 'No stories.')
+        drain(fd, compact, 0.15)
+        assert 'Enter open/collapse' not in compact.text(), 'empty page advertises unavailable activation'
+        assert 'Esc back' not in compact.text(), 'retired reader kept its Back shortcut'
         compact.save('empty')
         send(fd, '\x03')
         status = wait_exit(pid, fd, compact)

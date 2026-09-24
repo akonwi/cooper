@@ -1,0 +1,221 @@
+use ard/testing
+
+use cooper
+use cooper/cui
+use cooper/event
+use cooper/keymap
+use cooper/testing as headless
+use cooper/ui
+
+private fn pressed(name: Str, value: Str?) mut event::KeyEvent {
+  event::key(
+    name,
+    value.or(name),
+    event::KeyEventType::press,
+    event::Modifiers{
+      shift: false,
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
+}
+
+struct Model {
+  calls: Str,
+  version: Int,
+  priority: Int,
+  visible: Bool,
+  field: mut cui::InputRef,
+  context: cui::Context?,
+}
+struct Props {
+  model: mut Model,
+}
+struct Screen {
+  model: mut Model,
+}
+private fn screen(props: mut Props) mut Screen {
+  (mut Screen{model: props.model})
+}
+
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    if not self.model.visible {
+      cui::text("gone")
+    } else {
+      let version = self.model.version
+      let run = keymap::simple_command("run", "Run", fn() Bool {
+        self.model.calls = "{self.model.calls}{version}"
+        true
+      })
+      mut move_key = "z"
+      if version > 2 {
+        move_key = "v"
+      }
+      cui::box(
+        [
+          cui::input(
+            "abc",
+            focused: true,
+            ref: self.model.field,
+            key_bindings: keymap::bindings(
+              [keymap::mapping(keymap::key(move_key), ui::InputAction::move_start)],
+            ),
+          ),
+        ],
+        bindings: [keymap::binding(keymap::key("x"), run.with())],
+        binding_priority: self.model.priority,
+      )
+    }
+  }
+}
+
+impl cui::Lifecycle for Screen {
+  fn mut mounted(ctx: cui::Context) {
+    self.model.context = Maybe::new(ctx)
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+
+test fn declarative_layers_retain_identity_update_callbacks_and_clean_up() Void!Str {
+  let application = headless::new(20, 2)
+  defer application.destroy()
+  let model = mut Model{
+    calls: "",
+    version: 1,
+    priority: 5,
+    visible: true,
+    field: cui::input_ref(),
+    context: Maybe::new<cui::Context>(),
+  }
+  let mounted = cui::mount(
+    cooper::App{context: application.context, root: application.root},
+    cui::child(screen, Props{model: model}),
+  )
+  application.flush()
+
+  let fallback = keymap::simple_command("fallback", "Fallback", fn() Bool {
+    model.calls = "{model.calls}a"
+    true
+  })
+  let remove_fallback = keymap::register(
+    application.context,
+    keymap::layer([keymap::binding(keymap::key("x"), fallback.with())], priority: 1),
+  )
+  application.key(pressed("x"))
+  try testing::assert(model.calls == "1", "Focused CUI scope precedes an application fallback")
+
+  model.version = 2
+  model.priority = 0
+  mounted.invalidate()
+  application.flush()
+  application.key(pressed("x"))
+  try testing::assert(
+    model.calls == "1a",
+    "Reconciliation updates priority without re-registering precedence",
+  )
+
+  application.key(pressed("z", value: "z"))
+  try testing::assert(
+    model.field.current.expect("input ref").value() == "abc",
+    "Typed control key_bindings remap the retained control",
+  )
+
+  remove_fallback()
+  mounted.destroy()
+  application.key(pressed("x"))
+  testing::assert(model.calls == "1a", "Unmount removes declarative layers")
+}
+
+test fn component_context_owns_layers_and_rejects_registration_after_cancellation() Void!Str {
+  let application = headless::new(20, 2)
+  defer application.destroy()
+  let model = mut Model{
+    calls: "",
+    version: 0,
+    priority: 0,
+    visible: true,
+    field: cui::input_ref(),
+    context: Maybe::new<cui::Context>(),
+  }
+  let mounted = cui::mount(
+    cooper::App{context: application.context, root: application.root},
+    cui::child(screen, Props{model: model}),
+  )
+  application.flush()
+  let ctx = model.context.expect("mounted context")
+  let command = keymap::simple_command("owned", "Owned", fn() Bool {
+    model.calls = "{model.calls}c"
+    true
+  })
+  let layer = keymap::layer([keymap::binding(keymap::key("c"), command.with())])
+  let _ = ctx.bind_keys(layer)
+  application.key(pressed("c"))
+  try testing::assert(model.calls == "c", "Context registers a mount-owned key layer")
+
+  mounted.destroy()
+  let _ = ctx.bind_keys(layer)
+  application.key(pressed("c"))
+  testing::assert(model.calls == "c", "Cancelled contexts neither retain nor register layers")
+}
+
+test fn declarative_control_remaps_notify_discovery_without_render_loops() Void!Str {
+  let application = headless::new(20, 2)
+  defer application.destroy()
+  let model = mut Model{
+    calls: "",
+    version: 1,
+    priority: 0,
+    visible: true,
+    field: cui::input_ref(),
+    context: Maybe::new<cui::Context>(),
+  }
+  let mounted = cui::mount(
+    cooper::App{context: application.context, root: application.root},
+    cui::child(screen, Props{model: model}),
+  )
+  defer mounted.destroy()
+  application.flush()
+  mut changes = 0
+  let remove = keymap::on_change(application.context, fn() {
+    changes =+ 1
+  })
+  defer remove()
+  model.version = 3
+  mounted.invalidate()
+  application.flush()
+  try testing::assert(changes == 1, "A control-only remap notifies discovery once")
+  mut found = false
+  for shortcut in keymap::shortcuts(application.context) {
+    if shortcut.command.id() == "input.move_start" {
+      found = shortcut.key.name == "v"
+    }
+  }
+  try testing::assert(found, "Discovery sees the replacement control key")
+  mounted.invalidate()
+  application.flush()
+  try testing::assert(changes == 1, "An unchanged render does not notify again")
+  application.key(pressed("x"))
+  try testing::assert(model.calls == "3", "The retained layer uses the latest callback")
+  let parent = model.field.current.expect("field").node().parent.expect("container")
+  let newer = keymap::simple_command("newer", "Newer", fn() Bool {
+    model.calls = "{model.calls}a"
+    true
+  })
+  let remove_newer = keymap::register(
+    application.context,
+    keymap::layer(
+      [keymap::binding(keymap::key("x"), newer.with())],
+      scope: keymap::focus_within(parent.owner_as_renderable()),
+    ),
+  )
+  mounted.invalidate()
+  application.flush()
+  application.key(pressed("x"))
+  try testing::assert(model.calls == "3a", "Reconciliation retains same-scope registration precedence")
+  remove_newer()
+  application.key(pressed("x"))
+  testing::assert(model.calls == "3a3", "Removing the newer layer restores the declarative binding")
+}

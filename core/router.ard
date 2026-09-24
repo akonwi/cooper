@@ -11,7 +11,12 @@ struct Outcome {
 }
 
 fn empty_outcome() Outcome {
-  Outcome{handled: false, redraw: false, quit: false, preserve_focus_scroll: false}
+  Outcome{
+    handled: false,
+    redraw: false,
+    quit: false,
+    preserve_focus_scroll: false,
+  }
 }
 
 fn merge(left: Outcome, right: Outcome) Outcome {
@@ -47,7 +52,11 @@ private fn path(root: mut node::Node, target: mut node::Node) [RouteEntry]? {
       _ => { scanning = false },
     }
   }
-  if found { Maybe::new<[RouteEntry]>(routed.@) } else { Maybe::new<[RouteEntry]>() }
+  if found {
+    Maybe::new<[RouteEntry]>(routed.@)
+  } else {
+    Maybe::new<[RouteEntry]>()
+  }
 }
 
 private fn route_is_current(routed: [RouteEntry], tree_version: Int) Bool {
@@ -139,7 +148,9 @@ fn dispatch_mouse(
           local_y: mouse.local_y,
           focused: focused.is_focused(current),
           outcome: state,
-          focus_request: fn() Bool { focused.focus(root, current) },
+          focus_request: fn() Bool {
+            focused.focus(root, current)
+          },
           dispatch: current.attachment_dispatch(),
         ),
       )
@@ -161,26 +172,32 @@ fn dispatch_key(
   target: mut node::Node,
   key: mut event::KeyEvent,
   focused: mut focus::State,
+  bindings: (fn() Bool)?,
 ) Outcome {
   let state = event_delivery::new_outcome()
+  let version = target.attachment_tree_version()
   target.emit_key(key)
-  deliver_default(
-    target,
-    event_delivery::context(
-      key_event: key,
-      focused: focused.is_focused(target),
-      outcome: state,
-      dispatch: target.attachment_dispatch(),
-    ),
-  )
+  if target.attachment_tree_version() == version and focused.is_focused(target) {
+    match bindings {
+      dispatch => { state.handled = dispatch() },
+      _ => (),
+    }
+    if target.attachment_tree_version() == version and focused.is_focused(target) {
+      deliver_default(
+        target,
+        event_delivery::context(
+          key_event: key,
+          focused: focused.is_focused(target),
+          outcome: state,
+          dispatch: target.attachment_dispatch(),
+        ),
+      )
+    }
+  }
   outcome(state)
 }
 
-fn dispatch_paste(
-  target: mut node::Node,
-  paste: mut event::PasteEvent,
-  focused: mut focus::State,
-) Outcome {
+fn dispatch_paste(target: mut node::Node, paste: mut event::PasteEvent, focused: mut focus::State) Outcome {
   let state = event_delivery::new_outcome()
   target.emit_paste(paste)
   deliver_default(

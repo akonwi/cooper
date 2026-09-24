@@ -1,0 +1,517 @@
+use ard/unsafe
+
+use cooper/core/node
+use cooper/event
+
+// Keys are value data. Omitted modifiers are false, never wildcards.
+struct Key {
+  name: Str,
+  modifiers: event::Modifiers,
+}
+
+fn key(name: Str, shift: Bool?, ctrl: Bool?, alt: Bool?, super: Bool?) Key {
+  if name.is_empty() {
+    panic("key name must not be empty")
+  }
+  Key{
+    name: name,
+    modifiers: event::Modifiers{
+      shift: shift.or(false),
+      ctrl: ctrl.or(false),
+      alt: alt.or(false),
+      super: super.or(false),
+    },
+  }
+}
+
+impl Key {
+  fn matches(received: event::KeyEvent) Bool {
+    received.matches(
+      self.name,
+      shift: self.modifiers.shift,
+      ctrl: self.modifiers.ctrl,
+      alt: self.modifiers.alt,
+      super: self.modifiers.super,
+    )
+  }
+
+  fn label() Str {
+    mut label = ""
+    if self.modifiers.ctrl {
+      label = "{label}Ctrl+"
+    }
+    if self.modifiers.alt {
+      label = "{label}Alt+"
+    }
+    if self.modifiers.shift {
+      label = "{label}Shift+"
+    }
+    if self.modifiers.super {
+      label = "{label}Super+"
+    }
+    mut name = match self.name {
+      "return" => "Enter",
+      "escape" => "Esc",
+      "tab" => "Tab",
+      "space" => "Space",
+      "backspace" => "Backspace",
+      "delete" => "Delete",
+      "left" => "Left",
+      "right" => "Right",
+      "up" => "Up",
+      "down" => "Down",
+      "home" => "Home",
+      "end" => "End",
+      "page_up" => "Page Up",
+      "page_down" => "Page Down",
+      _ => self.name,
+    }
+    for character, index in "abcdefghijklmnopqrstuvwxyz" {
+      if name == "{character}" {
+        name = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".slice(
+          start: index,
+          end: index + 1,
+        ).expect("ASCII key label")
+        break
+      }
+    }
+    "{label}{name}"
+  }
+}
+
+enum Trigger {
+  press,
+  press_or_repeat,
+  release,
+}
+
+fn matches_trigger(trigger: Trigger, received: event::KeyEventType) Bool {
+  match trigger {
+    Trigger::press => received == event::KeyEventType::press,
+    Trigger::press_or_repeat => received != event::KeyEventType::release,
+    Trigger::release => received == event::KeyEventType::release,
+  }
+}
+
+trait Command {
+  fn id() Str
+
+  fn title() Str
+
+  fn group() Str
+
+  fn enabled() Bool
+}
+
+struct TypedCommand<$Args> {
+  identifier: Str,
+  label: Str,
+  category: Str,
+  available: fn() Bool,
+  handler: fn($Args) Bool,
+}
+
+fn command(id: Str, title: Str, handler: fn($Args) Bool, enabled: (fn() Bool)?, group: Str?) TypedCommand<$Args> {
+  if id.is_empty() or title.is_empty() {
+    panic("command id and title must not be empty")
+  }
+  TypedCommand{
+    identifier: id,
+    label: title,
+    category: group.or(""),
+    available: enabled.or(fn() Bool {
+      true
+    }),
+    handler: handler,
+  }
+}
+
+impl Command for TypedCommand {
+  fn id() Str {
+    self.identifier
+  }
+
+  fn title() Str {
+    self.label
+  }
+
+  fn group() Str {
+    self.category
+  }
+
+  fn enabled() Bool {
+    self.available()
+  }
+}
+
+impl TypedCommand {
+  fn invoke(args: $Args) Bool {
+    self.available() and self.handler(args)
+  }
+
+  fn with(args: $Args) Invocation {
+    let command = self
+    Invocation{command: self, run: fn() Bool {
+      command.invoke(args)
+    }}
+  }
+
+  fn with_lazy(args: fn() $Args) Invocation {
+    let command = self
+    Invocation{
+      command: self,
+      run: fn() Bool {
+        if command.available() {
+          command.handler(args())
+        } else {
+          false
+        }
+      },
+    }
+  }
+}
+
+struct SimpleCommand {
+  identifier: Str,
+  label: Str,
+  category: Str,
+  available: fn() Bool,
+  handler: fn() Bool,
+}
+
+fn simple_command(id: Str, title: Str, handler: fn() Bool, enabled: (fn() Bool)?, group: Str?) SimpleCommand {
+  if id.is_empty() or title.is_empty() {
+    panic("command id and title must not be empty")
+  }
+  SimpleCommand{
+    identifier: id,
+    label: title,
+    category: group.or(""),
+    available: enabled.or(fn() Bool {
+      true
+    }),
+    handler: handler,
+  }
+}
+
+impl Command for SimpleCommand {
+  fn id() Str {
+    self.identifier
+  }
+
+  fn title() Str {
+    self.label
+  }
+
+  fn group() Str {
+    self.category
+  }
+
+  fn enabled() Bool {
+    self.available()
+  }
+}
+
+impl SimpleCommand {
+  fn invoke() Bool {
+    self.available() and self.handler()
+  }
+
+  fn with() Invocation {
+    let command = self
+    Invocation{command: self, run: fn() Bool {
+      command.invoke()
+    }}
+  }
+}
+
+struct Invocation {
+  command: Command,
+  run: fn() Bool,
+}
+
+impl Invocation {
+  fn invoke() Bool {
+    self.run()
+  }
+}
+
+struct Binding {
+  key: Key,
+  trigger: Trigger,
+  invocation: Invocation,
+}
+
+fn binding(key: Key, invocation: Invocation, trigger: Trigger?) Binding {
+  Binding{
+    key: key,
+    invocation: invocation,
+    trigger: trigger.or(Trigger::press),
+  }
+}
+
+enum ScopeMode {
+  application,
+  focus,
+  focus_within,
+}
+
+struct Scope {
+  mode: ScopeMode,
+  // Keep the recursive Node graph out of CUI generic callback substitution.
+  internal: Any,
+}
+
+fn application() Scope {
+  Scope{mode: ScopeMode::application, internal: Maybe::new<mut node::Node>()}
+}
+
+fn focus(target: mut node::Renderable) Scope {
+  Scope{mode: ScopeMode::focus, internal: Maybe::new(target.node())}
+}
+
+fn focus_within(target: mut node::Renderable) Scope {
+  Scope{mode: ScopeMode::focus_within, internal: Maybe::new(target.node())}
+}
+
+fn internal_target(scope: Scope) (mut node::Node)? {
+  unsafe::cast<(mut node::Node)?>(scope.internal).expect("Scope must be created by keymap")
+}
+
+// Update a registered Layer in place to preserve its precedence. Call changed
+// after updates (including state used by enabled predicates) to refresh discovery.
+struct Layer {
+  scope: Scope,
+  priority: Int,
+  enabled: fn() Bool,
+  commands: [Command],
+  bindings: [Binding],
+  internal_after_run: fn(),
+}
+
+fn layer(
+  bindings: [Binding],
+  scope: Scope?,
+  commands: [Command]?,
+  priority: Int?,
+  enabled: (fn() Bool)?,
+) mut Layer {
+  (mut Layer{
+    scope: scope.or(application()),
+    priority: priority.or(0),
+    enabled: enabled.or(fn() Bool {
+      true
+    }),
+    commands: commands.or([]),
+    bindings: bindings,
+    internal_after_run: fn() {},
+  })
+}
+
+impl Layer {
+  fn mut unbind(key: Key, trigger: Trigger?) {
+    let kind = trigger.or(Trigger::press)
+    let kept = mut List::new<Binding>()
+    for binding in self.bindings {
+      if (not same_key(binding.key, key)) or binding.trigger != kind {
+        kept.push(binding)
+      }
+    }
+    self.bindings = kept.@
+  }
+
+  fn mut bind(value: Binding) {
+    self.unbind(value.key, value.trigger)
+    self.bindings.push(value)
+  }
+
+  fn mut rebind(invocation: Invocation, keys: [Key], trigger: Trigger?) {
+    let kept = mut List::new<Binding>()
+    for binding in self.bindings {
+      if binding.invocation.command.id() != invocation.command.id() {
+        kept.push(binding)
+      }
+    }
+    self.bindings = kept.@
+    for key in keys {
+      self.bind(binding(key, invocation, trigger))
+    }
+  }
+}
+
+// Shadowing is precedence information, not a guarantee: an earlier command can
+// decline and arbitrary raw listeners may prevent dispatch.
+struct Shortcut {
+  key: Key,
+  trigger: Trigger,
+  command: Command,
+  scope: Scope,
+  priority: Int,
+  eligible: Bool,
+  shadowed: Bool,
+}
+
+trait Host {
+  fn mut internal_register_keys(layer: mut Layer) fn()
+
+  fn mut internal_shortcuts() [Shortcut]
+
+  fn mut internal_commands() [Command]
+
+  fn mut internal_keys_changed()
+
+  fn mut internal_on_keys_changed(handler: fn()) fn()
+}
+
+// Controls expose discovery without registering a second keyboard dispatcher.
+trait Control {
+  fn mut key_bindings_info() [Binding]
+}
+
+fn describe_bindings(
+  configured: Bindings<$Action>,
+  prefix: Str,
+  name: fn($Action) Str,
+  perform: fn($Action) Bool,
+  enabled: (fn($Action) Bool)?,
+) [Binding] {
+  let result = mut List::new<Binding>()
+  for entry in configured.entries {
+    let command = match entry.action {
+      action => {
+        let id = name(action)
+        simple_command(
+          "{prefix}.{id}",
+          id.replace("_", " "),
+          fn() Bool {
+            perform(action)
+          },
+          enabled: fn() Bool {
+            match enabled {
+              predicate => predicate(action),
+              _ => true,
+            }
+          },
+          group: prefix,
+        )
+      },
+      _ => {
+        simple_command(
+          "{prefix}.consume",
+          "Consume key",
+          fn() Bool {
+            true
+          },
+          group: prefix,
+        )
+      },
+    }
+    result.push(binding(entry.key, command.with(), entry.trigger))
+  }
+  result.@
+}
+
+fn register(host: mut Host, layer: mut Layer) fn() {
+  host.internal_register_keys(layer)
+}
+fn shortcuts(host: mut Host) [Shortcut] {
+  host.internal_shortcuts()
+}
+fn commands(host: mut Host) [Command] {
+  host.internal_commands()
+}
+fn changed(host: mut Host) {
+  host.internal_keys_changed()
+}
+fn on_change(host: mut Host, handler: fn()) fn() {
+  host.internal_on_keys_changed(handler)
+}
+
+// A missing action explicitly consumes a key. No matching entry permits fallback.
+struct Mapping<$Action> {
+  key: Key,
+  trigger: Trigger,
+  action: $Action?,
+}
+
+struct Bindings<$Action> {
+  entries: [Mapping<$Action>],
+}
+
+fn bindings(entries: [Mapping<$Action>]) Bindings<$Action> {
+  Bindings{entries: entries}
+}
+
+fn mapping(key: Key, action: $Action, trigger: Trigger?) Mapping<$Action> {
+  Mapping{
+    key: key,
+    action: Maybe::new(action),
+    trigger: trigger.or(Trigger::press_or_repeat),
+  }
+}
+
+// Standalone generic functions can infer the comparable requirement from an
+// action enum; generic receiver methods cannot express that constraint in Ard.
+fn rebind(configured: Bindings<$Action>, action: $Action, keys: [Key], trigger: Trigger?) Bindings<$Action> {
+  let kept = mut List::new<Mapping<$Action>>()
+  for entry in configured.entries {
+    let remove = match entry.action {
+      candidate => candidate == action,
+      _ => false,
+    }
+    if not remove {
+      kept.push(entry)
+    }
+  }
+  mut result = bindings(kept.@)
+  for key in keys {
+    result = result.bind(key, action, trigger)
+  }
+  result
+}
+
+fn same_key(left: Key, right: Key) Bool {
+  left.name == right.name and left.modifiers.shift == right.modifiers.shift and left.modifiers.ctrl == right.modifiers.ctrl and left.modifiers.alt == right.modifiers.alt and left.modifiers.super == right.modifiers.super
+}
+
+impl Bindings {
+  fn resolve(received: event::KeyEvent) Mapping<$Action>? {
+    mut found = Maybe::new<Mapping<$Action>>()
+    for entry in self.entries {
+      if entry.key.matches(received) and matches_trigger(entry.trigger, received.event_type) {
+        found = Maybe::new(entry)
+        break
+      }
+    }
+    found
+  }
+
+  fn unbind(key: Key, trigger: Trigger?) Bindings<$Action> {
+    let kind = trigger.or(Trigger::press_or_repeat)
+    let kept = mut List::new<Mapping<$Action>>()
+    for entry in self.entries {
+      if (not same_key(entry.key, key)) or entry.trigger != kind {
+        kept.push(entry)
+      }
+    }
+    Bindings{entries: kept.@}
+  }
+
+  fn bind(key: Key, action: $Action, trigger: Trigger?) Bindings<$Action> {
+    let next = mut self.unbind(key, trigger)
+    next.entries.push(mapping(key, action, trigger))
+    next.@
+  }
+
+  fn consume(key: Key, trigger: Trigger?) Bindings<$Action> {
+    let next = mut self.unbind(key, trigger)
+    next.entries.push(
+      Mapping{
+        key: key,
+        trigger: trigger.or(Trigger::press_or_repeat),
+        action: Maybe::new<$Action>(),
+      },
+    )
+    next.@
+  }
+}

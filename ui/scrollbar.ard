@@ -1,10 +1,11 @@
 use ard/unsafe
 
-use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/event
+use cooper/keymap
+use cooper/runtime
 use cooper/ui/geometry
 use cooper/ui/style as layout_style
 use cooper/ui/text
@@ -19,6 +20,45 @@ enum Visibility {
   automatic,
   always,
   hidden,
+}
+
+enum Action {
+  backward,
+  forward,
+  page_backward,
+  page_forward,
+  home,
+  end,
+}
+
+fn action_name(action: Action) Str {
+  match action {
+    Action::backward => "backward",
+    Action::forward => "forward",
+    Action::page_backward => "page_backward",
+    Action::page_forward => "page_forward",
+    Action::home => "home",
+    Action::end => "end",
+  }
+}
+
+fn default_bindings(orientation: Orientation) keymap::Bindings<Action> {
+  let entries = mut List::new<keymap::Mapping<Action>>()
+  match orientation {
+    Orientation::vertical => {
+      entries.push(keymap::mapping(keymap::key("up"), Action::backward))
+      entries.push(keymap::mapping(keymap::key("down"), Action::forward))
+    },
+    Orientation::horizontal => {
+      entries.push(keymap::mapping(keymap::key("left"), Action::backward))
+      entries.push(keymap::mapping(keymap::key("right"), Action::forward))
+    },
+  }
+  entries.push(keymap::mapping(keymap::key("page_up"), Action::page_backward))
+  entries.push(keymap::mapping(keymap::key("page_down"), Action::page_forward))
+  entries.push(keymap::mapping(keymap::key("home"), Action::home))
+  entries.push(keymap::mapping(keymap::key("end"), Action::end))
+  keymap::bindings(entries.@)
 }
 
 struct State {
@@ -132,6 +172,7 @@ private struct Listener {
 }
 
 private struct InternalState {
+  runtime: mut runtime::Runtime,
   orientation: Orientation,
   value: State,
   options: Options,
@@ -144,6 +185,7 @@ private struct InternalState {
   drag_offset: Int,
   next_listener_id: Int,
   listeners: [Listener],
+  key_bindings: keymap::Bindings<Action>,
 }
 
 struct Scrollbar {
@@ -329,6 +371,7 @@ fn internal_new(
     configured(styles, orientation, initial_options.visibility),
   )
   let shared = mut InternalState{
+    runtime: context_state,
     orientation: orientation,
     value: normalize_state(initial_state),
     options: initial_options,
@@ -341,6 +384,7 @@ fn internal_new(
     drag_offset: 0,
     next_listener_id: 1,
     listeners: [],
+    key_bindings: default_bindings(orientation),
   }
   let created = mut Scrollbar{node_ref: retained, internal: shared}
   retained.bind(created)
@@ -544,6 +588,41 @@ impl Scrollbar {
 
   fn maximum_scroll_position() Int {
     maximum_for(internal_state(self.internal).value)
+  }
+
+  fn key_bindings() keymap::Bindings<Action> {
+    internal_state(self.internal).key_bindings
+  }
+
+  fn mut set_key_bindings(value: keymap::Bindings<Action>) {
+    self.require_live()
+    internal_state(self.internal).key_bindings = value
+  }
+
+  private fn mut apply_action(action: Action) Bool {
+    let shared = internal_state(self.internal)
+    match action {
+      Action::backward => self.scroll_by(0 - shared.options.scroll_step),
+      Action::forward => self.scroll_by(shared.options.scroll_step),
+      Action::page_backward => self.scroll_by(0 - shared.value.viewport_size),
+      Action::page_forward => self.scroll_by(shared.value.viewport_size),
+      Action::home => self.scroll_to(0),
+      Action::end => self.scroll_to(maximum_for(shared.value)),
+    }
+  }
+
+  fn mut perform(action: Action) Bool {
+    self.require_live()
+    let shared = internal_state(self.internal)
+    if not visible(shared) {
+      false
+    } else {
+      let changed = self.apply_action(action)
+      if changed {
+        shared.runtime.internal_preserve_focus_scroll()
+      }
+      true
+    }
   }
 
   fn mut set_state(value: State) {
@@ -775,44 +854,47 @@ impl Scrollbar {
 
   private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
     let shared = internal_state(self.internal)
-    if key.event_type == event::KeyEventType::release or not visible(shared) {
+    if not visible(shared) {
       event_delivery::Disposition::ignored
     } else {
-      mut handled = true
-      mut changed = false
-      if self.orientation() == Orientation::vertical and key.matches("up") {
-        changed = self.scroll_by(0 - shared.options.scroll_step)
-      } else if self.orientation() == Orientation::vertical and key.matches("down") {
-        changed = self.scroll_by(shared.options.scroll_step)
-      } else if self.orientation() == Orientation::horizontal and key.matches("left") {
-        changed = self.scroll_by(0 - shared.options.scroll_step)
-      } else if self.orientation() == Orientation::horizontal and key.matches("right") {
-        changed = self.scroll_by(shared.options.scroll_step)
-      } else if key.matches("page_up") {
-        changed = self.scroll_by(0 - shared.value.viewport_size)
-      } else if key.matches("page_down") {
-        changed = self.scroll_by(shared.value.viewport_size)
-      } else if key.matches("home") {
-        changed = self.scroll_to(0)
-      } else if key.matches("end") {
-        changed = self.scroll_to(maximum_for(shared.value))
-      } else {
-        handled = false
-      }
-      if handled {
-        key.prevent_default()
-        if changed {
-          ctx.preserve_focus_scroll()
-          ctx.request_redraw()
-        }
-        event_delivery::Disposition::handled
-      } else {
-        event_delivery::Disposition::ignored
+      match shared.key_bindings.resolve(key.@) {
+        mapping => {
+          key.prevent_default()
+          match mapping.action {
+            action => {
+              if self.apply_action(action) {
+                ctx.preserve_focus_scroll()
+                ctx.request_redraw()
+              }
+            },
+            _ => (),
+          }
+          event_delivery::Disposition::handled
+        },
+        _ => event_delivery::Disposition::ignored,
       }
     }
   }
 
   fn mut destroy(recursive: Bool?) {
     self.node_ref.destroy(recursive)
+  }
+}
+
+impl keymap::Control for Scrollbar {
+  fn mut key_bindings_info() [keymap::Binding] {
+    let shared = internal_state(self.internal)
+    if visible(shared) {
+      keymap::describe_bindings(
+        shared.key_bindings,
+        "scrollbar",
+        action_name,
+        fn(action: Action) Bool {
+          self.perform(action)
+        },
+      )
+    } else {
+      []
+    }
   }
 }

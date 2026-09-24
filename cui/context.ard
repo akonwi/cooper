@@ -1,6 +1,7 @@
 use cooper/animation
 use cooper/core/runtime as scopes
 use cooper/event
+use cooper/keymap
 use cooper/runtime
 use cooper/ui/selection
 
@@ -18,6 +19,10 @@ struct Context {
   on_selection_change: fn(fn(selection::Selection?)) fn(),
   on_key: fn(fn(mut event::KeyEvent)) fn(),
   on_paste: fn(fn(mut event::PasteEvent)) fn(),
+  bind_keys: fn(mut keymap::Layer) fn(),
+  on_keys_change: fn(fn()) fn(),
+  shortcuts: fn() [keymap::Shortcut],
+  commands: fn() [keymap::Command],
   terminal_focus: fn() event::TerminalFocus?,
   current_selection: fn() selection::Selection?,
   // Framework-only: settle lazy descendants between layout and painting.
@@ -142,6 +147,50 @@ fn internal_new(
       }
       fn() {
         subscription.cancel()
+      }
+    },
+    bind_keys: fn(layer: mut keymap::Layer) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        let after = layer.internal_after_run
+        layer.internal_after_run = fn() {
+          after()
+          if subscription.active {
+            invalidate()
+          }
+        }
+        subscription.remove_listener = keymap::register(runtime, layer)
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
+    on_keys_change: fn(handler: fn()) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = keymap::on_change(runtime, fn() {
+          if subscription.active {
+            handler()
+            invalidate()
+          }
+        })
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
+    shortcuts: fn() [keymap::Shortcut] {
+      if scope.is_cancelled() {
+        []
+      } else {
+        keymap::shortcuts(runtime)
+      }
+    },
+    commands: fn() [keymap::Command] {
+      if scope.is_cancelled() {
+        []
+      } else {
+        keymap::commands(runtime)
       }
     },
     terminal_focus: fn() event::TerminalFocus? {

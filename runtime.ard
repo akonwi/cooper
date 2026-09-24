@@ -6,6 +6,7 @@ use cooper/animation
 use cooper/clipboard
 use cooper/core/focus
 use cooper/core/graphics
+use cooper/core/keymaps
 use cooper/core/node
 use cooper/core/paint
 use cooper/core/pointer
@@ -18,6 +19,7 @@ use go:cooper/ffi/numberbridge as numbers
 use go:cooper/ffi/signalwatch
 use go:cooper/ffi/urlopen
 use go:cooper/ffi/vaxisbridge
+use cooper/keymap
 use cooper/notification
 use cooper/screen
 use cooper/terminal_progress
@@ -247,6 +249,8 @@ private struct State {
   completion_error: Error?,
   next_node_id: Int,
   context_token: mut node::ContextToken,
+  keymaps: mut keymaps::Registry,
+  keymap_focus: (mut node::Node)?,
   nodes: [mut node::Node],
   retained_destroyed: Bool,
   retained_running: Bool,
@@ -304,6 +308,7 @@ private fn state(
 ) mut State {
   let presentation = screen_config.or(screen::config(screen::Mode::alt))
   presentation.internal_validate()
+  let context_token = node::new_context_token()
   let terminal_io = mut sync::Mutex{}
   let lifecycle = mut sync::Mutex{}
   let updates = mut dispatch_runtime::new_dispatch_queue()
@@ -394,7 +399,9 @@ private fn state(
     completion_published: false,
     completion_error: Maybe::new<Error>(),
     next_node_id: 1,
-    context_token: node::new_context_token(),
+    context_token: context_token,
+    keymaps: keymaps::new(context_token),
+    keymap_focus: Maybe::new<mut node::Node>(),
     nodes: [],
     retained_destroyed: false,
     retained_running: false,
@@ -682,6 +689,7 @@ impl State {
       panic("cannot destroy a running retained Runtime")
     }
     if should_destroy {
+      self.keymaps.destroy()
       let owned = self.nodes
       self.nodes = []
       for retained in owned {
@@ -1040,7 +1048,7 @@ impl State {
   }
 
   private fn mut focus_node(target_id: Int) Bool {
-    match self.root_node {
+    let accepted = match self.root_node {
       root => {
         match root.find(target_id) {
           target => self.focused.focus(root.owner_as_renderable(), target),
@@ -1049,6 +1057,8 @@ impl State {
       },
       _ => false,
     }
+    self.notify_keymap_focus()
+    accepted
   }
 
   private fn mut blur_node(target_id: Int) {
@@ -1059,6 +1069,15 @@ impl State {
         }
       },
       _ => (),
+    }
+    self.notify_keymap_focus()
+  }
+
+  private fn mut notify_keymap_focus() {
+    let current = self.focused.focused()
+    if not keymaps::same_target(current, self.keymap_focus) {
+      self.keymap_focus = current
+      self.keymaps.changed()
     }
   }
 
@@ -1597,6 +1616,7 @@ impl State {
   ) mut paint::Buffer {
     self.settle_layout(root, width, height)
     self.focused.reconcile(root)
+    self.notify_keymap_focus()
     let focus_changed = self.focused.take_reveal_request()
     // Manual scrolling remains authoritative across release events and later
     // paints. An explicit focus request resumes automatic focus reveal.
@@ -1789,6 +1809,7 @@ impl State {
   }
 
   private fn mut apply_outcome(outcome: router::Outcome) {
+    self.notify_keymap_focus()
     if outcome.preserve_focus_scroll {
       self.suppress_focus_reveal = true
     }
@@ -2176,6 +2197,29 @@ impl State {
       if not received.is_propagation_stopped() {
         listener.handler(received)
       }
+    }
+  }
+
+  private fn mut dispatch_bindings(received: mut event::KeyEvent) Bool {
+    if received.is_propagation_stopped() or received.is_default_prevented() {
+      false
+    } else {
+      self.keymaps.dispatch(
+        self.root_node,
+        self.focused.focused(),
+        received,
+        fn() (mut node::Node)? {
+          match self.root_node {
+            root => {
+              if not root.is_destroyed() {
+                self.focused.reconcile(root.owner_as_renderable())
+              }
+            },
+            _ => (),
+          }
+          self.focused.focused()
+        },
+      )
     }
   }
 
@@ -2682,9 +2726,12 @@ impl State {
                                         target,
                                         converted,
                                         self.focused,
+                                        bindings: fn() Bool {
+                                          self.dispatch_bindings(converted)
+                                        },
                                       )
                                       self.apply_outcome(outcome)
-                                      if outcome.redraw {
+                                      if outcome.redraw or self.take_redraw_request() {
                                         self.paint_live(root)
                                       }
                                       if outcome.quit {
@@ -2692,7 +2739,12 @@ impl State {
                                       }
                                     }
                                   },
-                                  _ => (),
+                                  _ => {
+                                    let _ = self.dispatch_bindings(converted)
+                                    if self.take_redraw_request() {
+                                      self.paint_live(root)
+                                    }
+                                  },
                                 }
                               }
                             }
@@ -2767,12 +2819,16 @@ impl State {
     match self.focused.focused() {
       target => {
         if not received.is_propagation_stopped() {
-          let outcome = router::dispatch_key(target, received, self.focused)
+          let outcome = router::dispatch_key(target, received, self.focused, bindings: fn() Bool {
+            self.dispatch_bindings(received)
+          })
           self.apply_outcome(outcome)
           redraw = outcome.redraw
         }
       },
-      _ => (),
+      _ => {
+        let _ = self.dispatch_bindings(received)
+      },
     }
     if self.test_active() and (redraw or self.take_redraw_request()) {
       self.paint_test(root)
@@ -2956,6 +3012,89 @@ fn new_headless(
 
 fn new_detached(request_render: fn()?, width_measurer: (fn(Str) Int)?) mut Runtime {
   public_runtime(new_detached_state(request_render, width_measurer))
+}
+
+impl keymap::Host for Runtime {
+  fn mut internal_register_keys(layer: mut keymap::Layer) fn() {
+    internal_state(self).keymaps.register(layer)
+  }
+
+  fn mut internal_shortcuts() [keymap::Shortcut] {
+    let state = internal_state(self)
+    match state.root_node {
+      root => {
+        if not root.is_destroyed() {
+          state.focused.reconcile(root.owner_as_renderable())
+        }
+      },
+      _ => (),
+    }
+    let result = mut state.keymaps.shortcuts(
+      state.root_node,
+      state.focused.focused(),
+      state.exit_on_ctrl_c,
+    )
+    match state.focused.focused() {
+      target => {
+        if target.can_receive_events() {
+          match unsafe::cast<mut keymap::Control>(target.owner_as_renderable()) {
+            control => {
+              let scope = keymap::focus(target.owner_as_renderable())
+              for binding in control.key_bindings_info() {
+                mut shadowed = false
+                for prior in result.@ {
+                  if prior.eligible and keymap::same_key(prior.key, binding.key) and (prior.trigger == binding.trigger or prior.trigger == keymap::Trigger::press_or_repeat and binding.trigger == keymap::Trigger::press) {
+                    shadowed = true
+                  }
+                }
+                let reserved = state.exit_on_ctrl_c and keymap::same_key(binding.key, keymap::key("c", ctrl: true)) and binding.trigger != keymap::Trigger::release
+                result.push(
+                  keymap::Shortcut{
+                    key: binding.key,
+                    trigger: binding.trigger,
+                    command: binding.invocation.command,
+                    scope: scope,
+                    priority: 0,
+                    eligible: binding.invocation.command.enabled() and not reserved,
+                    shadowed: shadowed,
+                  },
+                )
+              }
+            },
+            _ => (),
+          }
+        }
+      },
+      _ => (),
+    }
+    result.@
+  }
+
+  fn mut internal_commands() [keymap::Command] {
+    let result = mut internal_state(self).keymaps.commands()
+    for shortcut in self.internal_shortcuts() {
+      mut found = false
+      for command in result.@ {
+        if command.id() == shortcut.command.id() {
+          found = true
+        }
+      }
+      if not found {
+        result.push(shortcut.command)
+      }
+    }
+    result.@
+  }
+
+  fn mut internal_keys_changed() {
+    let state = internal_state(self)
+    state.keymaps.changed()
+    (state.request_render())()
+  }
+
+  fn mut internal_on_keys_changed(handler: fn()) fn() {
+    internal_state(self).keymaps.on_change(handler)
+  }
 }
 
 impl Runtime {

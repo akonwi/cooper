@@ -1,0 +1,64 @@
+use ard/testing
+
+use cooper/event
+use cooper/keymap
+use cooper/testing as cooper_testing
+use cooper/ui/style
+use cooper/ui/text_area
+
+private fn fixed() style::Style {
+  style::new(width: style::cells(8), height: style::cells(3))
+}
+
+private fn key_event(name: Str, value: Str?, kind: event::KeyEventType?) mut event::KeyEvent {
+  event::key(
+    name,
+    value.or(""),
+    kind.or(event::KeyEventType::press),
+    event::Modifiers{
+      shift: false,
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
+}
+
+test fn text_area_actions_and_keymaps_share_edit_transactions() Void!Str {
+  let application = cooper_testing::new(8, 3)
+  let area = text_area::new(application.context, value: "one\ntwo", styles: fixed())
+  application.root.add(area)
+  application.render()
+  area.focus()
+  mut inputs = 0
+  let _ = area.on_input(fn(value: Str) {
+    inputs =+ 1
+  })
+
+  let _ = area.perform(text_area::Action::move_line_start)
+  let _ = area.perform(text_area::Action::insert_newline)
+  try testing::assert(area.value() == "one\n\ntwo", "Expected direct multiline actions")
+  try testing::assert(inputs == 1, "Expected one callback for direct edit transaction")
+
+  let configured = keymap::bindings(
+    [
+      keymap::mapping(keymap::key("x"), text_area::Action::delete_line_start),
+      keymap::mapping(keymap::key("r"), text_area::Action::insert_newline, keymap::Trigger::release),
+    ],
+  ).consume(keymap::key("q"))
+  area.set_key_bindings(configured)
+  application.key(key_event("q", value: "q"))
+  application.key(key_event("z", value: "z"))
+  application.key(key_event("r", kind: event::KeyEventType::press))
+  application.key(key_event("r", kind: event::KeyEventType::release))
+  try testing::assert(
+    area.value() == "one\n\nz\ntwo",
+    "Expected consume, fallback typing, and release mapping",
+  )
+
+  area.set_key_bindings(keymap::bindings([]))
+  application.key(key_event("a", value: "a", kind: event::KeyEventType::repeat))
+  try testing::assert(area.value() == "one\n\nz\natwo", "Expected repeat text fallback with an empty map")
+  application.destroy()
+  testing::assert(area.node_ref.is_destroyed(), "Expected cleanup")
+}

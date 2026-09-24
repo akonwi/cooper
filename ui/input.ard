@@ -2,6 +2,7 @@ use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/event
+use cooper/keymap
 use cooper/runtime
 use cooper/ui/color
 use cooper/ui/editor
@@ -29,96 +30,100 @@ private struct ByteRange {
   end: Int,
 }
 
-private struct InputKeyBinding {
-  name: Str,
-  action: editor::Action,
-  shift: Bool,
-  ctrl: Bool,
-  alt: Bool,
-  super: Bool,
+type Action = editor::Action
+
+fn action_name(action: Action) Str {
+  match action {
+    Action::move_left => "move_left",
+    Action::move_right => "move_right",
+    Action::move_start => "move_start",
+    Action::move_end => "move_end",
+    Action::move_word_backward => "move_word_backward",
+    Action::move_word_forward => "move_word_forward",
+    Action::select_left => "select_left",
+    Action::select_right => "select_right",
+    Action::select_start => "select_start",
+    Action::select_end => "select_end",
+    Action::select_word_backward => "select_word_backward",
+    Action::select_word_forward => "select_word_forward",
+    Action::select_all => "select_all",
+    Action::delete_backward => "delete_backward",
+    Action::delete_forward => "delete_forward",
+    Action::delete_word_backward => "delete_word_backward",
+    Action::delete_word_forward => "delete_word_forward",
+    Action::delete_to_start => "delete_to_start",
+    Action::delete_to_end => "delete_to_end",
+    Action::undo => "undo",
+    Action::redo => "redo",
+    Action::submit => "submit",
+  }
 }
 
 private fn input_binding(
   name: Str,
-  action: editor::Action,
+  action: Action,
   shift: Bool?,
   ctrl: Bool?,
   alt: Bool?,
   super: Bool?,
-) InputKeyBinding {
-  InputKeyBinding{
-    name: name,
-    action: action,
-    shift: shift.or(false),
-    ctrl: ctrl.or(false),
-    alt: alt.or(false),
-    super: super.or(false),
-  }
+) keymap::Mapping<Action> {
+  keymap::mapping(keymap::key(name, shift: shift, ctrl: ctrl, alt: alt, super: super), action)
 }
 
-private fn default_input_bindings() [InputKeyBinding] {
-  [
-    input_binding("left", editor::Action::select_left, shift: true),
-    input_binding("right", editor::Action::select_right, shift: true),
-    input_binding("b", editor::Action::select_left, shift: true, ctrl: true),
-    input_binding("f", editor::Action::select_right, shift: true, ctrl: true),
-    input_binding("home", editor::Action::select_start, shift: true),
-    input_binding("end", editor::Action::select_end, shift: true),
-    input_binding("a", editor::Action::select_start, shift: true, ctrl: true),
-    input_binding("e", editor::Action::select_end, shift: true, ctrl: true),
-    input_binding("left", editor::Action::select_word_backward, shift: true, alt: true),
-    input_binding("left", editor::Action::select_word_backward, shift: true, ctrl: true),
-    input_binding("b", editor::Action::select_word_backward, shift: true, alt: true),
-    input_binding("right", editor::Action::select_word_forward, shift: true, alt: true),
-    input_binding("right", editor::Action::select_word_forward, shift: true, ctrl: true),
-    input_binding("f", editor::Action::select_word_forward, shift: true, alt: true),
-    input_binding("left", editor::Action::move_left),
-    input_binding("right", editor::Action::move_right),
-    input_binding("b", editor::Action::move_left, ctrl: true),
-    input_binding("f", editor::Action::move_right, ctrl: true),
-    input_binding("home", editor::Action::move_start),
-    input_binding("end", editor::Action::move_end),
-    input_binding("a", editor::Action::move_start, ctrl: true),
-    input_binding("e", editor::Action::move_end, ctrl: true),
-    input_binding("left", editor::Action::move_start, super: true),
-    input_binding("right", editor::Action::move_end, super: true),
-    input_binding("left", editor::Action::select_start, shift: true, super: true),
-    input_binding("right", editor::Action::select_end, shift: true, super: true),
-    input_binding("left", editor::Action::move_word_backward, alt: true),
-    input_binding("left", editor::Action::move_word_backward, ctrl: true),
-    input_binding("b", editor::Action::move_word_backward, alt: true),
-    input_binding("right", editor::Action::move_word_forward, alt: true),
-    input_binding("right", editor::Action::move_word_forward, ctrl: true),
-    input_binding("f", editor::Action::move_word_forward, alt: true),
-    input_binding("backspace", editor::Action::delete_backward),
-    input_binding("delete", editor::Action::delete_forward),
-    input_binding("d", editor::Action::delete_forward, ctrl: true),
-    input_binding("w", editor::Action::delete_word_backward, ctrl: true),
-    input_binding("backspace", editor::Action::delete_word_backward, ctrl: true),
-    input_binding("backspace", editor::Action::delete_word_backward, alt: true),
-    input_binding("d", editor::Action::delete_word_forward, alt: true),
-    input_binding("delete", editor::Action::delete_word_forward, alt: true),
-    input_binding("delete", editor::Action::delete_word_forward, ctrl: true),
-    input_binding("u", editor::Action::delete_to_start, ctrl: true),
-    input_binding("k", editor::Action::delete_to_end, ctrl: true),
-    input_binding("a", editor::Action::select_all, super: true),
-    input_binding("z", editor::Action::undo, super: true),
-    input_binding("z", editor::Action::redo, shift: true, super: true),
-    input_binding("-", editor::Action::undo, ctrl: true),
-    input_binding(".", editor::Action::redo, ctrl: true),
-    input_binding("return", editor::Action::submit),
-  ]
-}
-
-private fn resolve_input_action(name: Str, modifiers: event::Modifiers) editor::Action? {
-  mut resolved = Maybe::new<editor::Action>()
-  for configured in default_input_bindings() {
-    if configured.name == name and configured.shift == modifiers.shift and configured.ctrl == modifiers.ctrl and configured.alt == modifiers.alt and configured.super == modifiers.super {
-      resolved = Maybe::new<editor::Action>(configured.action)
-      break
-    }
-  }
-  resolved
+fn default_bindings() keymap::Bindings<Action> {
+  keymap::bindings(
+    [
+      keymap::mapping(keymap::key("left", shift: true), Action::select_left),
+      input_binding("right", editor::Action::select_right, shift: true),
+      input_binding("b", editor::Action::select_left, shift: true, ctrl: true),
+      input_binding("f", editor::Action::select_right, shift: true, ctrl: true),
+      input_binding("home", editor::Action::select_start, shift: true),
+      input_binding("end", editor::Action::select_end, shift: true),
+      input_binding("a", editor::Action::select_start, shift: true, ctrl: true),
+      input_binding("e", editor::Action::select_end, shift: true, ctrl: true),
+      input_binding("left", editor::Action::select_word_backward, shift: true, alt: true),
+      input_binding("left", editor::Action::select_word_backward, shift: true, ctrl: true),
+      input_binding("b", editor::Action::select_word_backward, shift: true, alt: true),
+      input_binding("right", editor::Action::select_word_forward, shift: true, alt: true),
+      input_binding("right", editor::Action::select_word_forward, shift: true, ctrl: true),
+      input_binding("f", editor::Action::select_word_forward, shift: true, alt: true),
+      input_binding("left", editor::Action::move_left),
+      input_binding("right", editor::Action::move_right),
+      input_binding("b", editor::Action::move_left, ctrl: true),
+      input_binding("f", editor::Action::move_right, ctrl: true),
+      input_binding("home", editor::Action::move_start),
+      input_binding("end", editor::Action::move_end),
+      input_binding("a", editor::Action::move_start, ctrl: true),
+      input_binding("e", editor::Action::move_end, ctrl: true),
+      input_binding("left", editor::Action::move_start, super: true),
+      input_binding("right", editor::Action::move_end, super: true),
+      input_binding("left", editor::Action::select_start, shift: true, super: true),
+      input_binding("right", editor::Action::select_end, shift: true, super: true),
+      input_binding("left", editor::Action::move_word_backward, alt: true),
+      input_binding("left", editor::Action::move_word_backward, ctrl: true),
+      input_binding("b", editor::Action::move_word_backward, alt: true),
+      input_binding("right", editor::Action::move_word_forward, alt: true),
+      input_binding("right", editor::Action::move_word_forward, ctrl: true),
+      input_binding("f", editor::Action::move_word_forward, alt: true),
+      input_binding("backspace", editor::Action::delete_backward),
+      input_binding("delete", editor::Action::delete_forward),
+      input_binding("d", editor::Action::delete_forward, ctrl: true),
+      input_binding("w", editor::Action::delete_word_backward, ctrl: true),
+      input_binding("backspace", editor::Action::delete_word_backward, ctrl: true),
+      input_binding("backspace", editor::Action::delete_word_backward, alt: true),
+      input_binding("d", editor::Action::delete_word_forward, alt: true),
+      input_binding("delete", editor::Action::delete_word_forward, alt: true),
+      input_binding("delete", editor::Action::delete_word_forward, ctrl: true),
+      input_binding("u", editor::Action::delete_to_start, ctrl: true),
+      input_binding("k", editor::Action::delete_to_end, ctrl: true),
+      input_binding("a", editor::Action::select_all, super: true),
+      input_binding("z", editor::Action::undo, super: true),
+      input_binding("z", editor::Action::redo, shift: true, super: true),
+      input_binding("-", editor::Action::undo, ctrl: true),
+      input_binding(".", editor::Action::redo, ctrl: true),
+      keymap::mapping(keymap::key("return"), Action::submit),
+    ],
+  )
 }
 
 struct Input {
@@ -144,6 +149,7 @@ struct Input {
   selected_text_value: Str,
   commit_baseline: Str,
   width_measurer: fn(Str) Int,
+  configured_key_bindings: keymap::Bindings<Action>,
 }
 
 private fn glyphs(text: Str) [Glyph] {
@@ -350,7 +356,7 @@ private fn input_view(value: Str, placeholder: Str, cursor: Int, width: Int, mea
         cursor_width = cursor_width + measure(glyph.text)
       }
     }
-    
+
     mut start_index = 0
     mut dropped_width = 0
     if width > 0 {
@@ -363,7 +369,7 @@ private fn input_view(value: Str, placeholder: Str, cursor: Int, width: Int, mea
         }
       }
     }
-    
+
     mut visible = ""
     mut visible_width = 0
     for glyph, index in value_glyphs {
@@ -377,7 +383,7 @@ private fn input_view(value: Str, placeholder: Str, cursor: Int, width: Int, mea
         }
       }
     }
-    
+
     let start = match value_glyphs.at(start_index) {
       glyph => glyph.start,
       _ => value.size(),
@@ -465,6 +471,7 @@ fn new(
   placeholder_style: text::TextStyle?,
   selectable: Bool?,
   selection_style: fn(mut text::TextStyle)?,
+  key_bindings: keymap::Bindings<Action>?,
 ) mut Input {
   let minimum = min_length.or(0)
   if minimum < 0 {
@@ -507,6 +514,7 @@ fn new(
     width_measurer: fn(value: Str) Int {
       ctx.measure_text(value)
     },
+    configured_key_bindings: key_bindings.or(default_bindings()),
   }
   let retained = input.node_ref
   retained.bind(input)
@@ -539,9 +547,9 @@ impl node::Renderable for Input {
   fn node() mut node::Node {
     self.node_ref
   }
-  
+
   fn mount(ctx: node::MountContext) {}
-  
+
   fn paint(ctx: mut paint::Context) {
     let width = self.node_ref.layout().screen.width
     let view = match self.editor_state.anchor() {
@@ -600,7 +608,7 @@ impl node::Renderable for Input {
       ctx.show_cursor(view.cursor_x, 0)
     }
   }
-  
+
   fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
     match ctx.mouse_event {
       mouse => self.handle_mouse(ctx, mouse),
@@ -632,13 +640,22 @@ impl node::Renderable for Input {
 }
 
 impl Input {
+  fn key_bindings() keymap::Bindings<Action> {
+    self.configured_key_bindings
+  }
+
+  fn mut set_key_bindings(value: keymap::Bindings<Action>) {
+    self.node_ref.require_live()
+    self.configured_key_bindings = value
+  }
+
   private fn byte_selection() ByteRange? {
     match self.editor_state.selection() {
       selected => Maybe::new<ByteRange>(ByteRange{start: selected.start, end: selected.end}),
       _ => Maybe::new<ByteRange>(),
     }
   }
-  
+
   private fn mut clear_local_selection() node::SelectionResult {
     self.editor_state.clear_selection()
     self.selection_generation = 0
@@ -650,7 +667,7 @@ impl Input {
     self.selected_text_value = ""
     node::empty_selection_result()
   }
-  
+
   private fn mut refresh_selected_value() {
     match self.byte_selection() {
       selected => {
@@ -671,11 +688,11 @@ impl Input {
       },
     }
   }
-  
+
   private fn selection_accepts(local_x: Int, local_y: Int) Bool {
     local_y == 0 and local_x >= 0 and local_x <= self.node_ref.layout().screen.width
   }
-  
+
   private fn mut apply_local_selection(value: node::LocalSelection?) node::SelectionResult {
     let local = try value -> _ { self.clear_local_selection() }
     if (not local.is_active) or local.anchor_y < 0 and local.focus_y < 0 or local.anchor_y > 0 and local.focus_y > 0 {
@@ -812,7 +829,7 @@ impl Input {
       }
     }
   }
-  
+
   private fn mut enable_selection() {
     self.node_ref.set_selection_callbacks(
       fn(local_x: Int, local_y: Int) Bool {
@@ -826,59 +843,59 @@ impl Input {
       Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(),
     )
   }
-  
+
   fn value() Str {
     self.editor_state.value()
   }
-  
+
   fn mut focus() Bool {
     self.node_ref.focus()
   }
-  
+
   fn mut blur() {
     self.node_ref.blur()
   }
-  
+
   fn is_focused() Bool {
     self.node_ref.is_focused()
   }
-  
+
   fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
     self.node_ref.on_key(handler)
   }
-  
+
   fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
     self.node_ref.on_paste(handler)
   }
-  
+
   fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
-  
+
   fn mut on_focus(handler: fn()) fn() {
     self.node_ref.on_focus(handler)
   }
-  
+
   fn mut on_blur(handler: fn()) fn() {
     self.node_ref.on_blur(handler)
   }
-  
+
   fn mut on_input(handler: fn(Str)) fn() {
     self.node_ref.on_value(1, handler)
   }
-  
+
   fn mut on_change(handler: fn(Str)) fn() {
     self.node_ref.on_value(2, handler)
   }
-  
+
   fn mut on_submit(handler: fn(Str)) fn() {
     self.node_ref.on_value(3, handler)
   }
-  
+
   fn placeholder() Str {
     self.placeholder_text
   }
-  
+
   fn mut set_placeholder(value: Str) {
     self.node_ref.require_live()
     let normalized = single_line(value)
@@ -887,11 +904,11 @@ impl Input {
       self.node_ref.mark_measure_dirty()
     }
   }
-  
+
   fn min_length() Int {
     self.minimum_length
   }
-  
+
   fn mut set_min_length(value: Int) {
     self.node_ref.require_live()
     if value < 0 {
@@ -907,11 +924,11 @@ impl Input {
     }
     self.minimum_length = value
   }
-  
+
   fn max_length() Int? {
     self.maximum_length
   }
-  
+
   fn mut set_max_length(value: Int?) {
     self.node_ref.require_live()
     match value {
@@ -925,15 +942,15 @@ impl Input {
     self.maximum_length = value
     self.set_value(self.editor_state.value())
   }
-  
+
   fn text_style() text::TextStyle {
     self.value_style
   }
-  
+
   fn selectable() Bool {
     self.node_ref.is_selectable()
   }
-  
+
   fn mut set_selectable(value: Bool) {
     self.node_ref.require_live()
     if value and not self.node_ref.is_selectable() {
@@ -942,22 +959,22 @@ impl Input {
       self.node_ref.clear_selection_callbacks()
     }
   }
-  
+
   fn selection() selection::Range? {
     self.selected_range
   }
-  
+
   fn selected_text() Str {
     self.selected_text_value
   }
-  
+
   fn mut set_selection_style(patch: fn(mut text::TextStyle)) {
     self.node_ref.require_live()
     self.selection_patch = patch
     self.selected_style = apply_style_patch(self.value_style, patch)
     self.node_ref.request_redraw()
   }
-  
+
   fn mut set_text_style(value: text::TextStyle) {
     self.node_ref.require_live()
     if not same_text_style(self.value_style, value) {
@@ -966,11 +983,11 @@ impl Input {
       self.node_ref.request_redraw()
     }
   }
-  
+
   fn placeholder_style() text::TextStyle {
     self.placeholder_text_style
   }
-  
+
   fn mut set_placeholder_style(value: text::TextStyle) {
     self.node_ref.require_live()
     if not same_text_style(self.placeholder_text_style, value) {
@@ -978,7 +995,7 @@ impl Input {
       self.node_ref.request_redraw()
     }
   }
-  
+
   fn mut set_value(value: Str) {
     self.node_ref.require_live()
     let normalized = truncate(single_line(value), self.maximum_length)
@@ -995,7 +1012,7 @@ impl Input {
       self.node_ref.request_redraw()
     }
   }
-  
+
   private fn mut commit_pending_change() {
     if self.editor_state.value() != self.commit_baseline {
       let committed = self.editor_state.value()
@@ -1003,7 +1020,7 @@ impl Input {
       self.commit_baseline = committed
     }
   }
-  
+
   fn mut submit() Bool {
     self.node_ref.require_live()
     if grapheme_count(self.editor_state.value()) < self.minimum_length {
@@ -1018,19 +1035,42 @@ impl Input {
       true
     }
   }
-  
+
+  fn mut perform(action: Action) Bool {
+    self.node_ref.require_live()
+    let ctx = event_delivery::context(
+      focused: self.node_ref.is_focused(),
+      outcome: event_delivery::new_outcome(),
+    )
+    if action == Action::submit {
+      let _ = self.submit()
+    } else if action == Action::select_all {
+      let _ = self.select_all(ctx)
+    } else {
+      let selecting = action == Action::select_left or action == Action::select_right or action == Action::select_start or action == Action::select_end or action == Action::select_word_backward or action == Action::select_word_forward
+      if selecting {
+        let _ = self.perform_selection_action(ctx, action)
+      } else {
+        let had_selection = self.editor_state.has_anchor()
+        let changed = self.editor_state.apply(action)
+        let _ = self.finish_editor_outcome(ctx, changed, had_selection)
+      }
+    }
+    true
+  }
+
   fn style() layout_style::Style {
     self.node_ref.style()
   }
-  
+
   fn mut set_style(value: layout_style::Style) {
     self.node_ref.apply_style(value)
   }
-  
+
   fn layout() geometry::Geometry {
     self.node_ref.layout()
   }
-  
+
   private fn mut changed(ctx: mut event_delivery::Context, text_changed: Bool) event_delivery::Disposition {
     if text_changed {
       self.node_ref.mark_measure_dirty()
@@ -1041,7 +1081,7 @@ impl Input {
     ctx.request_redraw()
     event_delivery::Disposition::handled
   }
-  
+
   private fn mut finish_editor_outcome(
     ctx: mut event_delivery::Context,
     changed: editor::Outcome,
@@ -1059,7 +1099,7 @@ impl Input {
       event_delivery::Disposition::handled
     }
   }
-  
+
   private fn cursor_column() Int {
     let view = input_view(
       self.editor_state.value(),
@@ -1070,7 +1110,7 @@ impl Input {
     )
     view.cursor_x
   }
-  
+
   private fn mut begin_keyboard_selection() Bool {
     if self.editor_state.has_anchor() and self.node_ref.owns_global_selection() {
       true
@@ -1098,7 +1138,7 @@ impl Input {
       accepted
     }
   }
-  
+
   private fn mut finish_keyboard_selection() {
     let view = input_view(
       self.editor_state.value(),
@@ -1114,14 +1154,14 @@ impl Input {
     }
     self.refresh_selected_value()
   }
-  
+
   private fn mut clear_keyboard_selection() {
     if self.editor_state.has_anchor() {
       self.node_ref.clear_global_selection()
       let _ = self.clear_local_selection()
     }
   }
-  
+
   private fn mut insert_text(ctx: mut event_delivery::Context, value: Str) event_delivery::Disposition {
     let inserted = single_line(value)
     if inserted.is_empty() {
@@ -1132,7 +1172,7 @@ impl Input {
       self.finish_editor_outcome(ctx, changed, had_selection)
     }
   }
-  
+
   private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
     if mouse.button != event::MouseButton::left or mouse.event_type != event::MouseEventType::down {
       event_delivery::Disposition::ignored
@@ -1166,7 +1206,7 @@ impl Input {
       self.changed(ctx, false)
     }
   }
-  
+
   private fn mut select_all(ctx: mut event_delivery::Context) event_delivery::Disposition {
     if self.editor_state.has_anchor() {
       self.node_ref.clear_global_selection()
@@ -1182,7 +1222,7 @@ impl Input {
     }
     self.changed(ctx, false)
   }
-  
+
   private fn mut perform_selection_action(ctx: mut event_delivery::Context, action: editor::Action) event_delivery::Disposition {
     let selecting = self.begin_keyboard_selection()
     if selecting {
@@ -1202,43 +1242,47 @@ impl Input {
     }
     self.changed(ctx, false)
   }
-  
+
   private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
-    if key.event_type == event::KeyEventType::release {
-      event_delivery::Disposition::ignored
-    } else {
-      match resolve_input_action(key.name, key.modifiers) {
-        action => {
-          match action {
-            editor::Action::submit => {
-              let _ = self.submit()
-              event_delivery::Disposition::handled
-            },
-            editor::Action::select_all => self.select_all(ctx),
-            _ => {
-              let selecting = action == editor::Action::select_left or action == editor::Action::select_right or action == editor::Action::select_start or action == editor::Action::select_end or action == editor::Action::select_word_backward or action == editor::Action::select_word_forward
-              if selecting {
-                self.perform_selection_action(ctx, action)
-              } else {
-                let had_selection = self.editor_state.has_anchor()
-                let changed = self.editor_state.apply(action)
-                self.finish_editor_outcome(ctx, changed, had_selection)
-              }
-            },
-          }
-        },
-        _ => {
+    match self.configured_key_bindings.resolve(key.@) {
+      configured => {
+        match configured.action {
+          action => {
+            let _ = self.perform(action)
+          },
+          _ => (),
+        }
+        ctx.request_redraw()
+        event_delivery::Disposition::handled
+      },
+      _ => {
+        if key.event_type == event::KeyEventType::release {
+          event_delivery::Disposition::ignored
+        } else {
           if (not key.text.is_empty()) and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super) {
             self.insert_text(ctx, key.text)
           } else {
             event_delivery::Disposition::ignored
           }
-        },
-      }
+        }
+      },
     }
   }
-  
+
   fn mut destroy(recursive: Bool?) {
     self.node_ref.destroy(recursive)
+  }
+}
+
+impl keymap::Control for Input {
+  fn mut key_bindings_info() [keymap::Binding] {
+    keymap::describe_bindings(
+      self.configured_key_bindings,
+      "input",
+      action_name,
+      fn(action: Action) Bool {
+        self.perform(action)
+      },
+    )
   }
 }

@@ -5,6 +5,7 @@ use cooper/core/runtime as scopes
 use cooper/cui/context
 use cooper/cui/view
 use cooper/event
+use cooper/keymap
 use cooper/root
 use cooper/runtime
 use cooper/ui
@@ -24,6 +25,9 @@ private struct Mounted {
   effective_value: Str,
   remove_key: fn(),
   remove_mouse: fn(),
+  key_layer: (mut keymap::Layer)?,
+  remove_key_layer: fn(),
+  key_availability: Str,
 }
 
 private struct Prepared {
@@ -91,6 +95,27 @@ private fn same_menu(left: ui::SelectConfig, right: ui::SelectConfig) Bool {
 
 private fn same_tabs(left: ui::SelectTabConfig, right: ui::SelectTabConfig) Bool {
   left.tab_width == right.tab_width and left.show_description == right.show_description and left.show_arrows == right.show_arrows and left.wrap_selection == right.wrap_selection
+}
+
+private fn same_key_declaration(left: view::Description, right: view::Description) Bool {
+  mut same = left.binding_scope == right.binding_scope and left.binding_priority == right.binding_priority and left.commands.size() == right.commands.size() and left.bindings.size() == right.bindings.size()
+  for command, index in left.commands {
+    match right.commands.at(index) {
+      other => {
+        same = same and command.id() == other.id() and command.title() == other.title() and command.group() == other.group()
+      },
+      _ => { same = false },
+    }
+  }
+  for binding, index in left.bindings {
+    match right.bindings.at(index) {
+      other => {
+        same = same and binding.key.name == other.key.name and binding.key.modifiers.shift == other.key.modifiers.shift and binding.key.modifiers.ctrl == other.key.modifiers.ctrl and binding.key.modifiers.alt == other.key.modifiers.alt and binding.key.modifiers.super == other.key.modifiers.super and binding.trigger == other.trigger and binding.invocation.command.id() == other.invocation.command.id() and binding.invocation.command.title() == other.invocation.command.title() and binding.invocation.command.group() == other.invocation.command.group()
+      },
+      _ => { same = false },
+    }
+  }
+  same
 }
 
 private fn apply_select(
@@ -276,6 +301,8 @@ private fn retired(previous: [mut Mounted], prepared: [Prepared], removed: mut [
 
 private fn cancel(mounted: mut Mounted) {
   mounted.active = false
+  mounted.remove_key_layer()
+  mounted.remove_key_layer = fn() {}
   match mounted.scope {
     scope => scope.stop(),
     _ => (),
@@ -708,11 +735,23 @@ impl State {
       effective_value: effective_value,
       remove_key: fn() {},
       remove_mouse: fn() {},
+      key_layer: Maybe::new<mut keymap::Layer>(),
+      remove_key_layer: fn() {},
+      key_availability: "",
     }
     match scope {
       owned => { mounted.context = self.context(owned, mounted) },
       _ => (),
     }
+    let layer = keymap::layer([])
+    layer.enabled = fn() Bool {
+      self.active and live(mounted)
+    }
+    layer.internal_after_run = fn() {
+      self.invalidate_owner(mounted)
+    }
+    mounted.key_layer = Maybe::new(layer)
+    mounted.remove_key_layer = keymap::register(self.runtime, layer)
     if description.kind == view::Kind::input {
       let field = input(control)
       let _ = field.on_input(fn(value: Str) {
@@ -797,6 +836,7 @@ impl State {
       },
       view::Kind::input => {
         let field = input(mounted.control)
+        field.set_key_bindings(description.input_key_bindings.or(ui::default_input_bindings()))
         field.set_style(description.styles)
         field.set_placeholder(description.placeholder)
         mut needs_write = field.value() != mounted.effective_value
@@ -822,6 +862,9 @@ impl State {
       },
       view::Kind::text_area => {
         let field = text_area(mounted.control)
+        field.set_key_bindings(
+          description.text_area_key_bindings.or(ui::default_text_area_bindings()),
+        )
         field.set_style(description.styles)
         field.set_placeholder(description.placeholder)
         field.set_wrap(description.wrap)
@@ -849,6 +892,9 @@ impl State {
       view::Kind::tab_select => apply_select(mounted, description, previous),
       view::Kind::scroll => {
         let panel = scroll(mounted.control)
+        panel.set_key_bindings(
+          description.scroll_key_bindings.or(ui::default_scroll_box_bindings()),
+        )
         panel.set_style(description.styles)
         panel.set_scrollbar_options(description.scrollbar_options)
         match description.scroll_ref {
@@ -860,6 +906,48 @@ impl State {
         box(mounted.control).set_style(description.styles)
         box(mounted.control).set_title(description.title)
       },
+    }
+    if description.kind == view::Kind::select_input or description.kind == view::Kind::tab_select {
+      mut fallback = ui::default_select_bindings()
+      if description.kind == view::Kind::tab_select {
+        fallback = ui::default_tab_select_bindings()
+      }
+      select_control(mounted.control).set_key_bindings(description.select_key_bindings.or(fallback))
+    }
+    match mounted.key_layer {
+      layer => {
+        layer.bindings = description.bindings
+        layer.commands = description.commands
+        layer.priority = description.binding_priority
+        layer.scope = match description.binding_scope {
+          keymap::ScopeMode::application => keymap::application(),
+          keymap::ScopeMode::focus => keymap::focus(mounted.control),
+          keymap::ScopeMode::focus_within => keymap::focus_within(mounted.control),
+        }
+      },
+      _ => (),
+    }
+    mut availability = ""
+    for command in description.commands {
+      availability = "{availability}|{command.enabled()}"
+    }
+    for binding in description.bindings {
+      availability = "{availability}|{binding.invocation.command.enabled()}"
+    }
+    match unsafe::cast<mut keymap::Control>(mounted.control) {
+      control => {
+        for binding in control.key_bindings_info() {
+          let press = binding.trigger == keymap::Trigger::press
+          let release = binding.trigger == keymap::Trigger::release
+          availability = "{availability}|{binding.key.label()}:{press}:{release}:{binding.invocation.command.id()}:{binding.invocation.command.enabled()}"
+        }
+      },
+      _ => (),
+    }
+    let availability_changed = mounted.key_availability != availability
+    mounted.key_availability = availability
+    if availability_changed or not same_key_declaration(previous, description) {
+      keymap::changed(self.runtime)
     }
     mounted.remove_key()
     mounted.remove_mouse()
@@ -915,6 +1003,24 @@ impl State {
         _ => (),
       }
       current = owner.parent
+    }
+  }
+
+  private fn mut invalidate_owner(target: mut Mounted) {
+    if self.active and live(target) {
+      mut current = Maybe::new(target)
+      mut owner = Maybe::new<mut Mounted>()
+      while current.is_some() and owner.is_none() {
+        let candidate = current.expect("key layer owner")
+        if candidate.instance.is_some() {
+          owner = Maybe::new(candidate)
+        }
+        current = candidate.parent
+      }
+      match owner {
+        component => self.invalidate_component(component),
+        _ => self.invalidate(),
+      }
     }
   }
 

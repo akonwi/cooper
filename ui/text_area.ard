@@ -1,18 +1,19 @@
 use ard/unsafe
 
-use cooper/ui/color
-use cooper/runtime
 use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
-use cooper/ui/text_area_layout as area_layout
-use cooper/ui/editor
 use cooper/event
+use cooper/keymap
+use cooper/runtime
+use cooper/ui/color
+use cooper/ui/editor
 use cooper/ui/geometry
-use cooper/ui/selection
 use cooper/ui/scrollbar
+use cooper/ui/selection
 use cooper/ui/style as layout_style
 use cooper/ui/text
+use cooper/ui/text_area_layout as area_layout
 use go:math
 use go:strings
 
@@ -47,80 +48,153 @@ impl node::Renderable for Part {
   }
 }
 
-private struct AreaKeyBinding {
-  name: Str,
-  action: editor::Action,
-  shift: Bool,
-  ctrl: Bool,
-  alt: Bool,
-  super: Bool,
+enum Action {
+  move_left,
+  move_right,
+  move_start,
+  move_end,
+  move_word_backward,
+  move_word_forward,
+  select_left,
+  select_right,
+  select_start,
+  select_end,
+  select_word_backward,
+  select_word_forward,
+  delete_backward,
+  delete_forward,
+  delete_word_backward,
+  delete_word_forward,
+  delete_to_start,
+  delete_to_end,
+  undo,
+  redo,
+  submit,
+  insert_newline,
+  move_up,
+  move_down,
+  select_up,
+  select_down,
+  page_up,
+  page_down,
+  select_page_up,
+  select_page_down,
+  move_line_start,
+  move_line_end,
+  select_line_start,
+  select_line_end,
+  delete_line_start,
+  delete_line_end,
+  select_all,
 }
 
-private fn area_binding(
-  name: Str,
-  action: editor::Action,
-  shift: Bool?,
-  ctrl: Bool?,
-  alt: Bool?,
-  super: Bool?,
-) AreaKeyBinding {
-  AreaKeyBinding{
-    name: name,
-    action: action,
-    shift: shift.or(false),
-    ctrl: ctrl.or(false),
-    alt: alt.or(false),
-    super: super.or(false),
+fn action_name(action: Action) Str {
+  match action {
+    Action::move_left => "move_left",
+    Action::move_right => "move_right",
+    Action::move_start => "move_start",
+    Action::move_end => "move_end",
+    Action::move_word_backward => "move_word_backward",
+    Action::move_word_forward => "move_word_forward",
+    Action::select_left => "select_left",
+    Action::select_right => "select_right",
+    Action::select_start => "select_start",
+    Action::select_end => "select_end",
+    Action::select_word_backward => "select_word_backward",
+    Action::select_word_forward => "select_word_forward",
+    Action::delete_backward => "delete_backward",
+    Action::delete_forward => "delete_forward",
+    Action::delete_word_backward => "delete_word_backward",
+    Action::delete_word_forward => "delete_word_forward",
+    Action::delete_to_start => "delete_to_start",
+    Action::delete_to_end => "delete_to_end",
+    Action::undo => "undo",
+    Action::redo => "redo",
+    Action::submit => "submit",
+    Action::insert_newline => "insert_newline",
+    Action::move_up => "move_up",
+    Action::move_down => "move_down",
+    Action::select_up => "select_up",
+    Action::select_down => "select_down",
+    Action::page_up => "page_up",
+    Action::page_down => "page_down",
+    Action::select_page_up => "select_page_up",
+    Action::select_page_down => "select_page_down",
+    Action::move_line_start => "move_line_start",
+    Action::move_line_end => "move_line_end",
+    Action::select_line_start => "select_line_start",
+    Action::select_line_end => "select_line_end",
+    Action::delete_line_start => "delete_line_start",
+    Action::delete_line_end => "delete_line_end",
+    Action::select_all => "select_all",
   }
 }
 
-private fn area_editor_bindings() [AreaKeyBinding] {
-  [
-    area_binding("left", editor::Action::select_left, shift: true),
-    area_binding("right", editor::Action::select_right, shift: true),
-    area_binding("b", editor::Action::select_left, shift: true, ctrl: true),
-    area_binding("f", editor::Action::select_right, shift: true, ctrl: true),
-    area_binding("left", editor::Action::select_word_backward, shift: true, alt: true),
-    area_binding("left", editor::Action::select_word_backward, shift: true, ctrl: true),
-    area_binding("b", editor::Action::select_word_backward, shift: true, alt: true),
-    area_binding("right", editor::Action::select_word_forward, shift: true, alt: true),
-    area_binding("right", editor::Action::select_word_forward, shift: true, ctrl: true),
-    area_binding("f", editor::Action::select_word_forward, shift: true, alt: true),
-    area_binding("left", editor::Action::move_left),
-    area_binding("right", editor::Action::move_right),
-    area_binding("b", editor::Action::move_left, ctrl: true),
-    area_binding("f", editor::Action::move_right, ctrl: true),
-    area_binding("left", editor::Action::move_word_backward, alt: true),
-    area_binding("left", editor::Action::move_word_backward, ctrl: true),
-    area_binding("b", editor::Action::move_word_backward, alt: true),
-    area_binding("right", editor::Action::move_word_forward, alt: true),
-    area_binding("right", editor::Action::move_word_forward, ctrl: true),
-    area_binding("f", editor::Action::move_word_forward, alt: true),
-    area_binding("backspace", editor::Action::delete_backward),
-    area_binding("delete", editor::Action::delete_forward),
-    area_binding("d", editor::Action::delete_forward, ctrl: true),
-    area_binding("w", editor::Action::delete_word_backward, ctrl: true),
-    area_binding("backspace", editor::Action::delete_word_backward, ctrl: true),
-    area_binding("backspace", editor::Action::delete_word_backward, alt: true),
-    area_binding("d", editor::Action::delete_word_forward, alt: true),
-    area_binding("delete", editor::Action::delete_word_forward, alt: true),
-    area_binding("delete", editor::Action::delete_word_forward, ctrl: true),
-    area_binding("z", editor::Action::undo, super: true),
-    area_binding("z", editor::Action::redo, shift: true, super: true),
-    area_binding("-", editor::Action::undo, ctrl: true),
-    area_binding(".", editor::Action::redo, ctrl: true),
-  ]
-}
-
-private fn resolve_editor_action(name: Str, modifiers: event::Modifiers) editor::Action? {
-  mut resolved = Maybe::new<editor::Action>()
-  for configured in area_editor_bindings() {
-    if configured.name == name and configured.shift == modifiers.shift and configured.ctrl == modifiers.ctrl and configured.alt == modifiers.alt and configured.super == modifiers.super {
-      resolved = Maybe::new<editor::Action>(configured.action)
-      break
-    }
+fn default_bindings() keymap::Bindings<Action> {
+  let entries = mut List::new<keymap::Mapping<Action>>()
+  entries.push(keymap::mapping(keymap::key("return"), Action::insert_newline))
+  entries.push(keymap::mapping(keymap::key("up"), Action::move_up))
+  entries.push(keymap::mapping(keymap::key("down"), Action::move_down))
+  entries.push(keymap::mapping(keymap::key("up", shift: true), Action::select_up))
+  entries.push(keymap::mapping(keymap::key("down", shift: true), Action::select_down))
+  entries.push(keymap::mapping(keymap::key("page_up"), Action::page_up))
+  entries.push(keymap::mapping(keymap::key("page_down"), Action::page_down))
+  entries.push(keymap::mapping(keymap::key("page_up", shift: true), Action::select_page_up))
+  entries.push(keymap::mapping(keymap::key("page_down", shift: true), Action::select_page_down))
+  let add = fn(name: Str, action: Action, shift: Bool?, ctrl: Bool?, alt: Bool?, super: Bool?) {
+    entries.push(
+      keymap::mapping(keymap::key(name, shift: shift, ctrl: ctrl, alt: alt, super: super), action),
+    )
   }
-  resolved
+  add("home", Action::move_line_start)
+  add("a", Action::move_line_start, ctrl: true)
+  add("left", Action::move_line_start, super: true)
+  add("end", Action::move_line_end)
+  add("e", Action::move_line_end, ctrl: true)
+  add("right", Action::move_line_end, super: true)
+  add("home", Action::select_line_start, shift: true)
+  add("a", Action::select_line_start, shift: true, ctrl: true)
+  add("left", Action::select_line_start, shift: true, super: true)
+  add("end", Action::select_line_end, shift: true)
+  add("e", Action::select_line_end, shift: true, ctrl: true)
+  add("right", Action::select_line_end, shift: true, super: true)
+  add("u", Action::delete_line_start, ctrl: true)
+  add("k", Action::delete_line_end, ctrl: true)
+  add("a", Action::select_all, super: true)
+  add("left", Action::select_left, shift: true)
+  add("right", Action::select_right, shift: true)
+  add("b", Action::select_left, shift: true, ctrl: true)
+  add("f", Action::select_right, shift: true, ctrl: true)
+  add("left", Action::select_word_backward, shift: true, alt: true)
+  add("left", Action::select_word_backward, shift: true, ctrl: true)
+  add("b", Action::select_word_backward, shift: true, alt: true)
+  add("right", Action::select_word_forward, shift: true, alt: true)
+  add("right", Action::select_word_forward, shift: true, ctrl: true)
+  add("f", Action::select_word_forward, shift: true, alt: true)
+  add("left", Action::move_left)
+  add("right", Action::move_right)
+  add("b", Action::move_left, ctrl: true)
+  add("f", Action::move_right, ctrl: true)
+  add("left", Action::move_word_backward, alt: true)
+  add("left", Action::move_word_backward, ctrl: true)
+  add("b", Action::move_word_backward, alt: true)
+  add("right", Action::move_word_forward, alt: true)
+  add("right", Action::move_word_forward, ctrl: true)
+  add("f", Action::move_word_forward, alt: true)
+  add("backspace", Action::delete_backward)
+  add("delete", Action::delete_forward)
+  add("d", Action::delete_forward, ctrl: true)
+  add("w", Action::delete_word_backward, ctrl: true)
+  add("backspace", Action::delete_word_backward, ctrl: true)
+  add("backspace", Action::delete_word_backward, alt: true)
+  add("d", Action::delete_word_forward, alt: true)
+  add("delete", Action::delete_word_forward, alt: true)
+  add("delete", Action::delete_word_forward, ctrl: true)
+  add("z", Action::undo, super: true)
+  add("z", Action::redo, shift: true, super: true)
+  add("-", Action::undo, ctrl: true)
+  add(".", Action::redo, ctrl: true)
+  keymap::bindings(entries.@)
 }
 
 struct TextArea {
@@ -147,6 +221,7 @@ struct TextArea {
   selected_text_value: Str,
   source_revision: Int,
   width_measurer: fn(Str) Int,
+  bindings: keymap::Bindings<Action>,
   internal: Any,
 }
 
@@ -297,6 +372,7 @@ fn new(
   selectable: Bool?,
   selection_style: fn(mut text::TextStyle)?,
   scrollbar_options: scrollbar::Options?,
+  key_bindings: keymap::Bindings<Action>?,
 ) mut TextArea {
   let initial_value = normalize_newlines(value.or(""))
   let base_style = text_style.or(text::style())
@@ -308,9 +384,7 @@ fn new(
     last_width: -1,
     last_height: -1,
   }
-  let retained = ctx.create_node(
-    configured(styles.or(default_text_area_style())),
-  )
+  let retained = ctx.create_node(configured(styles.or(default_text_area_style())))
   let wrapper = part(ctx, wrapper_style())
   let viewport = part(ctx, viewport_style())
   let vertical_bar = scrollbar::internal_new(
@@ -344,7 +418,10 @@ fn new(
     selected_range: Maybe::new<selection::Range>(),
     selected_text_value: "",
     source_revision: 1,
-    width_measurer: fn(value: Str) Int { ctx.measure_text(value) },
+    width_measurer: fn(value: Str) Int {
+      ctx.measure_text(value)
+    },
+    bindings: key_bindings.or(default_bindings()),
     internal: internal_state,
   }
   retained.bind(area)
@@ -505,7 +582,13 @@ impl node::Renderable for TextArea {
               true => self.selected_style,
               false => self.value_style,
             }
-            ctx.write_measured(origin.x + x, origin.y + y, glyph.text, self.width_measurer, text_style: cell_style(applied))
+            ctx.write_measured(
+              origin.x + x,
+              origin.y + y,
+              glyph.text,
+              self.width_measurer,
+              text_style: cell_style(applied),
+            )
           }
         }
       }
@@ -525,7 +608,7 @@ impl node::Renderable for TextArea {
         match ctx.paste_event {
           paste => {
             if ctx.focused {
-              self.insert_text(ctx, paste.text)
+              self.insert_text(paste.text)
             } else {
               event_delivery::Disposition::ignored
             }
@@ -672,11 +755,7 @@ impl TextArea {
       }
     } else if local_y >= self.viewport_height() {
       if clamp_edge.or(false) {
-        area_layout::cursor_at(
-          laid_out,
-          column + scroll_x,
-          scroll_y + self.viewport_height() - 1,
-        )
+        area_layout::cursor_at(laid_out, column + scroll_x, scroll_y + self.viewport_height() - 1)
       } else {
         self.editor_state.value().size()
       }
@@ -833,7 +912,7 @@ impl TextArea {
         self.selection_generation = local.generation
         self.selection_scroll_x = state.scroll_x
         self.selection_scroll_y = state.scroll_y
-        if (not preserve_initial) and (not has_locked_source) {
+        if (not preserve_initial) and not has_locked_source {
           self.editor_state.set_anchor(
             self.cursor_for_local(
               local.anchor_x,
@@ -855,7 +934,7 @@ impl TextArea {
       }
 
       if generation_changed or version_changed or local_changed {
-        if (not preserve_initial) and (not has_locked_source) {
+        if (not preserve_initial) and not has_locked_source {
           self.editor_state.set_cursor(
             self.cursor_for_local(
               local.focus_x,
@@ -1127,6 +1206,116 @@ impl TextArea {
     self.vertical_bar.set_options(value)
   }
 
+  fn key_bindings() keymap::Bindings<Action> {
+    self.bindings
+  }
+
+  fn mut set_key_bindings(value: keymap::Bindings<Action>) {
+    self.node_ref.require_live()
+    self.bindings = value
+  }
+
+  fn mut perform(action: Action) Bool {
+    self.node_ref.require_live()
+    match action {
+      Action::insert_newline => {
+        let _ = self.insert_text("\n")
+      },
+      Action::move_up => {
+        let _ = self.move_vertical(-1, false)
+      },
+      Action::move_down => {
+        let _ = self.move_vertical(1, false)
+      },
+      Action::select_up => {
+        let _ = self.move_vertical(-1, true)
+      },
+      Action::select_down => {
+        let _ = self.move_vertical(1, true)
+      },
+      Action::page_up => {
+        let _ = self.move_vertical(0 - self.viewport_height(), false)
+      },
+      Action::page_down => {
+        let _ = self.move_vertical(self.viewport_height(), false)
+      },
+      Action::select_page_up => {
+        let _ = self.move_vertical(0 - self.viewport_height(), true)
+      },
+      Action::select_page_down => {
+        let _ = self.move_vertical(self.viewport_height(), true)
+      },
+      Action::move_line_start => {
+        let _ = self.move_to(
+          area_layout::hard_line_start(self.editor_state.value(), self.editor_state.cursor()),
+          false,
+        )
+      },
+      Action::move_line_end => {
+        let _ = self.move_to(
+          area_layout::hard_line_end(self.editor_state.value(), self.editor_state.cursor()),
+          false,
+        )
+      },
+      Action::select_line_start => {
+        let _ = self.move_to(
+          area_layout::hard_line_start(self.editor_state.value(), self.editor_state.cursor()),
+          true,
+        )
+      },
+      Action::select_line_end => {
+        let _ = self.move_to(
+          area_layout::hard_line_end(self.editor_state.value(), self.editor_state.cursor()),
+          true,
+        )
+      },
+      Action::delete_line_start => {
+        let _ = self.delete_line_side(true)
+      },
+      Action::delete_line_end => {
+        let _ = self.delete_line_side(false)
+      },
+      Action::select_all => {
+        let _ = self.select_all()
+      },
+      _ => {
+        let editor_action = match action {
+          Action::move_left => editor::Action::move_left,
+          Action::move_right => editor::Action::move_right,
+          Action::move_start => editor::Action::move_start,
+          Action::move_end => editor::Action::move_end,
+          Action::move_word_backward => editor::Action::move_word_backward,
+          Action::move_word_forward => editor::Action::move_word_forward,
+          Action::select_left => editor::Action::select_left,
+          Action::select_right => editor::Action::select_right,
+          Action::select_start => editor::Action::select_start,
+          Action::select_end => editor::Action::select_end,
+          Action::select_word_backward => editor::Action::select_word_backward,
+          Action::select_word_forward => editor::Action::select_word_forward,
+          Action::delete_backward => editor::Action::delete_backward,
+          Action::delete_forward => editor::Action::delete_forward,
+          Action::delete_word_backward => editor::Action::delete_word_backward,
+          Action::delete_word_forward => editor::Action::delete_word_forward,
+          Action::delete_to_start => editor::Action::delete_to_start,
+          Action::delete_to_end => editor::Action::delete_to_end,
+          Action::undo => editor::Action::undo,
+          Action::redo => editor::Action::redo,
+          Action::submit => editor::Action::submit,
+          _ => editor::Action::move_left,
+        }
+        let selecting = action == Action::select_left or action == Action::select_right or action == Action::select_start or action == Action::select_end or action == Action::select_word_backward or action == Action::select_word_forward
+        if selecting {
+          let _ = self.perform_selection_action(editor_action)
+        } else {
+          let had_selection = self.editor_state.has_anchor()
+          let changed = self.editor_state.apply(editor_action)
+          let _ = self.finish_editor_outcome(changed, had_selection)
+        }
+      },
+    }
+    true
+  }
+
   fn style() layout_style::Style {
     self.node_ref.style()
   }
@@ -1139,7 +1328,7 @@ impl TextArea {
     self.node_ref.layout()
   }
 
-  private fn mut changed(ctx: mut event_delivery::Context, text_changed: Bool) event_delivery::Disposition {
+  private fn mut changed(text_changed: Bool) event_delivery::Disposition {
     self.reveal_cursor()
     if self.node_ref.is_focused() {
       let _ = self.node_ref.focus()
@@ -1151,25 +1340,20 @@ impl TextArea {
     } else {
       self.node_ref.request_redraw()
     }
-    ctx.request_redraw()
     event_delivery::Disposition::handled
   }
 
-  private fn mut finish_editor_outcome(
-    ctx: mut event_delivery::Context,
-    changed: editor::Outcome,
-    had_selection: Bool,
-  ) event_delivery::Disposition {
+  private fn mut finish_editor_outcome(changed: editor::Outcome, had_selection: Bool) event_delivery::Disposition {
     if had_selection and not self.editor_state.has_anchor() {
       self.viewport_ref.clear_global_selection()
       let _ = self.clear_local_selection()
     }
     if changed.text_changed {
       self.reset_preferred_column()
-      self.changed(ctx, true)
+      self.changed(true)
     } else if changed.cursor_changed or changed.selection_changed {
       self.reset_preferred_column()
-      self.changed(ctx, false)
+      self.changed(false)
     } else {
       event_delivery::Disposition::handled
     }
@@ -1218,18 +1402,18 @@ impl TextArea {
     }
   }
 
-  private fn mut insert_text(ctx: mut event_delivery::Context, value: Str) event_delivery::Disposition {
+  private fn mut insert_text(value: Str) event_delivery::Disposition {
     let inserted = normalize_newlines(value)
     if inserted.is_empty() {
       event_delivery::Disposition::handled
     } else {
       let had_selection = self.editor_state.has_anchor()
       let changed = self.editor_state.insert_text(inserted)
-      self.finish_editor_outcome(ctx, changed, had_selection)
+      self.finish_editor_outcome(changed, had_selection)
     }
   }
 
-  private fn mut perform_selection_action(ctx: mut event_delivery::Context, action: editor::Action) event_delivery::Disposition {
+  private fn mut perform_selection_action(action: editor::Action) event_delivery::Disposition {
     let selecting = self.begin_keyboard_selection()
     if selecting {
       let _ = self.editor_state.apply(action)
@@ -1238,6 +1422,8 @@ impl TextArea {
       let fallback = match action {
         editor::Action::select_left => editor::Action::move_left,
         editor::Action::select_right => editor::Action::move_right,
+        editor::Action::select_start => editor::Action::move_start,
+        editor::Action::select_end => editor::Action::move_end,
         editor::Action::select_word_backward => editor::Action::move_word_backward,
         editor::Action::select_word_forward => editor::Action::move_word_forward,
         _ => action,
@@ -1245,15 +1431,10 @@ impl TextArea {
       let _ = self.editor_state.apply(fallback)
     }
     self.reset_preferred_column()
-    self.changed(ctx, false)
+    self.changed(false)
   }
 
-  private fn mut move_to(
-    ctx: mut event_delivery::Context,
-    target: Int,
-    selecting: Bool,
-    preserve_preferred: Bool?,
-  ) event_delivery::Disposition {
+  private fn mut move_to(target: Int, selecting: Bool, preserve_preferred: Bool?) event_delivery::Disposition {
     if selecting {
       if self.begin_keyboard_selection() {
         self.editor_state.set_cursor(target)
@@ -1269,10 +1450,10 @@ impl TextArea {
     if not preserve_preferred.or(false) {
       self.reset_preferred_column()
     }
-    self.changed(ctx, false)
+    self.changed(false)
   }
 
-  private fn mut move_vertical(ctx: mut event_delivery::Context, delta: Int, selecting: Bool) event_delivery::Disposition {
+  private fn mut move_vertical(delta: Int, selecting: Bool) event_delivery::Disposition {
     let laid_out = self.current_layout()
     let current = area_layout::caret(laid_out, self.editor_state.cursor())
     let state = view_state(self.internal)
@@ -1286,10 +1467,10 @@ impl TextArea {
     }
     state.preferred_x = Maybe::new<Int>(preferred)
     let target = area_layout::cursor_at(laid_out, preferred, target_y)
-    self.move_to(ctx, target, selecting, preserve_preferred: true)
+    self.move_to(target, selecting, preserve_preferred: true)
   }
 
-  private fn mut select_all(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  private fn mut select_all() event_delivery::Disposition {
     if self.editor_state.has_anchor() {
       self.viewport_ref.clear_global_selection()
       let _ = self.clear_local_selection()
@@ -1302,10 +1483,10 @@ impl TextArea {
       let _ = self.editor_state.apply(editor::Action::move_end)
     }
     self.reset_preferred_column()
-    self.changed(ctx, false)
+    self.changed(false)
   }
 
-  private fn mut delete_line_side(ctx: mut event_delivery::Context, toward_start: Bool) event_delivery::Disposition {
+  private fn mut delete_line_side(toward_start: Bool) event_delivery::Disposition {
     let had_selection = self.editor_state.has_anchor()
     let cursor = self.editor_state.cursor()
     let target = match toward_start {
@@ -1323,7 +1504,7 @@ impl TextArea {
         false => editor::Action::delete_forward,
       }
       let changed = self.editor_state.apply(action)
-      self.finish_editor_outcome(ctx, changed, had_selection)
+      self.finish_editor_outcome(changed, had_selection)
     }
   }
 
@@ -1404,85 +1585,40 @@ impl TextArea {
         self.selection_scroll_y = state.scroll_y
         self.refresh_selected_value()
       }
-      self.changed(ctx, false)
+      self.changed(false)
     }
   }
 
   private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
-    if key.event_type == event::KeyEventType::release {
-      event_delivery::Disposition::ignored
-    } else if key.matches("return") {
-      self.insert_text(ctx, "\n")
-    } else if key.matches("up") {
-      self.move_vertical(ctx, -1, false)
-    } else if key.matches("down") {
-      self.move_vertical(ctx, 1, false)
-    } else if key.matches("up", shift: true) {
-      self.move_vertical(ctx, -1, true)
-    } else if key.matches("down", shift: true) {
-      self.move_vertical(ctx, 1, true)
-    } else if key.matches("page_up") {
-      self.move_vertical(ctx, 0 - self.viewport_height(), false)
-    } else if key.matches("page_down") {
-      self.move_vertical(ctx, self.viewport_height(), false)
-    } else if key.matches("page_up", shift: true) {
-      self.move_vertical(ctx, 0 - self.viewport_height(), true)
-    } else if key.matches("page_down", shift: true) {
-      self.move_vertical(ctx, self.viewport_height(), true)
-    } else if key.matches("home") or key.matches("a", ctrl: true) or key.matches("left", super: true) {
-      self.move_to(
-        ctx,
-        area_layout::hard_line_start(self.editor_state.value(), self.editor_state.cursor()),
-        false,
-      )
-    } else if key.matches("end") or key.matches("e", ctrl: true) or key.matches("right", super: true) {
-      self.move_to(
-        ctx,
-        area_layout::hard_line_end(self.editor_state.value(), self.editor_state.cursor()),
-        false,
-      )
-    } else if key.matches("home", shift: true) or key.matches("a", shift: true, ctrl: true) or key.matches("left", shift: true, super: true) {
-      self.move_to(
-        ctx,
-        area_layout::hard_line_start(self.editor_state.value(), self.editor_state.cursor()),
-        true,
-      )
-    } else if key.matches("end", shift: true) or key.matches("e", shift: true, ctrl: true) or key.matches("right", shift: true, super: true) {
-      self.move_to(
-        ctx,
-        area_layout::hard_line_end(self.editor_state.value(), self.editor_state.cursor()),
-        true,
-      )
-    } else if key.matches("u", ctrl: true) {
-      self.delete_line_side(ctx, true)
-    } else if key.matches("k", ctrl: true) {
-      self.delete_line_side(ctx, false)
-    } else if key.matches("a", super: true) {
-      self.select_all(ctx)
-    } else {
-      match resolve_editor_action(key.name, key.modifiers) {
-        action => {
-          let selecting = action == editor::Action::select_left or action == editor::Action::select_right or action == editor::Action::select_word_backward or action == editor::Action::select_word_forward
-          if selecting {
-            self.perform_selection_action(ctx, action)
-          } else {
-            let had_selection = self.editor_state.has_anchor()
-            let changed = self.editor_state.apply(action)
-            self.finish_editor_outcome(ctx, changed, had_selection)
-          }
-        },
-        _ => {
-          if (not key.text.is_empty()) and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super) {
-            self.insert_text(ctx, key.text)
-          } else {
-            event_delivery::Disposition::ignored
-          }
-        },
-      }
+    match self.bindings.resolve(key.@) {
+      configured => {
+        match configured.action {
+          action => {
+            let _ = self.perform(action)
+          },
+          _ => (),
+        }
+        event_delivery::Disposition::handled
+      },
+      _ => {
+        if key.event_type != event::KeyEventType::release and (not key.text.is_empty()) and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super) {
+          self.insert_text(key.text)
+        } else {
+          event_delivery::Disposition::ignored
+        }
+      },
     }
   }
 
   fn mut destroy(recursive: Bool?) {
     self.node_ref.destroy(true)
+  }
+}
+
+impl keymap::Control for TextArea {
+  fn mut key_bindings_info() [keymap::Binding] {
+    keymap::describe_bindings(self.bindings, "text_area", action_name, fn(action: Action) Bool {
+      self.perform(action)
+    })
   }
 }

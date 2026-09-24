@@ -2,6 +2,7 @@ use ard/unsafe
 
 use cooper/cui/context
 use cooper/event
+use cooper/keymap
 use cooper/ui
 
 // CUI components retain their state across matching view descriptions.
@@ -174,6 +175,14 @@ struct Description {
   on_submit: fn(Str, context::Context)?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
+  commands: [keymap::Command],
+  bindings: [keymap::Binding],
+  binding_scope: keymap::ScopeMode,
+  binding_priority: Int,
+  input_key_bindings: keymap::Bindings<ui::InputAction>?,
+  text_area_key_bindings: keymap::Bindings<ui::TextAreaAction>?,
+  select_key_bindings: keymap::Bindings<ui::SelectAction>?,
+  scroll_key_bindings: keymap::Bindings<ui::ScrollBoxAction>?,
   input_ref: (mut InputRef)?,
   text_area_ref: (mut TextAreaRef)?,
   select_ref: (mut SelectRef)?,
@@ -217,6 +226,14 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     on_submit: Maybe::new<fn(Str, context::Context)>(),
     on_key: Maybe::new<fn(mut event::KeyEvent, context::Context)>(),
     on_mouse: Maybe::new<fn(mut event::MouseEvent, context::Context)>(),
+    commands: [],
+    bindings: [],
+    binding_scope: keymap::ScopeMode::focus_within,
+    binding_priority: 0,
+    input_key_bindings: Maybe::new<keymap::Bindings<ui::InputAction>>(),
+    text_area_key_bindings: Maybe::new<keymap::Bindings<ui::TextAreaAction>>(),
+    select_key_bindings: Maybe::new<keymap::Bindings<ui::SelectAction>>(),
+    scroll_key_bindings: Maybe::new<keymap::Bindings<ui::ScrollBoxAction>>(),
     input_ref: Maybe::new<mut InputRef>(),
     text_area_ref: Maybe::new<mut TextAreaRef>(),
     select_ref: Maybe::new<mut SelectRef>(),
@@ -254,6 +271,10 @@ fn box(
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut BoxRef)?,
+  commands: [keymap::Command]?,
+  bindings: [keymap::Binding]?,
+  binding_scope: keymap::ScopeMode?,
+  binding_priority: Int?,
 ) View {
   let result = mut base(Kind::box, key, styles)
   result.children = children
@@ -263,6 +284,10 @@ fn box(
   result.on_key = on_key
   result.on_mouse = on_mouse
   result.box_ref = ref
+  result.commands = commands.or([])
+  result.bindings = bindings.or([])
+  result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
+  result.binding_priority = binding_priority.or(0)
   View{internal: result.@}
 }
 
@@ -274,6 +299,11 @@ fn scroll_box(
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut ScrollBoxRef)?,
+  key_bindings: keymap::Bindings<ui::ScrollBoxAction>?,
+  commands: [keymap::Command]?,
+  bindings: [keymap::Binding]?,
+  binding_scope: keymap::ScopeMode?,
+  binding_priority: Int?,
 ) View {
   let result = mut base(Kind::scroll, key, styles)
   result.children = children
@@ -281,6 +311,11 @@ fn scroll_box(
   result.on_key = on_key
   result.on_mouse = on_mouse
   result.scroll_ref = ref
+  result.scroll_key_bindings = key_bindings
+  result.commands = commands.or([])
+  result.bindings = bindings.or([])
+  result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
+  result.binding_priority = binding_priority.or(0)
   View{internal: result.@}
 }
 
@@ -296,6 +331,11 @@ fn input(
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut InputRef)?,
+  key_bindings: keymap::Bindings<ui::InputAction>?,
+  commands: [keymap::Command]?,
+  bindings: [keymap::Binding]?,
+  binding_scope: keymap::ScopeMode?,
+  binding_priority: Int?,
 ) View {
   let result = mut base(Kind::input, key, styles)
   result.value = value
@@ -307,6 +347,11 @@ fn input(
   result.on_key = on_key
   result.on_mouse = on_mouse
   result.input_ref = ref
+  result.input_key_bindings = key_bindings
+  result.commands = commands.or([])
+  result.bindings = bindings.or([])
+  result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
+  result.binding_priority = binding_priority.or(0)
   View{internal: result.@}
 }
 
@@ -326,6 +371,11 @@ fn text_area(
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut TextAreaRef)?,
+  key_bindings: keymap::Bindings<ui::TextAreaAction>?,
+  commands: [keymap::Command]?,
+  bindings: [keymap::Binding]?,
+  binding_scope: keymap::ScopeMode?,
+  binding_priority: Int?,
 ) View {
   let result = mut base(Kind::text_area, key, styles)
   result.value = value
@@ -341,6 +391,11 @@ fn text_area(
   result.on_key = on_key
   result.on_mouse = on_mouse
   result.text_area_ref = ref
+  result.text_area_key_bindings = key_bindings
+  result.commands = commands.or([])
+  result.bindings = bindings.or([])
+  result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
+  result.binding_priority = binding_priority.or(0)
   View{internal: result.@}
 }
 
@@ -360,6 +415,11 @@ fn select_input(
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut SelectRef)?,
+  key_bindings: keymap::Bindings<ui::SelectAction>?,
+  commands: [keymap::Command]?,
+  bindings: [keymap::Binding]?,
+  binding_scope: keymap::ScopeMode?,
+  binding_priority: Int?,
 ) View {
   let result = mut base(Kind::select_input, key, styles)
   result.options = options
@@ -375,6 +435,11 @@ fn select_input(
   result.on_key = on_key
   result.on_mouse = on_mouse
   result.select_ref = ref
+  result.select_key_bindings = key_bindings
+  result.commands = commands.or([])
+  result.bindings = bindings.or([])
+  result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
+  result.binding_priority = binding_priority.or(0)
   View{internal: result.@}
 }
 
@@ -394,6 +459,11 @@ fn tab_select(
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut SelectRef)?,
+  key_bindings: keymap::Bindings<ui::SelectAction>?,
+  commands: [keymap::Command]?,
+  bindings: [keymap::Binding]?,
+  binding_scope: keymap::ScopeMode?,
+  binding_priority: Int?,
 ) View {
   let result = mut describe(
     select_input(
@@ -411,6 +481,11 @@ fn tab_select(
       on_key: on_key,
       on_mouse: on_mouse,
       ref: ref,
+      key_bindings: key_bindings,
+      commands: commands,
+      bindings: bindings,
+      binding_scope: binding_scope,
+      binding_priority: binding_priority,
     ),
   )
   result.kind = Kind::tab_select
@@ -418,8 +493,19 @@ fn tab_select(
   View{internal: result.@}
 }
 
-fn child(specification: Specification, key: Str?) View {
+fn child(
+  specification: Specification,
+  key: Str?,
+  commands: [keymap::Command]?,
+  bindings: [keymap::Binding]?,
+  binding_scope: keymap::ScopeMode?,
+  binding_priority: Int?,
+) View {
   let result = mut base(Kind::component, key, Maybe::new(ui::style(display: ui::Display::contents)))
   result.component = Maybe::new(specification)
+  result.commands = commands.or([])
+  result.bindings = bindings.or([])
+  result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
+  result.binding_priority = binding_priority.or(0)
   View{internal: result.@}
 }

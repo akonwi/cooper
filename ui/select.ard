@@ -4,6 +4,7 @@ use cooper/core/event_delivery
 use cooper/core/node
 use cooper/core/paint
 use cooper/event
+use cooper/keymap
 use cooper/runtime
 use cooper/ui/color
 use cooper/ui/geometry
@@ -226,6 +227,7 @@ private struct Model {
   highlight_listeners: [Listener],
   change_listeners: [Listener],
   submit_listeners: [Listener],
+  key_bindings: keymap::Bindings<Action>,
 }
 
 private struct Popup {
@@ -248,6 +250,7 @@ private struct InternalState {
   remove_scroll_listener: fn(),
   layout_style: layout_style::Style,
   measure_width: fn(Str) Int,
+  runtime: mut runtime::Runtime,
 }
 
 struct Select {
@@ -255,7 +258,72 @@ struct Select {
   internal: Any,
 }
 
+private struct ActionResult {
+  handled: Bool,
+  changed: Bool,
+}
+
 type TabSelect = Select
+
+enum Action {
+  open,
+  close,
+  activate,
+  previous_or_open,
+  next_or_open,
+  previous,
+  next,
+  fast_previous,
+  fast_next,
+  submit,
+}
+
+fn action_name(action: Action) Str {
+  match action {
+    Action::open => "open",
+    Action::close => "close",
+    Action::activate => "activate",
+    Action::previous_or_open => "previous_or_open",
+    Action::next_or_open => "next_or_open",
+    Action::previous => "previous",
+    Action::next => "next",
+    Action::fast_previous => "fast_previous",
+    Action::fast_next => "fast_next",
+    Action::submit => "submit",
+  }
+}
+
+fn default_bindings() keymap::Bindings<Action> {
+  keymap::bindings(
+    [
+      keymap::mapping(keymap::key("escape"), Action::close),
+      keymap::mapping(keymap::key("return"), Action::activate),
+      keymap::mapping(keymap::key("linefeed"), Action::activate),
+      keymap::mapping(keymap::key("space"), Action::open),
+      keymap::mapping(keymap::key("up"), Action::previous_or_open),
+      keymap::mapping(keymap::key("k"), Action::previous),
+      keymap::mapping(keymap::key("down"), Action::next_or_open),
+      keymap::mapping(keymap::key("j"), Action::next),
+      keymap::mapping(keymap::key("up", shift: true), Action::fast_previous),
+      keymap::mapping(keymap::key("k", shift: true), Action::fast_previous),
+      keymap::mapping(keymap::key("down", shift: true), Action::fast_next),
+      keymap::mapping(keymap::key("j", shift: true), Action::fast_next),
+    ],
+  )
+}
+
+fn default_tab_bindings() keymap::Bindings<Action> {
+  keymap::bindings(
+    [
+      keymap::mapping(keymap::key("left"), Action::previous),
+      keymap::mapping(keymap::key("["), Action::previous),
+      keymap::mapping(keymap::key("right"), Action::next),
+      keymap::mapping(keymap::key("]"), Action::next),
+      keymap::mapping(keymap::key("return"), Action::submit),
+      keymap::mapping(keymap::key("linefeed"), Action::submit),
+    ],
+  )
+}
 
 private fn internal_state(value: Any) mut InternalState {
   unsafe::cast<mut InternalState>(value).expect("Select must be created by Cooper")
@@ -1069,6 +1137,10 @@ private fn internal_new(
     highlight_listeners: [],
     change_listeners: [],
     submit_listeners: [],
+    key_bindings: match selected_presentation {
+      SelectConfig => default_bindings(),
+      TabConfig => default_tab_bindings(),
+    },
   }
   let popup_node = context_state.create_node(popup_style(model))
   popup_node.mark_internal_overlay()
@@ -1130,6 +1202,7 @@ private fn internal_new(
     remove_scroll_listener: remove_scroll_listener,
     layout_style: styles.or(layout_style::new()),
     measure_width: measure_width,
+    runtime: context_state,
   }
   let created = mut Select{node_ref: retained, internal: shared}
   retained.bind(created)
@@ -1726,6 +1799,157 @@ impl Select {
     }
   }
 
+  fn key_bindings() keymap::Bindings<Action> {
+    internal_state(self.internal).model.key_bindings
+  }
+
+  fn mut set_key_bindings(value: keymap::Bindings<Action>) {
+    self.require_live()
+    internal_state(self.internal).model.key_bindings = value
+  }
+
+  private fn action_applicable(action: Action) Bool {
+    let model = internal_state(self.internal).model
+    match action {
+      Action::open => not model.open,
+      Action::close => model.open,
+      Action::activate => true,
+      Action::previous_or_open => true,
+      Action::next_or_open => true,
+      Action::previous => {
+        match model.presentation {
+          SelectConfig => model.open,
+          TabConfig => true,
+        }
+      },
+      Action::next => {
+        match model.presentation {
+          SelectConfig => model.open,
+          TabConfig => true,
+        }
+      },
+      Action::fast_previous => {
+        match model.presentation {
+          SelectConfig => model.open,
+          TabConfig => true,
+        }
+      },
+      Action::fast_next => {
+        match model.presentation {
+          SelectConfig => model.open,
+          TabConfig => true,
+        }
+      },
+      Action::submit => true,
+    }
+  }
+
+  private fn mut apply_action(action: Action) ActionResult {
+    self.require_live()
+    let model = internal_state(self.internal).model
+    mut handled = true
+    mut changed = false
+    match action {
+      Action::open => {
+        handled = not model.open
+        if handled {
+          changed = self.open()
+        }
+      },
+      Action::close => {
+        handled = model.open
+        if handled {
+          changed = self.close()
+        }
+      },
+      Action::activate => {
+        if model.open {
+          changed = self.submit()
+        } else {
+          changed = self.open()
+        }
+      },
+      Action::previous_or_open => {
+        match model.presentation {
+          SelectConfig => {
+            if model.open {
+              changed = self.move_by(-1)
+            } else {
+              changed = self.open()
+            }
+          },
+          TabConfig => { changed = self.move_by(-1) },
+        }
+      },
+      Action::next_or_open => {
+        match model.presentation {
+          SelectConfig => {
+            if model.open {
+              changed = self.move_by(1)
+            } else {
+              changed = self.open()
+            }
+          },
+          TabConfig => { changed = self.move_by(1) },
+        }
+      },
+      Action::previous => {
+        match model.presentation {
+          SelectConfig => {
+            handled = model.open
+            if handled {
+              changed = self.move_by(-1)
+            }
+          },
+          TabConfig => { changed = self.move_by(-1) },
+        }
+      },
+      Action::next => {
+        match model.presentation {
+          SelectConfig => {
+            handled = model.open
+            if handled {
+              changed = self.move_by(1)
+            }
+          },
+          TabConfig => { changed = self.move_by(1) },
+        }
+      },
+      Action::fast_previous => {
+        match model.presentation {
+          SelectConfig => {
+            handled = model.open
+            if handled {
+              changed = self.move_by(0 - it.fast_step)
+            }
+          },
+          TabConfig => { changed = self.move_by(-1) },
+        }
+      },
+      Action::fast_next => {
+        match model.presentation {
+          SelectConfig => {
+            handled = model.open
+            if handled {
+              changed = self.move_by(it.fast_step)
+            }
+          },
+          TabConfig => { changed = self.move_by(1) },
+        }
+      },
+      Action::submit => { changed = self.submit() },
+    }
+    ActionResult{handled: handled, changed: changed}
+  }
+
+  fn mut perform(action: Action) Bool {
+    let result = self.apply_action(action)
+    if result.changed {
+      internal_state(self.internal).runtime.internal_preserve_focus_scroll()
+    }
+    result.handled
+  }
+
   // Synchronize a value without committing a user action or moving highlight.
   // Like construction, indexes clamp to the option range; none clears selection.
   fn mut set_selected_index(index: Int?) Bool {
@@ -2069,60 +2293,27 @@ impl Select {
   }
 
   private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
-    if key.event_type == event::KeyEventType::release {
-      event_delivery::Disposition::ignored
-    } else {
-      let model = internal_state(self.internal).model
-      mut recognized = true
-      mut changed = false
-      match model.presentation {
-        SelectConfig => {
-          if key.matches("escape") and model.open {
-            changed = self.close()
-          } else if key.matches("return") or key.matches("linefeed") {
-            if model.open {
-              changed = self.submit()
+    let model = internal_state(self.internal).model
+    match model.key_bindings.resolve(key.@) {
+      mapping => {
+        match mapping.action {
+          action => {
+            let result = self.apply_action(action)
+            if result.handled {
+              key.prevent_default()
+              if result.changed {
+                ctx.preserve_focus_scroll()
+                ctx.request_redraw()
+              }
+              event_delivery::Disposition::handled
             } else {
-              changed = self.open()
+              event_delivery::Disposition::ignored
             }
-          } else if key.matches("space") and not model.open {
-            changed = self.open()
-          } else if model.open and (key.matches("up") or key.matches("k")) {
-            changed = self.move_by(-1)
-          } else if model.open and (key.matches("down") or key.matches("j")) {
-            changed = self.move_by(1)
-          } else if model.open and (key.matches("up", shift: true) or key.matches("k", shift: true)) {
-            changed = self.move_by(0 - it.fast_step)
-          } else if model.open and (key.matches("down", shift: true) or key.matches("j", shift: true)) {
-            changed = self.move_by(it.fast_step)
-          } else if (not model.open) and (key.matches("up") or key.matches("down")) {
-            changed = self.open()
-          } else {
-            recognized = false
-          }
-        },
-        TabConfig => {
-          if key.matches("left") or key.matches("[") {
-            changed = self.move_by(-1)
-          } else if key.matches("right") or key.matches("]") {
-            changed = self.move_by(1)
-          } else if key.matches("return") or key.matches("linefeed") {
-            changed = self.submit()
-          } else {
-            recognized = false
-          }
-        },
-      }
-      if recognized {
-        key.prevent_default()
-        if changed {
-          ctx.preserve_focus_scroll()
-          ctx.request_redraw()
+          },
+          _ => event_delivery::Disposition::handled,
         }
-        event_delivery::Disposition::handled
-      } else {
-        event_delivery::Disposition::ignored
-      }
+      },
+      _ => event_delivery::Disposition::ignored,
     }
   }
 
@@ -2231,5 +2422,25 @@ impl Select {
       }
       self.node_ref.destroy(true)
     }
+  }
+}
+
+impl keymap::Control for Select {
+  fn mut key_bindings_info() [keymap::Binding] {
+    let prefix = match internal_state(self.internal).model.presentation {
+      SelectConfig => "select",
+      TabConfig => "tab_select",
+    }
+    keymap::describe_bindings(
+      self.key_bindings(),
+      prefix,
+      action_name,
+      fn(action: Action) Bool {
+        self.perform(action)
+      },
+      enabled: fn(action: Action) Bool {
+        self.action_applicable(action)
+      },
+    )
   }
 }

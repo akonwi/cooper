@@ -143,6 +143,13 @@ changes through `ctx.dispatch`. No networking is involved.
 API, requiring Ard v0.42.0. It exercises real HTTP requests, component-owned
 async scheduling, keyed lists, nested comments, focus reveal, and scrolling.
 
+Keyboard actions use `cooper/keymap`: page-local focus scopes own selection,
+expansion, scrolling, pagination, and retry; the outer scope owns feed switching
+and Back. Typed commands carry movement amounts and feed names, and activation
+uses `with_lazy` to read the current selected item. The footer discovers eligible
+shortcuts, hiding Back in feeds and Open on empty pages. Ctrl+C retains the
+Runtime's automatic exit behavior. See the [keymap guide](../docs/keymaps.md).
+
 ```sh
 ard run cui_hackernews.ard
 ard test hackernews
@@ -178,6 +185,8 @@ The client is read-only: no authentication, voting, posting, or persistent cache
 The PTY test runs against a local HTTP fixture, not the public service. It checks
 out-of-order completions, retries, cached expansion, deleted/dead comments,
 nested replies, stale feed/reader completions, compact layout, and clean exit.
+It also checks shortcut availability, exact modifiers, arrow/page-key aliases,
+and lazy activation after changing the selected story.
 `HN_API_ROOT` overrides the API base URL for fixtures. `HN_CAPTURE_DIR` optionally
 records ANSI snapshots. Request-count assertions check that opening, expanding,
 and paginating fetch only the requested level; collapsing hides replies but

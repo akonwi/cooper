@@ -1,0 +1,550 @@
+use ard/testing
+
+use cooper/event
+use cooper/keymap
+use cooper/testing as cooper_testing
+use cooper/ui/box
+use cooper/ui/input
+use cooper/ui/style
+
+private fn modifiers(shift: Bool?, ctrl: Bool?, alt: Bool?, super: Bool?) event::Modifiers {
+  event::Modifiers{
+    shift: shift.or(false),
+    ctrl: ctrl.or(false),
+    alt: alt.or(false),
+    super: super.or(false),
+  }
+}
+
+private fn received(
+  name: Str,
+  kind: event::KeyEventType,
+  shift: Bool?,
+  ctrl: Bool?,
+  alt: Bool?,
+  super: Bool?,
+) mut event::KeyEvent {
+  event::key(name, name, kind, modifiers(shift, ctrl, alt, super))
+}
+
+private fn ids(commands: [keymap::Command]) Str {
+  mut result = ""
+  for command in commands {
+    result = "{result}|{command.id()}:{command.title()}:{command.group()}:{command.enabled()}"
+  }
+  result
+}
+
+struct Availability {
+  value: Int,
+  layer_enabled: Bool,
+  command_enabled: Bool,
+}
+
+test fn generic_and_simple_commands_have_lazy_enablement_and_trait_metadata() Void!Str {
+  let model = mut Availability{
+    value: 2,
+    layer_enabled: false,
+    command_enabled: true,
+  }
+  mut handled = 0
+  mut providers = 0
+  let typed = keymap::command(
+    "typed",
+    "Typed",
+    fn(value: Int) Bool {
+      handled =+ value
+      true
+    },
+    enabled: fn() Bool {
+      model.value > 0
+    },
+    group: "edit",
+  )
+  let simple = keymap::simple_command(
+    "simple",
+    "Simple",
+    fn() Bool {
+      handled =+ 100
+      true
+    },
+    group: "tools",
+  )
+  let eager = typed.with(model.value)
+  let lazy = typed.with_lazy(fn() Int {
+    providers =+ 1
+    model.value
+  })
+
+  model.value = 7
+  try testing::assert(eager.invoke(), "Expected enabled eager invocation")
+  try testing::assert(lazy.invoke(), "Expected enabled lazy invocation")
+  try testing::assert(simple.with().invoke(), "Expected SimpleCommand invocation")
+  try testing::assert(
+    handled == 109 and providers == 1,
+    "Expected eager arguments captured and lazy arguments read from current model",
+  )
+
+  model.value = 0
+  try testing::assert(not typed.invoke(50), "Expected direct invocation to honor current enablement")
+  try testing::assert(not eager.invoke(), "Expected eager invocation to honor current enablement")
+  try testing::assert(not lazy.invoke(), "Expected disabled lazy invocation")
+  try testing::assert(
+    providers == 1 and handled == 109,
+    "Expected no handler or lazy-provider evaluation while disabled",
+  )
+  let catalog: [keymap::Command] = [typed, simple]
+  testing::assert(
+    ids(catalog) == "|typed:Typed:edit:false|simple:Simple:tools:true",
+    "Expected inferred generic and SimpleCommand trait metadata",
+  )
+}
+
+test fn keys_use_exact_modifiers_and_binding_trigger_policies() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  mut calls = ""
+  let command = keymap::simple_command("run", "Run", fn() Bool {
+    calls = "{calls}x"
+    true
+  })
+  let _ = keymap::register(
+    application.context,
+    keymap::layer(
+      [
+        keymap::binding(keymap::key("k", ctrl: true), command.with()),
+        keymap::binding(
+          keymap::key("r", alt: true),
+          command.with(),
+          trigger: keymap::Trigger::press_or_repeat,
+        ),
+        keymap::binding(keymap::key("u", shift: true), command.with(), trigger: keymap::Trigger::release),
+      ],
+    ),
+  )
+
+  application.key(received("k", event::KeyEventType::press, ctrl: true))
+  application.key(received("k", event::KeyEventType::repeat, ctrl: true))
+  application.key(received("k", event::KeyEventType::press, ctrl: true, shift: true))
+  application.key(received("r", event::KeyEventType::press, alt: true))
+  application.key(received("r", event::KeyEventType::repeat, alt: true))
+  application.key(received("r", event::KeyEventType::release, alt: true))
+  application.key(received("u", event::KeyEventType::press, shift: true))
+  application.key(received("u", event::KeyEventType::release, shift: true))
+
+  try testing::assert(calls == "xxxx", "Expected exact modifiers and press/repeat/release matching")
+  application.destroy()
+  testing::assert(application.context.is_destroyed(), "Expected trigger test cleanup")
+}
+
+test fn runtime_orders_priority_specificity_and_newest_then_falls_back_on_decline() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let parent = box::new(application.context)
+  let child = box::new(application.context)
+  parent.add(child)
+  application.root.add(parent)
+  parent.set_focusable(true)
+  child.set_focusable(true)
+  application.render()
+  child.focus()
+  mut calls = ""
+  let make = fn(label: Str, accept: Bool) keymap::Binding {
+    let command = keymap::simple_command(label, label, fn() Bool {
+      calls = "{calls}{label}"
+      accept
+    })
+    keymap::binding(keymap::key("x"), command.with())
+  }
+  let _ = keymap::register(application.context, keymap::layer([make("A", true)], priority: 5))
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([make("W", true)], scope: keymap::focus_within(parent), priority: 5),
+  )
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([make("O", false)], scope: keymap::focus(child), priority: 5),
+  )
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([make("N", false)], scope: keymap::focus(child), priority: 5),
+  )
+
+  application.key(received("x", event::KeyEventType::press))
+
+  try testing::assert(
+    calls == "NOW",
+    "Expected newest exact focus to decline through older exact focus to focus-within",
+  )
+  let focused_priority = keymap::simple_command("focused-priority", "Focused priority", fn() Bool {
+    calls = "{calls}f"
+    true
+  })
+  let application_priority = keymap::simple_command(
+    "application-priority",
+    "Application priority",
+    fn() Bool {
+      calls = "{calls}p"
+      true
+    },
+  )
+  let _ = keymap::register(
+    application.context,
+    keymap::layer(
+      [keymap::binding(keymap::key("y"), focused_priority.with())],
+      scope: keymap::focus(child),
+      priority: 9,
+    ),
+  )
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([keymap::binding(keymap::key("y"), application_priority.with())], priority: 10),
+  )
+  application.key(received("y", event::KeyEventType::press))
+  try testing::assert(calls == "NOWp", "Expected priority to outrank scope specificity")
+  child.blur()
+  calls = ""
+  application.key(received("x", event::KeyEventType::press))
+  try testing::assert(calls == "A", "Expected application scope with no focus")
+  application.destroy()
+  testing::assert(application.context.is_destroyed(), "Expected ordering test cleanup")
+}
+
+test fn mutable_layer_enablement_bindings_and_discovery_use_current_configuration() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  let model = mut Availability{
+    value: 0,
+    layer_enabled: false,
+    command_enabled: true,
+  }
+  mut runs = 0
+  let command = keymap::simple_command(
+    "mutable",
+    "Mutable",
+    fn() Bool {
+      runs =+ 1
+      true
+    },
+    enabled: fn() Bool {
+      model.command_enabled
+    },
+  )
+  let layer = keymap::layer(
+    [keymap::binding(keymap::key("a"), command.with())],
+    enabled: fn() Bool {
+      model.layer_enabled
+    },
+  )
+  let remove = keymap::register(application.context, layer)
+
+  application.key(received("a", event::KeyEventType::press))
+  try testing::assert(runs == 0, "Expected disabled layer not to dispatch")
+  try testing::assert(
+    not keymap::shortcuts(application.context).at(0).expect("shortcut").eligible,
+    "Expected disabled layer discovery",
+  )
+  model.layer_enabled = true
+  layer.bindings = [keymap::binding(keymap::key("b"), command.with())]
+  keymap::changed(application.context)
+  application.key(received("a", event::KeyEventType::press))
+  application.key(received("b", event::KeyEventType::press))
+  try testing::assert(runs == 1, "Expected registered layer to read current mutable bindings")
+  model.command_enabled = false
+  keymap::changed(application.context)
+  let shortcut = keymap::shortcuts(application.context).at(0).expect("mutable shortcut")
+  try testing::assert(not shortcut.eligible, "Expected discovery to read current command enablement")
+  application.key(received("b", event::KeyEventType::press))
+  try testing::assert(runs == 1, "Expected disabled command not to run")
+  remove()
+  remove()
+  try testing::assert(
+    keymap::shortcuts(application.context).size() == 0,
+    "Expected idempotent layer disposal",
+  )
+  application.destroy()
+  testing::assert(
+    keymap::commands(application.context).size() == 0,
+    "Expected destroyed Runtime keymap cleanup",
+  )
+}
+
+test fn discovery_reports_shadowing_catalog_sources_and_headless_ctrl_c_metadata() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  let first = keymap::simple_command("first", "First", fn() Bool {
+    false
+  })
+  let second = keymap::simple_command("second", "Second", fn() Bool {
+    true
+  })
+  let explicit = keymap::simple_command("explicit", "Explicit", fn() Bool {
+    true
+  })
+  let control_c = keymap::simple_command("copy", "Copy", fn() Bool {
+    true
+  })
+  let _ = keymap::register(
+    application.context,
+    keymap::layer(
+      [
+        keymap::binding(keymap::key("q"), first.with()),
+        keymap::binding(keymap::key("c", ctrl: true), control_c.with()),
+      ],
+      commands: [explicit],
+    ),
+  )
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([keymap::binding(keymap::key("q"), second.with())]),
+  )
+
+  let shortcuts = keymap::shortcuts(application.context)
+  try testing::assert(shortcuts.size() == 3, "Expected all bindings in discovery")
+  try testing::assert(
+    shortcuts.at(0).expect("newest").command.id() == "second" and not shortcuts.at(0).expect("newest").shadowed,
+    "Expected newest declaration first",
+  )
+  try testing::assert(
+    shortcuts.at(1).expect("older").command.id() == "first" and shortcuts.at(1).expect("older").eligible and shortcuts.at(1).expect("older").shadowed,
+    "Expected eligible shadowed fallback despite earlier command being able to decline",
+  )
+  try testing::assert(
+    not shortcuts.at(2).expect("ctrl-c").eligible,
+    "Expected default automatic Ctrl+C policy to reserve its shortcut",
+  )
+  try testing::assert(
+    ids(keymap::commands(application.context)) == "|explicit:Explicit::true|first:First::true|copy:Copy::true|second:Second::true",
+    "Expected explicit commands and binding-derived commands in registration order",
+  )
+  application.destroy()
+  testing::assert(application.context.is_destroyed(), "Expected discovery test cleanup")
+}
+
+test fn raw_prevention_and_stop_suppress_keymaps_without_changing_raw_listener_order() Void!Str {
+  let application = cooper_testing::new(8, 1)
+  mut raw = ""
+  mut mapped = 0
+  let command = keymap::simple_command("mapped", "Mapped", fn() Bool {
+    mapped =+ 1
+    true
+  })
+  let _ = keymap::register(
+    application.context,
+    keymap::layer(
+      [
+        keymap::binding(keymap::key("p"), command.with()),
+        keymap::binding(keymap::key("s"), command.with()),
+      ],
+    ),
+  )
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    raw = "{raw}1"
+    if received.name == "p" {
+      received.prevent_default()
+    } else {
+      received.stop_propagation()
+    }
+  })
+  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+    raw = "{raw}2"
+  })
+
+  application.key(received("p", event::KeyEventType::press))
+  application.key(received("s", event::KeyEventType::press))
+  try testing::assert(
+    raw == "121" and mapped == 0,
+    "Expected prevention to preserve raw order and stop to suppress later raw delivery; both suppress bindings",
+  )
+  application.destroy()
+  testing::assert(application.context.is_destroyed(), "Expected raw listener test cleanup")
+}
+
+test fn dispatch_snapshots_layers_and_stops_when_focus_or_attachment_changes() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let parent = box::new(application.context)
+  let child = box::new(application.context)
+  let sibling = box::new(application.context)
+  parent.add(child)
+  parent.add(sibling)
+  application.root.add(parent)
+  child.set_focusable(true)
+  sibling.set_focusable(true)
+  application.render()
+  child.focus()
+  mut calls = ""
+  mut remove_late: fn() = fn() {}
+  let late = keymap::simple_command("late", "Late", fn() Bool {
+    calls = "{calls}L"
+    true
+  })
+  remove_late = keymap::register(
+    application.context,
+    keymap::layer([keymap::binding(keymap::key("x"), late.with())]),
+  )
+  let mutate = keymap::simple_command("mutate", "Mutate", fn() Bool {
+    calls = "{calls}M"
+    remove_late()
+    let added = keymap::simple_command("added", "Added", fn() Bool {
+      calls = "{calls}A"
+      true
+    })
+    let _ = keymap::register(
+      application.context,
+      keymap::layer([keymap::binding(keymap::key("x"), added.with())]),
+    )
+    false
+  })
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([keymap::binding(keymap::key("x"), mutate.with())], priority: 1),
+  )
+  application.key(received("x", event::KeyEventType::press))
+  try testing::assert(
+    calls == "M",
+    "Expected removed snapshot candidate suppressed and added layer deferred",
+  )
+  application.key(received("x", event::KeyEventType::press))
+  try testing::assert(calls == "MMA", "Expected newly added layer on the next dispatch")
+
+  let change_focus = keymap::simple_command("focus-change", "Focus change", fn() Bool {
+    calls = "{calls}F"
+    sibling.focus()
+    false
+  })
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([keymap::binding(keymap::key("f"), change_focus.with())], priority: 2),
+  )
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([keymap::binding(keymap::key("f"), late.with())]),
+  )
+  child.focus()
+  application.key(received("f", event::KeyEventType::press))
+  try testing::assert(calls == "MMAF", "Expected focus change to invalidate remaining route")
+
+  let detach = keymap::simple_command("detach", "Detach", fn() Bool {
+    calls = "{calls}D"
+    parent.remove(child)
+    false
+  })
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([keymap::binding(keymap::key("d"), detach.with())], priority: 2),
+  )
+  let _ = keymap::register(
+    application.context,
+    keymap::layer([keymap::binding(keymap::key("d"), late.with())]),
+  )
+  child.focus()
+  application.key(received("d", event::KeyEventType::press))
+  try testing::assert(calls == "MMAFD", "Expected detach attachment change to invalidate remaining route")
+  application.destroy()
+  testing::assert(application.context.is_destroyed(), "Expected mutation test cleanup")
+}
+
+test fn control_discovery_tracks_rebinding_and_focus_notifications() Void!Str {
+  let app = cooper_testing::new(12, 2)
+  defer app.destroy()
+  let field = input::new(app.context)
+  app.root.add(field)
+  app.render()
+  mut changes = 0
+  let remove = keymap::on_change(app.context, fn() {
+    changes =+ 1
+  })
+  field.focus()
+  try testing::assert(changes == 1, "Focus changes notify shortcut consumers")
+  field.set_key_bindings(
+    keymap::rebind(
+      input::default_bindings(),
+      input::Action::submit,
+      [keymap::key("s", ctrl: true)],
+    ),
+  )
+  let rows = keymap::shortcuts(app.context)
+  mut submits = 0
+  for row in rows {
+    if row.command.id() == "input.submit" {
+      submits =+ 1
+      try testing::assert(
+        row.key.label() == "Ctrl+S" and row.eligible,
+        "Labels derive from the effective control map",
+      )
+    }
+  }
+  try testing::assert(submits == 1, "Rebind replaces all prior aliases for one action")
+  field.blur()
+  try testing::assert(
+    changes == 2 and keymap::shortcuts(app.context).size() == 0,
+    "Blur removes focused defaults",
+  )
+  remove()
+  remove()
+  field.focus()
+  testing::assert(changes == 2, "Disposed discovery listeners stay silent")
+}
+
+test fn hidden_scope_and_stopped_focused_listener_preserve_default_behavior() Void!Str {
+  let app = cooper_testing::new(12, 2)
+  defer app.destroy()
+  let panel = box::new(app.context)
+  let field = input::new(app.context)
+  panel.add(field)
+  app.root.add(panel)
+  app.render()
+  field.focus()
+  mut calls = 0
+  let command = keymap::simple_command("intercept", "Intercept", fn() Bool {
+    calls =+ 1
+    true
+  })
+  let _ = keymap::register(
+    app.context,
+    keymap::layer(
+      [keymap::binding(keymap::key("a"), command.with())],
+      scope: keymap::focus_within(panel),
+    ),
+  )
+  let stop = field.on_key(fn(key: mut event::KeyEvent) {
+    key.stop_propagation()
+  })
+  app.key(received("a", event::KeyEventType::press))
+  try testing::assert(
+    calls == 0 and field.value() == "a",
+    "Focused stop skips bindings but retains typing",
+  )
+  stop()
+  panel.set_style(style::new(display: style::Display::none))
+  try testing::assert(
+    keymap::shortcuts(app.context).size() == 1,
+    "Discovery excludes hidden control defaults before the next event or paint",
+  )
+  app.key(received("a", event::KeyEventType::press))
+  try testing::assert(calls == 0, "Hidden scopes do not dispatch")
+  let rows = keymap::shortcuts(app.context)
+  testing::assert(
+    rows.size() == 1 and not rows.at(0).expect("inactive").eligible,
+    "Hidden registered scope is discoverable but inactive",
+  )
+}
+
+test fn layer_overrides_replace_keys_and_command_aliases() Void!Str {
+  let command = keymap::simple_command("first", "First", fn() Bool {
+    true
+  })
+  let other = keymap::simple_command("second", "Second", fn() Bool {
+    true
+  })
+  let layer = keymap::layer(
+    [
+      keymap::binding(keymap::key("a"), command.with()),
+      keymap::binding(keymap::key("b"), command.with()),
+      keymap::binding(keymap::key("c"), other.with()),
+    ],
+  )
+  layer.rebind(command.with(), [keymap::key("c")])
+  try testing::assert(
+    layer.bindings.size() == 1 and layer.bindings.at(0).expect("replacement").invocation.command.id() == "first",
+    "Rebind removes aliases and replaces conflicts",
+  )
+  layer.unbind(keymap::key("c"))
+  testing::assert(layer.bindings.size() == 0, "Unbind removes the mapping")
+}

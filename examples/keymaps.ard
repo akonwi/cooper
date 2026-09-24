@@ -1,0 +1,181 @@
+use cooper
+use cooper/cui
+use cooper/keymap
+use cooper/ui
+
+struct EditorState {
+  text: Str,
+  saved: Str,
+  saves: Int,
+  submits: Int,
+  blocked: Int,
+  runtime: mut cooper::Runtime,
+}
+
+struct Props {
+  state: mut EditorState,
+  quit: fn() Bool,
+}
+
+struct Editor {
+  state: mut EditorState,
+  quit: fn() Bool,
+}
+
+private fn editor(props: mut Props) mut Editor {
+  (mut Editor{state: props.state, quit: props.quit})
+}
+
+private fn shortcut_rows(runtime: mut cooper::Runtime) [cui::View] {
+  let rows = mut List::new<cui::View>()
+  for shortcut in keymap::shortcuts(runtime) {
+    if shortcut.command.group() != "input" {
+      mut flags = "eligible"
+      if not shortcut.eligible {
+        flags = "disabled"
+        if shortcut.command.group() == "reserved" {
+          flags = "reserved"
+        }
+      }
+      if shortcut.shadowed {
+        flags = "{flags}, shadowed"
+      }
+      rows.push(
+        cui::text(
+          "{shortcut.key.label()}  {shortcut.command.title()} [{shortcut.command.group()}] · {flags}",
+          styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
+          text_style: ui::text_style(dim: true),
+        ),
+      )
+    }
+  }
+  rows.@
+}
+
+impl cui::Component for Editor {
+  fn mut render() cui::View {
+    let save = keymap::command(
+      "editor.save",
+      "Save",
+      fn(value: Str) Bool {
+        self.state.saved = value
+        self.state.saves =+ 1
+        true
+      },
+      enabled: fn() Bool {
+        self.state.text != self.state.saved
+      },
+      group: "editor",
+    )
+    let quit = keymap::simple_command("editor.quit", "Quit", self.quit, group: "application")
+    let blocked = keymap::simple_command(
+      "editor.blocked",
+      "Blocked action",
+      fn() Bool {
+        self.state.blocked =+ 100
+        true
+      },
+      group: "editor",
+    )
+    let ctrl_c = keymap::simple_command(
+      "editor.ctrl-c",
+      "Mapped Ctrl+C",
+      fn() Bool {
+        self.state.blocked =+ 1000
+        true
+      },
+      group: "reserved",
+    )
+    let bindings = [
+      keymap::binding(
+        keymap::key("s", ctrl: true),
+        save.with_lazy(fn() Str {
+          self.state.text
+        }),
+      ),
+      keymap::binding(keymap::key("q", ctrl: true), quit.with()),
+      keymap::binding(keymap::key("p", ctrl: true), blocked.with()),
+      keymap::binding(keymap::key("c", ctrl: true), ctrl_c.with()),
+    ]
+    let rows = shortcut_rows(self.state.runtime)
+    cui::box(
+      [
+        cui::text(
+          "Scoped keymap editor",
+          text_style: ui::text_style(bold: true, foreground: ui::indexed(4)),
+        ),
+        cui::input(
+          self.state.text,
+          focused: true,
+          placeholder: "Type here",
+          styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
+          on_input: fn(value: Str, ctx: cui::Context) {
+            self.state.text = value
+          },
+          on_submit: fn(value: Str, ctx: cui::Context) {
+            self.state.submits =+ 1
+          },
+        ),
+        cui::text(
+          "text={self.state.text} saved={self.state.saved} saves={self.state.saves} submits={self.state.submits} blocked={self.state.blocked}",
+          styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0),
+        ),
+        cui::text("Discovered shortcuts (labels are generated):", text_style: ui::text_style(bold: true)),
+        cui::box(
+          rows,
+          styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
+        ),
+      ],
+      styles: ui::style(
+        width: ui::percent(100.0),
+        height: ui::percent(100.0),
+        padding: ui::edges(ui::cells(1)),
+        gap: ui::cells(1),
+      ),
+      commands: [save, quit, blocked, ctrl_c],
+      bindings: bindings,
+      binding_scope: keymap::ScopeMode::focus_within,
+      binding_priority: 10,
+      on_key: fn(received: mut cooper::KeyEvent, ctx: cui::Context) {
+        if received.event_type == cooper::KeyEventType::press and received.matches("p", ctrl: true) {
+          self.state.blocked =+ 1
+          received.prevent_default()
+        }
+      },
+    )
+  }
+}
+
+impl cui::Lifecycle for Editor {
+  fn mut mounted(ctx: cui::Context) {
+    let _ = ctx.on_keys_change(fn() {})
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+
+fn main() {
+  let application = cooper::app().expect("create keymap example")
+  defer application.destroy()
+  let state = mut EditorState{
+    text: "",
+    saved: "",
+    saves: 0,
+    submits: 0,
+    blocked: 0,
+    runtime: application.context,
+  }
+  let runtime = application.context
+  let renderer = cui::mount(
+    application,
+    cui::child(
+      editor,
+      Props{state: state, quit: fn() Bool {
+        runtime.destroy_live()
+        true
+      }},
+    ),
+  )
+  defer renderer.destroy()
+  application.run().expect("run keymap example")
+}

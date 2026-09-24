@@ -1,0 +1,106 @@
+use ard/testing
+
+use cooper/core/event_delivery
+use cooper/event
+use cooper/keymap
+use cooper/runtime
+use cooper/ui/input
+
+private fn modifiers(shift: Bool?, ctrl: Bool?) event::Modifiers {
+  event::Modifiers{
+    shift: shift.or(false),
+    ctrl: ctrl.or(false),
+    alt: false,
+    super: false,
+  }
+}
+
+private fn send(
+  field: mut input::Input,
+  name: Str,
+  text: Str?,
+  event_type: event::KeyEventType?,
+  shift: Bool?,
+  ctrl: Bool?,
+) event_delivery::Disposition {
+  field.event(
+    event_delivery::context(
+      key_event: event::key(
+        name,
+        text.or(""),
+        event_type.or(event::KeyEventType::press),
+        modifiers(shift, ctrl),
+      ),
+      focused: true,
+      outcome: event_delivery::new_outcome(),
+    ),
+  )
+}
+
+test fn input_keymap_remaps_and_matches_trigger_and_modifiers_exactly() Void!Str {
+  let ctx = runtime::new_detached()
+  let configured = keymap::bindings(
+    [
+      keymap::mapping(keymap::key("x", ctrl: true), input::Action::delete_backward),
+      keymap::mapping(keymap::key("r"), input::Action::delete_backward, trigger: keymap::Trigger::release),
+    ],
+  )
+  let field = input::new(ctx, value: "abc", key_bindings: configured)
+
+  let _ = send(field, "x", text: "x")
+  try testing::assert(field.value() == "abcx", "Expected unmodified key text fallback")
+  let _ = send(field, "x", ctrl: true)
+  try testing::assert(field.value() == "abc", "Expected exact Ctrl-X remap")
+  let _ = send(field, "r", text: "r", event_type: event::KeyEventType::press)
+  try testing::assert(field.value() == "abcr", "Expected press to miss release-only mapping")
+  let _ = send(field, "r", text: "r", event_type: event::KeyEventType::repeat)
+  try testing::assert(field.value() == "abcrr", "Expected repeat to miss release-only mapping")
+  let _ = send(field, "r", event_type: event::KeyEventType::release)
+  testing::assert(field.value() == "abcr", "Expected explicit release mapping")
+}
+
+test fn input_keymap_distinguishes_consume_unbind_and_empty_fallback() Void!Str {
+  let ctx = runtime::new_detached()
+  let printable = keymap::key("x")
+  let field = input::new(ctx, key_bindings: input::default_bindings().consume(printable))
+
+  let consumed = send(field, "x", text: "x")
+  try testing::assert(consumed == event_delivery::Disposition::handled, "Expected consumed key")
+  try testing::assert(field.value().is_empty(), "Expected consume to suppress text fallback")
+  field.set_key_bindings(field.key_bindings().unbind(printable))
+  let _ = send(field, "x", text: "x")
+  try testing::assert(field.value() == "x", "Expected unbound printable fallback")
+  field.set_key_bindings(keymap::bindings<input::Action>([]))
+  let _ = send(field, "y", text: "y")
+  testing::assert(field.value() == "xy", "Expected empty keymap typing fallback")
+}
+
+test fn input_perform_uses_real_submit_and_edit_transactions() Void!Str {
+  let ctx = runtime::new_detached()
+  let field = input::new(ctx, value: "ab", min_length: 2)
+  mut submissions = 0
+  mut inputs = 0
+  let _ = field.on_submit(fn(value: Str) {
+    submissions =+ 1
+  })
+  let _ = field.on_input(fn(value: Str) {
+    inputs =+ 1
+  })
+
+  try testing::assert(field.perform(input::Action::delete_backward), "Expected typed action handling")
+  try testing::assert(field.value() == "a" and inputs == 1, "Expected normal edit callbacks")
+  try testing::assert(field.perform(input::Action::submit), "Expected rejected submit action handling")
+  try testing::assert(submissions == 0, "Expected invalid direct submit suppression")
+  try testing::assert(field.perform(input::Action::select_left), "Expected selection action handling")
+  try testing::assert(
+    field.perform(input::Action::delete_forward),
+    "Expected selection fallback invocation",
+  )
+  try testing::assert(
+    field.value().is_empty() and inputs == 2,
+    "Expected selection fallback edit callbacks",
+  )
+  field.set_value("valid")
+  try testing::assert(field.perform(input::Action::submit), "Expected valid direct submit")
+  testing::assert(submissions == 1, "Expected direct submit callback")
+}

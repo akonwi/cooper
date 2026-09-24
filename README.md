@@ -14,7 +14,7 @@ buffer for Vaxis to diff.
 
 ## Status
 
-Cooper is under active development and requires Ard v0.41.0 or newer. The
+Cooper is under active development and requires Ard v0.42.0 or newer. The
 accepted application API, built-in controls, headless TestApp, and runnable
 examples are implemented.
 
@@ -63,6 +63,10 @@ fn main() {
 `cooper` is the application namespace for App, Runtime, and events. `cooper/ui`
 is the view-construction namespace for controls, layout, colors, geometry,
 selection, and rich text. Focused modules remain available for specialized APIs.
+
+`cooper/keymap` provides typed commands, scoped bindings, control remapping, and
+discoverable shortcut labels. See the [keymap guide](./docs/keymaps.md) and
+[Hacker News example](./examples/cui_hackernews.ard).
 
 App exposes its Runtime as `application.context` and its permanent surface-sized Root. Controls
 are persistent references: construct them once, add them to the tree, and

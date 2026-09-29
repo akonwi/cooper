@@ -2,8 +2,9 @@
 
 ## Status
 
-Proposed. An experimental implementation and executable example are available;
-the imperative Cooper contract remains unchanged.
+Accepted. The opt-in `cooper/cui` layer is implemented with examples and a
+[framework guide](../declarative.md); the imperative Cooper contract remains
+unchanged.
 
 ## Context
 

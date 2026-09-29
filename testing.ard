@@ -8,6 +8,7 @@ use cooper/root
 use cooper/runtime
 use cooper/screen
 use cooper/terminal_progress
+use cooper/ui/cursor as text_cursor
 use cooper/ui/geometry
 use cooper/ui/selection
 use cooper/ui/text
@@ -76,6 +77,13 @@ impl Frame {
     match self.buffer.cursor {
       cursor => Maybe::new<Int>(cursor.y),
       _ => Maybe::new<Int>(),
+    }
+  }
+
+  fn cursor_style() text_cursor::CursorStyle? {
+    match self.buffer.cursor {
+      cursor => Maybe::new<text_cursor::CursorStyle>(cursor.style),
+      _ => Maybe::new<text_cursor::CursorStyle>(),
     }
   }
 

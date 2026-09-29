@@ -1,5 +1,6 @@
 use cooper/ui/box as box_control
 use cooper/ui/color as color_value
+use cooper/ui/cursor as cursor_value
 use cooper/ui/geometry as geometry_value
 use cooper/ui/image as image_control
 use cooper/ui/input as input_control
@@ -12,6 +13,8 @@ use cooper/ui/text as text_control
 use cooper/ui/text_area as text_area_control
 
 type Color = color_value::Color
+
+type CursorStyle = cursor_value::CursorStyle
 
 type Point = geometry_value::Point
 type Rect = geometry_value::Rect

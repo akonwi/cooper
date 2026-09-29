@@ -1,0 +1,249 @@
+use cooper
+use cooper/ui
+
+struct Demo {
+  vim: Bool,
+  normal: Bool,
+}
+
+fn style_name(value: ui::CursorStyle) Str {
+  match value {
+    ui::CursorStyle::terminal => "terminal",
+    ui::CursorStyle::block => "block",
+    ui::CursorStyle::blinking_block => "blinking_block",
+    ui::CursorStyle::underline => "underline",
+    ui::CursorStyle::blinking_underline => "blinking_underline",
+    ui::CursorStyle::beam => "beam",
+    ui::CursorStyle::blinking_beam => "blinking_beam",
+  }
+}
+
+fn next_style(value: ui::CursorStyle) ui::CursorStyle {
+  match value {
+    ui::CursorStyle::terminal => ui::CursorStyle::block,
+    ui::CursorStyle::block => ui::CursorStyle::blinking_block,
+    ui::CursorStyle::blinking_block => ui::CursorStyle::underline,
+    ui::CursorStyle::underline => ui::CursorStyle::blinking_underline,
+    ui::CursorStyle::blinking_underline => ui::CursorStyle::beam,
+    ui::CursorStyle::beam => ui::CursorStyle::blinking_beam,
+    ui::CursorStyle::blinking_beam => ui::CursorStyle::terminal,
+  }
+}
+
+fn row_style() ui::Style {
+  ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
+}
+
+fn label(ctx: mut cooper::Runtime, content: Str, tint: ui::Color) mut ui::Text {
+  ui::text(
+    ctx,
+    content: content,
+    styles: row_style(),
+    selectable: false,
+    wrap: ui::TextWrap::none,
+    text_style: ui::text_style(foreground: tint),
+  )
+}
+
+fn mode_name(demo: Demo) Str {
+  if not demo.vim {
+    "off"
+  } else if demo.normal {
+    "NORMAL"
+  } else {
+    "INSERT"
+  }
+}
+
+fn refresh(
+  field: mut ui::Input,
+  area: mut ui::TextArea,
+  demo: Demo,
+  focus_status: mut ui::Text,
+  styles_status: mut ui::Text,
+  mode_status: mut ui::Text,
+) {
+  mut focused = "none"
+  if field.is_focused() {
+    focused = "input"
+  } else if area.is_focused() {
+    focused = "text_area"
+  }
+  focus_status.set_content("FOCUS {focused}")
+  styles_status.set_content(
+    "INPUT {style_name(field.cursor_style())}  TEXT_AREA {style_name(area.cursor_style())}",
+  )
+  mode_status.set_content("MODE {mode_name(demo)}")
+}
+
+fn set_both(field: mut ui::Input, area: mut ui::TextArea, value: ui::CursorStyle) {
+  field.set_cursor_style(value)
+  area.set_cursor_style(value)
+}
+
+fn main() {
+  let application = cooper::app().expect("create Cooper cursor styles demo")
+  defer application.destroy()
+  let ctx = application.context
+
+  let root = ui::box(
+    ctx,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      padding: ui::edges(ui::cells(1)),
+      flex_direction: ui::FlexDirection::column,
+      gap: ui::cells(1),
+    ),
+  )
+  root.add(
+    ui::text(
+      ctx,
+      content: "Cursor Styles",
+      styles: row_style(),
+      selectable: false,
+      text_style: ui::text_style(foreground: ui::rgb(72, 209, 204), bold: true),
+    ),
+  )
+  root.add(
+    ui::text(
+      ctx,
+      content: "Tab switch field · Ctrl+T cycle focused style · Ctrl+O vim demo (Esc normal, i insert) · Ctrl+C quit\n`terminal` uses your terminal's configured cursor. Change it in your terminal config and relaunch.",
+      styles: ui::style(width: ui::percent(100.0), height: ui::cells(2), flex_shrink: 0.0),
+      selectable: false,
+      text_style: ui::text_style(foreground: ui::rgb(160, 160, 180)),
+    ),
+  )
+
+  let field = ui::input(
+    ctx,
+    value: "Single-line input",
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
+      flex_shrink: 0.0,
+      background: ui::hex("#1F2430"),
+    ),
+  )
+  let field_box = ui::box(
+    ctx,
+    title: "Input",
+    styles: ui::style(
+      border: ui::Border::rounded,
+      border_color: ui::hex("#4ECDC4"),
+      width: ui::percent(100.0),
+      height: ui::cells(3),
+      flex_shrink: 0.0,
+    ),
+  )
+  field_box.add(field)
+  root.add(field_box)
+
+  let area = ui::text_area(
+    ctx,
+    value: "Multiline text area.\nFocus moves the hardware cursor, and its style follows.",
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::percent(100.0),
+      background: ui::hex("#1F2430"),
+    ),
+  )
+  let area_box = ui::box(
+    ctx,
+    title: "TextArea",
+    styles: ui::style(
+      border: ui::Border::rounded,
+      border_color: ui::hex("#6BCF7F"),
+      width: ui::percent(100.0),
+      height: ui::cells(6),
+      flex_shrink: 0.0,
+    ),
+  )
+  area_box.add(area)
+  root.add(area_box)
+
+  let focus_status = label(ctx, "", ui::rgb(165, 214, 255))
+  let styles_status = label(ctx, "", ui::rgb(210, 168, 255))
+  let mode_status = label(ctx, "", ui::rgb(255, 200, 90))
+  let status = ui::box(
+    ctx,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      flex_direction: ui::FlexDirection::column,
+      flex_shrink: 0.0,
+    ),
+  )
+  status.add(focus_status)
+  status.add(styles_status)
+  status.add(mode_status)
+  root.add(status)
+  application.root.add(root)
+
+  let demo = mut Demo{vim: false, normal: false}
+  let update = fn() {
+    refresh(field, area, demo.@, focus_status, styles_status, mode_status)
+  }
+  let _ = field.on_focus(update)
+  let _ = area.on_focus(update)
+
+  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+    if received.event_type != cooper::KeyEventType::release {
+      if received.matches("tab") or received.matches("tab", shift: true) {
+        if field.is_focused() {
+          let _ = area.focus()
+        } else {
+          let _ = field.focus()
+        }
+        received.prevent_default()
+      } else if received.matches("t", ctrl: true) {
+        demo.vim = false
+        if area.is_focused() {
+          area.set_cursor_style(next_style(area.cursor_style()))
+        } else {
+          field.set_cursor_style(next_style(field.cursor_style()))
+        }
+        received.prevent_default()
+      } else if received.matches("o", ctrl: true) {
+        demo.vim = not demo.vim
+        demo.normal = false
+        if demo.vim {
+          set_both(field, area, ui::CursorStyle::beam)
+        } else {
+          set_both(field, area, ui::CursorStyle::terminal)
+        }
+        received.prevent_default()
+      } else if demo.vim and demo.normal {
+        if received.matches("i") {
+          demo.normal = false
+          set_both(field, area, ui::CursorStyle::beam)
+          received.prevent_default()
+        } else if received.matches("h") {
+          if area.is_focused() {
+            let _ = area.perform(ui::TextAreaAction::move_left)
+          } else {
+            let _ = field.perform(ui::InputAction::move_left)
+          }
+          received.prevent_default()
+        } else if received.matches("l") {
+          if area.is_focused() {
+            let _ = area.perform(ui::TextAreaAction::move_right)
+          } else {
+            let _ = field.perform(ui::InputAction::move_right)
+          }
+          received.prevent_default()
+        } else if not received.text.is_empty() or received.matches("backspace") or received.matches("delete") or received.matches("return") {
+          received.prevent_default()
+        }
+      } else if demo.vim and received.matches("escape") {
+        demo.normal = true
+        set_both(field, area, ui::CursorStyle::block)
+        received.prevent_default()
+      }
+    }
+    update()
+  })
+
+  let _ = field.focus()
+  update()
+  application.run().expect("run Cooper cursor styles demo")
+}

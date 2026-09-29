@@ -1,0 +1,13 @@
+// Hardware text cursor styles.
+//
+// Each variant corresponds to one DECSCUSR value. `terminal` asks the terminal
+// to use its own configured cursor style.
+enum CursorStyle {
+  terminal,
+  block,
+  blinking_block,
+  underline,
+  blinking_underline,
+  beam,
+  blinking_beam,
+}

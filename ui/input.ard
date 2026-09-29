@@ -5,6 +5,7 @@ use cooper/event
 use cooper/keymap
 use cooper/runtime
 use cooper/ui/color
+use cooper/ui/cursor as text_cursor
 use cooper/ui/editor
 use cooper/ui/geometry
 use cooper/ui/selection
@@ -150,6 +151,7 @@ struct Input {
   commit_baseline: Str,
   width_measurer: fn(Str) Int,
   configured_key_bindings: keymap::Bindings<Action>,
+  caret_style: text_cursor::CursorStyle,
 }
 
 private fn glyphs(text: Str) [Glyph] {
@@ -472,6 +474,7 @@ fn new(
   selectable: Bool?,
   selection_style: fn(mut text::TextStyle)?,
   key_bindings: keymap::Bindings<Action>?,
+  cursor_style: text_cursor::CursorStyle?,
 ) mut Input {
   let minimum = min_length.or(0)
   if minimum < 0 {
@@ -515,6 +518,7 @@ fn new(
       ctx.measure_text(value)
     },
     configured_key_bindings: key_bindings.or(default_bindings()),
+    caret_style: cursor_style.or(text_cursor::CursorStyle::terminal),
   }
   let retained = input.node_ref
   retained.bind(input)
@@ -605,7 +609,7 @@ impl node::Renderable for Input {
       _ => (),
     }
     if self.node_ref.is_focused() and view.cursor_x >= 0 and view.cursor_x < width {
-      ctx.show_cursor(view.cursor_x, 0)
+      ctx.show_cursor(view.cursor_x, 0, self.caret_style)
     }
   }
 
@@ -890,6 +894,18 @@ impl Input {
 
   fn mut on_submit(handler: fn(Str)) fn() {
     self.node_ref.on_value(3, handler)
+  }
+
+  fn cursor_style() text_cursor::CursorStyle {
+    self.caret_style
+  }
+
+  fn mut set_cursor_style(value: text_cursor::CursorStyle) {
+    self.node_ref.require_live()
+    if self.caret_style != value {
+      self.caret_style = value
+      self.node_ref.request_redraw()
+    }
   }
 
   fn placeholder() Str {

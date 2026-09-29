@@ -24,6 +24,7 @@ use cooper/notification
 use cooper/screen
 use cooper/terminal_progress
 use cooper/ui/color
+use cooper/ui/cursor as text_cursor
 use cooper/ui/selection as public_selection
 use cooper/ui/style
 use go:math
@@ -95,6 +96,20 @@ private fn vaxis_attributes(style: paint::CellStyle) vaxis::AttributeMask {
     attributes = attributes + vaxis::AttrInvisible
   }
   attributes
+}
+
+private fn vaxis_cursor_style(style: text_cursor::CursorStyle) vaxis::CursorStyle {
+  match style {
+    text_cursor::CursorStyle::terminal => vaxis::CursorStyle::from(vaxis::CursorDefault),
+    text_cursor::CursorStyle::block => vaxis::CursorStyle::from(vaxis::CursorBlock),
+    text_cursor::CursorStyle::blinking_block => vaxis::CursorStyle::from(vaxis::CursorBlockBlinking),
+    text_cursor::CursorStyle::underline => vaxis::CursorStyle::from(vaxis::CursorUnderline),
+    text_cursor::CursorStyle::blinking_underline => {
+      vaxis::CursorStyle::from(vaxis::CursorUnderlineBlinking)
+    },
+    text_cursor::CursorStyle::beam => vaxis::CursorStyle::from(vaxis::CursorBeam),
+    text_cursor::CursorStyle::blinking_beam => vaxis::CursorStyle::from(vaxis::CursorBeamBlinking),
+  }
 }
 
 private fn vaxis_style(style: paint::CellStyle) vaxis::Style {
@@ -1682,7 +1697,7 @@ impl State {
         match buffer.cell_at(cursor.x, cursor.y) {
           cell => {
             if cell.width > 0 {
-              window.ShowCursor(cursor.x, cursor.y, vaxis::CursorStyle::from(vaxis::CursorBeam))
+              window.ShowCursor(cursor.x, cursor.y, vaxis_cursor_style(cursor.style))
             }
           },
           _ => (),

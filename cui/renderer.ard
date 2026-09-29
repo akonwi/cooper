@@ -839,6 +839,7 @@ impl State {
         field.set_key_bindings(description.input_key_bindings.or(ui::default_input_bindings()))
         field.set_style(description.styles)
         field.set_placeholder(description.placeholder)
+        field.set_cursor_style(description.cursor_style)
         mut needs_write = field.value() != mounted.effective_value
         if mounted.requested_value != description.value {
           needs_write = field.value() != description.value
@@ -867,6 +868,7 @@ impl State {
         )
         field.set_style(description.styles)
         field.set_placeholder(description.placeholder)
+        field.set_cursor_style(description.cursor_style)
         field.set_wrap(description.wrap)
         field.set_text_style(description.text_style)
         field.set_placeholder_style(description.placeholder_style)

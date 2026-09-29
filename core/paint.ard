@@ -1,4 +1,5 @@
 use cooper/ui/color
+use cooper/ui/cursor as text_cursor
 use cooper/ui/geometry
 use go:vaxis
 
@@ -77,6 +78,7 @@ private fn continuation(style: mut CellStyle) StoredCell {
 struct Cursor {
   x: Int,
   y: Int,
+  style: text_cursor::CursorStyle,
 }
 
 // Image requests remain in paint order until the terminal presents the frame.
@@ -336,11 +338,17 @@ impl Context {
     }
   }
 
-  fn mut show_cursor(x: Int, y: Int) {
+  fn mut show_cursor(x: Int, y: Int, style: text_cursor::CursorStyle?) {
     let target_x = self.bounds.x + x
     let target_y = self.bounds.y + y
     if geometry::contains(self.clip, target_x, target_y) {
-      self.buffer.cursor = Maybe::new<Cursor>(Cursor{x: target_x, y: target_y})
+      self.buffer.cursor = Maybe::new<Cursor>(
+        Cursor{
+          x: target_x,
+          y: target_y,
+          style: style.or(text_cursor::CursorStyle::terminal),
+        },
+      )
     }
   }
 

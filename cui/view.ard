@@ -159,6 +159,7 @@ struct Description {
   value: Str,
   placeholder: Str,
   placeholder_style: ui::TextStyle,
+  cursor_style: ui::CursorStyle,
   scrollbar_options: ui::ScrollbarOptions,
   options: [ui::SelectOption],
   select_config: ui::SelectConfig,
@@ -210,6 +211,7 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     value: "",
     placeholder: "",
     placeholder_style: ui::text_style(dim: true),
+    cursor_style: ui::CursorStyle::terminal,
     scrollbar_options: ui::scrollbar_options(),
     options: [],
     select_config: ui::select_config(),
@@ -332,6 +334,7 @@ fn input(
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut InputRef)?,
   key_bindings: keymap::Bindings<ui::InputAction>?,
+  cursor_style: ui::CursorStyle?,
   commands: [keymap::Command]?,
   bindings: [keymap::Binding]?,
   binding_scope: keymap::ScopeMode?,
@@ -348,6 +351,7 @@ fn input(
   result.on_mouse = on_mouse
   result.input_ref = ref
   result.input_key_bindings = key_bindings
+  result.cursor_style = cursor_style.or(ui::CursorStyle::terminal)
   result.commands = commands.or([])
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
@@ -372,6 +376,7 @@ fn text_area(
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut TextAreaRef)?,
   key_bindings: keymap::Bindings<ui::TextAreaAction>?,
+  cursor_style: ui::CursorStyle?,
   commands: [keymap::Command]?,
   bindings: [keymap::Binding]?,
   binding_scope: keymap::ScopeMode?,
@@ -392,6 +397,7 @@ fn text_area(
   result.on_mouse = on_mouse
   result.text_area_ref = ref
   result.text_area_key_bindings = key_bindings
+  result.cursor_style = cursor_style.or(ui::CursorStyle::terminal)
   result.commands = commands.or([])
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)

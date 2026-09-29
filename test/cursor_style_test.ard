@@ -1,0 +1,161 @@
+use ard/testing
+
+use cooper/cui
+use cooper/cui/renderer
+use cooper/testing as cooper_testing
+use cooper/ui
+
+private fn fixed(width: Int, height: Int) ui::Style {
+  ui::style(width: ui::cells(width), height: ui::cells(height), flex_shrink: 0.0)
+}
+
+private fn style_name(value: ui::CursorStyle?) Str {
+  match value {
+    style => {
+      match style {
+        ui::CursorStyle::terminal => "terminal",
+        ui::CursorStyle::block => "block",
+        ui::CursorStyle::blinking_block => "blinking_block",
+        ui::CursorStyle::underline => "underline",
+        ui::CursorStyle::blinking_underline => "blinking_underline",
+        ui::CursorStyle::beam => "beam",
+        ui::CursorStyle::blinking_beam => "blinking_beam",
+      }
+    },
+    _ => "none",
+  }
+}
+
+test fn input_and_text_area_default_to_terminal_cursor_style() Void!Str {
+  let application = cooper_testing::new(12, 4)
+  let column = ui::box(application.context)
+  let field = ui::input(application.context, value: "abc", styles: fixed(12, 1))
+  let area = ui::text_area(application.context, value: "one\ntwo", styles: fixed(12, 3))
+  column.add(field)
+  column.add(area)
+  application.root.add(column)
+  application.render()
+  try testing::assert(
+    field.cursor_style() == ui::CursorStyle::terminal and area.cursor_style() == ui::CursorStyle::terminal,
+    "Expected terminal cursor style by default",
+  )
+  try testing::assert(
+    style_name(application.frame().cursor_style()) == "none",
+    "Expected no cursor while unfocused",
+  )
+  let _ = field.focus()
+  application.render()
+  let input_style = style_name(application.frame().cursor_style())
+  try testing::assert(
+    input_style == "terminal",
+    "Expected focused Input terminal style, got {input_style}",
+  )
+  let _ = area.focus()
+  application.render()
+  let area_style = style_name(application.frame().cursor_style())
+  try testing::assert(
+    area_style == "terminal",
+    "Expected focused TextArea terminal style, got {area_style}",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn constructor_and_setter_control_the_painted_cursor_style() Void!Str {
+  let application = cooper_testing::new(12, 1)
+  let field = ui::input(
+    application.context,
+    value: "abc",
+    styles: fixed(12, 1),
+    cursor_style: ui::CursorStyle::block,
+  )
+  application.root.add(field)
+  application.render()
+  let _ = field.focus()
+  application.render()
+  let initial = style_name(application.frame().cursor_style())
+  try testing::assert(initial == "block", "Expected constructor block style, got {initial}")
+  let cursor_x = application.frame().cursor_x().or(-1)
+
+  field.set_cursor_style(ui::CursorStyle::blinking_underline)
+  application.render()
+
+  application.render()
+  let changed = style_name(application.frame().cursor_style())
+  try testing::assert(changed == "blinking_underline", "Expected repainted style, got {changed}")
+  try testing::assert(
+    application.frame().cursor_x().or(-1) == cursor_x and field.value() == "abc",
+    "Expected style change to leave caret and value unchanged",
+  )
+
+  field.set_cursor_style(ui::CursorStyle::blinking_underline)
+  application.render()
+
+  application.render()
+  try testing::assert(
+    field.cursor_style() == ui::CursorStyle::blinking_underline,
+    "Expected idempotent setter",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn focused_control_owns_the_cursor_style() Void!Str {
+  let application = cooper_testing::new(12, 4)
+  let column = ui::box(application.context)
+  let field = ui::input(
+    application.context,
+    value: "abc",
+    styles: fixed(12, 1),
+    cursor_style: ui::CursorStyle::beam,
+  )
+  let area = ui::text_area(
+    application.context,
+    value: "one",
+    styles: fixed(12, 3),
+    cursor_style: ui::CursorStyle::underline,
+  )
+  column.add(field)
+  column.add(area)
+  application.root.add(column)
+  application.render()
+  let _ = field.focus()
+  application.render()
+  let first = style_name(application.frame().cursor_style())
+  try testing::assert(first == "beam", "Expected Input style, got {first}")
+  let _ = area.focus()
+  application.render()
+  let second = style_name(application.frame().cursor_style())
+  try testing::assert(second == "underline", "Expected TextArea style, got {second}")
+  area.set_cursor_style(ui::CursorStyle::blinking_block)
+  application.render()
+  let third = style_name(application.frame().cursor_style())
+  try testing::assert(third == "blinking_block", "Expected TextArea setter style, got {third}")
+  application.destroy()
+  Result::ok(())
+}
+
+test fn declarative_input_and_text_area_apply_cursor_style() Void!Str {
+  let application = cooper_testing::new(12, 4)
+  let input_ref = cui::input_ref()
+  let area_ref = cui::text_area_ref()
+  let renderer = renderer::mount(
+    application.context,
+    application.root,
+    cui::box(
+      [
+        cui::input("abc", ref: input_ref, cursor_style: ui::CursorStyle::block),
+        cui::text_area("one", ref: area_ref),
+      ],
+    ),
+  )
+  let field = input_ref.current.expect("mounted Input")
+  let area = area_ref.current.expect("mounted TextArea")
+  try testing::assert(
+    field.cursor_style() == ui::CursorStyle::block and area.cursor_style() == ui::CursorStyle::terminal,
+    "Expected declarative cursor styles",
+  )
+  renderer.destroy()
+  application.destroy()
+  Result::ok(())
+}

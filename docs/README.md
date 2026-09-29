@@ -1,107 +1,14 @@
 # Cooper docs
 
-Design decisions for Cooper's Ard-native retained-mode framework.
-
-## Experimental declarative framework
-
-- [Framework guide](./declarative.md) — persistent components, typed child inputs,
-  automatic nested ownership, lifecycle, reconciliation, and updates.
-- [ADR 0022](./adrs/0022-define-declarative-components.md) — proposed declarative
-  component API.
-
-## Benchmarks and implementation history
-
-- [Benchmark guide](../benchmarks/README.md) — current runners, reproduction,
-  output storage, and access to archived raw data.
-- [Performance checkpoints](./performance-optimization.md) — optimization
-  findings through sized paint buffers and live-heap measurements.
-- Historical measurements: [layout baseline](./layout-profiling-baseline.md),
-  [layout comparison](./layout-performance-comparison.md),
-  [complex feed](./complex-feed-benchmark.md), and
-  [Bubble Tea pager](./bubbletea-pager-benchmark.md).
-- Layout migration research: [Ard evaluation](./ard-layout-evaluation.md),
-  [Yoga port map](./yoga-ard-port-map.md), and
-  [conformance audit](./layout-conformance-audit.md).
-
-Historical reports describe their named revisions, not current main. Keep their
-findings and design rationale here; generated benchmark data belongs outside Git.
-
-## Canonical design
-
-- [ADR 0002](./adrs/0002-define-application-api.md) — accepted imperative
-  application API, runtime model, OpenTUI lineage, and intentionally deferred
-  extension surfaces.
-- [ADR 0003](./adrs/0003-define-interaction-focus-and-selection.md) — accepted
-  pointer, focus, terminal-focus, and selection semantics.
-- [ADR 0004](./adrs/0004-define-input-editor-and-keybindings.md) — accepted
-  Ard-native editor state, actions, and default CLI keybindings.
-- [ADR 0005](./adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md) — accepted
-  rich Text spans, Unicode wrapping, overflow, links, and double-click selection.
-- [ADR 0006](./adrs/0006-define-terminal-clipboard-access.md) — accepted OSC 52
-  clipboard reads, writes, clears, and App-lifetime semantics.
-- [ADR 0007](./adrs/0007-define-scrollbars-and-two-axis-scrolling.md) — accepted
-  standalone Scrollbars, built-in ScrollBox gutters, and sequenced two-axis scrolling.
-- [ADR 0008](./adrs/0008-define-select-controls-and-appearance-overrides.md) — accepted
-  compact Select menus, TabSelect, committed choice state, and local Appearance patches.
-- [ADR 0009](./adrs/0009-define-terminal-mediated-notifications.md) — accepted
-  Runtime notification requests, conservative protocol selection, and lifecycle semantics.
-- [ADR 0010](./adrs/0010-define-terminal-progress-reporting.md) — accepted
-  Runtime terminal progress states, Ghostty OSC 9;4 output, and lifecycle cleanup.
-- [ADR 0011](./adrs/0011-define-multiline-text-area.md) — accepted
-  multiline editing, wrapping, viewport movement, cursor reveal, and editable selection.
-- [ADR 0012](./adrs/0012-define-terminal-title-updates.md) — accepted
-  sanitized, coalesced, lifecycle-safe terminal title updates through Runtime.
-- [ADR 0013](./adrs/0013-consolidate-context-into-runtime.md) — accepted
-  the App-to-Runtime ownership model and removal of the redundant Context type.
-- [ADR 0014](./adrs/0014-define-animation-timelines.md) — accepted
-  Runtime-scoped, demand-driven, typed animation timelines.
-- [ADR 0015](./adrs/0015-define-package-entry-points-and-ui-namespace.md) — accepted
-  canonical `cooper` and `cooper/ui` entry points backed by the physical UI namespace.
-- [ADR 0016](./adrs/0016-define-intrinsic-sizing-and-constraints.md) — accepted
-  intrinsic sizing and constraint resolution contract; implementation pending.
-- [ADR 0017](./adrs/0017-define-item-alignment-and-line-distribution.md) — accepted
-  item alignment and wrapped-line distribution contract; implementation pending.
-- [ADR 0018](./adrs/0018-define-baseline-alignment.md) — accepted
-  bottom-edge box baseline contract; implementation pending.
-- [ADR 0019](./adrs/0019-define-display-contents.md) — accepted
-  boxless retained grouping contract; implementation pending.
-- [ADR 0020](./adrs/0020-define-layout-cell-rounding.md) — accepted
-  shared-edge cell rounding contract; implementation pending.
-- [ADR 0021](./adrs/0021-define-spring-animations.md) — accepted
-  Ard-owned scalar springs, momentum-preserving retargeting, and Runtime lifecycle semantics.
-- [ADR 0023](./adrs/0023-define-terminal-screen-modes.md) — accepted
-  alternate-screen, main-screen, inline, and split-footer configuration, output
-  ownership, and lifecycle contract; backend and Cooper implementation are pending.
+Design decisions and implementation history for Cooper's retained-mode framework.
 
 ## Architecture Decision Records
 
-Significant architecture decisions are recorded in [`adrs/`](./adrs/).
-
-| ADR | Status | Decision |
-| --- | --- | --- |
-| [0001](./adrs/0001-record-architecture-decisions.md) | Accepted | Record architecture decisions |
-| [0002](./adrs/0002-define-application-api.md) | Accepted | Define the application API |
-| [0003](./adrs/0003-define-interaction-focus-and-selection.md) | Accepted | Define interaction, focus, and selection |
-| [0004](./adrs/0004-define-input-editor-and-keybindings.md) | Accepted | Define Input editor state and CLI keybindings |
-| [0005](./adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md) | Accepted | Define rich Text, wrapping, and multi-click selection |
-| [0006](./adrs/0006-define-terminal-clipboard-access.md) | Accepted | Define terminal clipboard access |
-| [0007](./adrs/0007-define-scrollbars-and-two-axis-scrolling.md) | Accepted | Define Scrollbars and two-axis scrolling |
-| [0008](./adrs/0008-define-select-controls-and-appearance-overrides.md) | Accepted | Define Select, TabSelect, and Appearance overrides |
-| [0009](./adrs/0009-define-terminal-mediated-notifications.md) | Accepted | Define terminal-mediated notifications |
-| [0010](./adrs/0010-define-terminal-progress-reporting.md) | Accepted | Define terminal progress reporting |
-| [0011](./adrs/0011-define-multiline-text-area.md) | Accepted | Define the multiline TextArea |
-| [0012](./adrs/0012-define-terminal-title-updates.md) | Accepted | Define terminal title updates |
-| [0013](./adrs/0013-consolidate-context-into-runtime.md) | Accepted | Consolidate Context into Runtime |
-| [0014](./adrs/0014-define-animation-timelines.md) | Accepted | Define animation timelines |
-| [0015](./adrs/0015-define-package-entry-points-and-ui-namespace.md) | Accepted | Define package entry points and the UI namespace |
-| [0016](./adrs/0016-define-intrinsic-sizing-and-constraints.md) | Accepted | Define intrinsic sizing and constraint resolution |
-| [0017](./adrs/0017-define-item-alignment-and-line-distribution.md) | Accepted | Define item alignment and wrapped-line distribution |
-| [0018](./adrs/0018-define-baseline-alignment.md) | Accepted | Define baseline alignment |
-| [0019](./adrs/0019-define-display-contents.md) | Accepted | Define display contents for retained nodes |
-| [0020](./adrs/0020-define-layout-cell-rounding.md) | Accepted | Define layout cell rounding |
-| [0021](./adrs/0021-define-spring-animations.md) | Accepted | Define spring animations |
-| [0022](./adrs/0022-define-declarative-components.md) | Proposed | Define declarative components |
-| [0023](./adrs/0023-define-terminal-screen-modes.md) | Accepted | Define terminal screen modes |
+Canonical design decisions live in [`adrs/`](./adrs/). Each ADR records the
+context, decision, and consequences of a significant architectural choice.
+Accepted ADRs preserve the rationale at the time of the decision; replace an
+accepted decision with a new ADR whose `Related` section links to the ADR it
+supersedes.
 
 ### Add an ADR
 
@@ -111,11 +18,22 @@ Significant architecture decisions are recorded in [`adrs/`](./adrs/).
    `Related`.
 4. Start unresolved decisions as `Proposed` and update their status when
    resolved.
-5. Add the ADR to the table above.
 
-Accepted ADRs preserve the rationale at the time of the decision. Replace an
-accepted decision with a new ADR whose `Related` section links to the ADR it
-supersedes.
+## Framework guides
+
+- [Declarative components](./declarative.md) — `cooper/cui` framework guide.
+- [Keymaps and commands](./keymaps.md) — typed commands, scoped bindings, and
+  shortcut discovery.
+
+## Benchmarks and implementation history
+
+- [Benchmark guide](../benchmarks/README.md) — runners, reproduction, and
+  output storage.
+- [Performance checkpoints](./performance-optimization.md) — optimization
+  findings and live-heap measurements.
+
+Historical reports describe their named revisions, not current main. Keep their
+findings and design rationale here; generated benchmark data belongs outside Git.
 
 ## Conventions
 

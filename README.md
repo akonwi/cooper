@@ -1,49 +1,32 @@
 # Cooper
 
-**An Ard-native imperative retained-mode TUI framework** powered by
+**An imperative retained-mode TUI framework** powered by
 [Vaxis](https://github.com/rockorager/vaxis).
 
-Cooper keeps application state, control identity, hierarchy, layout geometry,
-focus, listeners, and selection in persistent Ard controls. Layout updates
-attached Nodes in place, and drawing writes directly into one logical cell
-buffer for Vaxis to diff.
+Cooper is heavily influenced by OpenTUI. A lot of TUI libraries are immediate mode or use heavy functional paradigms, and I wanted a retained mode library that provided
+a similar imperative API to the DOM because that is intuitive to me, when building UIs.
+Also, I just wanted to build TUIs with my programming language, Ard.
 
 ![Cooper operations dashboard example](./screenshots/dashboard.gif)
 
 ![Six spring presets responding to shared targets](./screenshots/spring-lab.gif)
 
-## Status
+## Installation
 
-Cooper is under active development and requires Ard v0.42.0 or newer. The
-accepted application API, built-in controls, headless TestApp, and runnable
-examples are implemented.
+```sh
+ard add github.com/akonwi/cooper@latest
+```
 
-The canonical design is defined by the accepted
-[application API ADR](./docs/adrs/0002-define-application-api.md),
-[interaction ADR](./docs/adrs/0003-define-interaction-focus-and-selection.md),
-[input editor ADR](./docs/adrs/0004-define-input-editor-and-keybindings.md),
-[rich Text ADR](./docs/adrs/0005-define-rich-text-wrapping-and-multi-click-selection.md),
-[terminal clipboard ADR](./docs/adrs/0006-define-terminal-clipboard-access.md),
-[scrollbar ADR](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md),
-[Select ADR](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md),
-[notification ADR](./docs/adrs/0009-define-terminal-mediated-notifications.md),
-[terminal progress ADR](./docs/adrs/0010-define-terminal-progress-reporting.md),
-[multiline TextArea ADR](./docs/adrs/0011-define-multiline-text-area.md),
-[terminal title ADR](./docs/adrs/0012-define-terminal-title-updates.md),
-[Runtime ownership ADR](./docs/adrs/0013-consolidate-context-into-runtime.md),
-[animation ADR](./docs/adrs/0014-define-animation-timelines.md),
-[package entry-point ADR](./docs/adrs/0015-define-package-entry-points-and-ui-namespace.md), and
-[spring animation ADR](./docs/adrs/0021-define-spring-animations.md).
-Cooper has no compatibility constraint while it is implemented.
-
-## Application shape
+## Quickstart
 
 ```ard
 use cooper
 use cooper/ui
 
 fn main() {
-  let application = cooper::app().expect("create Cooper app")
+  let application = cooper::app().expect("could not create app")
+  defer application.destroy()
+  
   let field = ui::input(
     application.context,
     placeholder: "Type here, then press Ctrl+C to quit",
@@ -55,325 +38,53 @@ fn main() {
 
   application.root.add(field)
   field.focus()
-  defer application.destroy()
   application.run().expect("run Cooper")
 }
 ```
 
 `cooper` is the application namespace for App, Runtime, and events. `cooper/ui`
 is the view-construction namespace for controls, layout, colors, geometry,
-selection, and rich text. Focused modules remain available for specialized APIs.
+selection, and rich text.
 
-`cooper/keymap` provides typed commands, scoped bindings, control remapping, and
-discoverable shortcut labels. See the [keymap guide](./docs/keymaps.md) and
-[Hacker News example](./examples/cui_hackernews.ard).
+## Features
 
-App exposes its Runtime as `application.context` and its permanent surface-sized Root. Controls
-are persistent references: construct them once, add them to the tree, and
-mutate them through setters. `start()` launches the event pump and returns,
-`wait()` is its completion barrier, and `run()` is the blocking convenience for
-standalone programs. Only `destroy()` is final; call `wait()` after requesting
-destruction before a standalone process exits. `suspend()` and `resume()`
-temporarily release and reacquire the terminal while retaining the tree.
-
-## Terminal screen modes
-
-The default `alt` mode uses the alternate screen. Import `cooper/screen` to choose
-`main` (full-height normal buffer), `inline` (a trailing live block), or `split`
-(a footer that advances with output, then stays at the bottom):
-
-```ard
-use cooper
-use cooper/screen
-
-let application = cooper::app(
-  screen: screen::config(screen::Mode::split, height: 6),
-).expect("create app")
-```
-
-`inline` and `split` require a positive height, clamped to the terminal; Root and
-all controls use that surface's dimensions. They accept complete plain-text
-output blocks through `application.context.append_output("Build finished")`.
-The call is background-safe and returns false outside an active bounded session.
-It normalizes line endings and control characters; it does not execute ANSI or
-capture stdout/stderr. Suspend the App before another program writes to the terminal.
-
-Inline preserves its final text by default; main and split clear their owned
-surface. Set `clear_on_exit` to override this in normal-buffer modes. Resume
-reserves a fresh surface after intervening output. See the
-[screen modes contract](./docs/adrs/0023-define-terminal-screen-modes.md) and
-[`screen_modes.ard`](./examples/screen_modes.ard).
-
-Cooper pins the Vaxis fork revision that supports these modes; no sibling
-Vaxis checkout or local module override is required.
-
-## Experimental declarative components
-
-`cooper/cui` adds persistent component structs, ordinary mutable state,
-optional lifecycle methods, and keyed view reconciliation without hooks or
-generated glue. `d.child(factory, props, key:)` supplies ordinary typed props and
-automatically retains nested components by view identity. This
-opt-in layer requires Ard v0.42.0 and leaves the imperative API unchanged.
-
-See the [framework guide](./docs/declarative.md) and run
-`ard run declarative_jobs.ard` from `examples` for editable, reorderable components.
-`ard run cui_tinear.ard` runs a larger static-data issue board with filtering and
-keyboard-driven detail components, modeled on [tinear](https://github.com/akonwi/tinear).
-The initial primitives are text, input, box, and scroll box. The renderer owns
-the expanded component tree; lifecycle hooks manage each component's own resources.
-
-## Animation
-
-Runtime-owned timelines apply typed update closures on Cooper's UI thread and
-return the renderer to demand-driven operation after completion:
-
-```ard
-use cooper/animation
-
-let timeline = application.context.timeline(300)
-timeline.add(
-  300,
-  fn(frame: animation::Frame) {
-    let applied = mut panel.style()
-    applied.left = ui::cells(animation::lerp_int(0, 20, frame.progress))
-    panel.set_style(applied.@)
-  },
-  ease: animation::out_quad,
-)
-let _ = timeline.play()
-defer timeline.destroy()
-```
-
-Timelines support scheduled tracks and callbacks, pause/restart, looping,
-alternate direction, custom easing functions, and deterministic headless time.
-
-For interruptible motion, Runtime-owned scalar springs preserve velocity when
-their target changes:
-
-```ard
-use go:math
-
-let spring = application.context.spring(
-  0.0,
-  fn(frame: animation::SpringFrame) {
-    let applied = mut panel.style()
-    applied.left = ui::cells(math::Round(frame.value).to_int())
-    panel.set_style(applied.@)
-  },
-  options: animation::spring_config(angular_frequency: 12.0, damping_ratio: 0.7),
-)
-defer spring.destroy()
-let _ = spring.set_target(20.0)
-// A later event can redirect motion without resetting momentum.
-let _ = spring.set_target(8.0)
-```
-
-Springs start paused. A changed target starts playback; `pause()` and `play()`
-freeze and resume both value and velocity. They snap to the target and stop
-requesting frames when both position and velocity are within tolerance.
-Keep floating-point state in the spring and round only when applying cells.
-The solver is an Ard port of [Harmonica](https://github.com/charmbracelet/harmonica),
-with no new Go dependency. See the [spring contract](./docs/adrs/0021-define-spring-animations.md)
-and run `ard run spring_lab.ard` from `examples` to try retargeting and pause/resume.
-The [spring comparison lab](./examples/README.md#spring-comparisons) includes
-an animated recording of six presets responding to shared targets.
-
-## Retained model
-
-Every built-in control owns one persistent internal Node. Parent/child
-relationships change through indexed `add`, `remove`, reparenting, and
-`destroy`.
-
-- Removal detaches without destroying.
-- Same-parent reorder preserves attachment.
-- Cross-parent reparent receives a fresh attachment scope.
-- `destroy()` destroys one control and preserves detached children.
-- `destroy(recursive: true)` destroys the complete subtree.
-- App teardown destroys all remaining Runtime-owned controls.
-
-The internal Renderable protocol is language-visible beneath `core/` but is not
-yet a supported custom-control API.
-
-## Runtime behavior
-
-- Runtime dispatch queues application work on the UI thread and exposes
-  App-lifetime cancellation. After nonblocking `start()`, use dispatch or a
-  Cooper callback for retained-tree mutation.
-- Frame requests are demand-driven and coalesced; Runtime-owned animation
-  timelines and springs schedule paced frames only while playing.
-- Layout and drawing use one frame-consistent grapheme/terminal-width measurer.
-- Drawing writes directly into one backend-independent cell buffer.
-- Vaxis input is converted to Cooper-owned event values.
-- Keyboard and paste run through App listeners and then the focused control.
-- Mouse input targets the deepest hit control, bubbles through ancestors, and
-  captures left-button drags to their source.
-- Stable sibling z-index controls both paint and hit order.
-- Focus is explicit or caused by configurable mouse autofocus; terminal-window
-  focus is reported separately. Cooper does not reserve Tab or choose fallback
-  focus.
-- Text and Input participate in one global, grapheme-safe selection; selectable
-  Text supports double-click word selection.
-- Input delegates logical editing to an Ard-native action model with familiar
-  readline-style Ctrl, Alt, and Super keybindings.
-- Runtime exposes App-bound OSC 52 clipboard read, write, and clear operations
-  while terminal access policy remains under terminal-host control.
-- Runtime can request sanitized terminal-mediated desktop notifications,
-  lifecycle-safe terminal-surface progress, and sanitized terminal title updates
-  from callbacks or background fibers.
-
-## Initial controls
-
-- `Box` — indexed flex container with background, border, and title;
-- `Text` — selectable multiline plain or StyledText spans with Unicode-aware
-  word wrapping by default, inheritable styles, plain-click/OSC 8 hyperlinks
-  with pointer cursors, and optional ellipsis overflow;
-- `Image` — [static-image prototype](./examples/README.md#image-prototype) with
-  PNG/JPEG/WebP decoding, contain fitting, native Kitty graphics, and half-block fallback;
-- `Input` — grapheme-aware single-line CLI editing, editable selection, validation, and callbacks;
-- `TextArea` — multiline editing with Unicode wrapping, cursor navigation,
-  selection, and a configurable automatic overflow scrollbar;
-- `ScrollBox` — focusable two-axis retained scrolling container with a built-in
-  automatic vertical bar and configurable horizontal bar.
-- `Scrollbar` — standalone vertical or horizontal track/thumb control with
-  pointer, keyboard, arrow, visibility, styling, and change-state APIs.
-- `Select` — compact non-editable field with an anchored option menu and
-  independent highlight/selection state;
-- `TabSelect` — fixed-width horizontal tabs with overflow and mouse support.
-
-Public layout and interaction use Ard-native Style, Color, Point, Rect,
-Geometry, and Selection values.
-Production builds use Cooper's Ard-native layout implementation and do not
-require Tess, Yoga, CGo, or a C++ toolchain. The optional pinned-layout
-comparison (`python3 test/compare_layout.py`) resolves Tess only inside its
-isolated historical baseline worktree and requires a C++20 compiler.
-
-## Installation
-
-```sh
-ard add github.com/akonwi/cooper@latest
-```
-
+- **Controls** — Box, Text, Image, Input, TextArea, ScrollBox, Scrollbar,
+  Select, TabSelect. See the [controls list](docs/adrs/0002-define-application-api.md)
+  and [examples](examples/README.md).
+- **Animation** — Runtime-owned timelines and springs with easing, looping,
+  and momentum-preserving retargeting. See [ADR 0014](docs/adrs/0014-define-animation-timelines.md),
+  [ADR 0021](docs/adrs/0021-define-spring-animations.md), and the
+  [spring lab example](examples/README.md#spring-comparisons).
+- **Terminal screen modes** — Alternate screen, main buffer, inline, and
+  split-footer configurations. See [ADR 0023](docs/adrs/0023-define-terminal-screen-modes.md)
+  and the [screen modes example](examples/screen_modes.ard).
+- **Declarative components** — Opt-in `cooper/cui` layer with persistent
+  component structs, keyed reconciliation, and lifecycle hooks. (Feels like the good days of Backbone.js or React class components). See the
+  [framework guide](docs/declarative.md).
+- **Keymaps** — Typed commands, scoped bindings, control remapping, and
+  discoverable shortcut labels. See the [keymap guide](docs/keymaps.md).
+- **Clipboard, notifications, progress, title** — Runtime-exposed terminal
+  services. See [ADR 0006](docs/adrs/0006-define-terminal-clipboard-access.md),
+  [ADR 0009](docs/adrs/0009-define-terminal-mediated-notifications.md),
+  [ADR 0010](docs/adrs/0010-define-terminal-progress-reporting.md),
+  [ADR 0012](docs/adrs/0012-define-terminal-title-updates.md).
 
 ## Examples
 
-The runnable examples exercise the public application and control APIs:
+The runnable examples exercise the public application and control APIs.
+See [`examples/README.md`](./examples/README.md) for the full gallery,
+behavior descriptions, and PTY smoke tests.
 
-```sh
-cd examples
-ard run quickstart.ard
-ard run animation.ard
-ard run spring_lab.ard
-ard run layout_playground.ard
-ard run text_gallery.ard
-ard run dashboard.ard
-ard run stacking.ard
-ard run input_lab.ard
-ard run event_inspector.ard
-ard run links.ard
-ard run terminal_focus.ard
-ard run widgets.ard
-ard run explorer.ard
-```
+## Documentation
 
-See [`examples/README.md`](./examples/README.md) for behavior and PTY smoke
-tests.
-
-## Module structure
-
-```text
-cooper.ard       canonical App, Runtime, Root, and event entry point
-ui.ard           canonical controls, layout, color, geometry, and text facade
-ui/              focused UI implementation modules
-  box.ard
-  color.ard
-  editor.ard     shared editable-text engine
-  geometry.ard
-  input.ard
-  scroll_box.ard
-  scrollbar.ard
-  select.ard
-  selection.ard
-  style.ard
-  text.ard
-  text_area.ard
-  text_area_layout.ard
-animation.ard    Runtime-owned timelines and springs, easing, and interpolation
-clipboard.ard    Runtime-exposed OSC 52 clipboard service
-event.ard        Cooper-owned events, controls, and propagation state
-notification.ard accepted notification request snapshots
-root.ard         permanent Runtime-bound Root
-runtime.ard      application capabilities, retained ownership, lifecycle, and backend state
-terminal_progress.ard terminal progress state and report values
-testing.ard      headless TestApp, frame snapshots, and terminal title history
-core/            unsupported runtime mechanisms
-  event_delivery.ard
-  focus.ard
-  hit.ard
-  node.ard
-  paint.ard
-  pointer.ard
-  router.ard
-  runtime.ard
-  selection_state.ard
-ffi/             isolated Go bridges, one directory per package
-  contextbridge/ adapts Go context/cancel return pairs
-  numberbridge/  numeric conversions missing from Ard
-  vaxisbridge/   Vaxis modifier-bit testing
-  signalwatch/   OS signal subscriptions and terminal-size queries
-  urlopen/       platform URL handlers
-test/            deterministic integration tests
-examples/        curated runnable applications and PTY tests
-  fixtures/      focused non-gallery regression programs
-benchmarks/      retained layout and stress workloads
-```
-
-## Development
-
-```sh
-ard test
-
-git diff --check
-
-go test ./...
-
-cd examples
-python3 test_animation.py
-python3 test_layout_playground.py
-python3 test_text_gallery.py
-python3 test_dashboard.py
-python3 test_stacking.py
-python3 test_input_lab.py
-python3 test_text_area.py
-python3 test_event_inspector.py
-python3 test_links.py
-python3 test_terminal_focus.py
-python3 test_widgets.py
-python3 test_clipboard.py
-python3 test_notification.py
-python3 test_scroll_form.py
-python3 test_horizontal_scroll.py
-python3 test_select.py
-python3 test_async.py
-python3 test_lifecycle.py
-python3 test_explorer.py
-python3 test_interaction.py
-
-cd ..
-python3 benchmarks/run.py
-```
-
-## Design principles
-
-- Persistent Ard Nodes and concrete controls own framework and application
-  state.
-- Vaxis is a narrow terminal backend, not Cooper's public model.
-- Tree and retained-state mutation are UI-thread-only.
-- Layout, drawing, hit testing, focus, and cursor placement share cached
-  geometry.
-- Paint the complete logical buffer first; optimize only after measurement.
-- Prefer one configurable primitive and promote broader APIs only after repeated
-  application use.
+- **Design decisions** — Architecture Decision Records in [`docs/adrs/`](docs/adrs/);
+  see [`docs/README.md`](docs/README.md) for the index
+- **Declarative framework** — [`docs/declarative.md`](docs/declarative.md)
+- **Keymaps and commands** — [`docs/keymaps.md`](docs/keymaps.md)
+- **Examples and behavior** — [`examples/README.md`](examples/README.md)
+- **Benchmarks and performance** — [`benchmarks/README.md`](benchmarks/README.md),
+  [`docs/performance-optimization.md`](docs/performance-optimization.md)
 
 ## License
 
-BSD 3-Clause. See [LICENSE](./LICENSE).
+[BSD 3-Clause](./LICENSE).

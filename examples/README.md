@@ -1,7 +1,6 @@
 # Cooper examples
 
-These applications exercise Cooper's accepted application API and require Ard
-v0.39.0 or newer.
+These applications exercise Cooper's accepted application API.
 
 Every UI example imports the canonical `cooper` and `cooper/ui` entry points and
 uses `App.context`, the permanent `App.root`, persistent public controls, and

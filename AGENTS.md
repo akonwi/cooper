@@ -5,8 +5,6 @@ An Ard-native imperative retained-mode TUI framework using
 
 ## Vision
 
-See [`ADR 0002`](./docs/adrs/0002-define-application-api.md).
-
 - Before adopting unfamiliar Ard syntax or interop behavior, use the `ard-expert`
 sub-agent and verify the smallest shape with the current compiler.
 
@@ -71,45 +69,88 @@ Prefer deterministic headless tests for:
 Use PTY tests for terminal startup/restoration, raw keyboard/mouse/paste input,
 resize, cursor placement, asynchronous dispatch, examples, and clean quit.
 
-Current validation entry points:
+Validation entry points:
 
 ```sh
-ard test
-
-cd examples
-python3 test_animation.py
-python3 test_layout_playground.py
-python3 test_text_gallery.py
-python3 test_dashboard.py
-python3 test_stacking.py
-python3 test_input_lab.py
-python3 test_text_area.py
-python3 test_event_inspector.py
-python3 test_links.py
-python3 test_terminal_focus.py
-python3 test_widgets.py
-python3 test_clipboard.py
-python3 test_notification.py
-python3 test_scroll_form.py
-python3 test_horizontal_scroll.py
-python3 test_select.py
-python3 test_async.py
-python3 test_lifecycle.py
-python3 test_explorer.py
-python3 test_interaction.py
-
-cd ..
-python3 benchmarks/run.py
+ard test          # headless unit and integration tests
+go test ./...     # Go bridge tests
 ```
+
+PTY tests live in `examples/test_*.py`. Run the one relevant to your change,
+or the example's own test if it has one. Benchmarks: `python3 benchmarks/run.py`.
+
+## Module structure
+
+```text
+cooper.ard       canonical App, Runtime, Root, and event entry point
+ui.ard           canonical controls, layout, color, geometry, and text facade
+ui/              focused UI implementation modules
+  box.ard
+  color.ard
+  editor.ard     shared editable-text engine
+  geometry.ard
+  image.ard
+  input.ard
+  scroll_box.ard
+  scrollbar.ard
+  select.ard
+  selection.ard
+  style.ard
+  text.ard
+  text_area.ard
+  text_area_layout.ard
+animation.ard    Runtime-owned timelines and springs, easing, and interpolation
+clipboard.ard    Runtime-exposed OSC 52 clipboard service
+cui.ard          declarative component layer (experimental)
+event.ard        Cooper-owned events, controls, and propagation state
+keymap.ard       typed commands, scoped bindings, and shortcut discovery
+notification.ard accepted notification request snapshots
+root.ard         permanent Runtime-bound Root
+runtime.ard      application capabilities, retained ownership, lifecycle, and backend state
+screen.ard       terminal screen mode configuration
+terminal_progress.ard terminal progress state and report values
+testing.ard      headless TestApp, frame snapshots, and terminal title history
+core/            unsupported runtime mechanisms
+  event_delivery.ard
+  focus.ard
+  graphics.ard
+  hit.ard
+  keymaps.ard
+  layout.ard
+  node.ard
+  paint.ard
+  pointer.ard
+  router.ard
+  runtime.ard
+  selection_state.ard
+  terminal_events.ard
+  virtual_extent.ard
+ffi/             isolated Go bridges, one directory per package
+  contextbridge/ adapts Go context/cancel return pairs
+  numberbridge/  numeric conversions missing from Ard
+  vaxisbridge/   Vaxis modifier-bit testing
+  signalwatch/   OS signal subscriptions and terminal-size queries
+  urlopen/       platform URL handlers
+test/            deterministic integration tests
+examples/        curated runnable applications and PTY tests
+  fixtures/      focused non-gallery regression programs
+benchmarks/      retained layout and stress workloads
+```
+
+## Design principles
+
+- Persistent Ard Nodes and concrete controls own framework and application
+  state.
+- Vaxis is a narrow terminal backend, not Cooper's public model.
+- Tree and retained-state mutation are UI-thread-only.
+- Layout, drawing, hit testing, focus, and cursor placement share cached
+  geometry.
+- Paint the complete logical buffer first; optimize only after measurement.
+- Prefer one configurable primitive and promote broader APIs only after repeated
+  application use.
 
 ## References
 
-- Application API: [`ADR 0002`](./docs/adrs/0002-define-application-api.md)
-- Terminal clipboard: [`ADR 0006`](./docs/adrs/0006-define-terminal-clipboard-access.md)
-- Scrollbars and two-axis scrolling: [`ADR 0007`](./docs/adrs/0007-define-scrollbars-and-two-axis-scrolling.md)
-- Select controls and Appearance overrides: [`ADR 0008`](./docs/adrs/0008-define-select-controls-and-appearance-overrides.md)
-- Terminal-mediated notifications: [`ADR 0009`](./docs/adrs/0009-define-terminal-mediated-notifications.md)
-- Terminal progress reporting: [`ADR 0010`](./docs/adrs/0010-define-terminal-progress-reporting.md)
-- Terminal title updates: [`ADR 0012`](./docs/adrs/0012-define-terminal-title-updates.md)
+- Architecture decisions: [`docs/adrs/`](./docs/adrs/) (see [`docs/README.md`](./docs/README.md) for the index)
 - Vaxis source: `github.com/akonwi/vaxis` (Cooper distribution fork)
 - Ard docs: https://ard.run

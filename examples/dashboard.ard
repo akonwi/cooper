@@ -2,6 +2,7 @@ use ard/async
 use ard/list
 
 use cooper
+use cooper/theme
 use cooper/ui
 use go:math
 use go:strings
@@ -20,6 +21,12 @@ struct LogRow {
   control: mut ui::Text,
 }
 
+enum ThemeChoice {
+  terminal,
+  dark,
+  light,
+}
+
 struct DashboardState {
   tick: Int,
   paused: Bool,
@@ -28,12 +35,15 @@ struct DashboardState {
   samples: [Int],
   rows: [LogRow],
   theme: cooper::Theme,
+  terminal_theme: cooper::Theme,
+  theme_choice: ThemeChoice,
 }
 
 struct DashboardView {
   root: mut ui::Box,
   header: mut ui::Box,
   title: mut ui::Text,
+  picker: mut ui::TabSelect,
   subtitle: mut ui::Text,
   cpu: MetricTile,
   memory: MetricTile,
@@ -84,6 +94,75 @@ private fn seed_samples() [Int] {
     index =+ 1
   }
   samples.@
+}
+
+private fn present_color(value: Str) ui::Color? {
+  Maybe::new(ui::hex(value))
+}
+
+private fn preset_theme(choice: ThemeChoice) cooper::Theme {
+  match choice {
+    ThemeChoice::dark => {
+      theme::from_terminal(
+        cooper::TerminalColors{
+          foreground: present_color("#E2E8F0"),
+          background: present_color("#020617"),
+          palette: [
+            present_color("#0F172A"),
+            present_color("#F87171"),
+            present_color("#4ADE80"),
+            present_color("#FBBF24"),
+            present_color("#60A5FA"),
+            present_color("#F472B6"),
+            present_color("#22D3EE"),
+            present_color("#F8FAFC"),
+          ],
+        },
+      )
+    },
+    ThemeChoice::light => {
+      theme::from_terminal(
+        cooper::TerminalColors{
+          foreground: present_color("#172033"),
+          background: present_color("#F8FAFC"),
+          palette: [
+            present_color("#172033"),
+            present_color("#DC2626"),
+            present_color("#15803D"),
+            present_color("#A16207"),
+            present_color("#2563EB"),
+            present_color("#C026D3"),
+            present_color("#0891B2"),
+            present_color("#F8FAFC"),
+          ],
+        },
+      )
+    },
+    ThemeChoice::terminal => panic("Terminal theme is supplied by the application"),
+  }
+}
+
+private fn selected_theme(state: mut DashboardState, choice: ThemeChoice) cooper::Theme {
+  match choice {
+    ThemeChoice::terminal => state.terminal_theme,
+    _ => preset_theme(choice),
+  }
+}
+
+private fn choice_from_index(index: Int) ThemeChoice {
+  match index {
+    1 => ThemeChoice::dark,
+    2 => ThemeChoice::light,
+    _ => ThemeChoice::terminal,
+  }
+}
+
+private fn choice_label(choice: ThemeChoice) Str {
+  match choice {
+    ThemeChoice::terminal => "TERMINAL",
+    ThemeChoice::dark => "DARK PRESET",
+    ThemeChoice::light => "LIGHT PRESET",
+  }
 }
 
 private fn status_color(theme: cooper::Theme, value: Int, warning: Int, critical: Int) ui::Color {
@@ -212,7 +291,7 @@ private fn update_runtime_status(
 ) {
   subtitle.set_content("Synthetic telemetry · tick {state.tick} · {runtime_mode(state)}")
   status.set_content(
-    "State: {runtime_mode(state)} · Theme: {theme_mode(state.theme)} · Follow: {follow_mode(state)} · Rows: {state.rows.size()} · Seq: {state.sequence} · Tick: {state.tick}",
+    "State: {runtime_mode(state)} · Theme: {theme_mode(state.theme)} / {choice_label(state.theme_choice)} · Follow: {follow_mode(state)} · Rows: {state.rows.size()} · Seq: {state.sequence} · Tick: {state.tick}",
   )
 }
 
@@ -405,6 +484,25 @@ private fn clear_logs(viewport: mut ui::ScrollBox, state: mut DashboardState) {
   let _ = viewport.scroll_to(0)
 }
 
+private fn picker_appearance(theme: cooper::Theme) ui::SelectAppearance {
+  ui::select_appearance(
+    normal: ui::span_style(foreground: theme.muted_foreground),
+    focused: ui::span_style(foreground: theme.foreground, bold: true),
+    highlighted: ui::span_style(
+      foreground: theme.foreground,
+      background: theme.selection,
+      bold: true,
+    ),
+    selected: ui::span_style(
+      foreground: theme.primary_text,
+      background: theme.primary,
+      bold: true,
+      reverse: false,
+    ),
+    marker: "◆",
+  )
+}
+
 private fn help_content(theme: cooper::Theme) ui::StyledText {
   ui::styled_text(
     [
@@ -417,7 +515,7 @@ private fn help_content(theme: cooper::Theme) ui::StyledText {
       ui::span("C", style: ui::span_style(foreground: theme.warning_text, bold: true)),
       ui::span(" clear  ·  "),
       ui::span("Q", style: ui::span_style(foreground: theme.warning_text, bold: true)),
-      ui::span(" quit  ·  change terminal theme to adapt live"),
+      ui::span(" quit  ·  choose a theme above"),
     ],
   )
 }
@@ -461,6 +559,7 @@ private fn apply_theme(state: mut DashboardState, view: DashboardView, next: coo
     ),
   )
   view.title.set_text_style(ui::text_style(foreground: next.primary_text, bold: true))
+  view.picker.set_appearance(picker_appearance(next))
   view.subtitle.set_text_style(ui::text_style(foreground: next.muted_foreground))
   apply_metric_theme(view.cpu, next, next.primary)
   apply_metric_theme(view.memory, next, next.accent)
@@ -525,6 +624,7 @@ fn main() {
   let application = cooper::app().expect("create Cooper dashboard")
   defer application.destroy()
   let ctx = application.context
+  let terminal_theme = application.theme()
   let state = mut DashboardState{
     tick: 0,
     paused: false,
@@ -532,7 +632,9 @@ fn main() {
     sequence: 0,
     samples: seed_samples(),
     rows: [],
-    theme: application.theme(),
+    theme: terminal_theme,
+    terminal_theme: terminal_theme,
+    theme_choice: ThemeChoice::terminal,
   }
 
   let root = ui::box(
@@ -558,13 +660,44 @@ fn main() {
       justify_content: ui::Justify::center,
     ),
   )
+  let header_top = ui::box(
+    ctx,
+    styles: ui::style(
+      width: ui::percent(100.0),
+      height: ui::cells(1),
+      flex_shrink: 0.0,
+      flex_direction: ui::FlexDirection::row,
+      gap: ui::cells(2),
+      align_items: ui::Align::center,
+      justify_content: ui::Justify::center,
+    ),
+  )
   let title = ui::text(
     ctx,
     content: "COOPER OPERATIONS",
     selectable: false,
     text_style: ui::text_style(foreground: state.theme.primary_text, bold: true),
   )
-  header.add(title)
+  header_top.add(title)
+  let picker = ui::tab_select(
+    ctx,
+    [
+      ui::select_option("Terminal", value: "terminal"),
+      ui::select_option("Dark", value: "dark"),
+      ui::select_option("Light", value: "light"),
+    ],
+    config: ui::select_tab_config(
+      tab_width: 10,
+      show_description: false,
+      show_arrows: false,
+      wrap_selection: true,
+    ),
+    selected_index: 0,
+    appearance: picker_appearance(state.theme),
+    styles: ui::style(width: ui::cells(32), height: ui::cells(1)),
+  )
+  header_top.add(picker)
+  header.add(header_top)
   let subtitle = ui::text(
     ctx,
     content: "Synthetic telemetry · tick 0 · RUNNING",
@@ -700,6 +833,7 @@ fn main() {
     root: root,
     header: header,
     title: title,
+    picker: picker,
     subtitle: subtitle,
     cpu: cpu_tile,
     memory: memory_tile,
@@ -731,8 +865,16 @@ fn main() {
   )
   let _ = log.focus()
 
+  let _ = picker.on_change(fn(selection: ui::SelectSelection) {
+    let choice = choice_from_index(selection.index)
+    state.theme_choice = choice
+    apply_theme(state, view, selected_theme(state, choice))
+  })
   let _ = application.on_theme_changed(fn(next: cooper::Theme) {
-    apply_theme(state, view, next)
+    state.terminal_theme = next
+    if state.theme_choice == ThemeChoice::terminal {
+      apply_theme(state, view, next)
+    }
   })
 
   let advance = fn() {
@@ -765,6 +907,7 @@ fn main() {
   let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release and received.matches("end") {
       state.follow = true
+      let _ = log.focus()
       let _ = log.scroll_to(math::MaxInt)
       update_runtime_status(state, subtitle, status)
       received.prevent_default()

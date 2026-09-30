@@ -388,18 +388,20 @@ has not been tested. Sixel and tmux passthrough are not implemented.
 `dashboard.ard` is a live synthetic operations console built entirely from
 persistent Box, Text, and ScrollBox controls. A cancellation-aware background
 fiber posts periodic metric, sparkline, status, and bounded event-stream updates
-through `Runtime.dispatch`. Its semantic colors come from `application.theme()`;
-`application.on_theme_changed(...)` reapplies them live when the terminal switches
-between dark and light themes. The log follows new rows until the operator scrolls
-or disables follow mode.
+through `Runtime.dispatch`. A retained theme picker switches between the live
+terminal theme and derived dark or light presets. Its semantic colors start with
+`application.theme()`; `application.on_theme_changed(...)` keeps the terminal
+choice current when the host theme changes. The log follows new rows until the
+operator scrolls or disables follow mode.
 
 ```sh
 ard run dashboard.ard
 ```
 
-Press Space to pause, F to toggle log following, A to insert a manual alert, C
-to clear the event stream, or Q to quit. Arrow and paging keys scroll the focused
-log; End restores follow mode.
+Use the picker at the top (mouse or focus navigation) to choose Terminal, Dark,
+or Light. Press Space to pause, F to toggle log following, A to insert a manual
+alert, C to clear the event stream, or Q to quit. Arrow and paging keys scroll
+the focused log; End restores follow mode.
 
 ## Stacking contexts
 

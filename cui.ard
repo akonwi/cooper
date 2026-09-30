@@ -23,6 +23,7 @@ type VirtualList = virtual::VirtualList
 type VirtualListRef = virtual::Ref
 type VirtualRange = virtual::Range
 type ScrollAlignment = virtual::Alignment
+type ScrollEdge = virtual::Edge
 
 let virtual_list_ref = virtual::ref
 
@@ -45,6 +46,8 @@ let tab_select = view::tab_select
 
 // Items are data; only the active range is turned into views. Heights and
 // overscan are terminal cells, not item counts. Keys are stable and unique.
+// follow_edge anchors content and follows growth at one vertical edge until
+// the user scrolls away; the ref exposes follow state and programmatic control.
 fn virtual_list(
   items: [$T],
   item_key: fn($T) Str,
@@ -58,6 +61,7 @@ fn virtual_list(
   ref: (mut VirtualListRef)?,
   on_key: fn(mut event::KeyEvent, Context)?,
   on_mouse: fn(mut event::MouseEvent, Context)?,
+  follow_edge: ScrollEdge?,
 ) View {
   let estimate = estimated_height.or(6)
   let extra = overscan.or(12)
@@ -83,6 +87,7 @@ fn virtual_list(
     ref: ref,
     on_key: on_key,
     on_mouse: on_mouse,
+    follow_edge: follow_edge,
   }
   child(virtual::new, virtual::Props{source: source}, key: key)
 }

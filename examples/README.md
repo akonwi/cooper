@@ -198,6 +198,26 @@ that navigating across the mounted window does not fetch additional items.
 Use the [network-free virtualization benchmark](../docs/cui-virtual-list-benchmark.md)
 to measure rendering latency and peak RSS separately from fetching.
 
+## CUI following messages
+
+`cui_following_messages.ard` is a simulated messaging feed that inserts a new
+variable-height message every four seconds. It demonstrates persistent following
+at either list edge, automatic unpin/repin after user scrolling, one-shot edge
+jumps, programmatic pinning, keyed viewport preservation, short-content
+anchoring, resizing, and paused background work.
+
+```sh
+ard run cui_following_messages.ard
+```
+
+Press `1` to follow and prepend at the top or `2` to follow and append at the
+bottom. `P` toggles following, `O` performs a one-shot jump to the opposite edge,
+`A` adds a regular message, `L` adds a tall message, `C` resets to one short
+message, and Space pauses the feed.
+Arrow, Page Up/Down, Home, End, mouse-wheel, and scrollbar input continue to use
+the VirtualList defaults. The status line reports following and first/last-item
+visibility so each transition is observable.
+
 ## CUI virtual comments
 
 `cui_virtual_comments.ard` exercises 4,000 already-loaded comments with variable

@@ -1,0 +1,312 @@
+use ard/async
+
+use cooper
+use cooper/cui
+use cooper/ui
+use go:time
+
+struct Message {
+  id: Int,
+  author: Str,
+  body: Str,
+}
+
+private fn author(id: Int) Str {
+  ["Ada", "Grace", "Linus", "Margaret"].at(id % 4).expect("message author")
+}
+
+private fn body(id: Int, tall: Bool) Str {
+  let samples = [
+    "The deploy finished. I am watching the error rate now.",
+    "Looks good from here — the retained rows kept their identity through the update.",
+    "This message wraps when the terminal is narrow, so its measured height can change after a resize.",
+    "I scrolled away for a moment. New arrivals should not move the message I am reading.",
+    "Following an edge is separate from pausing the feed. Try both controls.",
+  ]
+  mut value = samples.at(id % samples.size()).expect("message body")
+  if tall {
+    value = value + "\n\nThis deliberately tall message exercises variable-height settlement. While pinned, every newly measured line remains at the followed edge. Scroll away and later arrivals preserve the visible keyed row instead.\n\nUse the opposite-edge jump to compare a one-shot position with persistent following."
+  }
+  value
+}
+
+private fn message(id: Int, tall: Bool?) Message {
+  Message{
+    id: id,
+    author: author(id),
+    body: body(id, tall.or(false)),
+  }
+}
+
+private fn initial_messages() [Message] {
+  let messages = mut List::new<Message>()
+  mut id = 0
+  while id < 18 {
+    messages.push(message(id))
+    id =+ 1
+  }
+  messages.@
+}
+
+private fn edge_name(edge: cui::ScrollEdge) Str {
+  match edge {
+    cui::ScrollEdge::start => "top",
+    cui::ScrollEdge::end => "bottom",
+  }
+}
+
+private fn other_edge(edge: cui::ScrollEdge) cui::ScrollEdge {
+  match edge {
+    cui::ScrollEdge::start => cui::ScrollEdge::end,
+    cui::ScrollEdge::end => cui::ScrollEdge::start,
+  }
+}
+
+struct Model {
+  messages: [Message],
+  edge: cui::ScrollEdge,
+  paused: Bool,
+  elapsed: Int,
+  next_id: Int,
+  list: mut cui::VirtualListRef,
+}
+
+impl Model {
+  fn mut add(tall: Bool) {
+    let next = mut List::new<Message>()
+    let created = message(self.next_id, tall)
+    self.next_id =+ 1
+    match self.edge {
+      cui::ScrollEdge::start => {
+        next.push(created)
+        for current in self.messages {
+          next.push(current)
+        }
+      },
+      cui::ScrollEdge::end => {
+        for current in self.messages {
+          next.push(current)
+        }
+        next.push(created)
+      },
+    }
+    self.messages = next.@
+  }
+
+  fn mut reset_short() {
+    self.messages = [message(self.next_id)]
+    self.next_id =+ 1
+    self.elapsed = 0
+  }
+
+  fn mut tick() {
+    if not self.paused {
+      self.elapsed =+ 1
+      if self.elapsed % 4 == 0 {
+        self.add(false)
+      }
+    }
+  }
+}
+
+struct Props {
+  model: mut Model,
+}
+
+struct Screen {
+  model: mut Model,
+}
+
+private fn screen(props: mut Props) mut Screen {
+  (mut Screen{model: props.model})
+}
+
+impl Screen {
+  fn status() Str {
+    mut following = false
+    mut first_visible = false
+    mut last_visible = false
+    mut offset = 0
+    match self.model.list.current {
+      list => {
+        following = list.is_following_edge()
+        first_visible = list.first_item_visible()
+        last_visible = list.last_item_visible()
+        offset = list.scroll_top()
+      },
+      _ => (),
+    }
+    let live = match following {
+      true => "● FOLLOWING",
+      false => "○ UNPINNED",
+    }
+    let feed = match self.model.paused {
+      true => "PAUSED",
+      false => "LIVE",
+    }
+    "{live} {edge_name(self.model.edge)} · feed {feed} · first {first_visible} · last {last_visible} · offset {offset} · {self.model.messages.size()} messages"
+  }
+
+  fn mut follow(edge: cui::ScrollEdge) {
+    self.model.edge = edge
+    let _ = self.model.list.current.map(fn(list) {
+      let _ = list.scroll_to_edge(edge)
+    })
+  }
+
+  fn mut handle_key(key: mut cooper::KeyEvent) {
+    if key.event_type != cooper::KeyEventType::release {
+      if key.matches("1") {
+        self.follow(cui::ScrollEdge::start)
+        key.prevent_default()
+      } else if key.matches("2") {
+        self.follow(cui::ScrollEdge::end)
+        key.prevent_default()
+      } else if key.matches("p") {
+        let edge = self.model.edge
+        let _ = self.model.list.current.map(fn(list) {
+          if list.is_following_edge() {
+            list.stop_following()
+          } else {
+            let _ = list.scroll_to_edge(edge)
+          }
+        })
+        key.prevent_default()
+      } else if key.matches("o") {
+        let edge = other_edge(self.model.edge)
+        let _ = self.model.list.current.map(fn(list) {
+          let _ = list.scroll_to_edge(edge, false)
+        })
+        key.prevent_default()
+      } else if key.matches("a") {
+        self.model.add(false)
+        key.prevent_default()
+      } else if key.matches("l") {
+        self.model.add(true)
+        key.prevent_default()
+      } else if key.matches("c") {
+        self.model.reset_short()
+        key.prevent_default()
+      } else if key.matches("space") {
+        self.model.paused = not self.model.paused
+        key.prevent_default()
+      }
+    }
+  }
+}
+
+impl cui::Lifecycle for Screen {
+  fn mut mounted(ctx: cui::Context) {
+    let cancellation = ctx.cancellation
+    let dispatch = ctx.dispatch
+    async::start(fn() {
+      mut running = true
+      while running {
+        select {
+          cancellation.recv() => { running = false },
+          time::After(time::Second).recv() => {
+            if dispatch(fn() {
+              self.model.tick()
+            }).is_err() {
+              running = false
+            }
+          },
+        }
+      }
+    })
+  }
+
+  fn mut unmounting(ctx: cui::Context) {}
+}
+
+impl cui::Component for Screen {
+  fn mut render() cui::View {
+    cui::box(
+      [
+        cui::box(
+          [
+            cui::text(
+              "CUI · Following messages",
+              text_style: ui::text_style(bold: true, foreground: ui::indexed(6)),
+            ),
+            cui::text(self.status(), text_style: ui::text_style(dim: true)),
+          ],
+          styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0),
+        ),
+        cui::virtual_list(
+          self.model.messages,
+          item_key: fn(item: Message) Str {
+            item.id.to_str()
+          },
+          render_item: fn(item: Message) cui::View {
+            let padding = mut ui::edges()
+            padding.right = ui::cells(1)
+            padding.bottom = ui::cells(1)
+            padding.left = ui::cells(1)
+            cui::box(
+              [
+                cui::text(
+                  "{item.author} · message {item.id}",
+                  text_style: ui::text_style(bold: true, foreground: ui::indexed((4 + item.id) % 3)),
+                ),
+                cui::text(item.body),
+              ],
+              styles: ui::style(width: ui::percent(100.0), padding: padding.@, flex_shrink: 0.0),
+            )
+          },
+          estimated_height: 3,
+          overscan: 6,
+          ref: self.model.list,
+          follow_edge: self.model.edge,
+          scrollbar_options: ui::scrollbar_options(
+            appearance: ui::scrollbar_appearance(
+              track_glyph: " ",
+              thumb_glyph: "█",
+              thumb_style: ui::span_style(foreground: ui::indexed(6)),
+            ),
+          ),
+          styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
+        ),
+        cui::text(
+          "1 top · 2 bottom · P pin/unpin · O opposite · A add · L tall · C short reset",
+          text_style: ui::text_style(foreground: ui::indexed(6)),
+          styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+        ),
+        cui::text(
+          "Space pause · arrows/PgUp/PgDn/Home/End/mouse scroll · Ctrl-C quit",
+          text_style: ui::text_style(dim: true),
+          styles: ui::style(height: ui::cells(1), flex_shrink: 0.0),
+        ),
+      ],
+      styles: ui::style(
+        width: ui::percent(100.0),
+        height: ui::percent(100.0),
+        border: ui::Border::rounded,
+      ),
+      on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+        self.handle_key(key)
+      },
+    )
+  }
+}
+
+fn main() {
+  let application = cooper::app().expect("create following messages example")
+  defer application.destroy()
+  let model = mut Model{
+    messages: initial_messages(),
+    edge: cui::ScrollEdge::end,
+    paused: false,
+    elapsed: 0,
+    next_id: 18,
+    list: cui::virtual_list_ref(),
+  }
+  let renderer = cui::mount(application, cui::child(screen, Props{model: model}))
+  defer renderer.destroy()
+  let _ = application.context.dispatch(fn() {
+    let _ = model.list.current.map(fn(list) {
+      let _ = list.focus()
+    })
+  })
+  application.run().expect("run following messages example")
+}

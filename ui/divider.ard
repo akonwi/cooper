@@ -1,0 +1,49 @@
+use cooper/core/event_delivery
+use cooper/core/node
+use cooper/core/paint
+use cooper/runtime
+use cooper/ui/style as layout_style
+
+// Divider is a transparent, one-row structural child. A bordered Box paints
+// its rule so the line joins the box's vertical borders.
+struct Divider {
+  node_ref: mut node::Node,
+}
+
+private fn resolved_style(value: layout_style::Style) layout_style::Style {
+  let resolved = mut value
+  if resolved.height.kind == layout_style::LengthKind::undefined {
+    resolved.height = layout_style::cells(1)
+  }
+  resolved.flex_shrink = 0.0
+  resolved.@
+}
+
+fn new(ctx: mut runtime::Runtime, styles: layout_style::Style?) mut Divider {
+  let initial = resolved_style(styles.or(layout_style::new()))
+  let retained = ctx.create_node(initial)
+  retained.mark_structural_divider()
+  let divider = mut Divider{node_ref: retained}
+  retained.bind(divider)
+  divider
+}
+
+impl Divider {
+  fn mut set_style(value: layout_style::Style) {
+    self.node_ref.apply_style(resolved_style(value))
+  }
+}
+
+impl node::Renderable for Divider {
+  fn node() mut node::Node {
+    self.node_ref
+  }
+
+  fn mount(ctx: node::MountContext) {}
+
+  fn paint(ctx: mut paint::Context) {}
+
+  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+    event_delivery::Disposition::ignored
+  }
+}

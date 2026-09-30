@@ -16,6 +16,8 @@ private struct BorderGlyphs {
   bottom_right: Str,
   horizontal: Str,
   vertical: Str,
+  left_tee: Str,
+  right_tee: Str,
 }
 
 private fn glyphs(border: Border) BorderGlyphs {
@@ -28,6 +30,8 @@ private fn glyphs(border: Border) BorderGlyphs {
         bottom_right: "╝",
         horizontal: "═",
         vertical: "║",
+        left_tee: "╠",
+        right_tee: "╣",
       }
     },
     layout_style::Border::rounded => {
@@ -38,6 +42,8 @@ private fn glyphs(border: Border) BorderGlyphs {
         bottom_right: "╯",
         horizontal: "─",
         vertical: "│",
+        left_tee: "├",
+        right_tee: "┤",
       }
     },
     layout_style::Border::heavy => {
@@ -48,6 +54,8 @@ private fn glyphs(border: Border) BorderGlyphs {
         bottom_right: "┛",
         horizontal: "━",
         vertical: "┃",
+        left_tee: "┣",
+        right_tee: "┫",
       }
     },
     _ => {
@@ -58,6 +66,8 @@ private fn glyphs(border: Border) BorderGlyphs {
         bottom_right: "┘",
         horizontal: "─",
         vertical: "│",
+        left_tee: "├",
+        right_tee: "┤",
       }
     },
   }
@@ -96,13 +106,14 @@ impl node::Renderable for Box {
   fn node() mut node::Node {
     self.node_ref
   }
-  
+
   fn mount(ctx: node::MountContext) {}
-  
+
   fn paint(ctx: mut paint::Context) {
     paint_border(ctx, self.node_ref.style(), self.title_text)
+    paint_dividers(ctx, self.node_ref, self.node_ref.style())
   }
-  
+
   fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
     event_delivery::Disposition::ignored
   }
@@ -175,23 +186,54 @@ fn paint_border(ctx: mut paint::Context, configured_style: layout_style::Style, 
   }
 }
 
+// paint_dividers extends structural divider rows across the parent's border.
+private fn paint_dividers(
+  ctx: mut paint::Context,
+  parent: mut node::Node,
+  configured_style: layout_style::Style,
+) {
+  if configured_style.border != layout_style::Border::none and ctx.bounds.width >= 2 {
+    let border_style = paint::style(
+      foreground: configured_style.border_color,
+      background: configured_style.background,
+    )
+    let border_glyphs = glyphs(configured_style.border)
+    for row in parent.structural_divider_rows() {
+      if row > 0 and row < ctx.bounds.height - 1 {
+        mut x = 0
+        while x < ctx.bounds.width {
+          ctx.write_overlay(x, row, border_glyphs.horizontal, text_style: border_style)
+          x =+ 1
+        }
+        ctx.write_overlay(0, row, border_glyphs.left_tee, text_style: border_style)
+        ctx.write_overlay(
+          ctx.bounds.width - 1,
+          row,
+          border_glyphs.right_tee,
+          text_style: border_style,
+        )
+      }
+    }
+  }
+}
+
 impl Box {
   fn mut add(child: mut node::Renderable, index: Int?) {
     self.node_ref.add(child.node(), index)
   }
-  
+
   fn mut remove(child: mut node::Renderable) Bool {
     self.node_ref.remove(child.node())
   }
-  
+
   fn child_count() Int {
     self.node_ref.child_count()
   }
-  
+
   fn border() Border {
     self.node_ref.style().border
   }
-  
+
   fn mut set_border(value: Border) {
     let updated = mut self.node_ref.style()
     if updated.border != value {
@@ -199,11 +241,11 @@ impl Box {
       self.set_style(updated.@)
     }
   }
-  
+
   fn border_color() color::Color? {
     self.node_ref.style().border_color
   }
-  
+
   fn mut set_border_color(value: color::Color?) {
     let updated = mut self.node_ref.style()
     if not same_color(updated.border_color, value) {
@@ -211,11 +253,11 @@ impl Box {
       self.set_style(updated.@)
     }
   }
-  
+
   fn title() Str {
     self.title_text
   }
-  
+
   fn mut set_title(value: Str) {
     self.node_ref.require_live()
     if self.title_text != value {
@@ -223,11 +265,11 @@ impl Box {
       self.node_ref.request_redraw()
     }
   }
-  
+
   fn style() layout_style::Style {
     self.node_ref.style()
   }
-  
+
   fn mut set_style(next: layout_style::Style) {
     self.node_ref.apply_style(next)
     mut width = 1
@@ -236,47 +278,47 @@ impl Box {
     }
     self.node_ref.set_border_width(width)
   }
-  
+
   fn mut set_focusable(value: Bool) {
     self.node_ref.set_focusable(value)
   }
-  
+
   fn mut focus() Bool {
     self.node_ref.focus()
   }
-  
+
   fn mut blur() {
     self.node_ref.blur()
   }
-  
+
   fn is_focused() Bool {
     self.node_ref.is_focused()
   }
-  
+
   fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
     self.node_ref.on_key(handler)
   }
-  
+
   fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
     self.node_ref.on_paste(handler)
   }
-  
+
   fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
-  
+
   fn mut on_focus(handler: fn()) fn() {
     self.node_ref.on_focus(handler)
   }
-  
+
   fn mut on_blur(handler: fn()) fn() {
     self.node_ref.on_blur(handler)
   }
-  
+
   fn layout() geometry::Geometry {
     self.node_ref.layout()
   }
-  
+
   fn mut destroy(recursive: Bool?) {
     self.node_ref.destroy(recursive)
   }

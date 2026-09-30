@@ -51,6 +51,10 @@ selection, and rich text.
 - **Controls** — Box, Text, Image, Input, TextArea, ScrollBox, Scrollbar,
   Select, TabSelect. See the [controls list](docs/adrs/0002-define-application-api.md)
   and [examples](examples/README.md).
+- **Structural dividers** — A `ui::divider` occupies one normal layout row;
+  its bordered `Box` parent paints the connected `├──┤`, `╠══╣`, or `┣━━┫`
+  junctions. This avoids fragile overdraw and inset-rule gaps in framed dialogs;
+  `cui::divider()` provides the declarative form.
 - **Animation** — Runtime-owned timelines and springs with easing, looping,
   and momentum-preserving retargeting. See [ADR 0014](docs/adrs/0014-define-animation-timelines.md),
   [ADR 0021](docs/adrs/0021-define-spring-animations.md), and the

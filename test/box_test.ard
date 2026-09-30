@@ -1,9 +1,10 @@
 use ard/testing
 
+use cooper/testing as cooper_testing
 use cooper/ui/box
 use cooper/ui/color
+use cooper/ui/divider
 use cooper/ui/style
-use cooper/testing as cooper_testing
 use cooper/ui/text
 
 test fn box_paints_background_border_title_and_insets_children() Void!Str {
@@ -61,6 +62,38 @@ test fn box_paints_background_border_title_and_insets_children() Void!Str {
 
   application.destroy()
   testing::assert(child.node_ref.is_destroyed(), "Expected decorated Box cleanup")
+}
+
+test fn bordered_box_joins_structural_dividers() Void!Str {
+  let borders: [style::Border] = [
+    style::Border::single,
+    style::Border::double,
+    style::Border::heavy,
+    style::Border::rounded,
+  ]
+  for border in borders {
+    let application = cooper_testing::new(8, 5)
+    let panel = box::new(
+      application.context,
+      styles: style::new(border: border, width: style::cells(8), height: style::cells(5)),
+    )
+    panel.add(text::new(application.context, content: "header"))
+    let rule = divider::new(application.context)
+    panel.add(rule)
+    panel.add(text::new(application.context, content: "footer"))
+    application.root.add(panel)
+    application.render()
+
+    let expected = match border {
+      style::Border::double => "╠═╣",
+      style::Border::heavy => "┣━┫",
+      _ => "├─┤",
+    }
+    let actual = "{application.frame().cell(0, 2).expect("left junction").grapheme}{application.frame().cell(1, 2).expect("rule").grapheme}{application.frame().cell(7, 2).expect("right junction").grapheme}"
+    try testing::assert(actual == expected, "Expected connected divider, got {actual}")
+    application.destroy()
+  }
+  testing::pass()
 }
 
 test fn box_decoration_setters_update_layout_and_common_api() Void!Str {

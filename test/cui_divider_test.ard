@@ -1,0 +1,28 @@
+use ard/testing
+
+use cooper/cui
+use cooper/cui/renderer
+use cooper/testing as headless
+use cooper/ui
+
+// CUI keeps structural dividers declarative while Box retains ownership of the
+// connected border paint.
+test fn declarative_divider_joins_its_bordered_box() Void!Str {
+  let application = headless::new(8, 5)
+  defer application.destroy()
+  let mounted = renderer::mount(
+    application.context,
+    application.root,
+    cui::box(
+      [cui::text("header"), cui::divider(), cui::text("footer")],
+      styles: ui::style(border: ui::Border::single, width: ui::cells(8), height: ui::cells(5)),
+    ),
+  )
+  defer mounted.destroy()
+  application.flush()
+  let frame = application.frame()
+  testing::assert(
+    frame.cell(0, 2).expect("left junction").grapheme == "├" and frame.cell(7, 2).expect("right junction").grapheme == "┤",
+    "Declarative divider joins the bordered box",
+  )
+}

@@ -1,6 +1,7 @@
 use cooper/ui/box as box_control
 use cooper/ui/color as color_value
 use cooper/ui/cursor as cursor_value
+use cooper/ui/divider as divider_control
 use cooper/ui/geometry as geometry_value
 use cooper/ui/image as image_control
 use cooper/ui/input as input_control
@@ -15,6 +16,7 @@ use cooper/ui/text_area as text_area_control
 type Color = color_value::Color
 
 type CursorStyle = cursor_value::CursorStyle
+type Divider = divider_control::Divider
 
 type Point = geometry_value::Point
 type Rect = geometry_value::Rect
@@ -90,6 +92,7 @@ let edges = layout_style::edges
 let style = layout_style::new
 
 let box = box_control::new
+let divider = divider_control::new
 let image = image_control::new
 let image_data = image_control::data
 let decode_image = image_control::decode

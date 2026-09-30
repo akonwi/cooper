@@ -199,6 +199,7 @@ struct Node {
   mounted_root: Bool,
   application_root: Bool,
   internal_overlay: Bool,
+  structural_divider: Bool,
   mount_generation: Int,
   mount_scope: (mut runtime::MountScope)?,
   mount_dispatch_base: (fn(fn()) Void!event::DispatchError)?,
@@ -292,6 +293,7 @@ fn create(
     mounted_root: false,
     application_root: false,
     internal_overlay: false,
+    structural_divider: false,
     mount_generation: 0,
     mount_scope: Maybe::new<mut runtime::MountScope>(),
     mount_dispatch_base: Maybe::new<fn(fn()) Void!event::DispatchError>(),
@@ -397,6 +399,26 @@ impl Node {
       panic("only a live detached Node can become an internal overlay")
     }
     self.internal_overlay = true
+  }
+
+  // mark_structural_divider identifies a transparent one-row child whose
+  // bordered parent paints a rule through its outer border.
+  fn mut mark_structural_divider() {
+    if self.destroyed {
+      panic("only a live Node can become a structural divider")
+    }
+    self.structural_divider = true
+  }
+
+  fn structural_divider_rows() [Int] {
+    let parent_y = self.geometry.screen.y
+    let rows = mut List::new<Int>()
+    for child in self.children {
+      if child.structural_divider and not child.destroyed {
+        rows.push(child.geometry.screen.y - parent_y)
+      }
+    }
+    rows.@
   }
 
   fn mut mark_application_root() {

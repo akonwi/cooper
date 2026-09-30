@@ -31,6 +31,7 @@ struct Specification {
 
 enum Kind {
   box,
+  divider,
   scroll,
   text,
   input,
@@ -290,6 +291,13 @@ fn box(
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
   result.binding_priority = binding_priority.or(0)
+  View{internal: result.@}
+}
+
+// divider is a one-row structural rule. A bordered parent Box paints the
+// connected junctions through its side borders.
+fn divider(key: Str?, styles: ui::Style?) View {
+  let result = mut base(Kind::divider, key, styles)
   View{internal: result.@}
 }
 

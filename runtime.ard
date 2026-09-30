@@ -178,6 +178,11 @@ private struct LayoutHook {
   handler: fn() Bool,
 }
 
+private struct CommitHook {
+  active: Bool,
+  handler: fn(),
+}
+
 struct PendingSelection {
   revision: Int,
   value: public_selection::Selection?,
@@ -295,6 +300,7 @@ private struct State {
   terminal_focus_listeners: [TerminalFocusListener],
   selection_listeners: [SelectionListener],
   layout_hooks: [mut LayoutHook],
+  commit_hooks: [mut CommitHook],
   painted_selection: public_selection::Selection?,
   pending_selection: PendingSelection?,
   selection_notifying: Bool,
@@ -446,6 +452,7 @@ private fn state(
     terminal_focus_listeners: [],
     selection_listeners: [],
     layout_hooks: [],
+    commit_hooks: [],
     painted_selection: Maybe::new<public_selection::Selection>(),
     pending_selection: Maybe::new<PendingSelection>(),
     selection_notifying: false,
@@ -1286,6 +1293,7 @@ impl State {
       self.terminal_focus_listeners = []
       self.selection_listeners = []
       self.layout_hooks = []
+      self.commit_hooks = []
       self.pointer.clear()
       self.selection.destroy()
       self.clipboard.internal_stop()
@@ -1459,6 +1467,7 @@ impl State {
       self.terminal_focus_listeners = []
       self.selection_listeners = []
       self.layout_hooks = []
+      self.commit_hooks = []
       self.pointer.clear()
       self.selection.destroy()
       self.clipboard.internal_stop()
@@ -1600,6 +1609,24 @@ impl State {
       hook.handler = fn() Bool {
         false
       }
+    }
+  }
+
+  // Internal callbacks run only after a frame has been presented or committed.
+  fn mut internal_on_commit(handler: fn()) fn() {
+    let _ = self.next_listener()
+    let retained = mut List::new<mut CommitHook>()
+    for hook in self.commit_hooks {
+      if hook.active {
+        retained.push(hook)
+      }
+    }
+    let hook = mut CommitHook{active: true, handler: handler}
+    retained.push(hook)
+    self.commit_hooks = retained.@
+    fn() {
+      hook.active = false
+      hook.handler = fn() {}
     }
   }
 
@@ -1765,6 +1792,15 @@ impl State {
     }
   }
 
+  private fn mut post_frame_commits() {
+    let hooks = self.commit_hooks
+    for hook in hooks {
+      if hook.active and self.callbacks_active() {
+        hook.handler()
+      }
+    }
+  }
+
   private fn mut paint_live(root: mut node::Renderable) {
     let terminal = self.terminal.expect("live application terminal")
     self.terminal_io.Lock()
@@ -1807,6 +1843,7 @@ impl State {
       } else if present {
         self.post_frame_pointer(root)
         self.post_frame_selection()
+        self.post_frame_commits()
       }
     }
   }
@@ -1821,6 +1858,7 @@ impl State {
     }
     self.post_frame_pointer(root)
     self.post_frame_selection()
+    self.post_frame_commits()
   }
 
   private fn mut apply_outcome(outcome: router::Outcome) {
@@ -3162,6 +3200,10 @@ impl Runtime {
 
   fn mut internal_on_layout(handler: fn() Bool) fn() {
     internal_state(self).internal_on_layout(handler)
+  }
+
+  fn mut internal_on_commit(handler: fn()) fn() {
+    internal_state(self).internal_on_commit(handler)
   }
 
   fn mut internal_preserve_focus_scroll() {

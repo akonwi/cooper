@@ -201,7 +201,7 @@ to measure rendering latency and peak RSS separately from fetching.
 ## CUI following messages
 
 `cui_following_messages.ard` is a simulated messaging feed that inserts a new
-variable-height message every four seconds. It demonstrates persistent following
+variable-height message every four seconds. It demonstrates `sticky_scroll`
 at either list edge, automatic unpin/repin after user scrolling, one-shot edge
 jumps, programmatic pinning, keyed viewport preservation, short-content
 anchoring, resizing, and paused background work.

@@ -564,7 +564,8 @@ therefore has this order:
 3. paint the complete logical buffer and commit it to the live terminal or
    TestApp frame;
 4. compute and route hover changes against that committed geometry;
-5. publish selection-change callbacks queued for that committed generation.
+5. publish selection-change callbacks queued for that committed generation;
+6. publish CUI finalized-state notifications, including `VirtualList` updates.
 
 Hover transition targets are determined before any post-commit user callback.
 If a hover callback invalidates a queued selection generation, its stale

@@ -27,6 +27,8 @@ struct Context {
   current_selection: fn() selection::Selection?,
   // Framework-only: settle lazy descendants between layout and painting.
   internal_layout: fn(fn() Bool) fn(),
+  // Framework-only: application notifications after a committed frame.
+  internal_commit: fn(fn()) fn(),
   internal_animate: fn(Int, fn(animation::Frame), animation::Easing) fn(),
   // Framework-only: one UI-thread attempt after pending commits, before painting.
   internal_focus: fn(fn()) fn(),
@@ -82,6 +84,19 @@ fn internal_new(
       if subscription.active {
         subscription.remove_listener = layout(fn() Bool {
           subscription.active and work()
+        })
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
+    internal_commit: fn(work: fn()) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = runtime.internal_on_commit(fn() {
+          if subscription.active {
+            work()
+          }
         })
       }
       fn() {

@@ -257,7 +257,7 @@ impl cui::Component for Screen {
           estimated_height: 3,
           overscan: 6,
           ref: self.model.list,
-          follow_edge: self.model.edge,
+          sticky_scroll: self.model.edge,
           scrollbar_options: ui::scrollbar_options(
             appearance: ui::scrollbar_appearance(
               track_glyph: " ",

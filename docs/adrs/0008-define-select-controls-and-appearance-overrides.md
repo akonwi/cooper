@@ -149,3 +149,4 @@ concept.
 - [ADR 0002: Define Application API](./0002-define-application-api.md)
 - [ADR 0003: Define Interaction, Focus, and Selection](./0003-define-interaction-focus-and-selection.md)
 - [ADR 0007: Define Scrollbars and Two-Axis Scrolling](./0007-define-scrollbars-and-two-axis-scrolling.md)
+- [ADR 0026: Define Terminal-Derived Application Themes](./0026-define-terminal-derived-application-themes.md)

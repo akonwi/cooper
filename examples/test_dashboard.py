@@ -60,6 +60,9 @@ def main():
         initial = screen.text()
         for expected in (
             "COOPER OPERATIONS",
+            "Terminal",
+            "Dark",
+            "Light",
             "CPU",
             "MEMORY",
             "NETWORK",
@@ -71,6 +74,20 @@ def main():
             "Follow: ON",
         ):
             assert expected in initial, f"missing dashboard region {expected!r}"
+
+        # Select the light preset from the retained theme picker, then restore
+        # the live terminal-derived choice.
+        picker_row = next(i for i, line in enumerate(screen.text().splitlines()) if "Terminal  Dark" in line)
+        light_col = screen.line(picker_row).index("Light") + 2
+        send(fd, f"\x1b[<0;{light_col};{picker_row + 1}M\x1b[<0;{light_col};{picker_row + 1}m")
+        wait_for(fd, screen, "LIGHT / LIGHT PRESET")
+        terminal_col = screen.line(picker_row).index("Terminal") + 2
+        send(fd, f"\x1b[<0;{terminal_col};{picker_row + 1}M\x1b[<0;{terminal_col};{picker_row + 1}m")
+        wait_for(fd, screen, "/ TERMINAL")
+        log_row = next(i for i, line in enumerate(screen.text().splitlines()) if "EVENT STREAM" in line)
+        log_col = screen.line(log_row).index("EVENT STREAM") + 2
+        send(fd, f"\x1b[<0;{log_col};{log_row + 2}M\x1b[<0;{log_col};{log_row + 2}m")
+        send(fd, "\t")
 
         # Pausing is UI-owned: the background timer keeps dispatching, but no
         # metric or tick state changes while paused.

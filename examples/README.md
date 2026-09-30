@@ -201,7 +201,7 @@ to measure rendering latency and peak RSS separately from fetching.
 ## CUI following messages
 
 `cui_following_messages.ard` is a simulated messaging feed that inserts a new
-variable-height message every four seconds. It demonstrates persistent following
+variable-height message every four seconds. It demonstrates `sticky_scroll`
 at either list edge, automatic unpin/repin after user scrolling, one-shot edge
 jumps, programmatic pinning, keyed viewport preservation, short-content
 anchoring, resizing, and paused background work.
@@ -388,16 +388,20 @@ has not been tested. Sixel and tmux passthrough are not implemented.
 `dashboard.ard` is a live synthetic operations console built entirely from
 persistent Box, Text, and ScrollBox controls. A cancellation-aware background
 fiber posts periodic metric, sparkline, status, and bounded event-stream updates
-through `Runtime.dispatch`. The log follows new rows until the operator scrolls
-or disables follow mode.
+through `Runtime.dispatch`. A retained theme picker switches between the live
+terminal theme and derived dark or light presets. Its semantic colors start with
+`application.theme()`; `application.on_theme_changed(...)` keeps the terminal
+choice current when the host theme changes. The log follows new rows until the
+operator scrolls or disables follow mode.
 
 ```sh
 ard run dashboard.ard
 ```
 
-Press Space to pause, F to toggle log following, A to insert a manual alert, C
-to clear the event stream, or Q to quit. Arrow and paging keys scroll the focused
-log; End restores follow mode.
+Use the picker at the top (mouse or focus navigation) to choose Terminal, Dark,
+or Light. Press Space to pause, F to toggle log following, A to insert a manual
+alert, C to clear the event stream, or Q to quit. Arrow and paging keys scroll
+the focused log; End restores follow mode.
 
 ## Stacking contexts
 

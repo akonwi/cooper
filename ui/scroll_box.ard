@@ -469,6 +469,12 @@ impl ScrollBox {
     self.node_ref.on_mouse(handler)
   }
 
+  // Framework-only: changes initiated by the vertical scrollbar itself.
+  fn mut internal_on_vertical_scrollbar_change(handler: fn(Int)) fn() {
+    self.require_live()
+    parts(self.internal).vertical_bar.on_change(handler)
+  }
+
   fn mut on_focus(handler: fn()) fn() {
     self.require_live()
     self.node_ref.on_focus(handler)

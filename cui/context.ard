@@ -3,6 +3,7 @@ use cooper/core/runtime as scopes
 use cooper/event
 use cooper/keymap
 use cooper/runtime
+use cooper/theme
 use cooper/ui/selection
 
 // Capture this value before starting a worker. Only dispatched callbacks may
@@ -16,6 +17,7 @@ struct Context {
   // UI-thread-only Runtime subscriptions; removal on unmount is automatic.
   // Returned functions optionally unsubscribe early and are idempotent.
   on_terminal_focus: fn(fn(event::TerminalFocus)) fn(),
+  on_theme_changed: fn(fn(theme::Theme)) fn(),
   on_selection_change: fn(fn(selection::Selection?)) fn(),
   on_key: fn(fn(mut event::KeyEvent)) fn(),
   on_paste: fn(fn(mut event::PasteEvent)) fn(),
@@ -24,9 +26,12 @@ struct Context {
   shortcuts: fn() [keymap::Shortcut],
   commands: fn() [keymap::Command],
   terminal_focus: fn() event::TerminalFocus?,
+  theme: fn() theme::Theme,
   current_selection: fn() selection::Selection?,
   // Framework-only: settle lazy descendants between layout and painting.
   internal_layout: fn(fn() Bool) fn(),
+  // Framework-only: application notifications after a committed frame.
+  internal_commit: fn(fn()) fn(),
   internal_animate: fn(Int, fn(animation::Frame), animation::Easing) fn(),
   // Framework-only: one UI-thread attempt after pending commits, before painting.
   internal_focus: fn(fn()) fn(),
@@ -88,6 +93,19 @@ fn internal_new(
         subscription.cancel()
       }
     },
+    internal_commit: fn(work: fn()) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = runtime.internal_on_commit(fn() {
+          if subscription.active {
+            work()
+          }
+        })
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
     invalidate_root: fn() {
       if not scope.is_cancelled() {
         invalidate_root()
@@ -97,6 +115,20 @@ fn internal_new(
       let subscription = scope.subscription()
       if subscription.active {
         subscription.remove_listener = runtime.on_terminal_focus(fn(value: event::TerminalFocus) {
+          if subscription.active {
+            handler(value)
+            invalidate()
+          }
+        })
+      }
+      fn() {
+        subscription.cancel()
+      }
+    },
+    on_theme_changed: fn(handler: fn(theme::Theme)) fn() {
+      let subscription = scope.subscription()
+      if subscription.active {
+        subscription.remove_listener = runtime.on_theme_changed(fn(value: theme::Theme) {
           if subscription.active {
             handler(value)
             invalidate()
@@ -199,6 +231,9 @@ fn internal_new(
       } else {
         runtime.terminal_focus()
       }
+    },
+    theme: fn() theme::Theme {
+      runtime.current_theme()
     },
     current_selection: fn() selection::Selection? {
       if scope.is_cancelled() {

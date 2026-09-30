@@ -590,7 +590,7 @@ impl cui::Component for FollowingScreen {
       overscan: 0,
       ref: self.data.ref,
       styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
-      follow_edge: cui::ScrollEdge::end,
+      sticky_scroll: cui::ScrollEdge::end,
     )
   }
 }
@@ -614,6 +614,19 @@ test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled(
   try testing::assert(
     list.is_following_edge() and list.scroll_top() == 6 and list.last_item_visible(),
     "Following list initially settles at its logical end",
+  )
+
+  app.drag(19, 4, 19, 0)
+  app.flush()
+  try testing::assert(
+    not list.is_following_edge() and list.scroll_top() == 0,
+    "Dragging the scrollbar away from a followed edge unpins it",
+  )
+  app.drag(19, 0, 19, 4)
+  app.flush()
+  try testing::assert(
+    list.is_following_edge() and list.scroll_top() == 6,
+    "Dragging the scrollbar back to the enabled edge resumes following",
   )
 
   let _ = list.scroll_by(-3)
@@ -747,7 +760,7 @@ test fn following_edge_bottom_anchors_short_content_and_reanchors_on_resize() Vo
       overscan: 0,
       ref: ref,
       styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
-      follow_edge: cui::ScrollEdge::end,
+      sticky_scroll: cui::ScrollEdge::end,
     ),
   )
   defer renderer.destroy()
@@ -804,7 +817,7 @@ impl cui::Component for StartFollowingScreen {
       overscan: 0,
       ref: self.data.ref,
       styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
-      follow_edge: self.data.edge,
+      sticky_scroll: self.data.edge,
     )
   }
 }
@@ -901,4 +914,134 @@ test fn declarative_edge_change_replaces_a_pending_opposite_jump() Void!Str {
     list.is_following_edge() and list.scroll_top() == 0 and list.first_item_visible(),
     "New declarative edge supersedes an older imperative settlement",
   )
+}
+
+struct UpdateLog {
+  count: Int,
+  latest: cui::VirtualListUpdate?,
+}
+struct UpdateModel {
+  log: mut UpdateLog,
+  ref: mut cui::VirtualListRef,
+}
+struct UpdateProps {
+  data: mut UpdateModel,
+}
+struct UpdateScreen {
+  data: mut UpdateModel,
+}
+private fn update_screen(props: mut UpdateProps) mut UpdateScreen {
+  (mut UpdateScreen{data: props.data})
+}
+impl cui::Component for UpdateScreen {
+  fn mut render() cui::View {
+    cui::virtual_list(
+      items(200),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: row,
+      estimated_height: 20,
+      overscan: 0,
+      ref: self.data.ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+      sticky_scroll: cui::ScrollEdge::end,
+      on_update: fn(update: cui::VirtualListUpdate, ctx: cui::Context) {
+        self.data.log.count =+ 1
+        self.data.log.latest = Maybe::new(update)
+      },
+    )
+  }
+}
+
+private fn update_direction(update: cui::VirtualListUpdate, direction: cui::VirtualScrollDirection) Bool {
+  match update.user_scroll {
+    actual => actual == direction,
+    _ => false,
+  }
+}
+
+test fn virtual_list_updates_publish_final_committed_state_and_user_intent() Void!Str {
+  let app = headless::new(30, 8)
+  defer app.destroy()
+  let data = mut UpdateModel{
+    log: mut UpdateLog{count: 0, latest: Maybe::new<cui::VirtualListUpdate>()},
+    ref: cui::virtual_list_ref(),
+  }
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::child(update_screen, UpdateProps{data: data}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let list = data.ref.current.expect("observed list")
+  let initial = data.log.latest.expect("initial update")
+  try testing::assert(
+    data.log.count == 1 and initial.initial and initial.state.scroll_top == initial.state.maximum_scroll_top and initial.state.last_item_visible,
+    "Initial notification coalesces measurement passes and describes the committed edge",
+  )
+
+  renderer.update(fn() {
+    list.stop_following()
+    let _ = list.scroll_by(-3)
+  })
+  app.flush()
+  let programmatic = data.log.latest.expect("programmatic update")
+  try testing::assert(
+    data.log.count == 2 and programmatic.user_scroll.is_none() and (not programmatic.moved) and (not programmatic.initial),
+    "Programmatic scrolling changes finalized state without reporting user origin",
+  )
+
+  try testing::assert(list.focus(), "Observed list accepts keyboard input")
+  app.key(navigation_key("up"))
+  app.flush()
+  let keyboard = data.log.latest.expect("keyboard update")
+  try testing::assert(
+    data.log.count == 3 and update_direction(keyboard, cui::VirtualScrollDirection::toward_start) and keyboard.moved,
+    "Keyboard movement reports its committed direction and movement",
+  )
+
+  renderer.update(fn() {
+    let _ = list.scroll_to_edge(cui::ScrollEdge::start, false)
+  })
+  app.flush()
+  let before_boundary = data.log.count
+  app.key(navigation_key("up"))
+  app.flush()
+  let boundary = data.log.latest.expect("boundary update")
+  try testing::assert(
+    data.log.count == before_boundary + 1 and update_direction(boundary, cui::VirtualScrollDirection::toward_start) and (not boundary.moved) and boundary.state.scroll_top == 0,
+    "Blocked keyboard intent still publishes against finalized state",
+  )
+
+  let before_wheel = data.log.count
+  app.scroll(0, 0, -1)
+  app.flush()
+  let wheel = data.log.latest.expect("wheel update")
+  try testing::assert(
+    data.log.count == before_wheel + 1 and update_direction(wheel, cui::VirtualScrollDirection::toward_start) and (not wheel.moved),
+    "Blocked wheel intent also publishes without requiring offset movement",
+  )
+
+  app.scroll(0, 0, 1)
+  app.flush()
+  let moving_wheel = data.log.latest.expect("moving wheel update")
+  try testing::assert(
+    update_direction(moving_wheel, cui::VirtualScrollDirection::toward_end) and moving_wheel.moved,
+    "Moving wheel input retains user origin through the committed frame",
+  )
+
+  app.drag(29, 0, 29, 7)
+  app.flush()
+  let scrollbar = data.log.latest.expect("scrollbar update")
+  try testing::assert(
+    update_direction(scrollbar, cui::VirtualScrollDirection::toward_end) and scrollbar.moved and scrollbar.state.scroll_top > 0,
+    "Scrollbar movement derives user direction from finalized offsets",
+  )
+
+  let delivered = data.log.count
+  renderer.destroy()
+  app.render()
+  testing::assert(data.log.count == delivered, "Unmount suppresses later post-commit delivery")
 }

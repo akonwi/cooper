@@ -15,9 +15,29 @@ enum Edge {
   start,
   end,
 }
+enum Direction {
+  toward_start,
+  toward_end,
+}
 struct Range {
   start: Int,
   end: Int,
+}
+struct State {
+  following_edge: Edge?,
+  first_item_visible: Bool,
+  last_item_visible: Bool,
+  visible_range: Range,
+  scroll_top: Int,
+  maximum_scroll_top: Int,
+  total_height: Int,
+  viewport_height: Int,
+}
+struct Update {
+  state: State,
+  initial: Bool,
+  user_scroll: Direction?,
+  moved: Bool,
 }
 struct Ref {
   current: (mut VirtualList)?,
@@ -38,7 +58,8 @@ struct Source {
   ref: (mut Ref)?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
-  follow_edge: Edge?,
+  sticky_scroll: Edge?,
+  on_update: fn(Update, context::Context)?,
 }
 struct Props {
   source: mut Source,
@@ -69,6 +90,10 @@ struct VirtualList {
   refresh: Bool,
   active: Bool,
   bound_ref: (mut Ref)?,
+  pending_state: State?,
+  delivered_state: State?,
+  pending_user_scroll: Direction?,
+  pending_user_start: Int?,
 }
 
 fn new(props: mut Props) mut VirtualList {
@@ -88,12 +113,16 @@ fn new(props: mut Props) mut VirtualList {
     restore: false,
     pending: Maybe::new<Str>(),
     alignment: Alignment::nearest,
-    enabled_edge: source.follow_edge,
-    following_edge: source.follow_edge,
+    enabled_edge: source.sticky_scroll,
+    following_edge: source.sticky_scroll,
     settling_edge: Maybe::new<Edge>(),
     refresh: false,
     active: false,
     bound_ref: Maybe::new<mut Ref>(),
+    pending_state: Maybe::new<State>(),
+    delivered_state: Maybe::new<State>(),
+    pending_user_scroll: Maybe::new<Direction>(),
+    pending_user_start: Maybe::new<Int>(),
   })
 }
 
@@ -112,6 +141,22 @@ private fn nonnegative(value: Int) Int {
   } else {
     value
   }
+}
+
+private fn same_edge(left: Edge?, right: Edge?) Bool {
+  match left {
+    left_edge => {
+      match right {
+        right_edge => left_edge == right_edge,
+        _ => false,
+      }
+    },
+    _ => right.is_none(),
+  }
+}
+
+private fn same_state(left: State, right: State) Bool {
+  same_edge(left.following_edge, right.following_edge) and left.first_item_visible == right.first_item_visible and left.last_item_visible == right.last_item_visible and left.visible_range.start == right.visible_range.start and left.visible_range.end == right.visible_range.end and left.scroll_top == right.scroll_top and left.maximum_scroll_top == right.maximum_scroll_top and left.total_height == right.total_height and left.viewport_height == right.viewport_height
 }
 
 impl VirtualList {
@@ -179,6 +224,64 @@ impl VirtualList {
     Range{start: first, end: end}
   }
 
+  private fn state(maximum_scroll_top: Int) State {
+    State{
+      following_edge: self.following_edge,
+      first_item_visible: self.first_item_visible(),
+      last_item_visible: self.last_item_visible(),
+      visible_range: self.visible_range(),
+      scroll_top: self.top,
+      maximum_scroll_top: maximum_scroll_top,
+      total_height: self.index.total(),
+      viewport_height: self.height,
+    }
+  }
+
+  private fn mut record_user_scroll(direction: Direction, start: Int) {
+    if self.pending_user_start.is_none() {
+      self.pending_user_start = Maybe::new(start)
+    }
+    self.pending_user_scroll = Maybe::new(direction)
+  }
+
+  private fn mut publish(ctx: context::Context) {
+    let user_scroll = self.pending_user_scroll
+    let user_start = self.pending_user_start
+    self.pending_user_scroll = Maybe::new<Direction>()
+    self.pending_user_start = Maybe::new<Int>()
+    match self.pending_state {
+      state => {
+        let initial = self.delivered_state.is_none()
+        let changed = match self.delivered_state {
+          previous => not same_state(previous, state),
+          _ => true,
+        }
+        if changed or user_scroll.is_some() {
+          match self.source.on_update {
+            handler => {
+              self.delivered_state = Maybe::new(state)
+              self.pending_state = Maybe::new<State>()
+              handler(
+                Update{
+                  state: state,
+                  initial: initial,
+                  user_scroll: user_scroll,
+                  moved: user_scroll.is_some() and state.scroll_top != user_start.or(state.scroll_top),
+                },
+                ctx,
+              )
+              (ctx.invalidate_root)()
+            },
+            _ => (),
+          }
+        } else {
+          self.pending_state = Maybe::new<State>()
+        }
+      },
+      _ => (),
+    }
+  }
+
   private fn mut cancel_pending_position() {
     self.settling_edge = Maybe::new<Edge>()
     self.pending = Maybe::new<Str>()
@@ -209,13 +312,13 @@ impl VirtualList {
     self.scroll_to_key(key, Alignment::nearest)
   }
 
-  // Jump to a logical edge. Following defaults to true so later changes remain
-  // pinned there; pass false for a one-shot jump.
-  fn mut scroll_to_edge(edge: Edge, follow: Bool?) Bool {
+  // Jump to a logical edge. Sticky behavior defaults to true so later changes
+  // remain pinned there; pass false for a one-shot jump.
+  fn mut scroll_to_edge(edge: Edge, sticky: Bool?) Bool {
     if not self.active {
       false
     } else {
-      if follow.or(true) {
+      if sticky.or(true) {
         if not self.edge_enabled(edge) {
           self.enabled_edge = Maybe::new(edge)
           self.refresh = true
@@ -264,6 +367,13 @@ impl VirtualList {
 
   private fn mut note_vertical_intent(delta: Int) {
     self.cancel_pending_position()
+    self.record_user_scroll(
+      match delta < 0 {
+        true => Direction::toward_start,
+        false => Direction::toward_end,
+      },
+      self.top,
+    )
     if self.edge_following(Edge::start) and delta > 0 or self.edge_following(Edge::end) and delta < 0 {
       self.stop_following()
     } else {
@@ -279,7 +389,7 @@ impl VirtualList {
   }
 
   private fn mut handle_key(key: mut event::KeyEvent, ctx: context::Context) {
-    let vertical = (self.enabled_edge.is_some() or self.settling_edge.is_some()) and key.event_type != event::KeyEventType::release and (not key.modifiers.shift) and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super)
+    let vertical = key.event_type != event::KeyEventType::release and (not key.modifiers.shift) and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super)
     if vertical {
       if key.name == "up" or key.name == "page_up" or key.name == "home" {
         self.note_vertical_intent(-1)
@@ -294,11 +404,14 @@ impl VirtualList {
   }
 
   private fn mut handle_mouse(mouse: mut event::MouseEvent, ctx: context::Context) {
-    if mouse.event_type == event::MouseEventType::down or mouse.event_type == event::MouseEventType::drag or mouse.event_type == event::MouseEventType::scroll {
+    if mouse.event_type == event::MouseEventType::down or mouse.event_type == event::MouseEventType::drag {
       self.cancel_pending_position()
-    }
-    if self.enabled_edge.is_some() and mouse.event_type == event::MouseEventType::scroll and (not mouse.modifiers.shift) and mouse.scroll_y != 0 {
-      self.note_vertical_intent(mouse.scroll_y)
+    } else if mouse.event_type == event::MouseEventType::scroll {
+      if (not mouse.modifiers.shift) and mouse.scroll_y != 0 {
+        self.note_vertical_intent(mouse.scroll_y)
+      } else {
+        self.cancel_pending_position()
+      }
     }
     match self.source.on_mouse {
       handler => handler(mouse, ctx),
@@ -444,12 +557,12 @@ impl VirtualList {
       let old_keys = self.source.keys
       let old_position = self.index.index_at(self.top)
       let old_height = self.source.row_height
-      let old_follow_edge = self.source.follow_edge
+      let old_sticky_scroll = self.source.sticky_scroll
       self.source = self.props.source
-      if old_follow_edge != self.source.follow_edge {
+      if old_sticky_scroll != self.source.sticky_scroll {
         self.cancel_pending_position()
-        self.enabled_edge = self.source.follow_edge
-        self.following_edge = self.source.follow_edge
+        self.enabled_edge = self.source.sticky_scroll
+        self.following_edge = self.source.sticky_scroll
       }
       self.index.replace(self.source.keys, self.source.row_height.or(self.source.estimate))
       if old_height != self.source.row_height {
@@ -642,6 +755,7 @@ impl VirtualList {
             self.settling_edge = Maybe::new<Edge>()
             self.pending = Maybe::new<Str>()
             self.capture_anchor(self.top)
+            self.pending_state = Maybe::new(self.state(scroll.maximum_scroll_top()))
           }
           changed
         }
@@ -716,8 +830,35 @@ impl view::Lifecycle for VirtualList {
   fn mut mounted(ctx: context::Context) {
     self.active = true
     self.bind_ref()
+    let _ = self.scroll.current.map(fn(scroll) {
+      scroll.internal_on_vertical_scrollbar_change(fn(position: Int) {
+        let start = self.top
+        self.cancel_pending_position()
+        if position < start {
+          self.record_user_scroll(Direction::toward_start, start)
+          if self.edge_following(Edge::end) {
+            self.following_edge = Maybe::new<Edge>()
+          }
+        } else if position > start {
+          self.record_user_scroll(Direction::toward_end, start)
+          if self.edge_following(Edge::start) {
+            self.following_edge = Maybe::new<Edge>()
+          }
+        }
+        if self.edge_enabled(Edge::start) and position == 0 {
+          self.following_edge = Maybe::new(Edge::start)
+        } else if self.edge_enabled(Edge::end) and position == scroll.maximum_scroll_top() {
+          self.following_edge = Maybe::new(Edge::end)
+        }
+      })
+    })
     let _ = ctx.internal_layout(fn() Bool {
       self.settle()
+    })
+    let _ = ctx.internal_commit(fn() {
+      if self.active {
+        self.publish(ctx)
+      }
     })
   }
 

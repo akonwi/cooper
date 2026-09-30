@@ -11,6 +11,10 @@ enum Alignment {
   end,
   nearest,
 }
+enum Edge {
+  start,
+  end,
+}
 struct Range {
   start: Int,
   end: Int,
@@ -34,6 +38,7 @@ struct Source {
   ref: (mut Ref)?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
+  follow_edge: Edge?,
 }
 struct Props {
   source: mut Source,
@@ -58,6 +63,10 @@ struct VirtualList {
   restore: Bool,
   pending: Str?,
   alignment: Alignment,
+  enabled_edge: Edge?,
+  following_edge: Edge?,
+  settling_edge: Edge?,
+  refresh: Bool,
   active: Bool,
   bound_ref: (mut Ref)?,
 }
@@ -79,6 +88,10 @@ fn new(props: mut Props) mut VirtualList {
     restore: false,
     pending: Maybe::new<Str>(),
     alignment: Alignment::nearest,
+    enabled_edge: source.follow_edge,
+    following_edge: source.follow_edge,
+    settling_edge: Maybe::new<Edge>(),
+    refresh: false,
     active: false,
     bound_ref: Maybe::new<mut Ref>(),
   })
@@ -110,6 +123,40 @@ impl VirtualList {
     self.index.total()
   }
 
+  fn is_following_edge() Bool {
+    self.following_edge.is_some()
+  }
+
+  fn first_item_visible() Bool {
+    self.index.count() > 0 and self.index.prefix(1) > self.top and self.height > 0
+  }
+
+  fn last_item_visible() Bool {
+    let count = self.index.count()
+    count > 0 and self.index.prefix(count - 1) < self.top + self.height and self.index.total() > self.top
+  }
+
+  private fn edge_enabled(edge: Edge) Bool {
+    match self.enabled_edge {
+      enabled => enabled == edge,
+      _ => false,
+    }
+  }
+
+  private fn edge_following(edge: Edge) Bool {
+    match self.following_edge {
+      followed => followed == edge,
+      _ => false,
+    }
+  }
+
+  private fn edge_settling(edge: Edge) Bool {
+    match self.settling_edge {
+      settling => settling == edge,
+      _ => false,
+    }
+  }
+
   fn mounted_count() Int {
     self.rows.size()
   }
@@ -132,10 +179,21 @@ impl VirtualList {
     Range{start: first, end: end}
   }
 
+  private fn mut cancel_pending_position() {
+    self.settling_edge = Maybe::new<Edge>()
+    self.pending = Maybe::new<Str>()
+    self.restore = false
+    let _ = self.scroll.current.map(fn(scroll) {
+      self.top = scroll.scroll_top()
+    })
+    self.capture_anchor(self.top)
+  }
+
   // Bool means the key exists and the request was accepted. Unmeasured targets
   // settle to their measured alignment before the next frame is painted.
   fn mut scroll_to_key(key: Str, alignment: Alignment?) Bool {
     if self.active and self.index.position(key).is_some() {
+      self.cancel_pending_position()
       self.pending = Maybe::new(key)
       self.alignment = alignment.or(Alignment::start)
       let _ = self.scroll.current.map(fn(scroll) {
@@ -151,11 +209,101 @@ impl VirtualList {
     self.scroll_to_key(key, Alignment::nearest)
   }
 
+  // Jump to a logical edge. Following defaults to true so later changes remain
+  // pinned there; pass false for a one-shot jump.
+  fn mut scroll_to_edge(edge: Edge, follow: Bool?) Bool {
+    if not self.active {
+      false
+    } else {
+      if follow.or(true) {
+        if not self.edge_enabled(edge) {
+          self.enabled_edge = Maybe::new(edge)
+          self.refresh = true
+        }
+        self.following_edge = Maybe::new(edge)
+      } else {
+        self.following_edge = Maybe::new<Edge>()
+      }
+      self.settling_edge = Maybe::new(edge)
+      self.pending = Maybe::new<Str>()
+      self.top = match edge {
+        Edge::start => 0,
+        Edge::end => self.clamp_top(self.index.total() - self.height),
+      }
+      self.capture_anchor(self.top)
+      self.restore = true
+      let _ = self.scroll.current.map(fn(scroll) {
+        scroll.node_ref.request_redraw()
+      })
+      true
+    }
+  }
+
+  fn mut stop_following() {
+    if self.active {
+      self.cancel_pending_position()
+      self.following_edge = Maybe::new<Edge>()
+    }
+  }
+
   fn mut scroll_by(cells: Int) Bool {
-    self.pending = Maybe::new<Str>()
+    self.cancel_pending_position()
+    if self.edge_following(Edge::start) and cells > 0 or self.edge_following(Edge::end) and cells < 0 {
+      self.stop_following()
+    }
     self.scroll.current.map(fn(scroll) Bool {
-      scroll.scroll_by(cells)
+      let moved = scroll.scroll_by(cells)
+      if self.edge_enabled(Edge::start) and cells < 0 and scroll.scroll_top() == 0 {
+        self.following_edge = Maybe::new(Edge::start)
+      } else if self.edge_enabled(Edge::end) and cells > 0 and scroll.scroll_top() == scroll.maximum_scroll_top() {
+        self.following_edge = Maybe::new(Edge::end)
+      }
+      moved
     }).or(false)
+  }
+
+  private fn mut note_vertical_intent(delta: Int) {
+    self.cancel_pending_position()
+    if self.edge_following(Edge::start) and delta > 0 or self.edge_following(Edge::end) and delta < 0 {
+      self.stop_following()
+    } else {
+      let _ = self.scroll.current.map(fn(scroll) {
+        if self.edge_enabled(Edge::start) and delta < 0 and scroll.scroll_top() == 0 {
+          self.following_edge = Maybe::new(Edge::start)
+        } else if self.edge_enabled(Edge::end) and delta > 0 and scroll.scroll_top() == scroll.maximum_scroll_top() {
+          self.following_edge = Maybe::new(Edge::end)
+        }
+        ()
+      })
+    }
+  }
+
+  private fn mut handle_key(key: mut event::KeyEvent, ctx: context::Context) {
+    let vertical = (self.enabled_edge.is_some() or self.settling_edge.is_some()) and key.event_type != event::KeyEventType::release and (not key.modifiers.shift) and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super)
+    if vertical {
+      if key.name == "up" or key.name == "page_up" or key.name == "home" {
+        self.note_vertical_intent(-1)
+      } else if key.name == "down" or key.name == "page_down" or key.name == "end" {
+        self.note_vertical_intent(1)
+      }
+    }
+    match self.source.on_key {
+      handler => handler(key, ctx),
+      _ => (),
+    }
+  }
+
+  private fn mut handle_mouse(mouse: mut event::MouseEvent, ctx: context::Context) {
+    if mouse.event_type == event::MouseEventType::down or mouse.event_type == event::MouseEventType::drag or mouse.event_type == event::MouseEventType::scroll {
+      self.cancel_pending_position()
+    }
+    if self.enabled_edge.is_some() and mouse.event_type == event::MouseEventType::scroll and (not mouse.modifiers.shift) and mouse.scroll_y != 0 {
+      self.note_vertical_intent(mouse.scroll_y)
+    }
+    match self.source.on_mouse {
+      handler => handler(mouse, ctx),
+      _ => (),
+    }
   }
 
   fn mut invalidate_item(key: Str) Bool {
@@ -221,7 +369,16 @@ impl VirtualList {
     let indices = mut List::new<Int>()
     let selected = mut Map::new<Bool>()
     mut first = self.index.index_at(nonnegative(self.top - self.source.overscan))
-    let edge = self.top + self.height + self.source.overscan
+    mut edge = self.top + self.height + self.source.overscan
+    if (self.edge_following(Edge::end) or self.edge_settling(Edge::end)) and self.index.count() > 0 {
+      first = self.index.count()
+      mut remaining = self.height + self.source.overscan
+      while first > 0 and remaining > 0 {
+        first =- 1
+        remaining =- self.index.measured.get(self.index.key(first)).or(self.sample_height)
+      }
+      edge = self.index.total()
+    }
     mut cursor = self.index.prefix(first)
     // Use observed heights to size the next materialization batch. A wildly
     // high initial estimate must not require one layout pass per new row.
@@ -287,7 +444,13 @@ impl VirtualList {
       let old_keys = self.source.keys
       let old_position = self.index.index_at(self.top)
       let old_height = self.source.row_height
+      let old_follow_edge = self.source.follow_edge
       self.source = self.props.source
+      if old_follow_edge != self.source.follow_edge {
+        self.cancel_pending_position()
+        self.enabled_edge = self.source.follow_edge
+        self.following_edge = self.source.follow_edge
+      }
       self.index.replace(self.source.keys, self.source.row_height.or(self.source.estimate))
       if old_height != self.source.row_height {
         self.index.reset(self.source.row_height.or(self.source.estimate))
@@ -332,19 +495,43 @@ impl VirtualList {
         if viewport.width <= 0 or viewport.height <= 0 {
           false
         } else {
-          mut changed = false
+          mut changed = self.refresh
+          self.refresh = false
           let resized = self.width != viewport.width
+          let height_changed = self.height != viewport.height
           self.height = viewport.height
-          if not self.restore and not resized {
-            if self.top != scroll.scroll_top() {
+          if not self.restore and not resized and not height_changed {
+            let observed = scroll.scroll_top()
+            if self.top != observed {
               changed = true
+              self.top = observed
+              self.following_edge = Maybe::new<Edge>()
+              match self.enabled_edge {
+                edge => {
+                  match edge {
+                    Edge::start => {
+                      if self.top == 0 {
+                        self.following_edge = Maybe::new(Edge::start)
+                      }
+                    },
+                    Edge::end => {
+                      if self.top == self.clamp_top(self.index.total() - self.height) {
+                        self.following_edge = Maybe::new(Edge::end)
+                      }
+                    },
+                  }
+                },
+                _ => (),
+              }
             }
-            self.top = scroll.scroll_top()
             self.capture_anchor(self.top)
           }
           if resized {
             self.width = viewport.width
             self.index.reset(self.source.row_height.or(self.source.estimate))
+            changed = true
+          }
+          if height_changed {
             changed = true
           }
           mut measured = 0
@@ -408,6 +595,24 @@ impl VirtualList {
             },
             _ => (),
           }
+          match self.following_edge {
+            edge => {
+              match edge {
+                Edge::start => { desired = 0 },
+                Edge::end => { desired = self.index.total() - self.height },
+              }
+            },
+            _ => (),
+          }
+          match self.settling_edge {
+            edge => {
+              match edge {
+                Edge::start => { desired = 0 },
+                Edge::end => { desired = self.index.total() - self.height },
+              }
+            },
+            _ => (),
+          }
           desired = self.clamp_top(desired)
           if desired != self.top {
             changed = true
@@ -434,6 +639,7 @@ impl VirtualList {
             }
           }
           if not changed {
+            self.settling_edge = Maybe::new<Edge>()
             self.pending = Maybe::new<Str>()
             self.capture_anchor(self.top)
           }
@@ -448,6 +654,10 @@ impl VirtualList {
 impl view::Component for VirtualList {
   fn mut render() view::View {
     self.sync_source()
+    let inset = match self.edge_enabled(Edge::end) {
+      true => nonnegative(self.height - self.index.total()),
+      false => 0,
+    }
     let rows = mut List::new<Row>()
     let children = mut List::new<view::View>()
     for index in self.indices() {
@@ -465,7 +675,7 @@ impl view::Component for VirtualList {
           ref: ref,
           styles: ui::style(
             position: ui::Position::absolute,
-            top: ui::cells(self.index.prefix(index)),
+            top: ui::cells(inset + self.index.prefix(index)),
             left: ui::cells(0),
             width: ui::percent(100.0),
             min_height: ui::cells(1),
@@ -484,7 +694,7 @@ impl view::Component for VirtualList {
         view::box(
           children.@,
           styles: ui::style(
-            height: ui::cells(self.index.total()),
+            height: ui::cells(inset + self.index.total()),
             width: ui::percent(100.0),
             flex_shrink: 0.0,
           ),
@@ -493,8 +703,12 @@ impl view::Component for VirtualList {
       styles: self.source.styles,
       scrollbar_options: self.source.scrollbar_options,
       ref: self.scroll,
-      on_key: self.source.on_key,
-      on_mouse: self.source.on_mouse,
+      on_key: fn(key: mut event::KeyEvent, ctx: context::Context) {
+        self.handle_key(key, ctx)
+      },
+      on_mouse: fn(mouse: mut event::MouseEvent, ctx: context::Context) {
+        self.handle_mouse(mouse, ctx)
+      },
     )
   }
 }

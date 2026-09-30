@@ -2,8 +2,23 @@ use ard/testing
 
 use cooper/cui
 use cooper/cui/renderer
+use cooper/event
 use cooper/testing as headless
 use cooper/ui
+
+private fn navigation_key(name: Str) mut event::KeyEvent {
+  event::key(
+    name,
+    "",
+    event::KeyEventType::press,
+    event::Modifiers{
+      shift: false,
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
+  )
+}
 
 private fn items(count: Int) [Int] {
   let values = mut List::new<Int>()
@@ -440,7 +455,16 @@ test fn fixed_rows_center_end_and_nearest_align_exactly() Void!Str {
   try testing::assert(list.scroll_top() == 93, "Nearest leaves an already visible row in place")
   let _ = list.reveal("90")
   app.flush()
-  testing::assert(list.scroll_top() == 90, "Nearest above viewport aligns to start")
+  try testing::assert(list.scroll_top() == 90, "Nearest above viewport aligns to start")
+  try testing::assert(
+    list.scroll_to_edge(cui::ScrollEdge::end),
+    "Programmatic end follow accepted without constructor opt-in",
+  )
+  app.flush()
+  testing::assert(
+    list.is_following_edge() and list.scroll_top() == 192,
+    "Programmatic end follow enables the presentation",
+  )
 }
 
 struct StyledListState {
@@ -530,5 +554,351 @@ test fn scrollbar_options_apply_update_hide_and_restore() Void!Str {
   testing::assert(
     app.frame().cell(11, 0).expect("default thumb").grapheme == "┃",
     "Default options restore standard thumb",
+  )
+}
+
+struct FollowingModel {
+  items: [Int],
+  last_height: Int,
+  ref: mut cui::VirtualListRef,
+}
+struct FollowingProps {
+  data: mut FollowingModel,
+}
+struct FollowingScreen {
+  data: mut FollowingModel,
+}
+private fn following_screen(props: mut FollowingProps) mut FollowingScreen {
+  (mut FollowingScreen{data: props.data})
+}
+impl cui::Component for FollowingScreen {
+  fn mut render() cui::View {
+    let last = self.data.items.size() - 1
+    cui::virtual_list(
+      self.data.items,
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        let height = match id == last {
+          true => self.data.last_height,
+          false => 1,
+        }
+        cui::text("row{id}", styles: ui::style(height: ui::cells(height)))
+      },
+      estimated_height: 1,
+      overscan: 0,
+      ref: self.data.ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+      follow_edge: cui::ScrollEdge::end,
+    )
+  }
+}
+
+test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled() Void!Str {
+  let app = headless::new(20, 5)
+  defer app.destroy()
+  let data = mut FollowingModel{
+    items: items(11),
+    last_height: 1,
+    ref: cui::virtual_list_ref(),
+  }
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::child(following_screen, FollowingProps{data: data}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let list = data.ref.current.expect("following list")
+  try testing::assert(
+    list.is_following_edge() and list.scroll_top() == 6 and list.last_item_visible(),
+    "Following list initially settles at its logical end",
+  )
+
+  let _ = list.scroll_by(-3)
+  app.flush()
+  try testing::assert(
+    not list.is_following_edge() and list.scroll_top() == 3 and (not list.last_item_visible()),
+    "Scrolling away stops following and reports the latest item out of view",
+  )
+  renderer.update(fn() {
+    let next = mut List::new<Int>()
+    for item in data.items {
+      next.push(item)
+    }
+    next.push(11)
+    data.items = next.@
+  })
+  app.flush()
+  try testing::assert(list.scroll_top() == 3, "Appending while unpinned preserves the viewport")
+
+  let _ = list.scroll_by(100)
+  app.flush()
+  try testing::assert(
+    list.is_following_edge() and list.last_item_visible(),
+    "Scrolling to the end resumes following",
+  )
+  renderer.update(fn() {
+    let next = mut List::new<Int>()
+    for item in data.items {
+      next.push(item)
+    }
+    next.push(12)
+    data.items = next.@
+  })
+  app.flush()
+  try testing::assert(list.scroll_top() == 8, "A pinned list follows appended items")
+
+  list.stop_following()
+  renderer.update(fn() {
+    let next = mut List::new<Int>()
+    for item in data.items {
+      next.push(item)
+    }
+    next.push(13)
+    data.items = next.@
+  })
+  app.flush()
+  try testing::assert(
+    not list.is_following_edge() and list.scroll_top() == 8,
+    "Programmatic unpin freezes the viewport",
+  )
+  try testing::assert(list.scroll_to_edge(cui::ScrollEdge::end), "End jump accepted")
+  app.flush()
+  try testing::assert(
+    list.is_following_edge() and list.scroll_top() == 9 and list.last_item_visible(),
+    "End jump resumes following",
+  )
+
+  renderer.update(fn() {
+    data.last_height = 4
+    let _ = list.invalidate_item("13")
+  })
+  app.flush()
+  try testing::assert(list.scroll_top() == 12, "Following tracks growth of the final item")
+  renderer.update(fn() {
+    data.last_height = 8
+    list.stop_following()
+    let _ = list.invalidate_item("13")
+    let _ = list.scroll_to_key("13", cui::ScrollAlignment::start)
+  })
+  app.flush()
+  testing::assert(
+    not list.is_following_edge() and list.scroll_top() == 13 and list.last_item_visible(),
+    "A tall final item can be positioned at its start without resuming follow",
+  )
+}
+
+test fn one_shot_end_jump_converges_from_a_severe_tail_estimate() Void!Str {
+  let app = headless::new(20, 5)
+  defer app.destroy()
+  let ref = cui::virtual_list_ref()
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      items(100),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        cui::text("row{id}", styles: ui::style(height: ui::cells(1)))
+      },
+      estimated_height: 10000,
+      overscan: 0,
+      ref: ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let list = ref.current.expect("estimated following list")
+  try testing::assert(list.focus(), "Estimated list can receive navigation input")
+  try testing::assert(list.scroll_to_edge(cui::ScrollEdge::end, false), "One-shot end jump accepted")
+  app.key(navigation_key("up"))
+  app.flush()
+  try testing::assert(list.scroll_top() == 0, "Newer keyboard input cancels a pending one-shot jump")
+  let _ = list.scroll_to_edge(cui::ScrollEdge::end, false)
+  app.flush()
+  let visible = list.visible_range()
+  testing::assert(
+    visible.start == 95 and visible.end == 100 and app.frame().text().contains("row99"),
+    "Tail following materializes a bounded backward batch despite a severe estimate",
+  )
+}
+
+test fn following_edge_bottom_anchors_short_content_and_reanchors_on_resize() Void!Str {
+  let app = headless::new(20, 5)
+  defer app.destroy()
+  let ref = cui::virtual_list_ref()
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      [0, 1],
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        cui::text("row{id}", styles: ui::style(height: ui::cells(1)))
+      },
+      row_height: 1,
+      overscan: 0,
+      ref: ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+      follow_edge: cui::ScrollEdge::end,
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let list = ref.current.expect("short following list")
+  try testing::assert(
+    app.frame().cell(0, 3).expect("first bottom row").grapheme == "r" and app.frame().cell(0, 4).expect("last bottom row").grapheme == "r",
+    "Short content grows upward from the viewport bottom",
+  )
+  try testing::assert(
+    list.scroll_top() == 0 and list.last_item_visible(),
+    "Short content is visible without a synthetic offset",
+  )
+  let _ = list.scroll_by(-1)
+  try testing::assert(
+    not list.is_following_edge(),
+    "Upward intent unpins even when short content cannot move",
+  )
+  let _ = list.scroll_to_edge(cui::ScrollEdge::end)
+  app.flush()
+  app.resize(20, 7)
+  app.flush()
+  testing::assert(
+    app.frame().cell(0, 5).expect("resized first row").grapheme == "r" and app.frame().cell(0, 6).expect("resized last row").grapheme == "r",
+    "Bottom anchor follows viewport height changes",
+  )
+}
+
+struct StartFollowingModel {
+  items: [Int],
+  edge: cui::ScrollEdge,
+  ref: mut cui::VirtualListRef,
+}
+struct StartFollowingProps {
+  data: mut StartFollowingModel,
+}
+struct StartFollowingScreen {
+  data: mut StartFollowingModel,
+}
+private fn start_following_screen(props: mut StartFollowingProps) mut StartFollowingScreen {
+  (mut StartFollowingScreen{data: props.data})
+}
+impl cui::Component for StartFollowingScreen {
+  fn mut render() cui::View {
+    cui::virtual_list(
+      self.data.items,
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        cui::text("row{id}", styles: ui::style(height: ui::cells(1)))
+      },
+      row_height: 1,
+      overscan: 0,
+      ref: self.data.ref,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+      follow_edge: self.data.edge,
+    )
+  }
+}
+
+test fn following_start_tracks_prepends_until_scrolling_away() Void!Str {
+  let app = headless::new(20, 5)
+  defer app.destroy()
+  let data = mut StartFollowingModel{
+    items: items(11),
+    edge: cui::ScrollEdge::start,
+    ref: cui::virtual_list_ref(),
+  }
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::child(start_following_screen, StartFollowingProps{data: data}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let list = data.ref.current.expect("start-following list")
+  try testing::assert(
+    list.is_following_edge() and list.scroll_top() == 0 and list.first_item_visible(),
+    "Start-following list initially settles at the top",
+  )
+
+  let _ = list.scroll_by(3)
+  app.flush()
+  try testing::assert(
+    not list.is_following_edge() and list.scroll_top() == 3 and (not list.first_item_visible()),
+    "Scrolling down stops start following",
+  )
+  renderer.update(fn() {
+    let next = mut List::new<Int>()
+    next.push(-2)
+    next.push(-1)
+    for item in data.items {
+      next.push(item)
+    }
+    data.items = next.@
+  })
+  app.flush()
+  try testing::assert(
+    list.scroll_top() == 5 and list.visible_range().start == 5,
+    "Prepending while unpinned preserves the visible keyed row",
+  )
+
+  let _ = list.scroll_by(-100)
+  app.flush()
+  try testing::assert(
+    list.is_following_edge() and list.scroll_top() == 0,
+    "Returning to the top resumes start following",
+  )
+  renderer.update(fn() {
+    let next = mut List::new<Int>()
+    next.push(-4)
+    next.push(-3)
+    for item in data.items {
+      next.push(item)
+    }
+    data.items = next.@
+  })
+  app.flush()
+  testing::assert(
+    list.scroll_top() == 0 and list.first_item_visible() and app.frame().text().contains("row-4"),
+    "A pinned start follows prepended items",
+  )
+}
+
+test fn declarative_edge_change_replaces_a_pending_opposite_jump() Void!Str {
+  let app = headless::new(20, 5)
+  defer app.destroy()
+  let data = mut StartFollowingModel{
+    items: items(20),
+    edge: cui::ScrollEdge::end,
+    ref: cui::virtual_list_ref(),
+  }
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::child(start_following_screen, StartFollowingProps{data: data}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  let list = data.ref.current.expect("switching-edge list")
+  try testing::assert(
+    list.scroll_to_edge(cui::ScrollEdge::end, false),
+    "Pending one-shot edge jump accepted",
+  )
+  renderer.update(fn() {
+    data.edge = cui::ScrollEdge::start
+  })
+  app.flush()
+  testing::assert(
+    list.is_following_edge() and list.scroll_top() == 0 and list.first_item_visible(),
+    "New declarative edge supersedes an older imperative settlement",
   )
 }

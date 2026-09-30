@@ -2,11 +2,15 @@ use cooper/event
 use cooper/root as application_root
 use cooper/runtime as application_runtime
 use cooper/screen
+use cooper/theme as application_theme
 use cooper/ui/selection as selection_value
 
 type Runtime = application_runtime::Runtime
 type Root = application_root::Root
 type Selection = selection_value::Selection
+type Theme = application_theme::Theme
+type ThemeMode = application_theme::Mode
+type TerminalColors = application_theme::TerminalColors
 type DispatchError = event::DispatchError
 type TerminalFocus = event::TerminalFocus
 type KeyEventType = event::KeyEventType
@@ -48,6 +52,15 @@ impl App {
 
   fn terminal_focus() TerminalFocus? {
     self.context.terminal_focus()
+  }
+
+  // Available immediately after app(), before the first frame starts.
+  fn theme() Theme {
+    self.context.theme()
+  }
+
+  fn on_theme_changed(handler: fn(Theme)) fn() {
+    self.context.on_theme_changed(handler)
   }
 
   fn on_terminal_focus(handler: fn(TerminalFocus)) fn() {

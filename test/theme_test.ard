@@ -1,0 +1,268 @@
+use ard/async
+use ard/testing
+
+use cooper/testing as headless
+use cooper/theme
+use cooper/ui
+
+// Expected values are produced by vaxis/ui (ThemeFromPalette over the same
+// terminal replies), so the Cooper client resolves the vaxis client's colors.
+
+fn c(r: Int, g: Int, b: Int) ui::Color {
+  ui::rgb(r, g, b)
+}
+
+fn some(r: Int, g: Int, b: Int) ui::Color? {
+  Maybe::new(ui::rgb(r, g, b))
+}
+
+fn none() ui::Color? {
+  Maybe::new<ui::Color>()
+}
+
+fn same(got: ui::Color, want: ui::Color) Bool {
+  got.red == want.red and got.green == want.green and got.blue == want.blue and got.terminal_default == want.terminal_default
+}
+
+fn terminal(foreground: ui::Color?, background: ui::Color?, palette: [ui::Color?]) theme::TerminalColors {
+  theme::TerminalColors{
+    foreground: foreground,
+    background: background,
+    palette: palette,
+  }
+}
+
+fn empty_terminal() theme::TerminalColors {
+  terminal(none(), none(), [])
+}
+
+struct Counter {
+  value: Int,
+}
+
+fn check(name: Str, got: ui::Color, want: ui::Color) Void!Str {
+  testing::assert(same(got, want), "{name}: colors differ")
+}
+
+fn expect(got: theme::Theme, want: theme::Theme) Void!Str {
+  try testing::assert(got.mode == want.mode, "mode differs")
+  try check("background", got.background, want.background)
+  try check("foreground", got.foreground, want.foreground)
+  try check("surface", got.surface, want.surface)
+  try check("surface_raised", got.surface_raised, want.surface_raised)
+  try check("surface_hovered", got.surface_hovered, want.surface_hovered)
+  try check("surface_pressed", got.surface_pressed, want.surface_pressed)
+  try check("primary", got.primary, want.primary)
+  try check("primary_text", got.primary_text, want.primary_text)
+  try check("primary_hovered", got.primary_hovered, want.primary_hovered)
+  try check("primary_pressed", got.primary_pressed, want.primary_pressed)
+  try check("accent", got.accent, want.accent)
+  try check("accent_text", got.accent_text, want.accent_text)
+  try check("success", got.success, want.success)
+  try check("success_text", got.success_text, want.success_text)
+  try check("warning", got.warning, want.warning)
+  try check("warning_text", got.warning_text, want.warning_text)
+  try check("danger", got.danger, want.danger)
+  try check("danger_text", got.danger_text, want.danger_text)
+  try check("muted", got.muted_foreground, want.muted_foreground)
+  try check("disabled", got.disabled_foreground, want.disabled_foreground)
+  try check("selection", got.selection, want.selection)
+  try check("border", got.border, want.border)
+  testing::pass()
+}
+
+test fn a_terminal_without_color_replies_uses_the_vaxis_default_theme() Void!Str {
+  expect(
+    theme::from_terminal(terminal(none(), none(), [])),
+    theme::Theme{
+      terminal_colors: empty_terminal(),
+      mode: theme::Mode::dark,
+      background: c(12, 14, 18),
+      foreground: c(245, 246, 250),
+      surface: c(21, 23, 27),
+      surface_raised: c(34, 36, 40),
+      surface_hovered: c(34, 36, 40),
+      surface_pressed: c(12, 14, 18),
+      primary: c(38, 94, 178),
+      primary_text: c(108, 172, 255),
+      primary_hovered: c(56, 121, 218),
+      primary_pressed: c(25, 69, 135),
+      accent: c(118, 83, 156),
+      accent_text: c(197, 158, 243),
+      success: c(28, 128, 91),
+      success_text: c(113, 210, 167),
+      warning: c(150, 114, 34),
+      warning_text: c(238, 197, 116),
+      danger: c(173, 65, 67),
+      danger_text: c(255, 142, 140),
+      muted_foreground: c(117, 119, 123),
+      disabled_foreground: c(82, 84, 89),
+      selection: c(25, 69, 135),
+      border: c(82, 84, 89),
+    },
+  )
+}
+
+test fn a_dark_terminal_derives_the_vaxis_theme() Void!Str {
+  expect(
+    theme::from_terminal(
+      terminal(
+        some(216, 222, 233),
+        some(40, 44, 52),
+        [
+          some(40, 44, 52),
+          some(224, 108, 117),
+          some(152, 195, 121),
+          some(229, 192, 123),
+          some(97, 175, 239),
+          some(198, 120, 221),
+          some(86, 182, 194),
+          some(171, 178, 191),
+        ],
+      ),
+    ),
+    theme::Theme{
+      terminal_colors: empty_terminal(),
+      mode: theme::Mode::dark,
+      background: c(40, 44, 52),
+      foreground: c(216, 222, 233),
+      surface: c(47, 52, 60),
+      surface_raised: c(58, 63, 71),
+      surface_hovered: c(58, 63, 71),
+      surface_pressed: c(40, 44, 52),
+      primary: c(62, 126, 177),
+      primary_text: c(118, 187, 245),
+      primary_hovered: c(62, 126, 177),
+      primary_pressed: c(52, 102, 143),
+      accent: c(146, 83, 165),
+      accent_text: c(209, 139, 230),
+      success: c(85, 112, 65),
+      success_text: c(164, 203, 136),
+      warning: c(130, 106, 62),
+      warning_text: c(231, 198, 137),
+      danger: c(168, 75, 83),
+      danger_text: c(235, 129, 135),
+      muted_foreground: c(122, 127, 137),
+      disabled_foreground: c(96, 101, 110),
+      selection: c(52, 102, 143),
+      border: c(96, 101, 110),
+    },
+  )
+}
+
+test fn partial_default_reports_match_vaxis_mode_and_palette_normalization() Void!Str {
+  let background_only = theme::from_terminal(terminal(none(), some(250, 250, 250), []))
+  try testing::assert(
+    background_only.mode == theme::Mode::light and background_only.terminal_colors.palette.size() == 8,
+    "a lone light background selects light mode and normalizes eight palette slots",
+  )
+  try check("background-only foreground", background_only.foreground, c(12, 14, 18))
+  let foreground_only = theme::from_terminal(terminal(some(220, 220, 220), none(), []))
+  try testing::assert(foreground_only.mode == theme::Mode::dark, "a lone foreground retains dark mode")
+  check("foreground-only background", foreground_only.background, c(12, 14, 18))
+}
+
+test fn theme_service_queries_and_caches_complete_semantic_themes() Void!Str {
+  let calls = mut Counter{value: 0}
+  let service = theme::internal_service(fn(ctx) theme::TerminalColors {
+    calls.value =+ 1
+    terminal(some(216, 222, 233), some(40, 44, 52), [])
+  })
+  defer service.internal_stop()
+  let queried = service.query()
+  try testing::assert(
+    calls.value == 1 and queried.mode == theme::Mode::dark,
+    "query resolves a dark theme",
+  )
+  try check("queried background", queried.background, c(40, 44, 52))
+  let cached = service.current()
+  try check("cached foreground", cached.foreground, c(216, 222, 233))
+  service.internal_suspend()
+  let suspended = service.query()
+  try testing::assert(calls.value == 1, "suspended query reuses the cached theme")
+  try check("suspended background", suspended.background, queried.background)
+  service.internal_resume()
+  let _ = service.query()
+  testing::assert(calls.value == 2, "resumed service queries again")
+}
+
+test fn theme_service_suspension_cancels_an_active_query() Void!Str {
+  let entered = Chan::new<Bool>()
+  let done = Chan::new<Bool>(1)
+  let service = theme::internal_service(fn(ctx) theme::TerminalColors {
+    entered.close()
+    ctx.Done().recv()
+    empty_terminal()
+  })
+  defer service.internal_stop()
+  async::start(fn() {
+    let _ = service.query()
+    done.send(true)
+  })
+  entered.receiver().recv()
+  service.internal_suspend()
+  try testing::assert(done.receiver().recv().or(false), "suspension cancels the active query")
+  service.internal_resume()
+  testing::assert(
+    theme::internal_same(service.current(), theme::default()),
+    "cancelled query preserves the current theme",
+  )
+}
+
+test fn app_theme_listeners_are_deduplicated_and_removable() Void!Str {
+  let app = headless::new(8, 2)
+  defer app.destroy()
+  let calls = mut Counter{value: 0}
+  let changed = theme::from_terminal(terminal(some(30, 30, 30), some(240, 240, 240), []))
+  let remove = app.context.on_theme_changed(fn(value: theme::Theme) {
+    calls.value =+ 1
+  })
+  app.context.theme_changed_test(changed)
+  try testing::assert(
+    theme::internal_same(app.context.theme(), changed),
+    "the current theme matches the listener value",
+  )
+  app.context.theme_changed_test(changed)
+  try testing::assert(calls.value == 1, "identical themes notify once")
+  remove()
+  app.context.theme_changed_test(theme::default())
+  testing::assert(calls.value == 1, "removed listener stays inactive")
+}
+
+test fn a_light_terminal_with_a_partial_palette_derives_the_vaxis_theme() Void!Str {
+  expect(
+    theme::from_terminal(
+      terminal(
+        some(56, 58, 66),
+        some(250, 250, 250),
+        [none(), some(202, 18, 67), none(), none(), some(64, 120, 242), none(), none(), none()],
+      ),
+    ),
+    theme::Theme{
+      terminal_colors: empty_terminal(),
+      mode: theme::Mode::light,
+      background: c(250, 250, 250),
+      foreground: c(56, 58, 66),
+      surface: c(239, 239, 240),
+      surface_raised: c(224, 225, 226),
+      surface_hovered: c(224, 225, 226),
+      surface_pressed: c(250, 250, 250),
+      primary: c(129, 176, 255),
+      primary_text: c(50, 95, 195),
+      primary_hovered: c(164, 200, 255),
+      primary_pressed: c(96, 149, 255),
+      accent: c(213, 181, 252),
+      accent_text: c(138, 102, 178),
+      success: c(145, 224, 187),
+      success_text: c(55, 148, 110),
+      warning: c(245, 211, 145),
+      warning_text: c(171, 134, 58),
+      danger: c(248, 121, 133),
+      danger_text: c(167, 20, 56),
+      muted_foreground: c(118, 120, 126),
+      disabled_foreground: c(177, 178, 181),
+      selection: c(199, 223, 255),
+      border: c(177, 178, 181),
+    },
+  )
+}

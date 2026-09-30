@@ -23,6 +23,7 @@ use cooper/keymap
 use cooper/notification
 use cooper/screen
 use cooper/terminal_progress
+use cooper/theme
 use cooper/ui/color
 use cooper/ui/cursor as text_cursor
 use cooper/ui/selection as public_selection
@@ -173,6 +174,11 @@ struct SelectionListener {
   handler: fn(public_selection::Selection?),
 }
 
+struct ThemeListener {
+  id: Int,
+  handler: fn(theme::Theme),
+}
+
 private struct LayoutHook {
   active: Bool,
   handler: fn() Bool,
@@ -210,6 +216,7 @@ private fn public_runtime(state: mut State) mut Runtime {
 
 private struct State {
   clipboard: mut clipboard::Clipboard,
+  theme_service: mut theme::Service,
   dispatch: fn(fn()) Void!event::DispatchError,
   cancellation: Receiver<Void>,
   terminal: (mut vaxis::Vaxis)?,
@@ -299,6 +306,10 @@ private struct State {
   terminal_focus_state: event::TerminalFocus?,
   terminal_focus_listeners: [TerminalFocusListener],
   selection_listeners: [SelectionListener],
+  theme_listeners: [ThemeListener],
+  theme_refreshing: Bool,
+  theme_refresh_pending: Bool,
+  notified_theme: theme::Theme,
   layout_hooks: [mut LayoutHook],
   commit_hooks: [mut CommitHook],
   painted_selection: public_selection::Selection?,
@@ -310,6 +321,8 @@ private struct State {
 private fn state(
   terminal: (mut vaxis::Vaxis)?,
   clipboard: mut clipboard::Clipboard,
+  theme_service: mut theme::Service,
+  terminal_io: mut sync::Mutex,
   notification_action: fn(Str, Str?) Bool,
   terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
   terminal_title_action: fn(Str),
@@ -330,7 +343,6 @@ private fn state(
   let presentation = screen_config.or(screen::config(screen::Mode::alt))
   presentation.internal_validate()
   let context_token = node::new_context_token()
-  let terminal_io = mut sync::Mutex{}
   let lifecycle = mut sync::Mutex{}
   let updates = mut dispatch_runtime::new_dispatch_queue()
   let dispatch = fn(action: fn()) Void!event::DispatchError {
@@ -366,6 +378,7 @@ private fn state(
   }
   (mut State{
     clipboard: clipboard,
+    theme_service: theme_service,
     dispatch: dispatch,
     cancellation: cancellation_signal.receiver(),
     terminal: terminal,
@@ -451,6 +464,10 @@ private fn state(
     terminal_focus_state: Maybe::new<event::TerminalFocus>(),
     terminal_focus_listeners: [],
     selection_listeners: [],
+    theme_listeners: [],
+    theme_refreshing: false,
+    theme_refresh_pending: false,
+    notified_theme: theme_service.current(),
     layout_hooks: [],
     commit_hooks: [],
     painted_selection: Maybe::new<public_selection::Selection>(),
@@ -488,6 +505,7 @@ private fn new_live_state(
     },
   }
   let watcher = signalwatch::New()
+  let terminal_io = mut sync::Mutex{}
   match vaxis::New(options) {
     ok(terminal) => {
       let clipboard = clipboard::internal_terminal(
@@ -498,6 +516,11 @@ private fn new_live_state(
           terminal.ClipboardPush(value)
         },
       )
+      let theme_service = theme::internal_service(fn(ctx: context::Context) theme::TerminalColors {
+        terminal_io.Lock()
+        defer terminal_io.Unlock()
+        theme::internal_report(vaxisbridge::QueryTerminalColors(ctx, terminal))
+      })
       let notification_backend = notification::internal_backend(
         fn() Str {
           terminal.TerminalID()
@@ -512,6 +535,8 @@ private fn new_live_state(
       let created = state(
         Maybe::new<mut vaxis::Vaxis>(terminal),
         clipboard,
+        theme_service,
+        terminal_io,
         fn(message: Str, title: Str?) Bool {
           notification_backend.notify(message, title.or(""))
         },
@@ -564,6 +589,8 @@ private fn new_headless_state(
   let created = state(
     Maybe::new<mut vaxis::Vaxis>(),
     clipboard::internal_memory(),
+    theme::internal_memory(),
+    mut sync::Mutex{},
     notification_action,
     terminal_progress_action,
     terminal_title_action,
@@ -588,6 +615,8 @@ private fn new_detached_state(request_render: fn()?, width_measurer: (fn(Str) In
   let created = state(
     Maybe::new<mut vaxis::Vaxis>(),
     clipboard::internal_memory(),
+    theme::internal_memory(),
+    mut sync::Mutex{},
     reject_notification,
     reject_terminal_progress,
     ignore_terminal_title,
@@ -1292,11 +1321,13 @@ impl State {
       self.paste_listeners = []
       self.terminal_focus_listeners = []
       self.selection_listeners = []
+      self.theme_listeners = []
       self.layout_hooks = []
       self.commit_hooks = []
       self.pointer.clear()
       self.selection.destroy()
       self.clipboard.internal_stop()
+      self.theme_service.internal_stop()
       self.close_cancellation()
       self.terminal_io.Lock()
       self.pointer_cursor = event::MouseCursor::default_cursor
@@ -1357,6 +1388,7 @@ impl State {
 
     if stop_dispatch {
       self.clipboard.internal_cancel()
+      self.theme_service.internal_cancel()
       self.updates.stop()
     }
     if request_shutdown {
@@ -1384,6 +1416,7 @@ impl State {
     self.lifecycle.Unlock()
     if stop_dispatch {
       self.clipboard.internal_cancel()
+      self.theme_service.internal_cancel()
       self.updates.stop()
     }
     finish_now
@@ -1466,11 +1499,13 @@ impl State {
       self.live_paste_buffer.reset()
       self.terminal_focus_listeners = []
       self.selection_listeners = []
+      self.theme_listeners = []
       self.layout_hooks = []
       self.commit_hooks = []
       self.pointer.clear()
       self.selection.destroy()
       self.clipboard.internal_stop()
+      self.theme_service.internal_stop()
       self.close_cancellation()
       self.destroy_animations()
     }
@@ -1897,6 +1932,7 @@ impl State {
     if defer_app_cleanup {
       self.updates.stop()
       self.clipboard.internal_stop()
+      self.theme_service.internal_stop()
       self.close_cancellation()
       let _ = self.release_terminal(Maybe::new<Error>())
     } else {
@@ -2214,6 +2250,74 @@ impl State {
     }
   }
 
+  fn mut resolved_theme() theme::Theme {
+    self.lifecycle.Lock()
+    let can_query = self.phase == 0
+    self.lifecycle.Unlock()
+    if can_query {
+      self.theme_service.query()
+    } else {
+      self.theme_service.current()
+    }
+  }
+
+  fn mut on_theme_changed(handler: fn(theme::Theme)) fn() {
+    let id = self.next_listener()
+    if self.theme_listeners.size() == 0 {
+      self.notified_theme = self.theme_service.current()
+    }
+    self.theme_listeners.push(ThemeListener{id: id, handler: handler})
+    fn() {
+      self.remove_theme_listener(id)
+    }
+  }
+
+  private fn mut remove_theme_listener(id: Int) {
+    let retained = mut List::new<ThemeListener>()
+    for listener in self.theme_listeners {
+      if listener.id != id {
+        retained.push(listener)
+      }
+    }
+    self.theme_listeners = retained.@
+  }
+
+  private fn mut complete_theme_refresh(value: theme::Theme) {
+    self.theme_refreshing = false
+    if self.callbacks_active() and not theme::internal_same(self.notified_theme, value) {
+      self.notified_theme = value
+      let listeners = self.theme_listeners
+      for listener in listeners {
+        if self.callbacks_active() {
+          listener.handler(value)
+        }
+      }
+    }
+    let repeat = self.theme_refresh_pending
+    self.theme_refresh_pending = false
+    if repeat and self.callbacks_active() {
+      self.request_theme_refresh()
+    }
+  }
+
+  private fn mut request_theme_refresh() {
+    if self.callbacks_active() {
+      if self.theme_refreshing {
+        self.theme_refresh_pending = true
+      } else {
+        self.theme_refreshing = true
+        let service = self.theme_service
+        let dispatch = self.dispatch
+        async::start(fn() {
+          let value = service.query()
+          let _ = dispatch(fn() {
+            self.complete_theme_refresh(value)
+          })
+        })
+      }
+    }
+  }
+
   fn mut current_selection() public_selection::Selection? {
     self.selection.current()
   }
@@ -2299,6 +2403,9 @@ impl State {
   }
 
   fn mut suspend_live() Void!Error {
+    // Cancel color queries before waiting for terminal ownership so suspension
+    // is not delayed by the query deadline.
+    let theme_suspended = self.theme_service.internal_suspend()
     self.terminal_io.Lock()
     self.lifecycle.Lock()
     mut previous = -1
@@ -2340,6 +2447,9 @@ impl State {
         self.lifecycle.Unlock()
         if restored {
           self.wake_animations_after_failed_suspend(previous)
+        }
+        if theme_suspended {
+          self.theme_service.internal_resume()
         }
         outcome = Result::err(
           Error::new("application cannot suspend while a clipboard read is active"),
@@ -2386,6 +2496,9 @@ impl State {
           },
           err(error) => {
             self.clipboard.internal_resume()
+            if theme_suspended {
+              self.theme_service.internal_resume()
+            }
             let restored = self.restore_terminal_progress_and_commit_phase(
               transition,
               previous,
@@ -2402,6 +2515,9 @@ impl State {
     self.terminal_io.Unlock()
 
     if not available {
+      if theme_suspended {
+        self.theme_service.internal_resume()
+      }
       Result::err(Error::new("application runtime is not available to suspend"))
     } else {
       outcome
@@ -2454,6 +2570,7 @@ impl State {
           let committed = self.restore_terminal_progress_and_commit_phase(transition, resumed, true)
           if committed {
             self.clipboard.internal_resume()
+            self.theme_service.internal_resume()
             (self.request_render())()
           } else {
             outcome = Result::err(Error::new("application was destroyed while resuming"))
@@ -2704,6 +2821,7 @@ impl State {
                           },
                           vaxis::FocusIn(_) => {
                             self.set_terminal_focus(event::TerminalFocus::gained)
+                            self.request_theme_refresh()
                             if self.take_redraw_request() {
                               self.paint_live(root)
                             }
@@ -2714,6 +2832,7 @@ impl State {
                               self.paint_live(root)
                             }
                           },
+                          vaxis::ColorThemeUpdate(_) => self.request_theme_refresh(),
                           vaxis::PasteStartEvent(_) => self.live_paste_buffer.start(),
                           vaxis::PasteEndEvent(_) => {
                             let pasted = self.live_paste_buffer.finish()
@@ -2940,6 +3059,12 @@ impl State {
     if self.test_active() and self.take_redraw_request() {
       self.paint_test(root)
     }
+  }
+
+  fn mut theme_changed_test(value: theme::Theme) {
+    self.require_phase(2)
+    self.theme_service.internal_accept(value)
+    self.complete_theme_refresh(value)
   }
 
   fn mut flush_test(root: mut node::Renderable, limit: Int) Int {
@@ -3222,6 +3347,12 @@ impl Runtime {
     internal_state(self).set_title(value)
   }
 
+  // Queries before start/run; once active, returns the cached current theme so
+  // calling from an application callback can never block Vaxis's event loop.
+  fn mut theme() theme::Theme {
+    internal_state(self).resolved_theme()
+  }
+
   fn mut progress(progress_state: terminal_progress::State, percent: Int?) Bool {
     internal_state(self).progress(progress_state, percent)
   }
@@ -3256,6 +3387,14 @@ impl Runtime {
 
   fn mut on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
     internal_state(self).on_terminal_focus(handler)
+  }
+
+  fn mut current_theme() theme::Theme {
+    internal_state(self).theme_service.current()
+  }
+
+  fn mut on_theme_changed(handler: fn(theme::Theme)) fn() {
+    internal_state(self).on_theme_changed(handler)
   }
 
   fn mut current_selection() public_selection::Selection? {
@@ -3332,6 +3471,10 @@ impl Runtime {
 
   fn mut terminal_focus_test(root: mut node::Renderable, value: event::TerminalFocus) {
     internal_state(self).terminal_focus_test(root, value)
+  }
+
+  fn mut theme_changed_test(value: theme::Theme) {
+    internal_state(self).theme_changed_test(value)
   }
 
   fn mut flush_test(root: mut node::Renderable, limit: Int) Int {

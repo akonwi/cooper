@@ -108,6 +108,7 @@ notification.ard accepted notification request snapshots
 root.ard         permanent Runtime-bound Root
 runtime.ard      application capabilities, retained ownership, lifecycle, and backend state
 screen.ard       terminal screen mode configuration
+theme.ard        terminal-derived semantic application themes
 terminal_progress.ard terminal progress state and report values
 testing.ard      headless TestApp, frame snapshots, and terminal title history
 core/            unsupported runtime mechanisms

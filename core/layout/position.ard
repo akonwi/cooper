@@ -44,7 +44,7 @@ fn inset_start(parent: mut layout::Node, row: Bool, reverse: Bool) Float32 {
       }
     },
   }
-  Float32::from(value)
+  Float32::fit(value)
 }
 
 fn margin_start(node: mut layout::Node, row: Bool, reverse: Bool, owner_width: Float32) Float32 {
@@ -194,19 +194,19 @@ fn apply(
     match content_align {
       style::Align::end => { cross_lead = cross_free },
       style::Align::center => { cross_lead = cross_free / Float32::from(2.0) },
-      style::Align::stretch => { extra_line = cross_free / Float32::from(lines.size()) },
+      style::Align::stretch => { extra_line = cross_free / Float32::fit(lines.size()) },
       style::Align::space_between => {
         if lines.size() > 1 {
-          between_lines = between_lines + cross_free / Float32::from(lines.size() - 1)
+          between_lines = between_lines + cross_free / Float32::fit(lines.size() - 1)
         }
       },
       style::Align::space_around => {
-        cross_lead = cross_free / Float32::from(2 * lines.size())
-        between_lines = between_lines + cross_free / Float32::from(lines.size())
+        cross_lead = cross_free / Float32::fit(2 * lines.size())
+        between_lines = between_lines + cross_free / Float32::fit(lines.size())
       },
       style::Align::space_evenly => {
-        cross_lead = cross_free / Float32::from(lines.size() + 1)
-        between_lines = between_lines + cross_free / Float32::from(lines.size() + 1)
+        cross_lead = cross_free / Float32::fit(lines.size() + 1)
+        between_lines = between_lines + cross_free / Float32::fit(lines.size() + 1)
       },
       _ => (),
     }
@@ -244,22 +244,22 @@ fn apply(
         style::Justify::center => { main_lead = free / Float32::from(2.0) },
         style::Justify::space_between => {
           if line.size() > 1 {
-            between = between + free / Float32::from(line.size() - 1)
+            between = between + free / Float32::fit(line.size() - 1)
           }
         },
         style::Justify::space_around => {
-          main_lead = free / Float32::from(2 * line.size())
-          between = between + free / Float32::from(line.size())
+          main_lead = free / Float32::fit(2 * line.size())
+          between = between + free / Float32::fit(line.size())
         },
         style::Justify::space_evenly => {
-          main_lead = free / Float32::from(line.size() + 1)
+          main_lead = free / Float32::fit(line.size() + 1)
           between = between + main_lead
         },
         _ => (),
       }
     }
     let auto_share = match auto_count > 0 and free > 0.0 {
-      true => free / Float32::from(auto_count),
+      true => free / Float32::fit(auto_count),
       false => Float32::from(0.0),
     }
     mut main_cursor = inset_start(parent, row, main_reverse) + main_lead
@@ -290,7 +290,7 @@ fn apply(
       if child_index + 1 < line.size() {
         main_cursor = main_cursor + between
       }
-      
+
       let alignment = match child.value.align_self == style::Align::auto {
         true => parent.value.align_items,
         false => child.value.align_self,

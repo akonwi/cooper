@@ -33,8 +33,8 @@ private fn placed(x: Int, y: Int) ui::Style {
 
 private fn bar(value: Float64) Str {
   let bounded = math::Max(0.0, math::Min(64.0, value))
-  let whole = bounded.to_int()
-  let fraction = (bounded * 8.0).to_int() % 8
+  let whole = Int::fit(bounded)
+  let fraction = Int::fit(bounded * 8.0) % 8
   let partial = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]
   mut content = ""
   mut index = 0
@@ -92,7 +92,7 @@ private fn lane(context: mut cooper::Runtime, parent: mut ui::Box, preset: Prese
       metrics.velocity = frame.velocity
       metrics.elapsed = metrics.elapsed + frame.delta
       let applied = mut marker.style()
-      applied.left = ui::cells(2 + math::Round(frame.value).to_int())
+      applied.left = ui::cells(2 + Int::fit(math::Round(frame.value)))
       marker.set_style(applied.@)
       fill.set_content(bar(frame.value))
       label.set_content(description(preset, metrics, "MOVING"))
@@ -221,7 +221,7 @@ fn main() {
           state.paused = false
           for item in lanes {
             item.metrics.elapsed = 0
-            let _ = item.motion.set_target(target.to_f64())
+            let _ = item.motion.set_target(Float64::fit(target))
             let applied = mut item.guide.style()
             applied.left = ui::cells(2 + target)
             item.guide.set_style(applied.@)

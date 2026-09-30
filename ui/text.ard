@@ -109,7 +109,7 @@ impl LinkEvent {
   fn mut prevent_default() {
     link_event_state(self.internal_state).default_prevented = true
   }
-  
+
   fn is_default_prevented() Bool {
     link_event_state(self.internal_state).default_prevented
   }
@@ -318,7 +318,7 @@ private fn same_color(left: color::Color?, right: color::Color?) Bool {
     false => {
       let left_color = try left -> _ { false }
       let right_color = try right -> _ { false }
-      
+
       left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue and left_color.index == right_color.index and left_color.terminal_default == right_color.terminal_default
     },
   }
@@ -776,7 +776,7 @@ private fn visual_view(
         }
       }
     }
-    
+
     let marker_width = measure("…")
     if width < marker_width or height < 1 or marker_width < 1 {
       VisualView{
@@ -1201,8 +1201,8 @@ fn new(
       text.width_measurer,
     )
     node::MeasureSize{
-      width: constrained(Float32::from(measured.width), input.width, input.width_mode),
-      height: constrained(Float32::from(measured.height), input.height, input.height_mode),
+      width: constrained(Float32::fit(measured.width), input.width, input.width_mode),
+      height: constrained(Float32::fit(measured.height), input.height, input.height_mode),
     }
   })
   if selectable.or(true) {
@@ -1215,9 +1215,9 @@ impl node::Renderable for Text {
   fn node() mut node::Node {
     self.node_ref
   }
-  
+
   fn mount(ctx: node::MountContext) {}
-  
+
   fn paint(ctx: mut paint::Context) {
     box::paint_border(ctx, self.node_ref.style())
     let content = self.node_ref.content_rect()
@@ -1312,7 +1312,7 @@ impl node::Renderable for Text {
       }
     }
   }
-  
+
   fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
     event_delivery::Disposition::ignored
   }
@@ -1344,7 +1344,7 @@ impl Text {
     }
     link_state(self.link_state).link_hits = hits.@
   }
-  
+
   private fn cached_link_at(local_x: Int, local_y: Int) Str? {
     mut link = Maybe::new<Str>()
     for hit in link_state(self.link_state).link_hits {
@@ -1354,7 +1354,7 @@ impl Text {
     }
     link
   }
-  
+
   private fn link_at(local_x: Int, local_y: Int) Str? {
     let runs = cached_style_runs(self.style_cache)
     let clip = link_state(self.link_state).paint_clip
@@ -1370,7 +1370,7 @@ impl Text {
     }
     link
   }
-  
+
   private fn emit_link(url: Str) {
     let state = link_state(self.link_state)
     let activated = new_link_event(url)
@@ -1382,7 +1382,7 @@ impl Text {
       let _ = state.open_url(url)
     }
   }
-  
+
   private fn activate_link_once(
     url: Str,
     press_at_ms: Int64,
@@ -1410,7 +1410,7 @@ impl Text {
       self.emit_link(url)
     }
   }
-  
+
   private fn observe_link_pointer(received: mut event::MouseEvent) {
     let state = link_state(self.link_state)
     let unmodified = (not received.modifiers.shift) and (not received.modifiers.ctrl) and (not received.modifiers.alt) and (not received.modifiers.super)
@@ -1496,7 +1496,7 @@ impl Text {
       }
     }
   }
-  
+
   private fn current_view(measured: Layout?) VisualView {
     let content = self.node_ref.content_rect()
     let layout = match measured {
@@ -1539,7 +1539,7 @@ impl Text {
       truncated: view.truncated,
     }
   }
-  
+
   private fn full_visual_content() [VisualGlyph] {
     let measured = layout_text(
       self.content,
@@ -1549,11 +1549,11 @@ impl Text {
     )
     visual_glyphs(self.content, measured, cached_style_runs(self.style_cache), self.width_measurer)
   }
-  
+
   private fn visual_content() [VisualGlyph] {
     self.current_view().glyphs
   }
-  
+
   private fn clamped_point(view: VisualView) geometry::Point {
     mut point = geometry::Point{x: 0, y: 0}
     mut found = false
@@ -1571,7 +1571,7 @@ impl Text {
     }
     point
   }
-  
+
   private fn expansion_from_source(value: SourceRange) node::SelectionExpansion? {
     mut range_started = false
     mut range_start = 0
@@ -1627,7 +1627,7 @@ impl Text {
       )
     }
   }
-  
+
   private fn lock_expansion(anchor_x: Int, anchor_y: Int, focus_x: Int, focus_y: Int) node::SelectionExpansion? {
     mut start_x = anchor_x
     mut start_y = anchor_y
@@ -1687,7 +1687,7 @@ impl Text {
       Maybe::new<node::SelectionExpansion>()
     }
   }
-  
+
   private fn word_expansion(local_x: Int, local_y: Int) node::SelectionExpansion? {
     let view = self.current_view()
     mut source_start = -1
@@ -1720,7 +1720,7 @@ impl Text {
       }
     }
   }
-  
+
   private fn resolve_expansion(
     logical_range: node::SelectionRange,
     source_range: node::SelectionRange,
@@ -1767,14 +1767,14 @@ impl Text {
       )
     }
   }
-  
+
   private fn mut clear_local_selection() node::SelectionResult {
     self.selected_range = Maybe::new<selection::Range>()
     self.selected_text_value = ""
     self.selected_glyphs = []
     node::empty_selection_result()
   }
-  
+
   private fn selection_accepts(local_x: Int, local_y: Int) Bool {
     let view = self.current_view()
     mut accepted = false
@@ -1798,7 +1798,7 @@ impl Text {
     }
     accepted and geometry::contains(self.node_ref.content_rect(), local_x, local_y)
   }
-  
+
   private fn mut apply_local_selection(value: node::LocalSelection?) node::SelectionResult {
     let local = try value -> _ { self.clear_local_selection() }
     let has_logical_range = local.logical_range.is_some()
@@ -1899,7 +1899,7 @@ impl Text {
       }
     }
   }
-  
+
   private fn mut enable_selection() {
     self.node_ref.set_selection_callbacks(
       fn(local_x: Int, local_y: Int) Bool {
@@ -1925,15 +1925,15 @@ impl Text {
       ),
     )
   }
-  
+
   fn content() Str {
     self.content
   }
-  
+
   fn styled_content() StyledText {
     styled_text(self.styled_value.spans)
   }
-  
+
   fn mut set_content(content: TextContent) {
     self.node_ref.require_live()
     let snapshot = snapshot_content(content)
@@ -1955,11 +1955,11 @@ impl Text {
       }
     }
   }
-  
+
   fn wrap() TextWrap {
     self.wrap_mode
   }
-  
+
   fn mut set_wrap(value: TextWrap) {
     self.node_ref.require_live()
     if self.wrap_mode != value {
@@ -1967,11 +1967,11 @@ impl Text {
       self.node_ref.mark_measure_dirty()
     }
   }
-  
+
   fn overflow() TextOverflow {
     self.overflow_mode
   }
-  
+
   fn mut set_overflow(value: TextOverflow) {
     self.node_ref.require_live()
     if self.overflow_mode != value {
@@ -1979,15 +1979,15 @@ impl Text {
       self.node_ref.mark_measure_dirty()
     }
   }
-  
+
   fn text_style() TextStyle {
     self.text_style
   }
-  
+
   fn selectable() Bool {
     self.node_ref.is_selectable()
   }
-  
+
   fn mut set_selectable(value: Bool) {
     self.node_ref.require_live()
     if value and not self.node_ref.is_selectable() {
@@ -1996,22 +1996,22 @@ impl Text {
       self.node_ref.clear_selection_callbacks()
     }
   }
-  
+
   fn selection() selection::Range? {
     self.selected_range
   }
-  
+
   fn selected_text() Str {
     self.selected_text_value
   }
-  
+
   fn mut set_selection_style(patch: fn(mut TextStyle)) {
     self.node_ref.require_live()
     self.selection_patch = patch
     self.style_cache = new_style_cache(styled_runs(self.styled_value, self.text_style, patch))
     self.node_ref.request_redraw()
   }
-  
+
   fn mut set_text_style(next: TextStyle) {
     self.node_ref.require_live()
     if not same_text_style(self.text_style, next) {
@@ -2020,11 +2020,11 @@ impl Text {
       self.node_ref.request_redraw()
     }
   }
-  
+
   fn style() layout_style::Style {
     self.node_ref.style()
   }
-  
+
   fn mut set_style(next: layout_style::Style) {
     self.node_ref.apply_style(next)
     mut width = 1
@@ -2033,11 +2033,11 @@ impl Text {
     }
     self.node_ref.set_border_width(width)
   }
-  
+
   fn layout() geometry::Geometry {
     self.node_ref.layout()
   }
-  
+
   fn mut on_link(handler: fn(mut LinkEvent)) fn() {
     self.node_ref.require_live()
     let state = link_state(self.link_state)
@@ -2051,7 +2051,7 @@ impl Text {
       self.remove_link_listener(id)
     }
   }
-  
+
   private fn remove_link_listener(id: Int) {
     let state = link_state(self.link_state)
     let retained = mut List::new<LinkListener>()
@@ -2062,11 +2062,11 @@ impl Text {
     }
     state.listeners = retained.@
   }
-  
+
   fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
-  
+
   fn mut destroy(recursive: Bool?) {
     self.node_ref.destroy(recursive)
   }
@@ -2340,7 +2340,7 @@ test fn ellipsis_that_cannot_fit_paints_no_partial_marker() Void!Str {
     view.glyphs.size() == 1 and view.glyphs.at(0).expect("narrow retained glyph").text == "a",
     "Expected fitting source retained without partial marker",
   )
-  
+
   let marker_base = style(bold: true)
   let styled = styled_text(
     [
@@ -2372,13 +2372,13 @@ test fn unicode_word_wrap_uses_line_opportunities_and_intrinsic_measurement() Vo
     cjk.height == 2 and cjk.lines.at(0).expect("first CJK line").text == "你好" and cjk.lines.at(1).expect("second CJK line").text == "世界",
     "Expected CJK line opportunities",
   )
-  
+
   let mixed = word_wrapped("Hi你好🙂world", 6, test_width)
   try testing::assert(
     mixed.height == 3 and mixed.lines.at(0).expect("mixed prefix").text == "Hi你好" and mixed.lines.at(1).expect("mixed emoji").text == "🙂" and mixed.lines.at(2).expect("mixed Latin").text == "world",
     "Expected mixed scripts without splitting fitting Latin words",
   )
-  
+
   let punctuated = word_wrapped("hello!world", 6, test_width)
   try testing::assert(
     punctuated.height == 2 and punctuated.lines.at(0).expect("punctuation break").text == "hello!",
@@ -2394,7 +2394,7 @@ test fn unicode_word_wrap_uses_line_opportunities_and_intrinsic_measurement() Vo
     unbreakable.height == 3 and unbreakable.lines.at(1).expect("fallback middle").text == "def",
     "Expected grapheme fallback for long runs",
   )
-  
+
   let spaced = word_wrapped("one two", 4, test_width)
   try testing::assert(
     spaced.lines.at(0).expect("spaced first line").text == "one " and spaced.lines.at(1).expect("spaced second line").text == "two",
@@ -2418,26 +2418,26 @@ test fn unicode_word_wrap_uses_line_opportunities_and_intrinsic_measurement() Vo
     unicode_breaks.height == 3 and unicode_breaks.lines.at(1).expect("Unicode empty line").text == "",
     "Expected Unicode mandatory line breaks",
   )
-  
+
   let no_wrap = layout_text("one two", TextWrap::none, 3, test_width)
   try testing::assert(
     no_wrap.width == 7 and no_wrap.height == 1,
     "Expected explicit no-wrap mode to remain available",
   )
-  
+
   let intrinsic_width: Int = 1
   let finite_width: Int = 4
   let intrinsic = measured_text(
     "one two",
     TextWrap::word,
-    Float32::from(intrinsic_width),
+    Float32::fit(intrinsic_width),
     node::MeasureMode::undefined,
     test_width,
   )
   let finite = measured_text(
     "one two",
     TextWrap::word,
-    Float32::from(finite_width),
+    Float32::fit(finite_width),
     node::MeasureMode::at_most,
     test_width,
   )
@@ -2529,7 +2529,7 @@ test fn styled_text_helpers_snapshot_and_resolve_tristate_styles() Void!Str {
   )
   let snapshot = styled_text(spans.@)
   spans.set(1, span("changed"))
-  
+
   try testing::assert(
     snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("empty span snapshot").text == "",
     "Expected empty span preserved",
@@ -2563,27 +2563,27 @@ test fn word_ranges_group_editor_oriented_unicode_classes() Void!Str {
     contraction.slice(start: contraction_range.start, end: contraction_range.end).or("") == "don't",
     "Expected internal apostrophe to join a word",
   )
-  
+
   let whitespace_range = word_source_range(contraction, 5).expect("whitespace word range")
   try testing::assert(
     contraction.slice(start: whitespace_range.start, end: whitespace_range.end).or("") == " ",
     "Expected contiguous whitespace run",
   )
-  
+
   let punctuation = "go...now"
   let punctuation_range = word_source_range(punctuation, 3).expect("punctuation word range")
   try testing::assert(
     punctuation.slice(start: punctuation_range.start, end: punctuation_range.end).or("") == "...",
     "Expected contiguous punctuation run",
   )
-  
+
   let symbols = "a🙂🙂b"
   let symbol_range = word_source_range(symbols, 1).expect("symbol word range")
   try testing::assert(
     symbols.slice(start: symbol_range.start, end: symbol_range.end).or("") == "🙂🙂",
     "Expected contiguous symbol run",
   )
-  
+
   let unicode_word = "你好_one"
   let unicode_range = word_source_range(unicode_word, 0).expect("Unicode word range")
   try testing::assert(

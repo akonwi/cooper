@@ -37,15 +37,15 @@ private fn modifiers(value: vaxis::ModifierMask) event::Modifiers {
 
 fn key(received: vaxis::Key) mut event::KeyEvent {
   mut name = ""
-  if received.Keycode == Int32::from(vaxis::KeyEnter) {
+  if received.Keycode == Int32::fit(vaxis::KeyEnter) {
     name = "return"
-  } else if received.Keycode == Int32::from(vaxis::KeyEsc) {
+  } else if received.Keycode == Int32::fit(vaxis::KeyEsc) {
     name = "escape"
-  } else if received.Keycode == Int32::from(vaxis::KeyTab) {
+  } else if received.Keycode == Int32::fit(vaxis::KeyTab) {
     name = "tab"
-  } else if received.Keycode == Int32::from(vaxis::KeySpace) {
+  } else if received.Keycode == Int32::fit(vaxis::KeySpace) {
     name = "space"
-  } else if received.Keycode == Int32::from(vaxis::KeyBackspace) {
+  } else if received.Keycode == Int32::fit(vaxis::KeyBackspace) {
     name = "backspace"
   } else if received.Keycode == Int32::from(vaxis::KeyPgUp) {
     name = "page_up"
@@ -75,11 +75,11 @@ fn paste_text(received: vaxis::Key) Str {
   mut text = ""
   if received.Text != "" {
     text = received.Text
-  } else if received.Keycode == Int32::from(vaxis::KeyEnter) {
+  } else if received.Keycode == Int32::fit(vaxis::KeyEnter) {
     text = "\r"
-  } else if received.Keycode == Int32::from(vaxis::KeyTab) {
+  } else if received.Keycode == Int32::fit(vaxis::KeyTab) {
     text = "\t"
-  } else if received.Keycode == Int32::from(vaxis::KeySpace) {
+  } else if received.Keycode == Int32::fit(vaxis::KeySpace) {
     text = " "
   } else if received.Keycode == Int32::from('j') and has_modifier(received.Modifiers, vaxis::ModCtrl) {
     text = "\n"
@@ -123,7 +123,7 @@ impl PasteBuffer {
     state.active = true
     state.lock.Unlock()
   }
-  
+
   fn mut append_key(received: vaxis::Key) Bool {
     let state = paste_state(self)
     state.lock.Lock()
@@ -134,7 +134,7 @@ impl PasteBuffer {
     state.lock.Unlock()
     active
   }
-  
+
   fn mut finish() PasteResult {
     let state = paste_state(self)
     state.lock.Lock()
@@ -144,7 +144,7 @@ impl PasteBuffer {
     state.lock.Unlock()
     result
   }
-  
+
   fn mut reset() {
     let state = paste_state(self)
     state.lock.Lock()

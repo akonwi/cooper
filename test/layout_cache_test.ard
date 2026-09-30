@@ -160,11 +160,11 @@ test fn cache_measurement_compatibility_accounts_for_modes_margins_and_bounds() 
 
 fn record(available: Int, computed: Int) cache::Measurement {
   cache::Measurement{
-    available_width: Float32::from(available.to_f64()),
+    available_width: Float32::fit(available),
     available_height: Float32::from(1.0),
     width_mode: cache::SizingMode::fit_content,
     height_mode: cache::SizingMode::stretch_fit,
-    computed_width: Float32::from(computed.to_f64()),
+    computed_width: Float32::fit(computed),
     computed_height: Float32::from(1.0),
   }
 }

@@ -35,12 +35,12 @@ fn calculate(node: mut layout::Node, width: Int, height: Int) Bool {
 }
 
 fn calculate_transaction(node: mut layout::Node, width: Int, height: Int) {
-  let available_width = Float32::from(width)
-  let available_height = Float32::from(height)
+  let available_width = Float32::fit(width)
+  let available_height = Float32::fit(height)
   node.intrinsic_policy = true
   children::resolve_insets(node, available_width)
-  let padding_row = Float32::from(node.insets.left + node.insets.right)
-  let padding_column = Float32::from(node.insets.top + node.insets.bottom)
+  let padding_row = Float32::fit(node.insets.left + node.insets.right)
+  let padding_column = Float32::fit(node.insets.top + node.insets.bottom)
   let generation = node.cache_state.generation + 1
   let width_axis = measure::Axis{
     available: match length::is_definite(node.value.width, available_width) {
@@ -206,7 +206,7 @@ fn axis_item(child: mut layout::Node, row: Bool, owner_width: Float32, owner_hei
   let owner_main = choose_float(row, owner_width, owner_height)
   let minimum = length::resolve(choose_length(row, value.min_width, value.min_height), owner_main)
   let maximum = length::resolve(choose_length(row, value.max_width, value.max_height), owner_main)
-  let border = Float32::from(child.border * 2)
+  let border = Float32::fit(child.border * 2)
   let padding = match row {
     true => {
       resolved_zero(value.padding.left, owner_width) + resolved_zero(value.padding.right, owner_width) + border
@@ -309,7 +309,7 @@ fn translated_visit(
       let wrap = node.value.flex_wrap != style::FlexWrap::no_wrap
       mut total_main = prepared.outer_basis
       if prepared.children.size() > 1 {
-        total_main = total_main + gap * Float32::from(prepared.children.size() - 1)
+        total_main = total_main + gap * Float32::fit(prepared.children.size() - 1)
       }
       let main_overflows = main_mode != cache::SizingMode::max_content and total_main > available_main
       if wrap and main_overflows and main_mode == cache::SizingMode::fit_content {
@@ -414,7 +414,7 @@ fn translated_visit(
             line_main = line_main + skipped.basis + skipped.margin
           }
           if line.items.size() > 1 {
-            line_main = line_main + gap * Float32::from(line.items.size() - 1)
+            line_main = line_main + gap * Float32::fit(line.items.size() - 1)
           }
           line_cross = available_cross
           mut child_index = index
@@ -618,17 +618,17 @@ fn translated_visit(
         let inner_cross = own_cross.measured_size(natural_cross) - own_cross.padding_border
         let remaining_cross = inner_cross - natural_cross
         let extra = match remaining_cross > 0.0 and node.value.align_content == style::Align::stretch {
-          true => remaining_cross / Float32::from(line_count),
+          true => remaining_cross / Float32::fit(line_count),
           false => Float32::from(0.0),
         }
         mut lead_per_line = Float32::from(0.0)
         if remaining_cross > 0.0 {
           lead_per_line = match node.value.align_content {
-            style::Align::space_around => remaining_cross / Float32::from(line_count),
-            style::Align::space_evenly => remaining_cross / Float32::from(line_count + 1),
+            style::Align::space_around => remaining_cross / Float32::fit(line_count),
+            style::Align::space_evenly => remaining_cross / Float32::fit(line_count + 1),
             style::Align::space_between => {
               match line_count > 1 {
-                true => remaining_cross / Float32::from(line_count - 1),
+                true => remaining_cross / Float32::fit(line_count - 1),
                 false => Float32::from(0.0),
               }
             },
@@ -739,8 +739,8 @@ fn translated_visit(
           absolute::descendants(
             node,
             node,
-            node.measured_width - Float32::from(node.border * 2),
-            node.measured_height - Float32::from(node.border * 2),
+            node.measured_width - Float32::fit(node.border * 2),
+            node.measured_height - Float32::fit(node.border * 2),
             own_width.mode,
             Float32::from(0.0),
             Float32::from(0.0),
@@ -957,7 +957,7 @@ fn visit(
   let value = node.value
   let replay_width = match node.allocation {
     frozen => {
-      let projected = Float32::from(frozen.content_width) + width.padding_border
+      let projected = Float32::fit(frozen.content_width) + width.padding_border
       match numeric::inexact_equals(projected, frozen.measured_width) {
         true => width,
         false => {

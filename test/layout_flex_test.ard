@@ -4,7 +4,7 @@ use cooper/core/layout/flex
 use cooper/core/layout/numeric
 
 fn f(value: Float64) Float32 {
-  Float32::from(value)
+  Float32::fit(value)
 }
 
 fn item(basis: Float32, minimum: Float32, maximum: Float32, grow: Float32, shrink: Float32) flex::Item {

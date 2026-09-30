@@ -136,7 +136,7 @@ impl Renderer {
           let source = source_rect(image, region)
           resource.image.Draw(
             vaxis::PixelPlacement{
-              ID: Uint32::from(placement + 1),
+              ID: Uint32::fit(placement + 1),
               Column: region.x,
               Row: region.y,
               Columns: region.width,

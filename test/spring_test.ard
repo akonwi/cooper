@@ -155,7 +155,7 @@ test fn spring_requires_velocity_to_settle_then_snaps_and_returns_runtime_to_idl
     fn(frame: animation::SpringFrame) {
       updates =+ 1
       let applied = mut marker.style()
-      applied.left = ui::cells(math::Round(frame.value).to_int())
+      applied.left = ui::cells(Int::fit(math::Round(frame.value)))
       marker.set_style(applied.@)
     },
     on_complete: fn() {

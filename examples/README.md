@@ -43,7 +43,7 @@ dependency; no sibling Vaxis checkout is required.
 ## Declarative jobs
 
 `declarative_jobs.ard` exercises the experimental `cooper/cui` framework
-and requires Ard v0.42.0. Row factories receive ordinary typed props; persistent
+and requires Ard v0.43.0. Row factories receive ordinary typed props; persistent
 components own editable notes and expandable details, while keyed reordering
 preserves their component state, editor state, and focus.
 
@@ -71,7 +71,7 @@ python3 test_cui_controls.py
 
 The PTY test checks popup navigation across rerenders, controlled multiline
 editing, keyed reorder, and compact layout. Set `CUI_CAPTURE_DIR` to record ANSI
-snapshots. This example requires Ard v0.42.0.
+snapshots. This example requires Ard v0.43.0.
 
 ## CUI Tinear
 
@@ -139,7 +139,7 @@ changes through `ctx.dispatch`. No networking is involved.
 ## CUI Hacker News
 
 `cui_hackernews.ard` is a read-only client for the official Hacker News Firebase
-API, requiring Ard v0.42.0. It exercises real HTTP requests, component-owned
+API, requiring Ard v0.43.0. It exercises real HTTP requests, component-owned
 async scheduling, keyed lists, nested comments, focus reveal, and scrolling.
 
 Keyboard actions use `cooper/keymap`: page-local focus scopes own selection,
@@ -175,7 +175,7 @@ switching feeds or closing a reader retires that component. The next read uses
 the cache, but collapse state resets after closing a reader. Deleted/dead
 comments retain their replies. Deep nesting caps visual indentation at 20 cells.
 
-Ard 0.42 has no native HTTP/JSON modules, so those platform operations are
+Ard 0.43 has no native HTTP/JSON modules, so those platform operations are
 isolated in `hackernews/api.ard`. Workers use `ctx.dispatch`; unmount prevents
 late UI updates and follow-on scheduling. **Already-running HTTP requests are
 not actively aborted**: they finish or time out. This is not request cancellation.

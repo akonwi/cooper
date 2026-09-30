@@ -6,7 +6,7 @@ use go:os
 use go:strings
 use go:time
 
-// Platform boundary: Ard 0.42 has no native HTTP, JSON, or HTML entity APIs.
+// Platform boundary: Ard 0.43 has no native HTTP, JSON, or HTML entity APIs.
 
 struct Item {
   id: Int?,

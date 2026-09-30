@@ -144,7 +144,7 @@ struct View {
 }
 
 // Keep recursive descriptions behind an opaque value: generic callback
-// substitution in Ard 0.42 cannot traverse a directly recursive View safely.
+// substitution cannot traverse a directly recursive View safely (Ard issue #506).
 struct Description {
   kind: Kind,
   key: Str?,

@@ -9,7 +9,7 @@ use cooper/ui/style
 
 fn axis(size: Float64, mode: cache::SizingMode) measure::Axis {
   measure::Axis{
-    available: Float32::from(size),
+    available: Float32::fit(size),
     mode: mode,
     padding_border: Float32::from(0.0),
     minimum: numeric::undefined(),
@@ -241,7 +241,7 @@ test fn fit_content_main_overflow_only_promotes_wrapped_lines() Void!Str {
       _ => 10.0,
     }
     try testing::assert(
-      root.measured_width == Float32::from(expected),
+      root.measured_width == Float32::fit(expected),
       "Yoga content-based nonwrapping lines overflow; wrapped overflow promotes exact allocation",
     )
   }
@@ -353,7 +353,7 @@ test fn line_stretch_revisits_children_after_cross_extent_is_known() Void!Str {
     root.insert(child, 0)
     root.insert(fixed(4, 5), 1)
     let height = mut axis(20.0, cache::SizingMode::fit_content)
-    height.minimum = Float32::from(minimum)
+    height.minimum = Float32::fit(minimum)
     visitor::visit(
       root,
       axis(10.0, cache::SizingMode::stretch_fit),
@@ -511,7 +511,7 @@ test fn fit_content_scroll_container_is_capped_on_both_axes() Void!Str {
       false => 12.0,
     }
     try testing::assert(
-      root.measured_width == Float32::from(expected_width) and root.measured_height == Float32::from(expected_height),
+      root.measured_width == Float32::fit(expected_width) and root.measured_height == Float32::fit(expected_height),
       "Step9 caps scroll containers to the fit-content offer while visible overflow expands",
     )
   }

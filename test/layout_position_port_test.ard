@@ -7,8 +7,8 @@ use cooper/ui/style
 
 fn sized(width: Float64, height: Float64, value: style::Style) mut layout::Node {
   let node = layout::new()
-  node.measured_width = Float32::from(width)
-  node.measured_height = Float32::from(height)
+  node.measured_width = Float32::fit(width)
+  node.measured_height = Float32::fit(height)
   node.value = value
   node
 }

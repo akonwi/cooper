@@ -138,7 +138,7 @@ private fn sanitize(value: Str) Str {
   mut byte_index = 0
   let output = mut strings::Builder{}
   for character in value {
-    let code = character.to_int()
+    let code = Int::from(character)
     mut malformed = false
     mut width = 1
     if code > 65535 {
@@ -149,7 +149,7 @@ private fn sanitize(value: Str) Str {
       width = 2
     }
     if code == 65533 {
-      let valid_replacement = byte_index + 2 < bytes.size() and bytes.at(byte_index).expect("current byte").to_int() == 239 and bytes.at(byte_index + 1).expect("replacement byte").to_int() == 191 and bytes.at(byte_index + 2).expect("replacement byte").to_int() == 189
+      let valid_replacement = byte_index + 2 < bytes.size() and Int::from(bytes.at(byte_index).expect("current byte")) == 239 and Int::from(bytes.at(byte_index + 1).expect("replacement byte")) == 191 and Int::from(bytes.at(byte_index + 2).expect("replacement byte")) == 189
       if not valid_replacement {
         malformed = true
         width = 1
@@ -217,7 +217,7 @@ impl Policy {
     }
     accepted
   }
-  
+
   fn mut set_progress(state: Int, percent: Int?) Bool {
     self.mutex.Lock()
     defer self.mutex.Unlock()

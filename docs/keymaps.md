@@ -1,7 +1,7 @@
 # Commands and keymaps
 
 `cooper/keymap` provides Runtime-owned keyboard scopes and typed commands.
-It requires Ard v0.42.0. See the runnable [Hacker News reader](../examples/cui_hackernews.ard)
+It requires Ard v0.43.0. See the runnable [Hacker News reader](../examples/cui_hackernews.ard)
 and [design decision](adrs/0024-define-keymaps-and-commands.md).
 
 The reader uses page-local focus scopes for selection, scrolling, expansion,

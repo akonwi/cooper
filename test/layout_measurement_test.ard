@@ -50,9 +50,9 @@ test fn fixed_leaf_sizes_do_not_measure_content_but_intrinsic_queries_still_do()
 
 fn axis(mode: cache::SizingMode, available: Int, padding: Int) measure::Axis {
   measure::Axis{
-    available: Float32::from(available.to_f64()),
+    available: Float32::fit(available),
     mode: mode,
-    padding_border: Float32::from(padding.to_f64()),
+    padding_border: Float32::fit(padding),
     minimum: numeric::undefined(),
     maximum: numeric::undefined(),
   }

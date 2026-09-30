@@ -77,7 +77,7 @@ struct Length {
 }
 
 private fn finite(value: Float32) Bool {
-  let infinity = Float32::from(math::Inf(1))
+  let infinity = Float32::fit(math::Inf(1))
   value == value and value != infinity and value != 0.0 - infinity
 }
 
@@ -97,14 +97,14 @@ fn cells(value: Int) Length {
   if value < 0 {
     panic("layout cell lengths must be non-negative")
   }
-  Length{kind: LengthKind::cells, value: Float32::from(value)}
+  Length{kind: LengthKind::cells, value: Float32::fit(value)}
 }
 
 fn percent(value: Float64) Length {
   if math::IsNaN(value) or math::IsInf(value, 0) or value < 0.0 or value > 100.0 {
     panic("layout percentages must be between 0 and 100")
   }
-  Length{kind: LengthKind::percent, value: Float32::from(value)}
+  Length{kind: LengthKind::percent, value: Float32::fit(value)}
 }
 
 fn max_content() Length {
@@ -316,8 +316,8 @@ fn new(
     flex_direction: flex_direction.or(FlexDirection::column),
     flex_wrap: flex_wrap.or(FlexWrap::no_wrap),
     flex_basis: flex_basis.or(auto()),
-    flex_grow: Float32::from(flex_grow.or(0.0)),
-    flex_shrink: Float32::from(flex_shrink.or(1.0)),
+    flex_grow: Float32::fit(flex_grow.or(0.0)),
+    flex_shrink: Float32::fit(flex_shrink.or(1.0)),
     align_items: align_items.or(Align::stretch),
     align_self: align_self.or(Align::auto),
     align_content: align_content.or(Align::stretch),

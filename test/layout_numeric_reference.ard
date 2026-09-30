@@ -20,10 +20,10 @@ fn emit(value: Float32) {
 fn main() {
   let values = [
     numeric::undefined(),
-    Float32::from(math::Inf(1)),
-    Float32::from(math::Inf(-1)),
+    Float32::fit(math::Inf(1)),
+    Float32::fit(math::Inf(-1)),
     Float32::from(0.0),
-    Float32::from(math::Copysign(0.0, -1.0)),
+    Float32::fit(math::Copysign(0.0, -1.0)),
     Float32::from(-7.0),
     Float32::from(2.0),
     Float32::from(0.000099),
@@ -372,7 +372,7 @@ fn axis_reference() {
     Float32::from(0.0),
     Float32::from(2.0),
     Float32::from(11.0),
-    Float32::from(math::Inf(1)),
+    Float32::fit(math::Inf(1)),
     Float32::from(3000000000000000000000000000000.0),
   ]
   let bounds = [numeric::undefined(), Float32::from(0.0), Float32::from(5.0), Float32::from(13.0)]

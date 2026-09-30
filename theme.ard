@@ -209,9 +209,9 @@ private fn reported(value: color::Color?) Rgb? {
       } else {
         Maybe::new(
           rgb(
-            Byte::from(present.red).to_int(),
-            Byte::from(present.green).to_int(),
-            Byte::from(present.blue).to_int(),
+            Int::from(Byte::from(present.red)),
+            Int::from(Byte::from(present.green)),
+            Int::from(Byte::from(present.blue)),
           ),
         )
       }
@@ -228,9 +228,9 @@ private fn queried_color(value: vaxisbridge::RGB) color::Color? {
   if value.Valid {
     Maybe::new(
       color::rgb(
-        Byte::from(value.Red).to_int(),
-        Byte::from(value.Green).to_int(),
-        Byte::from(value.Blue).to_int(),
+        Int::from(Byte::from(value.Red)),
+        Int::from(Byte::from(value.Green)),
+        Int::from(Byte::from(value.Blue)),
       ),
     )
   } else {
@@ -815,9 +815,9 @@ private fn contrast(a: Rgb, b: Rgb) Float64 {
 }
 
 private fn luminance(c: Rgb) Float64 {
-  let r = linear(c.r.to_f64() / 255.0)
-  let g = linear(c.g.to_f64() / 255.0)
-  let b = linear(c.b.to_f64() / 255.0)
+  let r = linear(Float64::fit(c.r) / 255.0)
+  let g = linear(Float64::fit(c.g) / 255.0)
+  let b = linear(Float64::fit(c.b) / 255.0)
   0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
@@ -832,7 +832,7 @@ private fn linear(v: Float64) Float64 {
 private fn blend(a: Rgb, b: Rgb, percent: Int) Rgb {
   let from = to_oklab(a)
   let to = to_oklab(b)
-  let t = percent.to_f64() / 100.0
+  let t = Float64::fit(percent) / 100.0
   from_oklab(
     Lab{
       l: from.l + (to.l - from.l) * t,
@@ -864,9 +864,9 @@ private fn to_oklch(color: Rgb) Lch {
 }
 
 private fn to_oklab(color: Rgb) Lab {
-  let r = linear(color.r.to_f64() / 255.0)
-  let g = linear(color.g.to_f64() / 255.0)
-  let b = linear(color.b.to_f64() / 255.0)
+  let r = linear(Float64::fit(color.r) / 255.0)
+  let g = linear(Float64::fit(color.g) / 255.0)
+  let b = linear(Float64::fit(color.b) / 255.0)
   let l = math::Cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
   let m = math::Cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
   let s = math::Cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
@@ -901,7 +901,7 @@ private fn from_oklab(color: Lab) Rgb {
 }
 
 private fn channel(v: Float64) Int {
-  math::Round(math::Max(0.0, math::Min(1.0, gamma(v))) * 255.0).to_int()
+  Int::fit(math::Round(math::Max(0.0, math::Min(1.0, gamma(v))) * 255.0))
 }
 
 private fn gamma(v: Float64) Float64 {

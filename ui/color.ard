@@ -18,7 +18,7 @@ private fn channel(value: Int) Uint8 {
   if value < 0 or value > 255 {
     panic("color component must be between 0 and 255")
   }
-  Uint8::from(value)
+  Uint8::fit(value)
 }
 
 fn rgb(red: Int, green: Int, blue: Int) Color {
@@ -55,11 +55,11 @@ fn terminal_default() Color {
 
 private fn hex_digit(value: Rune) Int {
   if value >= '0' and value <= '9' {
-    value.to_int() - '0'.to_int()
+    Int::from(value) - Int::from('0')
   } else if value >= 'a' and value <= 'f' {
-    value.to_int() - 'a'.to_int() + 10
+    Int::from(value) - Int::from('a') + 10
   } else if value >= 'A' and value <= 'F' {
-    value.to_int() - 'A'.to_int() + 10
+    Int::from(value) - Int::from('A') + 10
   } else {
     panic("hex color must contain only hexadecimal digits")
   }

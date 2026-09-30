@@ -99,7 +99,7 @@ fn internal_rounded_int(value: Float64) Int!Str {
     if rounded >= limit or rounded < 0.0 - limit {
       Result::err("{rounded} exceeds the platform Int range")
     } else {
-      Result::ok(rounded.to_int())
+      Result::ok(Int::fit(rounded))
     }
   }
 }
@@ -237,10 +237,10 @@ fn lerp_int(from: Int, to: Int, progress: Float64) Int {
     to
   } else {
     let exact_limit = 9007199254740991.0
-    if from.to_f64() < 0.0 - exact_limit or from.to_f64() > exact_limit or to.to_f64() < 0.0 - exact_limit or to.to_f64() > exact_limit {
+    if Float64::fit(from) < 0.0 - exact_limit or Float64::fit(from) > exact_limit or Float64::fit(to) < 0.0 - exact_limit or Float64::fit(to) > exact_limit {
       panic("integer interpolation endpoints must fit the exact Float64 integer range")
     }
-    let interpolated = lerp(from.to_f64(), to.to_f64(), progress)
+    let interpolated = lerp(Float64::fit(from), Float64::fit(to), progress)
     if interpolated < 0.0 - exact_limit or interpolated > exact_limit {
       panic("interpolated integer must fit the exact Float64 integer range")
     }
@@ -323,7 +323,7 @@ private fn evaluate_at(
           }
           valid = evaluation_valid(shared, revision, allow)
         }
-        
+
         if valid {
           let available = timeline_time - track.start
           let elapsed = match available > track.duration {
@@ -332,7 +332,7 @@ private fn evaluate_at(
           }
           let raw_progress = match track.duration == 0 {
             true => 1.0,
-            false => elapsed.to_f64() / track.duration.to_f64(),
+            false => Float64::fit(elapsed) / Float64::fit(track.duration),
           }
           let forward_linear = clamp_unit(raw_progress)
           let eased = require_finite((track.ease)(forward_linear), "easing output")
@@ -374,7 +374,7 @@ private fn evaluate_at(
       }
     }
   }
-  
+
   let calls = shared.calls
   for scheduled in calls {
     if valid and timeline_time >= scheduled.start and (not scheduled.executed) {
@@ -390,27 +390,27 @@ impl Timeline {
   fn duration() Int {
     state(self.internal).duration
   }
-  
+
   fn current_time() Int {
     state(self.internal).current_time
   }
-  
+
   fn iteration() Int {
     state(self.internal).iteration
   }
-  
+
   fn status() Status {
     state(self.internal).status
   }
-  
+
   fn is_playing() Bool {
     self.status() == Status::playing
   }
-  
+
   fn is_complete() Bool {
     self.status() == Status::completed
   }
-  
+
   fn mut add(
     duration: Int,
     update: fn(Frame),
@@ -453,7 +453,7 @@ impl Timeline {
       (shared.wake)()
     }
   }
-  
+
   fn mut call(action: fn(), at: Int?) {
     let shared = state(self.internal)
     require_available(shared)
@@ -477,7 +477,7 @@ impl Timeline {
       (shared.wake)()
     }
   }
-  
+
   fn mut play() Bool {
     let shared = state(self.internal)
     require_available(shared)
@@ -497,7 +497,7 @@ impl Timeline {
       true
     }
   }
-  
+
   fn mut pause() Bool {
     let shared = state(self.internal)
     require_available(shared)
@@ -510,7 +510,7 @@ impl Timeline {
       true
     }
   }
-  
+
   fn mut restart() Bool {
     let shared = state(self.internal)
     require_available(shared)
@@ -524,7 +524,7 @@ impl Timeline {
     (shared.wake)()
     true
   }
-  
+
   fn mut destroy() {
     let shared = state(self.internal)
     if shared.status != Status::destroyed {
@@ -537,15 +537,15 @@ impl Timeline {
       (shared.wake)()
     }
   }
-  
+
   fn mut internal_active() Bool {
     state(self.internal).status == Status::playing
   }
-  
+
   fn mut internal_destroyed() Bool {
     state(self.internal).status == Status::destroyed
   }
-  
+
   fn mut internal_tick(delta: Int, allow: fn() Bool) Bool {
     if delta < 0 {
       panic("animation frame delta must be non-negative")

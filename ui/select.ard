@@ -785,7 +785,9 @@ private fn scroll_menu_from_track(model: mut Model, config: SelectConfig, height
     }
     mut requested = 0
     if track > 1 {
-      requested = math::Round((y - 1).to_f64() * maximum.to_f64() / (track - 1).to_f64()).to_int()
+      requested = Int::fit(
+        math::Round(Float64::fit(y - 1) * Float64::fit(maximum) / Float64::fit(track - 1)),
+      )
     }
     if requested == model.menu_offset {
       false

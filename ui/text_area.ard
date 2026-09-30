@@ -459,8 +459,8 @@ fn new(
       desired_height = 1
     }
     node::MeasureSize{
-      width: constrained(Float32::from(desired_width), measurement.width, measurement.width_mode),
-      height: constrained(Float32::from(desired_height), measurement.height, measurement.height_mode),
+      width: constrained(Float32::fit(desired_width), measurement.width, measurement.width_mode),
+      height: constrained(Float32::fit(desired_height), measurement.height, measurement.height_mode),
     }
   })
   let _ = vertical_bar.on_change(fn(position: Int) {

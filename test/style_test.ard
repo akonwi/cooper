@@ -66,7 +66,7 @@ test fn style_new_configures_the_complete_public_vocabulary() Void!Str {
     gap: style::cells(2),
     z_index: 7,
   )
-  
+
   try testing::assert(
     configured.foreground.expect("foreground").blue == Uint8::from(3),
     "Expected foreground",
@@ -127,18 +127,18 @@ test fn style_replacement_clears_dimensions_constraints_and_offsets() Void!Str {
     child.layout().local.x == 2 and child.layout().local.y == 1 and child.layout().local.width == 4,
     "Expected initial dimensions, constraint, and offsets",
   )
-  
+
   child.set_style(style::new(width: style::cells(8), height: style::cells(1)))
   ctx.compute_layout(parent, 10, 5)
   let reset = child.layout().local
-  
+
   try testing::assert(reset.x == 0 and reset.y == 0, "Expected undefined offsets to clear backend state")
   try testing::assert(reset.width == 8, "Expected undefined max width to clear backend state")
-  
+
   child.set_style(style::new())
   ctx.compute_layout(parent, 10, 5)
   try testing::assert(child.layout().local.width == 0, "Expected undefined width to clear backend state")
-  
+
   ctx.destroy_detached()
   testing::assert(child.node_ref.is_destroyed(), "Expected style reset cleanup")
 }
@@ -157,10 +157,10 @@ test fn absolute_edge_offsets_reach_the_layout_backend() Void!Str {
     ),
   )
   parent.add(child)
-  
+
   ctx.compute_layout(parent, 10, 5)
   let layout = child.layout().local
-  
+
   try testing::assert(layout.x == 6, "Expected right offset in backend layout")
   try testing::assert(layout.y == 3, "Expected bottom offset in backend layout")
   ctx.destroy_detached()
@@ -180,7 +180,7 @@ test fn grow_ratios_redistribute_after_maximum_and_reset() Void!Str {
   try rect(first.layout().local, 0, 0, 10, 7)
   try rect(second.layout().local, 10, 0, 20, 7)
   try rect(third.layout().local, 30, 0, 30, 7)
-  
+
   second.set_style(
     style::new(flex_basis: style::cells(0), flex_grow: 2.0, max_width: style::cells(16)),
   )
@@ -679,8 +679,8 @@ test fn directly_constructed_nonfinite_and_out_of_range_lengths_are_rejected_by_
   let child = box::new(ctx, styles: style::new(width: style::cells(7)))
   let invalid = [
     style::Length{kind: style::LengthKind::cells, value: -1.0},
-    style::Length{kind: style::LengthKind::cells, value: Float32::from(math::NaN())},
-    style::Length{kind: style::LengthKind::cells, value: Float32::from(math::Inf(1))},
+    style::Length{kind: style::LengthKind::cells, value: Float32::fit(math::NaN())},
+    style::Length{kind: style::LengthKind::cells, value: Float32::fit(math::Inf(1))},
     style::Length{kind: style::LengthKind::percent, value: -0.5},
     style::Length{kind: style::LengthKind::percent, value: 100.5},
   ]
@@ -777,9 +777,9 @@ test fn setters_validate_property_specific_units_scalar_payloads_and_flex_factor
   try rejects_style(child, value, "max_height does not accept auto")
   for factor in [
     Float32::from(-0.1),
-    Float32::from(math::NaN()),
-    Float32::from(math::Inf(1)),
-    Float32::from(math::Inf(-1)),
+    Float32::fit(math::NaN()),
+    Float32::fit(math::Inf(1)),
+    Float32::fit(math::Inf(-1)),
   ] {
     value = mut style::new()
     value.flex_grow = factor
@@ -799,8 +799,8 @@ test fn setters_accept_zero_full_percent_and_intrinsic_units_without_narrowing_v
   parent.add(child)
   for amount in [0.0, 100.0] {
     let value = mut style::new()
-    value.width = style::Length{kind: style::LengthKind::percent, value: Float32::from(amount)}
-    value.height = style::Length{kind: style::LengthKind::percent, value: Float32::from(amount)}
+    value.width = style::Length{kind: style::LengthKind::percent, value: Float32::fit(amount)}
+    value.height = style::Length{kind: style::LengthKind::percent, value: Float32::fit(amount)}
     value.flex_grow = 0.0
     value.flex_shrink = 0.0
     child.set_style(value.@)

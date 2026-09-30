@@ -28,7 +28,7 @@ test fn terminal_hyperlinks_reject_controls_and_malformed_utf8() Void!Str {
 test fn terminal_key_translation_returns_cooper_events() Void!Str {
   let converted = terminal_events::key(
     vaxis::Key{
-      Keycode: Int32::from(vaxis::KeyEnter),
+      Keycode: Int32::fit(vaxis::KeyEnter),
       Text: "\r",
       Modifiers: vaxis::ModShift + vaxis::ModCtrl,
       EventType: vaxis::EventRepeat,
@@ -92,15 +92,15 @@ test fn terminal_paste_buffer_aggregates_and_resets() Void!Str {
 test fn terminal_paste_text_preserves_newlines_and_tabs() Void!Str {
   try testing::assert(terminal_events::paste_text(pasted("界")) == "界", "Expected printable text")
   try testing::assert(
-    terminal_events::paste_text(vaxis::Key{Keycode: Int32::from(vaxis::KeyEnter)}) == "\r",
+    terminal_events::paste_text(vaxis::Key{Keycode: Int32::fit(vaxis::KeyEnter)}) == "\r",
     "Expected carriage return",
   )
   try testing::assert(
-    terminal_events::paste_text(vaxis::Key{Keycode: Int32::from(vaxis::KeyTab)}) == "\t",
+    terminal_events::paste_text(vaxis::Key{Keycode: Int32::fit(vaxis::KeyTab)}) == "\t",
     "Expected tab",
   )
   try testing::assert(
-    terminal_events::paste_text(vaxis::Key{Keycode: Int32::from(vaxis::KeySpace)}) == " ",
+    terminal_events::paste_text(vaxis::Key{Keycode: Int32::fit(vaxis::KeySpace)}) == " ",
     "Expected space",
   )
   testing::assert(

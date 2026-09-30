@@ -58,7 +58,7 @@ fn layout_child(
 ) Bool {
   let value = child.value
   children::resolve_insets(child, containing_width)
-  let border = Float32::from(child.border * 2)
+  let border = Float32::fit(child.border * 2)
   let padding_row = resolved(value.padding.left, containing_width) + resolved(value.padding.right, containing_width) + border
   let padding_column = resolved(value.padding.top, containing_width) + resolved(value.padding.bottom, containing_width) + border
   let margin_left = resolved(value.margin.left, containing_width)
@@ -152,13 +152,13 @@ fn layout_child(
   ) or measured
   let child_width = child.measured_width
   let child_height = child.measured_height
-  let containing_border = Float32::from(containing.border)
+  let containing_border = Float32::fit(containing.border)
   let parent_padding_left = resolved(parent.value.padding.left, containing_width)
   let parent_padding_right = resolved(parent.value.padding.right, containing_width)
   let parent_padding_top = resolved(parent.value.padding.top, containing_width)
   let parent_padding_bottom = resolved(parent.value.padding.bottom, containing_width)
-  mut x = Float32::from(parent.border) + parent_padding_left + margin_left
-  mut y = Float32::from(parent.border) + parent_padding_top + margin_top
+  mut x = Float32::fit(parent.border) + parent_padding_left + margin_left
+  mut y = Float32::fit(parent.border) + parent_padding_top + margin_top
   let main_row = parent.value.flex_direction == style::FlexDirection::row or parent.value.flex_direction == style::FlexDirection::row_reverse
   mut alignment = match value.align_self == style::Align::auto {
     true => parent.value.align_items,
@@ -176,7 +176,7 @@ fn layout_child(
   } else if right_set {
     x = containing_width + containing_border - resolved(value.right, containing_width) - margin_right - child_width
   } else if main_row and (parent.value.flex_direction == style::FlexDirection::row and parent.value.justify_content == style::Justify::end or parent.value.flex_direction == style::FlexDirection::row_reverse and (parent.value.justify_content == style::Justify::start or parent.value.justify_content == style::Justify::space_between)) or (not main_row) and alignment == style::Align::end {
-    x = parent.measured_width - Float32::from(parent.border) - parent_padding_right - margin_right - child_width
+    x = parent.measured_width - Float32::fit(parent.border) - parent_padding_right - margin_right - child_width
   } else if main_row and (parent.value.justify_content == style::Justify::center or parent.value.justify_content == style::Justify::space_around or parent.value.justify_content == style::Justify::space_evenly) or (not main_row) and alignment == style::Align::center {
     x = (parent.measured_width - child_width - margin_row - parent_padding_left - parent_padding_right) / Float32::from(2.0) + margin_left + parent_padding_left
   }
@@ -185,7 +185,7 @@ fn layout_child(
   } else if bottom_set {
     y = containing_height + containing_border - resolved(value.bottom, containing_height) - margin_bottom - child_height
   } else if (not main_row) and (parent.value.flex_direction == style::FlexDirection::column and parent.value.justify_content == style::Justify::end or parent.value.flex_direction == style::FlexDirection::column_reverse and (parent.value.justify_content == style::Justify::start or parent.value.justify_content == style::Justify::space_between)) or main_row and alignment == style::Align::end {
-    y = parent.measured_height - Float32::from(parent.border) - parent_padding_bottom - margin_bottom - child_height
+    y = parent.measured_height - Float32::fit(parent.border) - parent_padding_bottom - margin_bottom - child_height
   } else if (not main_row) and (parent.value.justify_content == style::Justify::center or parent.value.justify_content == style::Justify::space_around or parent.value.justify_content == style::Justify::space_evenly) or main_row and alignment == style::Align::center {
     y = (parent.measured_height - child_height - margin_column - parent_padding_top - parent_padding_bottom) / Float32::from(2.0) + margin_top + parent_padding_top
   }
@@ -242,8 +242,8 @@ fn walk(
           containing_width,
           containing_height,
           width_mode,
-          offset_x + Float32::from(child.x),
-          offset_y + Float32::from(child.y),
+          offset_x + Float32::fit(child.x),
+          offset_y + Float32::fit(child.y),
           generation,
           visit,
         ) or changed

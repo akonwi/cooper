@@ -121,8 +121,8 @@ fn decode(encoded: [Byte], matte: color::Color?) ImageData!Str {
 }
 
 private fn flatten(channel: Byte, alpha: Byte, matte: Uint8) Int {
-  let opacity = alpha.to_int()
-  (channel.to_int() * opacity + Byte::from(matte).to_int() * (255 - opacity) + 127) / 255
+  let opacity = Int::from(alpha)
+  (Int::from(channel) * opacity + Int::from(Byte::from(matte)) * (255 - opacity) + 127) / 255
 }
 
 private fn snapshot(source: decoded_image::Image, background: color::Color) ImageData {

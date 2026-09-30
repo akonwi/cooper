@@ -38,7 +38,7 @@ fn intrinsic_basis(value: style::Length, natural: Float32, available: Float32) F
 }
 
 fn resolve_insets(node: mut layout::Node, owner_width: Float32) {
-  let border = Float32::from(node.border)
+  let border = Float32::fit(node.border)
   node.insets = layout::Insets{
     left: numbers::Widen(resolved_or_zero(node.value.padding.left, owner_width) + border),
     right: numbers::Widen(resolved_or_zero(node.value.padding.right, owner_width) + border),
@@ -154,7 +154,7 @@ fn prepare(
     true => width_mode,
     false => height_mode,
   }
-  
+
   mut single = Maybe::new<mut layout::Node>()
   if main_mode == cache::SizingMode::stretch_fit {
     mut valid = true
@@ -174,7 +174,7 @@ fn prepare(
       single = Maybe::new<mut layout::Node>()
     }
   }
-  
+
   let flowing: mut [mut layout::Node] = mut []
   mut total = Float32::from(0.0)
   for child in flattened {
@@ -190,7 +190,7 @@ fn prepare(
         child.intrinsic_available_width = inner_width - margin_row
         child.intrinsic_available_height = inner_height - margin_column
       }
-      let border = Float32::from(child.border * 2)
+      let border = Float32::fit(child.border * 2)
       let padding_row = resolved_or_zero(cs.padding.left, percent_width) + resolved_or_zero(cs.padding.right, percent_width) + border
       let padding_column = resolved_or_zero(cs.padding.top, percent_width) + resolved_or_zero(cs.padding.bottom, percent_width) + border
       let parent_width = axis(

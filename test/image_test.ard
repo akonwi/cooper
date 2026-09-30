@@ -23,7 +23,7 @@ private fn grid() ui::ImageData {
 private fn assert_rgb(value: ui::Color?, red: Int, green: Int, blue: Int) Void!Str {
   let actual = value.expect("painted RGB color")
   testing::assert(
-    actual.red == Uint8::from(red) and actual.green == Uint8::from(green) and actual.blue == Uint8::from(blue),
+    actual.red == Uint8::fit(red) and actual.green == Uint8::fit(green) and actual.blue == Uint8::fit(blue),
     "Expected exact sampled RGB channels",
   )
 }
@@ -356,7 +356,7 @@ test fn image_decodes_webp_lossless_alpha_lossy_and_rejects_invalid_sizes() Void
   try testing::assert(source.rgba.size() == 8, "Expected two RGBA pixels")
   for channel, index in [200, 40, 80, 128, 17, 99, 231, 255] {
     try testing::assert(
-      source.rgba.at(index).expect("WebP channel").to_int() == channel,
+      Int::from(source.rgba.at(index).expect("WebP channel")) == channel,
       "Expected original WebP colors and alpha for native rendering",
     )
   }

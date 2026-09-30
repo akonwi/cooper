@@ -41,7 +41,7 @@ fn rounded_constraint(value: Float32) Float32 {
     value
   } else {
     let wide = numbers::Widen(value)
-    mut whole = wide.to_int().to_f64()
+    mut whole = Float64::fit(Int::fit(wide))
     mut fraction = wide - whole
     if fraction < 0.0 {
       fraction =+ 1.0
@@ -50,11 +50,11 @@ fn rounded_constraint(value: Float32) Float32 {
     // Yoga's near-half tolerance belongs to cache compatibility only.
     let near_half = fraction > 0.4999 and fraction < 0.5001
     if fraction < 0.0001 {
-      Float32::from(whole)
+      Float32::fit(whole)
     } else if fraction > 0.9999 or fraction > 0.5 or near_half {
-      Float32::from(whole + 1.0)
+      Float32::fit(whole + 1.0)
     } else {
-      Float32::from(whole)
+      Float32::fit(whole)
     }
   }
 }
@@ -163,11 +163,11 @@ impl State {
     }
     visit
   }
-  
+
   fn mut invalidate_basis() {
     self.computed_flex_basis = numeric::undefined()
   }
-  
+
   fn find(
     request: Measurement,
     measured: Bool,
@@ -217,7 +217,7 @@ impl State {
     }
     found
   }
-  
+
   // Call only after recomputing a cache miss, not after a hit. Yoga resets
   // the measurement prefix at eight even when storing a layout result.
   fn mut store(result: Measurement, perform_layout: Bool) {
@@ -235,7 +235,7 @@ impl State {
       self.measurements = entries.@
     }
   }
-  
+
   fn mut complete(generation: Int, config_version: Int, direction: Direction) {
     self.generation = generation
     self.config_version = config_version

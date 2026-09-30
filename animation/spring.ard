@@ -152,10 +152,10 @@ private fn advance(shared: mut State, seconds: Float64) {
   let frequency = shared.config.angular_frequency
   let damping = shared.config.damping_ratio
   let decay = frequency * damping
-  mut pp = 0.to_f64()
-  mut pv = 0.to_f64()
-  mut vp = 0.to_f64()
-  mut vv = 0.to_f64()
+  mut pp = 0.0
+  mut pv = 0.0
+  mut vp = 0.0
+  mut vv = 0.0
   if damping > 1.0 {
     let root = math::Sqrt(damping * damping - 1.0)
     let fast = -frequency * (damping + root)
@@ -286,7 +286,7 @@ impl Spring {
       shared.fresh = false
       let revision = shared.revision
       if step > 0 {
-        advance(shared, step.to_f64() / 1000.0)
+        advance(shared, Float64::fit(step) / 1000.0)
       }
       let settled = math::Abs(shared.value - shared.target) <= shared.config.position_tolerance and math::Abs(shared.velocity) <= shared.config.velocity_tolerance
       if settled {

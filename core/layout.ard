@@ -126,8 +126,8 @@ fn max(a: Float64, b: Float64) Float64 {
 }
 fn rounded(value: Float64) Int {
   let shifted = value + 0.5
-  let truncated = shifted.to_int()
-  match truncated.to_f64() > shifted {
+  let truncated = Int::fit(shifted)
+  match Float64::fit(truncated) > shifted {
     true => truncated - 1,
     false => truncated,
   }
@@ -166,12 +166,12 @@ impl Node {
       }
     }
   }
-  
+
   fn mut set_measure(measure: fn(MeasureInput) MeasureSize) {
     self.measure = Maybe::new<fn(MeasureInput) MeasureSize>(measure)
     self.mark_dirty()
   }
-  
+
   // Leaf portion of Yoga calculateLayoutInternal. Axis availability here
   // includes margins; the leaf kernel receives border-box space instead.
   // Caller resolves lengths/bounds/insets before the visit.
@@ -236,7 +236,7 @@ impl Node {
     self.cache_state.complete(generation, 0, cache::Direction::ltr)
     visit or cached.is_some() == false
   }
-  
+
   // computeFlexBasisForChild's measurement branch, for leaf children only.
   // Caller constructs both axes with basis::measurement_axis. Containers will
   // use the general recursive visitor once translated, not calculate_leaf.
@@ -255,7 +255,7 @@ impl Node {
     }
     self.cache_state.computed_flex_basis_generation = generation
   }
-  
+
   fn mut apply(value: style::Style, border: Int) {
     if self.border != border or not same_layout_style(self.value, value) {
       self.mark_dirty()
@@ -263,7 +263,7 @@ impl Node {
     self.value = value
     self.border = border
   }
-  
+
   fn mut insert(child: mut Node, index: Int) {
     let next = mut List::new<mut Node>()
     for existing, current in self.children {
@@ -281,7 +281,7 @@ impl Node {
     child.owner = Maybe::new<mut Node>(self)
     self.mark_dirty()
   }
-  
+
   fn mut remove(child: mut Node) {
     mut removed = false
     let retained = mut List::new<mut Node>()
@@ -298,7 +298,7 @@ impl Node {
       self.mark_dirty()
     }
   }
-  
+
   fn mut project(px: Float64, py: Float64) {
     if self.value.display == style::Display::contents or self.value.display == style::Display::none {
       self.x = 0.0
@@ -333,7 +333,7 @@ impl Node {
     }
     self.allocation = Maybe::new<Allocation>()
   }
-  
+
   fn mut freeze_horizontal(px: Float64) {
     let x = px + self.x
     self.allocation = Maybe::new<Allocation>(
@@ -354,20 +354,20 @@ impl Node {
       child.freeze_horizontal(x)
     }
   }
-  
+
   // ADR0020 replay is deliberately a throw-away measurement transaction.
   // Empty caches force callbacks to observe the projected content width; the
   // natural transaction (including its fractional basis) is restored below.
   fn projected_width_changes_measurement(px: Float64) Bool {
     let x = px + self.x
     let content_width = rounded(x + max(self.insets.left, self.width - self.insets.right)) - rounded(x + self.insets.left)
-    mut changed = self.measure.is_some() and max(0.0, self.width - self.insets.left - self.insets.right) != content_width.to_f64()
+    mut changed = self.measure.is_some() and max(0.0, self.width - self.insets.left - self.insets.right) != Float64::fit(content_width)
     for child in self.children {
       changed = child.projected_width_changes_measurement(x) or changed
     }
     changed
   }
-  
+
   fn mut begin_replay() {
     self.cache_state = cache::new_state()
     self.dirty = true
@@ -375,7 +375,7 @@ impl Node {
       child.begin_replay()
     }
   }
-  
+
   fn mut finish_replay() {
     match self.allocation {
       // Display-contents cleanup intentionally has no box allocation.

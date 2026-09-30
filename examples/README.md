@@ -388,7 +388,9 @@ has not been tested. Sixel and tmux passthrough are not implemented.
 `dashboard.ard` is a live synthetic operations console built entirely from
 persistent Box, Text, and ScrollBox controls. A cancellation-aware background
 fiber posts periodic metric, sparkline, status, and bounded event-stream updates
-through `Runtime.dispatch`. The log follows new rows until the operator scrolls
+through `Runtime.dispatch`. Its semantic colors come from `application.theme()`;
+`application.on_theme_changed(...)` reapplies them live when the terminal switches
+between dark and light themes. The log follows new rows until the operator scrolls
 or disables follow mode.
 
 ```sh

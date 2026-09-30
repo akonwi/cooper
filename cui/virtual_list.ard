@@ -273,6 +273,7 @@ impl VirtualList {
         } else if self.edge_enabled(Edge::end) and delta > 0 and scroll.scroll_top() == scroll.maximum_scroll_top() {
           self.following_edge = Maybe::new(Edge::end)
         }
+        ()
       })
     }
   }

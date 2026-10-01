@@ -39,11 +39,149 @@ impl cui::Component for Card {
   }
 }
 
-test fn nonselectable_text_preserves_drag_capture_across_reconciliation() Void!Str {
+struct SelectionModel {
+  blue: Bool,
+}
+struct SelectionProps {
+  model: mut SelectionModel,
+}
+struct SelectionLabel {
+  model: mut SelectionModel,
+}
+private fn selection_label(props: mut SelectionProps) mut SelectionLabel {
+  (mut SelectionLabel{model: props.model})
+}
+impl cui::Component for SelectionLabel {
+  fn mut render() cui::View {
+    mut background = ui::rgb(80, 20, 20)
+    if self.model.blue {
+      background = ui::rgb(20, 40, 80)
+    }
+    cui::text(
+      "styled",
+      styles: ui::style(width: ui::cells(6), height: ui::cells(1)),
+      selectable: true,
+      selection_style: fn(value: mut ui::TextStyle) {
+        value.background = Maybe::new(background)
+        value.bold = true
+        value.reverse = false
+      },
+    )
+  }
+}
+
+test fn declarative_text_selection_style_applies_and_updates_in_place() Void!Str {
+  let app = headless::new(10, 2)
+  defer app.destroy()
+  let model = mut SelectionModel{blue: false}
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::child(selection_label, SelectionProps{model: model}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  app.drag(0, 0, 2, 0)
+  app.flush()
+  let initial = app.frame().cell(0, 0).expect("selected cell").style
+  try testing::assert(
+    initial.bold and not initial.reverse and initial.background.expect("background").red == Uint8::from(80),
+    "declarative selection patch applies to the retained Text",
+  )
+  renderer.update(fn() {
+    model.blue = true
+  })
+  app.flush()
+  let updated = app.frame().cell(0, 0).expect("updated selected cell").style
+  testing::assert(
+    updated.background.expect("updated background").blue == Uint8::from(80),
+    "selection patch updates without replacing the retained Text",
+  )
+}
+
+struct SelectionArea {
+  model: mut SelectionModel,
+}
+private fn selection_area(props: mut SelectionProps) mut SelectionArea {
+  (mut SelectionArea{model: props.model})
+}
+impl cui::Component for SelectionArea {
+  fn mut render() cui::View {
+    if self.model.blue {
+      cui::text_area(
+        "styled",
+        styles: ui::style(width: ui::cells(6), height: ui::cells(1)),
+        selection_style: fn(value: mut ui::TextStyle) {
+          value.background = Maybe::new(ui::rgb(20, 40, 80))
+          value.reverse = false
+        },
+      )
+    } else {
+      cui::text_area("styled", styles: ui::style(width: ui::cells(6), height: ui::cells(1)))
+    }
+  }
+}
+
+test fn declarative_text_area_selection_style_defaults_and_updates_in_place() Void!Str {
+  let app = headless::new(10, 2)
+  defer app.destroy()
+  let model = mut SelectionModel{blue: false}
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::child(selection_area, SelectionProps{model: model}),
+  )
+  defer renderer.destroy()
+  app.flush()
+  app.drag(0, 0, 2, 0)
+  app.flush()
+  try testing::assert(
+    app.frame().cell(0, 0).expect("default selected area cell").style.reverse,
+    "omitted TextArea selection_style keeps reverse video",
+  )
+  renderer.update(fn() {
+    model.blue = true
+  })
+  app.flush()
+  let updated = app.frame().cell(0, 0).expect("updated selected area cell").style
+  testing::assert(
+    not updated.reverse and updated.background.expect("updated area background").blue == Uint8::from(80),
+    "TextArea selection patch updates without replacing the retained control",
+  )
+}
+
+test fn editable_text_and_placeholders_remain_selection_enabled() Void!Str {
+  let app = headless::new(40, 4)
+  defer app.destroy()
+  let input = cui::input_ref()
+  let area = cui::text_area_ref()
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::box(
+      [
+        cui::input("", placeholder: "Search", ref: input),
+        cui::text_area("", placeholder: "Write notes", ref: area),
+      ],
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  try testing::assert(
+    input.current.expect("input").selectable() and area.current.expect("text area").selectable(),
+    "editable controls remain selectable when their values are empty",
+  )
+  testing::assert(
+    app.frame().text().contains("Search") and app.frame().text().contains("Write notes"),
+    "selection-enabled editable controls still render placeholders",
+  )
+}
+
+test fn text_selection_is_opt_in_and_drag_capture_survives_reconciliation() Void!Str {
   let app = headless::new(40, 4)
   defer app.destroy()
   let model = mut Model{
-    selectable: Maybe::new(false),
+    selectable: Maybe::new<Bool>(),
     drags: 0,
     ends: 0,
     releases: 0,
@@ -74,17 +212,21 @@ test fn nonselectable_text_preserves_drag_capture_across_reconciliation() Void!S
     model.drags == 1 and model.ends == 1 and model.releases == 1,
     "capture reaches source outside card after render",
   )
-  try testing::assert(not app.selection().is_some(), "dragging label must not select text")
+  try testing::assert(not app.selection().is_some(), "declarative text is nonselectable by default")
   renderer.update(fn() {
-    model.selectable = Maybe::new<Bool>()
+    model.selectable = Maybe::new(true)
   })
   app.flush()
   app.drag(1, 0, 7, 0)
   app.flush()
-  try testing::assert(app.selection().is_some(), "omitted option restores default text selection")
+  try testing::assert(app.selection().is_some(), "explicit selectable text starts selection")
+  try testing::assert(
+    app.frame().cell(1, 0).expect("default selected cell").style.reverse,
+    "omitted selection_style keeps reverse-video selection",
+  )
   renderer.update(fn() {
-    model.selectable = Maybe::new(false)
+    model.selectable = Maybe::new<Bool>()
   })
   app.flush()
-  testing::assert(not app.selection().is_some(), "disabling selection clears existing selection")
+  testing::assert(not app.selection().is_some(), "restoring the default clears existing selection")
 }

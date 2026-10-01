@@ -249,7 +249,7 @@ impl cui::Component for Screen {
                   "{item.author} · message {item.id}",
                   text_style: ui::text_style(bold: true, foreground: ui::indexed((4 + item.id) % 3)),
                 ),
-                cui::text(item.body),
+                cui::text(item.body, selectable: true),
               ],
               styles: ui::style(width: ui::percent(100.0), padding: padding.@, flex_shrink: 0.0),
             )

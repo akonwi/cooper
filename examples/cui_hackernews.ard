@@ -10,6 +10,12 @@ private fn line() ui::Style {
   ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
+private fn reading_selection(value: mut ui::TextStyle) {
+  value.foreground = Maybe::new(ui::indexed(15))
+  value.background = Maybe::new(ui::indexed(24))
+  value.reverse = false
+}
+
 private fn fill() ui::Style {
   ui::style(width: ui::percent(100.0), height: ui::percent(100.0))
 }
@@ -308,15 +314,28 @@ impl Page {
           ),
         )
         body.push(
-          cui::text(content, styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0)),
+          cui::text(
+            content,
+            styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0),
+            selectable: true,
+            selection_style: reading_selection,
+          ),
         )
         if id == self.props.story {
           if not item.text.or("").is_empty() {
-            body.push(cui::text(item.text.or("")))
+            body.push(
+              cui::text(item.text.or(""), selectable: true, selection_style: reading_selection),
+            )
           }
           let url = item.url.or("https://news.ycombinator.com/item?id={id}")
           if (url.starts_with("https://") or url.starts_with("http://")) and (not url.contains("\n")) and (not url.contains("\t")) {
-            body.push(cui::text(ui::styled_text([ui::span(url, link: url)])))
+            body.push(
+              cui::text(
+                ui::styled_text([ui::span(url, link: url)]),
+                selectable: true,
+                selection_style: reading_selection,
+              ),
+            )
           }
         }
         mut background = ui::indexed(0)

@@ -402,9 +402,23 @@ renders. Keep the source attached until release; use refs and screen geometry
 when a floating overlay obscures the physical destination. App-specific drag
 thresholds, drop eligibility, and data mutation remain component state.
 
-Use `cui::text(..., selectable: false)` for draggable labels. Text is selectable
-by default, and text selection takes precedence over ordinary drag capture.
-The property can also be changed during reconciliation.
+`cui::text` is nonselectable by default so labels do not take pointer capture
+away from interactive ancestors. Use `cui::text(..., selectable: true)` for
+content that users should be able to select and copy. Its optional
+`selection_style` callback patches the text style for selected cells; omission
+keeps reverse-video selection. Both properties update during reconciliation.
+
+```ard
+cui::text(
+  body,
+  selectable: true,
+  selection_style: fn(style: mut ui::TextStyle) {
+    style.foreground = Maybe::new(theme.foreground)
+    style.background = Maybe::new(theme.selection)
+    style.reverse = false
+  },
+)
+```
 
 ## Inputs, refs, and validation
 
@@ -472,13 +486,16 @@ own component's context. `stop_propagation()` stops ancestor callbacks;
 (such as input editing). This is CUI routing, not a change to Cooper's imperative
 key dispatch. Mouse events retain Cooper's existing bubbling behavior.
 
-Inputs and TextAreas are controlled: write accepted `on_input` values into component state.
-If a callback leaves the model unchanged, reconciliation restores the described
-value. Equal and normalized values avoid unnecessary setters, preserving cursor
-and selection state.
+Inputs and TextAreas remain selection-enabled by default, including while they
+show placeholders. They are controlled: write accepted `on_input` values into
+component state. If a callback leaves the model unchanged, reconciliation
+restores the described value. Equal and normalized values avoid unnecessary
+setters, preserving cursor and selection state.
 
 `cui::text_area(value, ...)` adds multiline editing with `placeholder`, `wrap`,
-`text_style`, `placeholder_style`, `selectable`, and `scrollbar_options`. Enter
+`text_style`, `placeholder_style`, `selectable`, `selection_style`, and
+`scrollbar_options`. Its selection-style callback has the same patch semantics
+and reverse-video default as `cui::text`. Enter
 inserts a newline; there is no single-line `on_submit` event. Use `on_key` for an
 application-specific save shortcut. `text_area_ref()` exposes the retained
 TextArea for selection, paste listeners, and other imperative editing APIs.
@@ -548,7 +565,7 @@ cui::virtual_list(
   comments,
   item_key: fn(comment: Comment) Str { comment.id.to_str() },
   render_item: fn(comment: Comment) cui::View {
-    cui::text(comment.body)
+    cui::text(comment.body, selectable: true)
   },
 )
 ```

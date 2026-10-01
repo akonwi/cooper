@@ -326,6 +326,7 @@ impl cui::Component for IssueDetail {
         cui::text(
           body,
           styles: ui::style(width: ui::percent(100.0), height: ui::cells(5), flex_shrink: 0.0),
+          selectable: true,
         ),
       ],
       styles: ui::style(

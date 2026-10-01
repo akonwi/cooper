@@ -96,7 +96,9 @@ impl cui::Component for Parent {
   fn mut render() cui::View {
     self.data.roots =+ 1
     let children = mut List::new<cui::View>()
-    children.push(cui::text("Hello World", styles: ui::style(height: ui::cells(1))))
+    children.push(
+      cui::text("Hello World", styles: ui::style(height: ui::cells(1)), selectable: true),
+    )
     if self.data.visible {
       mut display = ui::Display::flex
       if self.data.hidden {

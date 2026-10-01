@@ -694,9 +694,21 @@ impl State {
       scope = Maybe::new(owned)
     }
     let control: mut node::Renderable = match description.kind {
-      view::Kind::text => ui::text(self.runtime, content: description.content),
+      view::Kind::text => {
+        ui::text(
+          self.runtime,
+          content: description.content,
+          selection_style: description.selection_style,
+        )
+      },
       view::Kind::input => ui::input(self.runtime, value: description.value),
-      view::Kind::text_area => ui::text_area(self.runtime, value: description.value),
+      view::Kind::text_area => {
+        ui::text_area(
+          self.runtime,
+          value: description.value,
+          selection_style: description.selection_style,
+        )
+      },
       view::Kind::select_input => {
         ui::select_input(
           self.runtime,
@@ -838,6 +850,7 @@ impl State {
         text.set_wrap(description.wrap)
         text.set_overflow(description.overflow)
         text.set_selectable(description.selectable)
+        text.set_selection_style(description.selection_style)
       },
       view::Kind::input => {
         let field = input(mounted.control)
@@ -878,6 +891,7 @@ impl State {
         field.set_text_style(description.text_style)
         field.set_placeholder_style(description.placeholder_style)
         field.set_selectable(description.selectable)
+        field.set_selection_style(description.selection_style)
         field.set_scrollbar_options(description.scrollbar_options)
         mut needs_write = field.value() != mounted.effective_value
         if mounted.requested_value != description.value {

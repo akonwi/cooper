@@ -156,6 +156,7 @@ struct Description {
   wrap: ui::TextWrap,
   overflow: ui::TextOverflow,
   selectable: Bool,
+  selection_style: fn(mut ui::TextStyle),
   title: Str,
   value: Str,
   placeholder: Str,
@@ -197,6 +198,10 @@ fn describe(value: View) Description {
   unsafe::cast<Description>(value.internal).expect("View must be created by a constructor")
 }
 
+private fn default_selection_style(value: mut ui::TextStyle) {
+  value.reverse = not value.reverse
+}
+
 private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
   Description{
     kind: kind,
@@ -208,6 +213,7 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     wrap: ui::TextWrap::word,
     overflow: ui::TextOverflow::clip,
     selectable: true,
+    selection_style: default_selection_style,
     title: "",
     value: "",
     placeholder: "",
@@ -254,13 +260,15 @@ fn text(
   wrap: ui::TextWrap?,
   overflow: ui::TextOverflow?,
   selectable: Bool?,
+  selection_style: fn(mut ui::TextStyle)?,
 ) View {
   let result = mut base(Kind::text, key, styles)
   result.content = content
   result.text_style = text_style.or(ui::text_style())
   result.wrap = wrap.or(ui::TextWrap::word)
   result.overflow = overflow.or(ui::TextOverflow::clip)
-  result.selectable = selectable.or(true)
+  result.selectable = selectable.or(false)
+  result.selection_style = selection_style.or(default_selection_style)
   View{internal: result.@}
 }
 
@@ -376,6 +384,7 @@ fn text_area(
   text_style: ui::TextStyle?,
   placeholder_style: ui::TextStyle?,
   selectable: Bool?,
+  selection_style: fn(mut ui::TextStyle)?,
   scrollbar_options: ui::ScrollbarOptions?,
   focused: Bool?,
   autofocus: Bool?,
@@ -397,6 +406,7 @@ fn text_area(
   result.text_style = text_style.or(ui::text_style())
   result.placeholder_style = placeholder_style.or(ui::text_style(dim: true))
   result.selectable = selectable.or(true)
+  result.selection_style = selection_style.or(default_selection_style)
   result.scrollbar_options = scrollbar_options.or(ui::scrollbar_options())
   result.focused = focused
   result.autofocus = autofocus.or(false)

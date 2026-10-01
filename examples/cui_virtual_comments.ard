@@ -66,7 +66,7 @@ impl cui::Component for Screen {
                   "{indicator} comment #{comment.id} · user{comment.id % 31} · depth {comment.depth}",
                   text_style: ui::text_style(foreground: ui::indexed(6), bold: true),
                 ),
-                cui::text(comment.body),
+                cui::text(comment.body, selectable: true),
                 cui::text("reply · {comment.id % 97} points", text_style: ui::text_style(dim: true)),
                 cui::text(""),
               ],

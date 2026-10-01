@@ -616,6 +616,48 @@ private fn word_source_range(content: Str, source_index: Int) SourceRange? {
   }
 }
 
+private fn line_source_range(content: Str, source_index: Int) SourceRange? {
+  let glyphs = word_glyphs(content)
+  mut clicked = -1
+  for glyph, index in glyphs {
+    if source_index >= glyph.start and source_index < glyph.end {
+      clicked = index
+      break
+    }
+  }
+  if clicked < 0 {
+    Maybe::new<SourceRange>()
+  } else {
+    mut start = clicked
+    mut finding_start = true
+    while finding_start and start > 0 {
+      if newline(glyphs.at(start - 1).expect("line range previous").text) {
+        finding_start = false
+      } else {
+        start =- 1
+      }
+    }
+    mut end = clicked
+    mut finding_end = true
+    while finding_end and end < glyphs.size() {
+      if newline(glyphs.at(end).expect("line range end").text) {
+        finding_end = false
+      } else {
+        end =+ 1
+      }
+    }
+    if end < glyphs.size() {
+      end =+ 1
+    }
+    Maybe::new<SourceRange>(
+      SourceRange{
+        start: glyphs.at(start).expect("line range start").start,
+        end: glyphs.at(end - 1).expect("line range finish").end,
+      },
+    )
+  }
+}
+
 private fn source_glyphs(content: Str, runs: [StyleRun], measure: fn(Str) Int) [SourceGlyph] {
   let iterator = mut unicode::NewGraphemeIterator(content)
   let output = mut List::new<SourceGlyph>()
@@ -1721,6 +1763,25 @@ impl Text {
     }
   }
 
+  private fn line_expansion(local_x: Int, local_y: Int) node::SelectionExpansion? {
+    let view = self.current_view()
+    mut source_start = -1
+    for glyph in view.glyphs {
+      if glyph.y == local_y and local_x >= glyph.x and local_x < glyph.x + glyph.width {
+        source_start = glyph.source_start
+        break
+      }
+    }
+    if source_start < 0 {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      match line_source_range(self.content, source_start) {
+        value => self.expansion_from_source(value),
+        _ => Maybe::new<node::SelectionExpansion>(),
+      }
+    }
+  }
+
   private fn resolve_expansion(
     logical_range: node::SelectionRange,
     source_range: node::SelectionRange,
@@ -1916,6 +1977,11 @@ impl Text {
       Maybe::new<fn(Int, Int) node::SelectionExpansion?>(
         fn(local_x: Int, local_y: Int) node::SelectionExpansion? {
           self.word_expansion(local_x, local_y)
+        },
+      ),
+      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(
+        fn(local_x: Int, local_y: Int) node::SelectionExpansion? {
+          self.line_expansion(local_x, local_y)
         },
       ),
       Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(

@@ -403,6 +403,12 @@ impl TestApp {
     self.click(x, y)
   }
 
+  fn triple_click(x: Int, y: Int) {
+    self.click(x, y)
+    self.click(x, y)
+    self.click(x, y)
+  }
+
   fn drag(
     start_x: Int,
     start_y: Int,

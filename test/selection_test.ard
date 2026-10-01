@@ -70,6 +70,62 @@ test fn double_click_selects_complete_word_and_finalizes_selection() Void!Str {
   testing::assert(message.node_ref.is_destroyed(), "Expected double-click selection cleanup")
 }
 
+test fn triple_click_selects_complete_logical_line_including_break() Void!Str {
+  let application = cooper_testing::new(10, 2)
+  let message = text::new(
+    application.context,
+    content: "alpha beta\ngamma",
+    styles: fixed(10, height: 2),
+  )
+  application.root.add(message)
+
+  application.triple_click(2, 0)
+
+  let selected = application.selection().expect("triple-click selection")
+  let local = message.selection().expect("triple-click local range")
+  try testing::assert(
+    selected.selected_text == "alpha beta\n" and not selected.is_dragging,
+    "Expected complete finalized logical line with its break",
+  )
+  try testing::assert(
+    local.start == 0 and local.end == "alpha beta".size() and message.selected_text() == "alpha beta\n",
+    "Expected visual line range with complete source text",
+  )
+  try testing::assert(
+    application.frame().cell(9, 0).expect("last selected line cell").style.reverse,
+    "Expected complete first line paint",
+  )
+  try testing::assert(
+    not application.frame().cell(0, 1).expect("next line cell").style.reverse,
+    "Expected next line to remain unselected",
+  )
+
+  application.triple_click(2, 1)
+  try testing::assert(message.selected_text() == "gamma", "Expected final line without a trailing break")
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected triple-click selection cleanup")
+}
+
+test fn triple_click_uses_logical_line_across_visual_wraps() Void!Str {
+  let application = cooper_testing::new(3, 3)
+  let message = text::new(
+    application.context,
+    content: "abcdef\nz",
+    wrap: text::TextWrap::character,
+    styles: fixed(3, height: 3),
+  )
+  application.root.add(message)
+
+  application.triple_click(1, 1)
+
+  try testing::assert(
+    message.selected_text() == "abcdef\n" and application.selection().expect("wrapped line selection").selected_text == "abcdef\n",
+    "Expected triple-click on a visual continuation to select the complete logical line",
+  )
+  application.destroy()
+  testing::assert(message.node_ref.is_destroyed(), "Expected wrapped triple-click cleanup")
+}
+
 test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str {
   let application = cooper_testing::new(5, 1)
   let message = text::new(

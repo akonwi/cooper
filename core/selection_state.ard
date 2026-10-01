@@ -413,6 +413,48 @@ impl State {
     }
   }
   
+  fn mut expand_line(target: mut node::Node, x: Int, y: Int, expected_generation: Int) Bool {
+    match self.session {
+      active => {
+        let same_target = (not active.is_dragging) and active.anchor.control == target and active.focus_control.is_some() and active.focus_control.expect("line expansion focus") == target
+        if active.generation != expected_generation or not same_target {
+          false
+        } else {
+          let bounds = target.layout().screen
+          match target.expand_line_selection(x - bounds.x, y - bounds.y) {
+            expansion => {
+              if active.version == math::MaxInt {
+                panic("selection expansion version overflow")
+              }
+              let updated = mut active
+              updated.anchor.local_x = expansion.anchor_x
+              updated.anchor.local_y = expansion.anchor_y
+              updated.focus = geometry::Point{x: bounds.x + expansion.focus_x, y: bounds.y + expansion.focus_y}
+              updated.focus_control = Maybe::new<mut node::Node>(target)
+              updated.focus_local_x = expansion.focus_x
+              updated.focus_local_y = expansion.focus_y
+              updated.focus_tracks_control = true
+              updated.container = target
+              updated.is_dragging = false
+              updated.logical_range = Maybe::new<node::SelectionRange>(expansion.logical_range)
+              updated.source_range = Maybe::new<node::SelectionRange>(expansion.source_range)
+              updated.source_revision = expansion.source_revision
+              updated.logical_reversed = false
+              updated.prefer_source_text = true
+              updated.version =+ 1
+              updated.edge_pan_version = -1
+              self.session = Maybe::new<Session>(updated.@)
+              self.bump()
+              true
+            },
+            _ => false,
+          }
+        }
+      },
+      _ => false,
+    }
+  }
+
   fn mut update(target: (mut node::Node)?, x: Int, y: Int, edge_pan: Bool?) Bool {
     match self.session {
       active => {

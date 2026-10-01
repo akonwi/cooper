@@ -951,6 +951,7 @@ impl Input {
           self.word_expansion(local_x, local_y)
         },
       ),
+      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(),
       Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(
         fn(logical_range: node::SelectionRange, source_range: node::SelectionRange, source_revision: Int) node::SelectionExpansion? {
           self.resolve_expansion(logical_range, source_range, source_revision)

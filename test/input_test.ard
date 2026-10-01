@@ -249,6 +249,53 @@ test fn input_mouse_selection_replaces_range_and_clears_global_selection() Void!
   testing::assert(field.node_ref.is_destroyed(), "Expected Input mouse selection cleanup")
 }
 
+test fn input_double_click_selects_word_runs_for_editing() Void!Str {
+  let application = cooper_testing::new(20, 1)
+  let field = input::new(application.context, value: "can't...  stop", styles: fixed(20))
+  application.root.add(field)
+
+  application.double_click(2, 0)
+  try testing::assert(
+    field.selected_text() == "can't" and application.selection().expect("Input word selection").selected_text == "can't",
+    "Expected double-click to select an apostrophe word",
+  )
+  application.double_click(6, 0)
+  try testing::assert(field.selected_text() == "...", "Expected punctuation run selection")
+  application.double_click(9, 0)
+  try testing::assert(field.selected_text() == "  ", "Expected whitespace run selection")
+
+  application.key(key("x", text: "X"))
+  try testing::assert(field.value() == "can't...Xstop", "Expected typing to replace the selected run")
+  try testing::assert(
+    not field.selection().is_some() and not application.selection().is_some(),
+    "Expected replacement to clear double-click selection",
+  )
+
+  field.set_value("你 好")
+  application.double_click(1, 0)
+  try testing::assert(field.selected_text() == "你", "Expected either wide-glyph cell to select its word")
+  application.destroy()
+  testing::assert(field.node_ref.is_destroyed(), "Expected double-click Input cleanup")
+}
+
+test fn input_double_click_selects_complete_panned_word() Void!Str {
+  let application = cooper_testing::new(4, 1)
+  let field = input::new(application.context, value: "first second", styles: fixed(4))
+  application.root.add(field)
+  application.render()
+  field.focus()
+
+  application.double_click(1, 0)
+
+  try testing::assert(field.selected_text() == "second", "Expected complete panned word selection")
+  try testing::assert(
+    application.selection().expect("panned Input word selection").selected_text == "second",
+    "Expected complete panned word in global selection",
+  )
+  application.destroy()
+  testing::assert(field.node_ref.is_destroyed(), "Expected panned double-click Input cleanup")
+}
+
 test fn input_keyboard_selection_extends_collapses_and_persists_blur() Void!Str {
   let application = cooper_testing::new(7, 1)
   let field = input::new(application.context, value: "abcdef", styles: fixed(7))

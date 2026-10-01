@@ -173,6 +173,36 @@ private fn word_class(glyphs: [Grapheme], index: Int) WordClass {
   }
 }
 
+fn word_range_at(value: Str, byte: Int) Range? {
+  let glyphs = graphemes(value)
+  mut clicked = -1
+  for glyph, index in glyphs {
+    if byte >= glyph.start and byte < glyph.end {
+      clicked = index
+      break
+    }
+  }
+  if clicked < 0 {
+    Maybe::new<Range>()
+  } else {
+    let target = word_class(glyphs, clicked)
+    mut start = clicked
+    while start > 0 and word_class(glyphs, start - 1) == target {
+      start =- 1
+    }
+    mut end = clicked + 1
+    while end < glyphs.size() and word_class(glyphs, end) == target {
+      end =+ 1
+    }
+    Maybe::new<Range>(
+      Range{
+        start: glyphs.at(start).expect("word range start").start,
+        end: glyphs.at(end - 1).expect("word range end").end,
+      },
+    )
+  }
+}
+
 private fn previous_word_boundary(value: Str, cursor: Int) Int {
   let glyphs = graphemes(value)
   mut index = glyphs.size()

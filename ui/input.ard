@@ -458,6 +458,26 @@ private fn cursor_for_column(value: Str, start: Int, column: Int, width: Int, me
   cursor
 }
 
+private fn byte_at_column(value: Str, start: Int, column: Int, width: Int, measure: fn(Str) Int) Int? {
+  mut x = 0
+  mut found = Maybe::new<Int>()
+  mut locating = true
+  for glyph in glyphs(value) {
+    if locating and glyph.start >= start {
+      let glyph_width = measure(glyph.text)
+      if glyph_width < 0 or x + glyph_width > width {
+        locating = false
+      } else if glyph_width > 0 and column >= x and column < x + glyph_width {
+        found = Maybe::new<Int>(glyph.start)
+        locating = false
+      } else {
+        x = x + glyph_width
+      }
+    }
+  }
+  found
+}
+
 private fn default_input_style() layout_style::Style {
   layout_style::new(height: layout_style::cells(1))
 }
@@ -660,6 +680,85 @@ impl Input {
     }
   }
 
+  private fn expansion_from_byte_range(value: editor::Range) node::SelectionExpansion? {
+    let width = self.node_ref.layout().screen.width
+    if width <= 0 or value.start < 0 or value.end > self.editor_state.value().size() or value.start >= value.end {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      let view = input_view(
+        self.editor_state.value(),
+        self.placeholder_text,
+        self.editor_state.cursor(),
+        width,
+        self.width_measurer,
+      )
+      let visible_start = display_offset(self.editor_state.value(), view.start, self.width_measurer)
+      mut anchor_x = display_offset(self.editor_state.value(), value.start, self.width_measurer) - visible_start
+      mut focus_x = display_offset(self.editor_state.value(), value.end, self.width_measurer) - visible_start - 1
+      if anchor_x < 0 {
+        anchor_x = 0
+      }
+      if anchor_x >= width {
+        anchor_x = width - 1
+      }
+      if focus_x < 0 {
+        focus_x = 0
+      }
+      if focus_x >= width {
+        focus_x = width - 1
+      }
+      Maybe::new<node::SelectionExpansion>(
+        node::SelectionExpansion{
+          anchor_x: anchor_x,
+          anchor_y: 0,
+          focus_x: focus_x,
+          focus_y: 0,
+          logical_range: node::SelectionRange{start: value.start, end: value.end},
+          source_range: node::SelectionRange{start: value.start, end: value.end},
+          source_revision: 0,
+        },
+      )
+    }
+  }
+
+  private fn word_expansion(local_x: Int, local_y: Int) node::SelectionExpansion? {
+    if local_y != 0 {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      let width = self.node_ref.layout().screen.width
+      let view = input_view(
+        self.editor_state.value(),
+        self.placeholder_text,
+        self.editor_state.cursor(),
+        width,
+        self.width_measurer,
+      )
+      match byte_at_column(self.editor_state.value(), view.start, local_x, width, self.width_measurer) {
+        byte => {
+          match editor::word_range_at(self.editor_state.value(), byte) {
+            range => self.expansion_from_byte_range(range),
+            _ => Maybe::new<node::SelectionExpansion>(),
+          }
+        },
+        _ => Maybe::new<node::SelectionExpansion>(),
+      }
+    }
+  }
+
+  private fn resolve_expansion(
+    logical_range: node::SelectionRange,
+    source_range: node::SelectionRange,
+    source_revision: Int,
+  ) node::SelectionExpansion? {
+    if source_revision != 0 or logical_range.start != source_range.start or logical_range.end != source_range.end {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      self.expansion_from_byte_range(
+        editor::Range{start: logical_range.start, end: logical_range.end},
+      )
+    }
+  }
+
   private fn mut clear_local_selection() node::SelectionResult {
     self.editor_state.clear_selection()
     self.selection_generation = 0
@@ -727,7 +826,11 @@ impl Input {
         self.selection_view_start = view.start
         self.selection_view_width = width
       }
-      let preserve_initial = self.selection_generation == 0 and self.editor_state.anchor().is_some()
+      match local.logical_range {
+        range => self.editor_state.set_selection(range.start, range.end),
+        _ => (),
+      }
+      let preserve_initial = local.logical_range.is_some() or self.selection_generation == 0 and self.editor_state.anchor().is_some()
       let generation_changed = self.selection_generation != local.generation or not self.editor_state.anchor().is_some()
       let version_changed = self.selection_version != local.version
       let owns_selection = self.node_ref.owns_global_selection()
@@ -843,8 +946,16 @@ impl Input {
         self.apply_local_selection(value)
       },
       Maybe::new<fn(Int, Int, Int, Int) node::SelectionExpansion?>(),
-      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(),
-      Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(),
+      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(
+        fn(local_x: Int, local_y: Int) node::SelectionExpansion? {
+          self.word_expansion(local_x, local_y)
+        },
+      ),
+      Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(
+        fn(logical_range: node::SelectionRange, source_range: node::SelectionRange, source_revision: Int) node::SelectionExpansion? {
+          self.resolve_expansion(logical_range, source_range, source_revision)
+        },
+      ),
     )
   }
 

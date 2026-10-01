@@ -28,6 +28,8 @@ struct Context {
   terminal_focus: fn() event::TerminalFocus?,
   theme: fn() theme::Theme,
   current_selection: fn() selection::Selection?,
+  // copy emits an OSC 52 clipboard write. Terminal acceptance is not observable.
+  copy: fn(Str),
   // Framework-only: settle lazy descendants between layout and painting.
   internal_layout: fn(fn() Bool) fn(),
   // Framework-only: application notifications after a committed frame.
@@ -66,6 +68,9 @@ fn internal_new(
       })
     },
     cancellation: scope.cancellation(),
+    copy: fn(value: Str) {
+      runtime.clipboard.write(value)
+    },
     internal_focus: fn(work: fn()) fn() {
       let subscription = scope.subscription()
       if subscription.active {

@@ -208,6 +208,7 @@ struct Node {
   selection_start_base: fn(Int, Int, Int) Bool,
   selection_update_base: fn(Int, Int, Int, Bool) Bool,
   selection_owns_base: fn(Int) Bool,
+  selection_retains_base: fn(Int) Bool,
   selection_clear_base: fn(),
   next_listener_id: Int,
   key_listeners: [KeyListener],
@@ -265,6 +266,7 @@ fn create(
   selection_start: fn(Int, Int, Int) Bool,
   selection_update: fn(Int, Int, Int, Bool) Bool,
   selection_owns: fn(Int) Bool,
+  selection_retains: fn(Int) Bool,
   selection_clear: fn(),
   on_destroy: fn(Int),
 ) mut Node {
@@ -304,6 +306,7 @@ fn create(
     selection_start_base: selection_start,
     selection_update_base: selection_update,
     selection_owns_base: selection_owns,
+    selection_retains_base: selection_retains,
     selection_clear_base: selection_clear,
     next_listener_id: 1,
     key_listeners: [],
@@ -524,6 +527,10 @@ impl Node {
 
   fn owns_global_selection() Bool {
     (self.selection_owns_base)(self.id)
+  }
+
+  fn retains_global_selection() Bool {
+    (self.selection_retains_base)(self.id)
   }
 
   fn selection_copy_text() Str? {

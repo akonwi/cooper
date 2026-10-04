@@ -135,6 +135,16 @@ private fn focused(target: mut node::Node) Bool {
   }
   found
 }
+
+private fn selected_endpoint(target: mut node::Node) Bool {
+  mut found = target.retains_global_selection()
+  for child in target.children {
+    if selected_endpoint(child) {
+      found = true
+    }
+  }
+  found
+}
 private fn nonnegative(value: Int) Int {
   if value < 0 {
     0
@@ -478,6 +488,12 @@ impl VirtualList {
     }
   }
 
+  private fn samples_height(index: Int) Bool {
+    let start = nonnegative(self.top - self.source.overscan)
+    let end = self.top + self.height + self.source.overscan
+    self.index.prefix(index + 1) > start and self.index.prefix(index) < end
+  }
+
   private fn indices() [Int] {
     let indices = mut List::new<Int>()
     let selected = mut Map::new<Bool>()
@@ -501,13 +517,13 @@ impl VirtualList {
       cursor =+ self.index.measured.get(self.index.key(first)).or(self.sample_height)
       first =+ 1
     }
-    // Focus is the only automatic keep-alive exception. A far-away focused row
-    // is retained separately; intervening rows are not materialized.
+    // Focus and selection endpoints are bounded keep-alive exceptions. Their
+    // rows remain retained without materializing the intervening range.
     for row in self.rows {
       if not selected.get(row.key).or(false) {
         match row.ref.current {
           control => {
-            if focused(control.node_ref) {
+            if focused(control.node_ref) or selected_endpoint(control.node_ref) {
               let _ = self.index.position(
                 row.key,
               ).map(fn(index: Int) {
@@ -655,7 +671,7 @@ impl VirtualList {
                 match self.index.position(row.key) {
                   index => {
                     let height = control.layout().local.height
-                    if height > 0 {
+                    if height > 0 and self.samples_height(index) {
                       measured =+ height
                       measured_count =+ 1
                     }

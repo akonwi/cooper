@@ -343,6 +343,18 @@ impl State {
     }
   }
   
+  fn retains_id(target_id: Int) Bool {
+    match self.session {
+      active => {
+        active.anchor.control.id == target_id or (match active.focus_control {
+          focused => focused.id == target_id,
+          _ => false,
+        })
+      },
+      _ => false,
+    }
+  }
+
   fn is_dragging() Bool {
     match self.session {
       active => active.is_dragging,

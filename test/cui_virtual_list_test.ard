@@ -31,7 +31,7 @@ private fn items(count: Int) [Int] {
 }
 private fn row(id: Int) cui::View {
   let children = mut List::new<cui::View>()
-  children.push(cui::text("row{id}", styles: ui::style(height: ui::cells(1))))
+  children.push(cui::text("row{id}", styles: ui::style(height: ui::cells(1)), selectable: true))
   mut line = 0
   while line < id % 3 {
     children.push(cui::text("body{id}:{line}", styles: ui::style(height: ui::cells(1))))
@@ -1044,4 +1044,147 @@ test fn virtual_list_updates_publish_final_committed_state_and_user_intent() Voi
   renderer.destroy()
   app.render()
   testing::assert(data.log.count == delivered, "Unmount suppresses later post-commit delivery")
+}
+
+test fn selected_row_is_pinned_until_selection_moves() Void!Str {
+  let app = headless::new(30, 8)
+  defer app.destroy()
+  let ref = cui::virtual_list_ref()
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      items(200),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        cui::text("row{id} selectable", selectable: true)
+      },
+      ref: ref,
+      overscan: 0,
+      estimated_height: 1,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  app.double_click(6, 0)
+  app.flush()
+  try testing::assert(
+    app.selection().expect("selected first row").selected_text == "selectable",
+    "initial row selection is active",
+  )
+
+  let list = ref.current.expect("list")
+  let _ = list.scroll_to_key("100")
+  app.flush()
+  try testing::assert(list.visible_range().start == 100, "selection pin does not undo scrolling")
+  try testing::assert(list.mounted_count() < 15, "selection pin keeps the mounted set bounded")
+  try testing::assert(
+    app.selection().expect("retained offscreen selection").selected_text == "",
+    "offscreen selection contributes no clipped text",
+  )
+
+  let _ = list.scroll_to_key("0")
+  app.flush()
+  try testing::assert(
+    app.selection().expect("restored first-row selection").selected_text == "selectable",
+    "returning to the retained row restores its logical selection",
+  )
+
+  let _ = list.scroll_to_key("100")
+  app.flush()
+  let pinned_count = list.mounted_count()
+  app.double_click(8, 0)
+  app.flush()
+  try testing::assert(
+    app.selection().expect("moved visible selection").selected_text == "selectable",
+    "selection moves to the visible row",
+  )
+  testing::assert(
+    list.mounted_count() < pinned_count,
+    "moving selection releases the former offscreen endpoint row",
+  )
+}
+
+test fn both_cross_row_selection_endpoints_are_pinned() Void!Str {
+  let app = headless::new(30, 8)
+  defer app.destroy()
+  let ref = cui::virtual_list_ref()
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::virtual_list(
+      items(200),
+      item_key: fn(id: Int) Str {
+        id.to_str()
+      },
+      render_item: fn(id: Int) cui::View {
+        cui::text("row{id} selectable", selectable: true)
+      },
+      ref: ref,
+      overscan: 0,
+      estimated_height: 1,
+      styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+  app.drag(5, 0, 5, 1)
+  app.flush()
+  let selected = app.selection().expect("cross-row selection").selected_text
+  try testing::assert(selected != "", "cross-row selection is active")
+
+  let list = ref.current.expect("list")
+  let _ = list.scroll_to_key("100")
+  app.flush()
+  try testing::assert(list.visible_range().start == 100, "endpoint pins do not undo scrolling")
+  try testing::assert(list.mounted_count() <= 10, "only two endpoint rows are retained")
+  try testing::assert(
+    app.selection().expect("offscreen cross-row selection").selected_text == "",
+    "offscreen endpoint rows contribute no clipped text",
+  )
+
+  let _ = list.scroll_to_key("0")
+  app.flush()
+  testing::assert(
+    app.selection().expect("restored cross-row selection").selected_text == selected,
+    "both retained endpoints restore the original cross-row selection",
+  )
+}
+
+test fn removing_a_pinned_selection_endpoint_clears_selection_and_releases_the_row() Void!Str {
+  let app = headless::new(30, 8)
+  defer app.destroy()
+  let data = mut Model{items: items(200), builds: 0, ref: cui::virtual_list_ref()}
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data: data}))
+  defer renderer.destroy()
+  app.flush()
+  app.double_click(1, 0)
+  app.flush()
+  try testing::assert(
+    app.selection().expect("selected removable row").selected_text == "row0",
+    "first row owns the selection",
+  )
+  let list = data.ref.current.expect("list")
+  let _ = list.scroll_to_key("100")
+  app.flush()
+  try testing::assert(app.selection().is_some(), "offscreen endpoint remains retained")
+
+  renderer.update(fn() {
+    let remaining = mut List::new<Int>()
+    mut index = 1
+    while index < 200 {
+      remaining.push(index)
+      index =+ 1
+    }
+    data.items = remaining.@
+  })
+  app.flush()
+  try testing::assert(app.selection().is_none(), "removing the endpoint key clears disconnected selection")
+  testing::assert(
+    list.mounted_count() < 40,
+    "removing the endpoint returns to the ordinary bounded mounted range",
+  )
 }

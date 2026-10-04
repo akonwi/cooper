@@ -655,6 +655,7 @@ impl State {
       self.selection_start_request(),
       self.selection_update_request(),
       self.selection_owns_request(),
+      self.selection_retains_request(),
       self.selection_clear_request(),
       fn(destroyed_id: Int) {
         self.release_node(destroyed_id)
@@ -1212,6 +1213,10 @@ impl State {
     }
   }
 
+  private fn mut selection_retained_by(target_id: Int) Bool {
+    self.selection.retains_id(target_id)
+  }
+
   fn mut selection_start_request() fn(Int, Int, Int) Bool {
     fn(target_id: Int, local_x: Int, local_y: Int) Bool {
       self.start_selection_node(target_id, local_x, local_y)
@@ -1227,6 +1232,12 @@ impl State {
   fn mut selection_owns_request() fn(Int) Bool {
     fn(target_id: Int) Bool {
       self.selection_owned_by(target_id)
+    }
+  }
+
+  fn mut selection_retains_request() fn(Int) Bool {
+    fn(target_id: Int) Bool {
+      self.selection_retained_by(target_id)
     }
   }
 

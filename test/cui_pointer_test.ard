@@ -230,3 +230,90 @@ test fn text_selection_is_opt_in_and_drag_capture_survives_reconciliation() Void
   app.flush()
   testing::assert(not app.selection().is_some(), "restoring the default clears existing selection")
 }
+
+test fn declarative_box_supplies_semantic_copy_text_only_for_local_selection() Void!Str {
+  let app = headless::new(12, 3)
+  defer app.destroy()
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::box(
+      [
+        cui::box(
+          [cui::text("alpha", selectable: true)],
+          styles: ui::style(width: ui::cells(5), height: ui::cells(1)),
+          selection_copy: "Name\tValue\nalpha\t1",
+        ),
+        cui::text("outside", selectable: true),
+      ],
+      styles: ui::style(flex_direction: ui::FlexDirection::column),
+    ),
+  )
+  defer renderer.destroy()
+  app.flush()
+
+  app.drag(0, 0, 2, 0)
+  app.flush()
+  let local = app.selection().expect("local semantic selection")
+  try testing::assert(
+    local.copy_text.or("") == "Name\tValue\nalpha\t1",
+    "selection contained by the provider uses semantic copy text",
+  )
+
+  app.drag(0, 0, 2, 1)
+  app.flush()
+  testing::assert(
+    app.selection().expect("mixed selection").copy_text.is_none(),
+    "selection spanning outside the provider keeps visual copy text",
+  )
+}
+
+struct CopyModel {
+  value: Str?,
+}
+
+struct CopyProps {
+  model: mut CopyModel,
+}
+
+struct CopyProvider {
+  props: mut CopyProps,
+}
+
+private fn copy_provider(props: mut CopyProps) mut CopyProvider {
+  (mut CopyProvider{props: props})
+}
+
+impl cui::Component for CopyProvider {
+  fn mut render() cui::View {
+    cui::box(
+      [cui::text("alpha", selectable: true)],
+      styles: ui::style(width: ui::cells(5), height: ui::cells(1)),
+      selection_copy: self.props.model.value,
+    )
+  }
+}
+
+test fn declarative_box_refreshes_semantic_copy_text_for_an_active_selection() Void!Str {
+  let app = headless::new(8, 2)
+  defer app.destroy()
+  let model = mut CopyModel{value: Maybe::new("first")}
+  let renderer = renderer::mount(app.context, app.root, cui::child(copy_provider, CopyProps{model: model}))
+  defer renderer.destroy()
+  app.flush()
+  app.drag(0, 0, 2, 0)
+  app.flush()
+  try testing::assert(app.selection().expect("initial selection").copy_text.or("") == "first", "initial semantic copy text")
+
+  renderer.update(fn() {
+    model.value = Maybe::new("second")
+  })
+  app.flush()
+  try testing::assert(app.selection().expect("updated selection").copy_text.or("") == "second", "updated semantic copy text")
+
+  renderer.update(fn() {
+    model.value = Maybe::new<Str>()
+  })
+  app.flush()
+  testing::assert(app.selection().expect("cleared selection provider").copy_text.is_none(), "removed semantic copy text")
+}

@@ -143,6 +143,39 @@ private fn expanded_container(
   candidate
 }
 
+private fn semantic_copy_text(
+  anchor: mut node::Node,
+  focus: (mut node::Node)?,
+  focus_point: geometry::Point,
+) Str? {
+  mut current = Maybe::new<mut node::Node>(anchor)
+  mut result = Maybe::new<Str>()
+  mut scanning = true
+  while scanning {
+    match current {
+      candidate => {
+        let owns_focus = match focus {
+          target => is_ancestor(candidate, target),
+          _ => geometry::contains(candidate.layout().screen, focus_point.x, focus_point.y),
+        }
+        match candidate.selection_copy_text() {
+          value => {
+            if owns_focus {
+              result = Maybe::new(value)
+              scanning = false
+            } else {
+              current = candidate.parent
+            }
+          },
+          _ => { current = candidate.parent },
+        }
+      },
+      _ => { scanning = false },
+    }
+  }
+  result
+}
+
 private struct WalkResult {
   touched: [mut node::Node],
   fragments: [node::SelectionFragment],
@@ -717,6 +750,11 @@ impl State {
                   height: max_y - min_y + 1,
                 },
                 selected_text: selection_text,
+                copy_text: semantic_copy_text(
+                  current_session.anchor.control,
+                  current_session.focus_control,
+                  current_session.focus,
+                ),
                 is_dragging: current_session.is_dragging,
               },
             )

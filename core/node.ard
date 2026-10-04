@@ -226,6 +226,7 @@ struct Node {
   selection_expand_word: (fn(Int, Int) SelectionExpansion?)?,
   selection_expand_line: (fn(Int, Int) SelectionExpansion?)?,
   selection_resolve: (fn(SelectionRange, SelectionRange, Int) SelectionExpansion?)?,
+  selection_copy: Str?,
   requested_scroll_x: Int,
   requested_scroll_y: Int,
   children_offset_x: Int,
@@ -321,6 +322,7 @@ fn create(
     selection_expand_word: Maybe::new<fn(Int, Int) SelectionExpansion?>(),
     selection_expand_line: Maybe::new<fn(Int, Int) SelectionExpansion?>(),
     selection_resolve: Maybe::new<fn(SelectionRange, SelectionRange, Int) SelectionExpansion?>(),
+    selection_copy: Maybe::new<Str>(),
     requested_scroll_x: 0,
     requested_scroll_y: 0,
     children_offset_x: 0,
@@ -522,6 +524,17 @@ impl Node {
 
   fn owns_global_selection() Bool {
     (self.selection_owns_base)(self.id)
+  }
+
+  fn selection_copy_text() Str? {
+    self.selection_copy
+  }
+
+  fn mut set_selection_copy_text(value: Str?) {
+    if self.selection_copy != value {
+      self.selection_copy = value
+      self.request_render()
+    }
   }
 
   fn clear_global_selection() {

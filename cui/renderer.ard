@@ -917,6 +917,7 @@ impl State {
         panel.set_key_bindings(
           description.scroll_key_bindings.or(ui::default_scroll_box_bindings()),
         )
+        panel.set_focusable(description.focusable)
         panel.set_style(description.styles)
         panel.set_scrollbar_options(description.scrollbar_options)
         match description.scroll_ref {
@@ -927,6 +928,7 @@ impl State {
       _ => {
         box(mounted.control).set_style(description.styles)
         box(mounted.control).set_title(description.title)
+        box(mounted.control).set_selection_copy_text(description.selection_copy)
       },
     }
     if description.kind == view::Kind::select_input or description.kind == view::Kind::tab_select {

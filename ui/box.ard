@@ -266,6 +266,11 @@ impl Box {
     }
   }
 
+  fn mut set_selection_copy_text(value: Str?) {
+    self.node_ref.require_live()
+    self.node_ref.set_selection_copy_text(value)
+  }
+
   fn style() layout_style::Style {
     self.node_ref.style()
   }

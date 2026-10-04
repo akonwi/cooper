@@ -157,6 +157,7 @@ struct Description {
   overflow: ui::TextOverflow,
   selectable: Bool,
   selection_style: fn(mut ui::TextStyle),
+  selection_copy: Str?,
   title: Str,
   value: Str,
   placeholder: Str,
@@ -173,6 +174,7 @@ struct Description {
   on_change: fn(ui::SelectSelection, context::Context)?,
   on_select_submit: fn(ui::SelectSelection, context::Context)?,
   focused: Bool?,
+  focusable: Bool,
   autofocus: Bool,
   on_input: fn(Str, context::Context)?,
   on_submit: fn(Str, context::Context)?,
@@ -214,6 +216,7 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     overflow: ui::TextOverflow::clip,
     selectable: true,
     selection_style: default_selection_style,
+    selection_copy: Maybe::new<Str>(),
     title: "",
     value: "",
     placeholder: "",
@@ -230,6 +233,7 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     on_change: Maybe::new<fn(ui::SelectSelection, context::Context)>(),
     on_select_submit: Maybe::new<fn(ui::SelectSelection, context::Context)>(),
     focused: Maybe::new<Bool>(),
+    focusable: true,
     autofocus: false,
     on_input: Maybe::new<fn(Str, context::Context)>(),
     on_submit: Maybe::new<fn(Str, context::Context)>(),
@@ -277,6 +281,7 @@ fn box(
   key: Str?,
   styles: ui::Style?,
   title: Str?,
+  selection_copy: Str?,
   focused: Bool?,
   autofocus: Bool?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
@@ -290,6 +295,7 @@ fn box(
   let result = mut base(Kind::box, key, styles)
   result.children = children
   result.title = title.or("")
+  result.selection_copy = selection_copy
   result.focused = focused
   result.autofocus = autofocus.or(false)
   result.on_key = on_key
@@ -314,6 +320,7 @@ fn scroll_box(
   key: Str?,
   styles: ui::Style?,
   scrollbar_options: ui::ScrollbarOptions?,
+  focusable: Bool?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut ScrollBoxRef)?,
@@ -326,6 +333,7 @@ fn scroll_box(
   let result = mut base(Kind::scroll, key, styles)
   result.children = children
   result.scrollbar_options = scrollbar_options.or(ui::scrollbar_options())
+  result.focusable = focusable.or(true)
   result.on_key = on_key
   result.on_mouse = on_mouse
   result.scroll_ref = ref

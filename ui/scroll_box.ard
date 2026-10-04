@@ -440,6 +440,11 @@ impl ScrollBox {
     self.viewport().apply_style(configured_viewport(value))
   }
 
+  fn mut set_focusable(value: Bool) {
+    self.require_live()
+    self.node_ref.set_focusable(value)
+  }
+
   fn mut focus() Bool {
     self.require_live()
     self.node_ref.focus()

@@ -423,6 +423,26 @@ test fn manual_text_area_scroll_does_not_reveal_hidden_caret_in_parent() Void!St
   testing::assert(area.node_ref.is_destroyed(), "Expected manually scrolled TextArea cleanup")
 }
 
+test fn text_area_programmatic_cursor_placement_normalizes_and_reveals_the_caret() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let area = text_area::new(
+    application.context,
+    value: "one\ntwo\nthree\nfour",
+    styles: fixed(8, 2),
+  )
+  application.root.add(area)
+  application.render()
+  area.focus()
+
+  area.set_cursor(1)
+  application.render()
+
+  try testing::assert(area.cursor() == 1, "Expected the requested cursor byte offset")
+  try testing::assert(application.frame().cursor_y().or(-1) == 0, "Expected the restored cursor to be visible")
+  application.destroy()
+  testing::assert(area.node_ref.is_destroyed(), "Expected cursor placement TextArea cleanup")
+}
+
 test fn text_area_constructor_and_setter_normalize_every_line_ending() Void!Str {
   let application = cooper_testing::new(8, 3)
   let area = text_area::new(application.context, value: "a\r\nb\r\nc", styles: fixed(8, 3))

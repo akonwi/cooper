@@ -67,6 +67,24 @@ struct TextAreaRef {
   current: (mut ui::TextArea)?,
 }
 impl TextAreaRef {
+  fn cursor() Int? {
+    self.current.map(fn(control) {
+      control.cursor()
+    })
+  }
+
+  // set_cursor schedules placement after the pending commit so controlled value
+  // updates settle before the caret is restored.
+  fn mut set_cursor(ctx: context::Context, offset: Int) fn() {
+    (ctx.internal_commit)(
+      fn() {
+        self.current.map(fn(control) {
+          control.set_cursor(offset)
+        })
+      },
+    )
+  }
+
   fn mut focus(ctx: context::Context) fn() {
     (ctx.internal_focus)(
       fn() {

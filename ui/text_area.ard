@@ -1060,6 +1060,28 @@ impl TextArea {
     self.editor_state.value()
   }
 
+  // cursor returns the UTF-8 byte offset of the active caret.
+  fn cursor() Int {
+    self.node_ref.require_live()
+    self.editor_state.cursor()
+  }
+
+  // set_cursor places and reveals the caret at the nearest grapheme boundary.
+  // Programmatic placement clears any active selection.
+  fn mut set_cursor(value: Int) {
+    self.node_ref.require_live()
+    let had_selection = self.editor_state.has_anchor()
+    self.editor_state.set_cursor(value)
+    self.editor_state.clear_selection()
+    if had_selection {
+      self.viewport_ref.clear_global_selection()
+      let _ = self.clear_local_selection()
+    }
+    self.reset_preferred_column()
+    self.reveal_cursor()
+    self.node_ref.request_redraw()
+  }
+
   fn mut focus() Bool {
     self.node_ref.focus()
   }

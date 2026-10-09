@@ -62,6 +62,10 @@ private fn box(control: mut node::Renderable) mut ui::Box {
   unsafe::cast<mut ui::Box>(control).expect("box control")
 }
 
+private fn image(control: mut node::Renderable) mut ui::Image {
+  unsafe::cast<mut ui::Image>(control).expect("image control")
+}
+
 private fn divider(control: mut node::Renderable) mut ui::Divider {
   unsafe::cast<mut ui::Divider>(control).expect("divider control")
 }
@@ -192,7 +196,7 @@ private fn validate(children: [view::View], refs: mut [mut view::InputRef]) {
       },
       _ => (),
     }
-    if (child.kind == view::Kind::text or child.kind == view::Kind::input) and child.children.size() != 0 {
+    if (child.kind == view::Kind::text or child.kind == view::Kind::input or child.kind == view::Kind::image) and child.children.size() != 0 {
       panic("leaf view cannot have children")
     }
     match child.input_ref {
@@ -728,6 +732,13 @@ impl State {
         )
       },
       view::Kind::divider => ui::divider(self.runtime),
+      view::Kind::image => {
+        ui::image(
+          self.runtime,
+          description.image.expect("image source"),
+          styles: description.styles,
+        )
+      },
       view::Kind::scroll => ui::scroll_box(self.runtime),
       _ => ui::box(self.runtime),
     }
@@ -912,6 +923,13 @@ impl State {
       view::Kind::select_input => apply_select(mounted, description, previous),
       view::Kind::tab_select => apply_select(mounted, description, previous),
       view::Kind::divider => divider(mounted.control).set_style(description.styles),
+      view::Kind::image => {
+        let control = image(mounted.control)
+        control.set_style(description.styles)
+        if previous.value != description.value {
+          control.set_source(description.image.expect("image source"))
+        }
+      },
       view::Kind::scroll => {
         let panel = scroll(mounted.control)
         panel.set_key_bindings(

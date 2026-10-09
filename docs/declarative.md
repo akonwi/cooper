@@ -123,6 +123,7 @@ Primitive identity uses key and kind, or unkeyed position and kind.
 | `scroll_box(children, ...)` | Children, style, scrollbar options, key/mouse callbacks, ScrollBoxRef, key |
 | `text_area(value, ...)` | Controlled multiline value, wrapping, text/placeholder styles, scrollbar options, focus, callbacks, TextAreaRef, key |
 | `select_input(options, ...)` / `tab_select(options, ...)` | Selection, configuration, appearance, focus, callbacks, SelectRef, key |
+| `image(source, source_id, ...)` | ImageData, style-allocated rectangle, key; the source is replaced only when `source_id` changes |
 | `virtual_list(items, ...)` | Stable item keys, row builder, height estimates, overscan, scrollbar options, VirtualListRef, key |
 
 Styles and common values come from `cooper/ui`. A `View` is a description, not a
@@ -553,7 +554,7 @@ component view before controls or refs are mutated. Violations panic. Exceptions
 from application constructors, rendering, or lifecycle hooks are also programmer
 errors; Cooper makes no transactional model rollback or recovery promise.
 
-Images, custom control adapters, fine-grained scheduling, and a framework-managed
+Custom control adapters, fine-grained scheduling, and a framework-managed
 background executor are not exposed.
 
 ## Virtual lists

@@ -95,6 +95,7 @@ let box = box_control::new
 let divider = divider_control::new
 let image = image_control::new
 let image_data = image_control::data
+let image_rgba = image_control::rgba
 let decode_image = image_control::decode
 let input = input_control::new
 let default_input_bindings = input_control::default_bindings

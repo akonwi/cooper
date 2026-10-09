@@ -41,6 +41,7 @@ let box_ref = view::box_ref
 let scroll_box_ref = view::scroll_box_ref
 let box = view::box
 let divider = view::divider
+let image = view::image
 let scroll_box = view::scroll_box
 let text = view::text
 let input = view::input

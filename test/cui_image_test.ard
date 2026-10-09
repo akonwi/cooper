@@ -1,0 +1,97 @@
+use ard/testing
+
+use cooper/cui
+use cooper/cui/renderer
+use cooper/testing as headless
+use cooper/ui
+
+private fn solid(width: Int, height: Int, red: Int, green: Int, blue: Int, alpha: Int) ui::ImageData {
+  let bytes = mut List::new<Byte>()
+  mut index = 0
+  while index < width * height {
+    bytes.push(Byte::fit(red))
+    bytes.push(Byte::fit(green))
+    bytes.push(Byte::fit(blue))
+    bytes.push(Byte::fit(alpha))
+    index =+ 1
+  }
+  ui::image_rgba(width, height, bytes.@, Maybe::new(ui::rgb(0, 0, 200)))
+}
+
+private fn same(value: ui::Color?, red: Int, green: Int, blue: Int) Bool {
+  match value {
+    color => {
+      color.red == Uint8::fit(red) and color.green == Uint8::fit(green) and color.blue == Uint8::fit(blue)
+    },
+    _ => false,
+  }
+}
+
+test fn rgba_images_keep_alpha_and_composite_the_cell_fallback_over_the_matte() Void!Str {
+  let opaque = solid(1, 1, 255, 0, 0, 255)
+  try testing::assert(same(opaque.pixels.at(0), 255, 0, 0), "an opaque pixel keeps its color")
+  let half = solid(1, 1, 255, 0, 0, 128)
+  try testing::assert(same(half.pixels.at(0), 128, 0, 100), "a translucent pixel blends with the matte")
+  testing::assert(
+    half.rgba.size() == 4 and half.rgba.at(3).or(Byte::from(0)) == Byte::from(128),
+    "native output keeps straight alpha",
+  )
+}
+
+struct Model {
+  source: ui::ImageData,
+  source_id: Str,
+}
+
+struct Props {
+  model: mut Model,
+}
+
+struct Host {
+  props: mut Props,
+}
+
+private fn host(props: mut Props) mut Host {
+  (mut Host{props: props})
+}
+
+impl cui::Component for Host {
+  fn mut render() cui::View {
+    cui::image(
+      self.props.model.source,
+      self.props.model.source_id,
+      styles: ui::style(width: ui::cells(2), height: ui::cells(1)),
+    )
+  }
+}
+
+// Images are leaves whose pixels are replaced only when their identity
+// changes, so re-rendering a parent does not copy them again.
+test fn declarative_images_paint_and_replace_their_source_by_identity() Void!Str {
+  let application = headless::new(2, 1)
+  defer application.destroy()
+  let model = mut Model{source: solid(2, 2, 255, 0, 0, 255), source_id: "red"}
+  let mounted = renderer::mount(
+    application.context,
+    application.root,
+    cui::child(host, Props{model: model}),
+  )
+  defer mounted.destroy()
+  application.flush()
+  let painted = fn() ui::Color? {
+    application.frame().cell(0, 0).expect("image cell").style.foreground
+  }
+  try testing::assert(same(painted(), 255, 0, 0), "the image paints its pixels")
+
+  mounted.update(fn() {
+    model.source = solid(2, 2, 0, 255, 0, 255)
+  })
+  application.flush()
+  try testing::assert(same(painted(), 255, 0, 0), "the same identity keeps the retained pixels")
+
+  mounted.update(fn() {
+    model.source_id = "green"
+  })
+  application.flush()
+  testing::assert(same(painted(), 0, 255, 0), "a new identity replaces them")
+}

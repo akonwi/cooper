@@ -38,6 +38,7 @@ enum Kind {
   text_area,
   select_input,
   tab_select,
+  image,
   component,
 }
 
@@ -211,6 +212,8 @@ struct Description {
   select_ref: (mut SelectRef)?,
   box_ref: (mut BoxRef)?,
   scroll_ref: (mut ScrollBoxRef)?,
+  // An image view's pixels; `value` identifies them.
+  image: ui::ImageData?,
   component: Specification?,
 }
 
@@ -270,6 +273,7 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     select_ref: Maybe::new<mut SelectRef>(),
     box_ref: Maybe::new<mut BoxRef>(),
     scroll_ref: Maybe::new<mut ScrollBoxRef>(),
+    image: Maybe::new<ui::ImageData>(),
     component: Maybe::new<Specification>(),
   }
 }
@@ -323,6 +327,16 @@ fn box(
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
   result.binding_priority = binding_priority.or(0)
+  View{internal: result.@}
+}
+
+// image paints decoded pixels in the rectangle its styles allocate; images
+// have no intrinsic size. Copying pixels is costly, so the retained image
+// replaces its source only when `source_id` changes.
+fn image(source: ui::ImageData, source_id: Str, key: Str?, styles: ui::Style?) View {
+  let result = mut base(Kind::image, key, styles)
+  result.image = Maybe::new(source)
+  result.value = source_id
   View{internal: result.@}
 }
 

@@ -66,6 +66,44 @@ private fn copy_data(source: ImageData) ImageData {
   copied.@
 }
 
+// Snapshot straight-alpha RGBA8 bytes in row-major order, as produced by an
+// application that decodes and scales its own images. Cell fallback composites
+// over matte (default black).
+fn rgba(width: Int, height: Int, bytes: [Byte], matte: color::Color?) ImageData {
+  if not valid_size(width, height) or bytes.size() != width * height * 4 {
+    panic("image RGBA requires 1-4096 pixel dimensions and exactly width * height * 4 bytes")
+  }
+  let background = matte.or(color::rgb(0, 0, 0))
+  require_rgb(background)
+  let pixels = mut List::new<color::Color>()
+  let copied = mut List::new<Byte>()
+  mut index = 0
+  while index < bytes.size() {
+    let red = bytes.at(index).expect("red")
+    let green = bytes.at(index + 1).expect("green")
+    let blue = bytes.at(index + 2).expect("blue")
+    let alpha = bytes.at(index + 3).expect("alpha")
+    copied.push(red)
+    copied.push(green)
+    copied.push(blue)
+    copied.push(alpha)
+    pixels.push(
+      color::rgb(
+        flatten(red, alpha, background.red),
+        flatten(green, alpha, background.green),
+        flatten(blue, alpha, background.blue),
+      ),
+    )
+    index =+ 4
+  }
+  ImageData{
+    width: width,
+    height: height,
+    pixels: pixels.@,
+    rgba: copied.@,
+  }
+}
+
 // Decode synchronously; callers own file/network acquisition and dispatch.
 // Native output preserves alpha; only cell fallback uses matte (default black).
 fn decode(encoded: [Byte], matte: color::Color?) ImageData!Str {

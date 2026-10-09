@@ -473,6 +473,37 @@ test fn text_area_reports_the_screen_cell_of_its_caret() Void!Str {
   testing::assert(area.node_ref.is_destroyed(), "Expected caret TextArea cleanup")
 }
 
+test fn text_area_reports_the_screen_cell_of_a_character() Void!Str {
+  let application = cooper_testing::new(12, 4)
+  let area = text_area::new(
+    application.context,
+    value: "ab cd efgh",
+    styles: style::new(
+      position: style::Position::absolute,
+      top: style::cells(1),
+      left: style::cells(2),
+      width: style::cells(6),
+      height: style::cells(3),
+    ),
+  )
+  application.root.add(area)
+  application.render()
+
+  // The five content columns beside the scrollbar wrap the text as "ab ",
+  // "cd ", "efgh".
+  let first = area.cell(1)
+  try testing::assert(first.x == 3 and first.y == 1, "Expected the b's cell, got {first.x},{first.y}")
+  let wrapped = area.cell(3)
+  try testing::assert(
+    wrapped.x == 2 and wrapped.y == 2,
+    "Expected a wrapped line's first character on that line, got {wrapped.x},{wrapped.y}",
+  )
+  let last = area.cell(9)
+  try testing::assert(last.x == 5 and last.y == 3, "Expected the h's cell, got {last.x},{last.y}")
+  application.destroy()
+  testing::assert(area.node_ref.is_destroyed(), "Expected cell TextArea cleanup")
+}
+
 test fn text_area_constructor_and_setter_normalize_every_line_ending() Void!Str {
   let application = cooper_testing::new(8, 3)
   let area = text_area::new(application.context, value: "a\r\nb\r\nc", styles: fixed(8, 3))

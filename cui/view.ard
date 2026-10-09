@@ -81,6 +81,14 @@ impl TextAreaRef {
     })
   }
 
+  // cell is the screen cell of the character at a UTF-8 byte offset, as of
+  // the last layout.
+  fn cell(offset: Int) ui::Point? {
+    self.current.map(fn(control) {
+      control.cell(offset)
+    })
+  }
+
   // set_cursor schedules placement after the pending commit so controlled value
   // updates settle before the caret is restored.
   fn mut set_cursor(ctx: context::Context, offset: Int) fn() {

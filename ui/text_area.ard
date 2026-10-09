@@ -1076,6 +1076,18 @@ impl TextArea {
     geometry::Point{x: bounds.x + local.x, y: bounds.y + local.y}
   }
 
+  // cell returns the screen cell of the character at a UTF-8 byte offset,
+  // laid out and scrolled as the caret is, so applications can anchor
+  // popovers to text such as a mention's trigger. A character that starts a
+  // soft-wrapped line is on that line.
+  fn cell(offset: Int) geometry::Point {
+    self.node_ref.require_live()
+    let state = view_state(self.internal)
+    let position = area_layout::caret(self.current_layout(), offset)
+    let bounds = self.viewport_ref.layout().screen
+    geometry::Point{x: bounds.x + position.x - state.scroll_x, y: bounds.y + position.y - state.scroll_y}
+  }
+
   // set_cursor places and reveals the caret at the nearest grapheme boundary.
   // Programmatic placement clears any active selection.
   fn mut set_cursor(value: Int) {

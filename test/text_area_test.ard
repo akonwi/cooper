@@ -443,6 +443,36 @@ test fn text_area_programmatic_cursor_placement_normalizes_and_reveals_the_caret
   testing::assert(area.node_ref.is_destroyed(), "Expected cursor placement TextArea cleanup")
 }
 
+test fn text_area_reports_the_screen_cell_of_its_caret() Void!Str {
+  let application = cooper_testing::new(12, 4)
+  let area = text_area::new(
+    application.context,
+    value: "one\ntwo",
+    styles: style::new(
+      position: style::Position::absolute,
+      top: style::cells(1),
+      left: style::cells(2),
+      width: style::cells(6),
+      height: style::cells(3),
+    ),
+  )
+  application.root.add(area)
+  application.render()
+  area.focus()
+
+  // Byte 6 is the "o" of "two", the second line's third cell.
+  area.set_cursor(6)
+  application.render()
+  let caret = area.caret()
+  try testing::assert(caret.x == 4 and caret.y == 2, "Expected the caret cell, got {caret.x},{caret.y}")
+  try testing::assert(
+    application.frame().cursor_x().or(-1) == caret.x and application.frame().cursor_y().or(-1) == caret.y,
+    "Expected the terminal cursor at the reported cell",
+  )
+  application.destroy()
+  testing::assert(area.node_ref.is_destroyed(), "Expected caret TextArea cleanup")
+}
+
 test fn text_area_constructor_and_setter_normalize_every_line_ending() Void!Str {
   let application = cooper_testing::new(8, 3)
   let area = text_area::new(application.context, value: "a\r\nb\r\nc", styles: fixed(8, 3))

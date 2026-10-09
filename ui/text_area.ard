@@ -1066,6 +1066,16 @@ impl TextArea {
     self.editor_state.cursor()
   }
 
+  // caret returns the screen cell where the terminal cursor shows the caret:
+  // its place in the laid-out text, after scrolling, from the content box's
+  // origin. A caret scrolled out of view lies outside the content box.
+  fn caret() geometry::Point {
+    self.node_ref.require_live()
+    let local = self.local_caret()
+    let bounds = self.viewport_ref.layout().screen
+    geometry::Point{x: bounds.x + local.x, y: bounds.y + local.y}
+  }
+
   // set_cursor places and reveals the caret at the nearest grapheme boundary.
   // Programmatic placement clears any active selection.
   fn mut set_cursor(value: Int) {

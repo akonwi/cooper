@@ -74,6 +74,13 @@ impl TextAreaRef {
     })
   }
 
+  // caret is the screen cell of the mounted caret, as of the last layout.
+  fn caret() ui::Point? {
+    self.current.map(fn(control) {
+      control.caret()
+    })
+  }
+
   // set_cursor schedules placement after the pending commit so controlled value
   // updates settle before the caret is restored.
   fn mut set_cursor(ctx: context::Context, offset: Int) fn() {

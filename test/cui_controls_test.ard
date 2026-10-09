@@ -361,3 +361,38 @@ test fn new_control_refs_reject_duplicates_and_foreign_ownership_before_mutation
     err(message) => testing::assert(message.contains("TextAreaRef"), message),
   }
 }
+
+test fn a_textarea_ref_places_the_caret_once() Void!Str {
+  let app = headless::new(32, 12)
+  defer app.destroy()
+  let data = model()
+  data.value = "tail"
+  let renderer = renderer::mount(app.context, app.root, cui::child(form, Props{model: data}))
+  defer renderer.destroy()
+  app.flush()
+  let area = data.area.current.expect("area")
+  let _ = area.focus()
+  app.key(key("end"))
+  app.key(key("!", text: "!"))
+  app.flush()
+  let context = data.contexts.at(0).expect("event context")
+
+  // A controlled value change places the caret after its commit; typing then
+  // moves the caret on.
+  mut cancel = fn() {}
+  renderer.update(fn() {
+    data.value = "headtail!"
+    cancel = data.area.set_cursor(context, 4)
+  })
+  app.flush()
+  app.key(key("a", text: "a"))
+  app.flush()
+  app.key(key("b", text: "b"))
+  app.flush()
+  try testing::assert(data.value == "headabtail!", "the caret follows typing: {data.value}")
+  // Cancelling a placement that already ran changes nothing.
+  cancel()
+  app.key(key("c", text: "c"))
+  app.flush()
+  testing::assert(data.value == "headabctail!", data.value)
+}

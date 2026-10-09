@@ -67,6 +67,12 @@ fn input_ref() mut InputRef {
 struct TextAreaRef {
   current: (mut ui::TextArea)?,
 }
+
+// A one-time caret placement and the cancellation of its commit hook.
+private struct Placement {
+  done: Bool,
+  cancel: fn(),
+}
 impl TextAreaRef {
   fn cursor() Int? {
     self.current.map(fn(control) {
@@ -90,15 +96,27 @@ impl TextAreaRef {
   }
 
   // set_cursor schedules placement after the pending commit so controlled value
-  // updates settle before the caret is restored.
+  // updates settle before the caret is restored. It places the caret once;
+  // later commits leave it where editing moves it. The returned function
+  // cancels a placement that has not run yet.
   fn mut set_cursor(ctx: context::Context, offset: Int) fn() {
-    (ctx.internal_commit)(
+    let placement = mut Placement{done: false, cancel: fn() {}}
+    let cancel = (ctx.internal_commit)(
       fn() {
-        self.current.map(fn(control) {
-          control.set_cursor(offset)
-        })
+        if not placement.done {
+          placement.done = true
+          placement.cancel()
+          self.current.map(fn(control) {
+            control.set_cursor(offset)
+          })
+        }
       },
     )
+    placement.cancel = cancel
+    fn() {
+      placement.done = true
+      cancel()
+    }
   }
 
   fn mut focus(ctx: context::Context) fn() {

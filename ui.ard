@@ -3,6 +3,7 @@ use cooper/ui/color as color_value
 use cooper/ui/cursor as cursor_value
 use cooper/ui/divider as divider_control
 use cooper/ui/geometry as geometry_value
+use cooper/ui/grapheme as grapheme_value
 use cooper/ui/image as image_control
 use cooper/ui/input as input_control
 use cooper/ui/scroll_box as scroll_box_control
@@ -21,6 +22,8 @@ type Divider = divider_control::Divider
 type Point = geometry_value::Point
 type Rect = geometry_value::Rect
 type Geometry = geometry_value::Geometry
+
+type Grapheme = grapheme_value::Grapheme
 
 type Align = layout_style::Align
 type Border = layout_style::Border
@@ -80,6 +83,9 @@ let hex = color_value::hex
 
 let intersect = geometry_value::intersect
 let contains = geometry_value::contains
+
+let graphemes = grapheme_value::graphemes
+let text_width = grapheme_value::text_width
 
 let undefined = layout_style::undefined
 let auto = layout_style::auto

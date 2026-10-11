@@ -1,0 +1,46 @@
+use ard/testing
+
+use go:vaxis
+
+// Grapheme is one user-perceived character of a string and the terminal cells
+// it occupies under Vaxis's default width rules. Zero-width graphemes, such as
+// a lone combining mark, report 0.
+struct Grapheme {
+  text: Str,
+  width: Int,
+}
+
+// graphemes splits value into its graphemes in order, with each one's cell
+// width, for code that measures or trims text outside a laid-out control.
+fn graphemes(value: Str) [Grapheme] {
+  let result = mut List::new<Grapheme>()
+  for character in vaxis::Characters(value) {
+    result.push(Grapheme{text: character.Grapheme, width: character.Width})
+  }
+  result.@
+}
+
+// text_width is the number of terminal cells value occupies: the sum of its
+// graphemes' widths.
+fn text_width(value: Str) Int {
+  mut width = 0
+  for character in vaxis::Characters(value) {
+    width =+ character.Width
+  }
+  width
+}
+
+test fn graphemes_keep_clusters_whole_with_their_cell_widths() Void!Str {
+  let parts = graphemes("aé你👍🏽")
+  try testing::assert(parts.size() == 4, "got {parts.size()} graphemes")
+  let texts = parts.at(0).expect("a").text + "|" + parts.at(1).expect("é").text + "|" + parts.at(2).expect("你").text + "|" + parts.at(3).expect("thumb").text
+  try testing::assert(texts == "a|é|你|👍🏽", "got {texts}")
+  let widths = "{parts.at(0).expect("a").width} {parts.at(1).expect("é").width} {parts.at(2).expect("你").width} {parts.at(3).expect("thumb").width}"
+  testing::assert(widths == "1 1 2 2", "got widths {widths}")
+}
+
+test fn text_width_sums_grapheme_widths() Void!Str {
+  try testing::assert(text_width("") == 0, "empty text")
+  try testing::assert(text_width("kit") == 3, "ascii")
+  testing::assert(text_width("…/你好") == 6, "got {text_width("…/你好")}")
+}

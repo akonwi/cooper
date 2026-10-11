@@ -131,6 +131,11 @@ private struct TerminalTitles {
   values: [Str],
 }
 
+private struct Bells {
+  mutex: mut sync::Mutex,
+  count: Int,
+}
+
 struct TestApp {
   context: mut runtime::Runtime,
   root: mut root::Root,
@@ -138,6 +143,7 @@ struct TestApp {
   notification_log: Any,
   terminal_progress_log: Any,
   terminal_title_log: Any,
+  bell_log: Any,
 }
 
 private fn test_runtime(application: TestApp) mut runtime::Runtime {
@@ -168,6 +174,7 @@ fn new(
   let notification_log = mut SentNotifications{mutex: mut sync::Mutex{}, values: []}
   let terminal_progress_log = mut TerminalProgressReports{mutex: mut sync::Mutex{}, values: []}
   let terminal_title_log = mut TerminalTitles{mutex: mut sync::Mutex{}, values: []}
+  let bell_log = mut Bells{mutex: mut sync::Mutex{}, count: 0}
   let opened = mut OpenedURLs{values: []}
   let runtime = runtime::new_headless(
     width,
@@ -207,6 +214,11 @@ fn new(
       terminal_title_log.mutex.Unlock()
     },
     screen,
+    fn() {
+      bell_log.mutex.Lock()
+      bell_log.count = bell_log.count + 1
+      bell_log.mutex.Unlock()
+    },
   )
   let root = root::new(runtime)
   runtime.start_test(root)
@@ -217,6 +229,7 @@ fn new(
     notification_log: notification_log,
     terminal_progress_log: terminal_progress_log,
     terminal_title_log: terminal_title_log,
+    bell_log: bell_log,
   }
 }
 
@@ -247,6 +260,17 @@ impl TestApp {
     }
     log.mutex.Unlock()
     output.@
+  }
+
+  // The number of times the terminal bell has rung.
+  fn bells() Int {
+    let log = unsafe::cast<mut Bells>(
+      self.bell_log,
+    ).expect("TestApp bells must be created by Cooper")
+    log.mutex.Lock()
+    let count = log.count
+    log.mutex.Unlock()
+    count
   }
 
   fn terminal_titles() [Str] {

@@ -148,6 +148,8 @@ private fn reject_notification(message: Str, title: Str?) Bool {
   false
 }
 
+private fn ignore_bell() {}
+
 private fn reject_terminal_progress(state: terminal_progress::State, percent: Int?) Bool {
   false
 }
@@ -229,6 +231,8 @@ private struct State {
   terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
   terminal_title_action: fn(Str),
   terminal_title_supported: Bool,
+  // Rings the terminal bell. Runtimes without a terminal ignore it.
+  bell_action: fn(),
   render_request: fn(),
   width_measurer: fn(Str) Int,
   open_url_action: fn(Str) Void!Error,
@@ -391,6 +395,7 @@ private fn state(
     terminal_progress_action: terminal_progress_action,
     terminal_title_action: terminal_title_action,
     terminal_title_supported: terminal_title_supported,
+    bell_action: ignore_bell,
     render_request: retained_render_request,
     width_measurer: retained_width_measurer,
     open_url_action: open_url_action,
@@ -565,6 +570,9 @@ private fn new_live_state(
         false,
         presentation,
       )
+      created.bell_action = fn() {
+        terminal.Bell()
+      }
       Result::ok(created)
     },
     err(error) => {
@@ -582,6 +590,7 @@ private fn new_headless_state(
   terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
   terminal_title_action: fn(Str),
   screen_config: screen::Config?,
+  bell_action: fn()?,
 ) mut State {
   if width < 0 or height < 0 {
     panic("headless application dimensions must be non-negative")
@@ -608,6 +617,7 @@ private fn new_headless_state(
     false,
     screen_config,
   )
+  created.bell_action = bell_action.or(ignore_bell)
   created
 }
 
@@ -2080,6 +2090,21 @@ impl State {
     accepted
   }
 
+  // Rings the terminal bell while the terminal is presented, as terminal
+  // titles are written.
+  fn mut bell() Bool {
+    self.terminal_io.Lock()
+    defer self.terminal_io.Unlock()
+    self.lifecycle.Lock()
+    defer self.lifecycle.Unlock()
+    let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 5 or self.phase == 6 or self.phase == 7 or self.phase == 8 or self.phase == 14
+    let accepted = active and (not self.detached) and (not self.resources_stopped) and (not self.retained_destroyed)
+    if accepted {
+      self.bell_action()
+    }
+    accepted
+  }
+
   fn mut notify(message: Str, title: Str?) Bool {
     mut normalized = title
     match title {
@@ -3185,6 +3210,7 @@ fn new_headless(
   terminal_progress_action: fn(terminal_progress::State, Int?) Bool,
   terminal_title_action: fn(Str),
   screen_config: screen::Config?,
+  bell_action: fn()?,
 ) mut Runtime {
   public_runtime(
     new_headless_state(
@@ -3195,6 +3221,7 @@ fn new_headless(
       terminal_progress_action,
       terminal_title_action,
       screen_config,
+      bell_action,
     ),
   )
 }
@@ -3356,6 +3383,12 @@ impl Runtime {
 
   fn mut set_title(value: Str) Bool {
     internal_state(self).set_title(value)
+  }
+
+  // bell rings the terminal bell and reports whether it was sent. It is
+  // ignored before the runtime starts and after it stops.
+  fn mut bell() Bool {
+    internal_state(self).bell()
   }
 
   // Queries before start/run; once active, returns the cached current theme so

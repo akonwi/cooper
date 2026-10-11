@@ -1,0 +1,34 @@
+use ard/testing
+
+use cooper/runtime
+use cooper/testing as cooper_testing
+
+test fn the_bell_rings_once_per_request_while_the_runtime_runs() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  try testing::assert(application.bells() == 0, "no bell before a request")
+  try testing::assert(context.bell(), "the first bell is sent")
+  try testing::assert(context.bell(), "a repeated bell is sent")
+  try testing::assert(application.bells() == 2, "each request rings")
+
+  application.destroy()
+  try testing::assert(not context.bell(), "a destroyed runtime rejects the bell")
+  testing::assert(application.bells() == 2, "nothing rings after destruction")
+}
+
+test fn the_bell_rings_while_suspended() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  try testing::assert(application.suspend(), "expected headless suspension")
+  try testing::assert(application.context.bell(), "a suspended runtime still rings")
+  try testing::assert(application.resume(), "expected headless resume")
+  try testing::assert(application.bells() == 1, "the bell rang once")
+  application.destroy()
+  Result::ok(())
+}
+
+test fn a_detached_runtime_rejects_the_bell() Void!Str {
+  let detached = runtime::new_detached()
+  try testing::assert(not detached.bell(), "a runtime without a terminal cannot ring")
+  detached.destroy_detached()
+  Result::ok(())
+}

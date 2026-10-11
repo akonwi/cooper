@@ -151,7 +151,13 @@ let _ = application.context.set_title("Cooper · 3")
 
 let _ = application.context.notify("Background task finished", title: "Cooper")
 let _ = application.context.progress(terminal_progress::State::indeterminate)
+let _ = application.context.bell()
 ```
+
+`bell()` rings the terminal bell through the same serialized terminal output as
+titles, so it never interleaves with a frame. It reports whether the bell was
+sent: a Runtime without a terminal, or one not yet started or already stopped,
+rejects it. Headless test applications count bells with `bells()`.
 
 Dispatch queues an action on the UI thread. It may queue before `start` and is
 also drained while the terminal is suspended; setters coalesce a frame for the

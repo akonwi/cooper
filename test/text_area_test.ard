@@ -177,6 +177,70 @@ test fn text_area_mouse_selection_crosses_hard_lines_and_preserves_source() Void
   testing::assert(area.node_ref.is_destroyed(), "Expected mouse-selected TextArea cleanup")
 }
 
+test fn text_area_double_click_selects_word_runs_for_editing() Void!Str {
+  let application = cooper_testing::new(20, 2)
+  let area = text_area::new(
+    application.context,
+    value: "can't...  stop\nnext",
+    styles: fixed(20, 2),
+  )
+  application.root.add(area)
+  application.render()
+
+  application.double_click(2, 0)
+  try testing::assert(
+    area.selected_text() == "can't" and application.selection().expect("TextArea word selection").selected_text == "can't",
+    "Expected double-click to select an apostrophe word, got {area.selected_text()}",
+  )
+  application.double_click(6, 0)
+  try testing::assert(area.selected_text() == "...", "Expected punctuation run selection")
+  application.double_click(9, 0)
+  try testing::assert(area.selected_text() == "  ", "Expected whitespace run selection")
+  application.double_click(2, 1)
+  try testing::assert(area.selected_text() == "next", "Expected word selection on a later hard line")
+
+  application.key(key("x", value: "X"))
+  try testing::assert(
+    area.value() == "can't...  stop\nX",
+    "Expected typing to replace the double-clicked word, got {area.value()}",
+  )
+  application.destroy()
+  testing::assert(area.node_ref.is_destroyed(), "Expected double-clicked TextArea cleanup")
+}
+
+test fn text_area_triple_click_selects_wrapped_hard_line_with_its_newline() Void!Str {
+  let application = cooper_testing::new(8, 4)
+  let area = text_area::new(
+    application.context,
+    value: "alpha beta gamma\nlast",
+    wrap: text::TextWrap::word,
+    styles: fixed(8, 4),
+  )
+  application.root.add(area)
+  application.render()
+
+  application.triple_click(1, 1)
+  try testing::assert(
+    area.selected_text() == "alpha beta gamma\n",
+    "Expected triple-click to select the whole wrapped hard line, got {area.selected_text()}",
+  )
+  try testing::assert(
+    application.selection().expect("TextArea line selection").selected_text == "alpha beta gamma\n",
+    "Expected the hard line in the global selection",
+  )
+  application.triple_click(1, 3)
+  try testing::assert(area.selected_text() == "last", "Expected the final hard line without a newline")
+
+  application.triple_click(1, 0)
+  application.key(key("x", value: "X"))
+  try testing::assert(
+    area.value() == "Xlast",
+    "Expected typing to replace the selected line, got {area.value()}",
+  )
+  application.destroy()
+  testing::assert(area.node_ref.is_destroyed(), "Expected triple-clicked TextArea cleanup")
+}
+
 test fn text_area_focus_reveals_its_caret_through_ancestor_scroll_boxes() Void!Str {
   let application = cooper_testing::new(6, 2)
   let viewport = scroll_box::new(

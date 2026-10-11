@@ -870,6 +870,62 @@ impl TextArea {
     }
   }
 
+  // glyph_source_at returns the start of the grapheme drawn in a viewport cell,
+  // or -1 when the cell shows no text.
+  private fn glyph_source_at(local_x: Int, local_y: Int) Int {
+    let laid_out = self.current_layout()
+    let state = view_state(self.internal)
+    let column = local_x + state.scroll_x
+    let row = local_y + state.scroll_y
+    mut source_start = -1
+    for glyph in laid_out.glyphs {
+      let hit = glyph.y == row and column >= glyph.x and column < glyph.x + glyph.width
+      if hit and not glyph.newline {
+        source_start = glyph.source_start
+        break
+      }
+    }
+    source_start
+  }
+
+  // word_expansion selects the word, punctuation run, or whitespace run under a
+  // double-click, using the same boundaries as Input.
+  private fn word_expansion(local_x: Int, local_y: Int) node::SelectionExpansion? {
+    let byte = self.glyph_source_at(local_x, local_y)
+    if byte < 0 {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      match editor::word_range_at(self.editor_state.value(), byte) {
+        range => self.expansion_from_bytes(range.start, range.end),
+        _ => Maybe::new<node::SelectionExpansion>(),
+      }
+    }
+  }
+
+  // line_expansion selects the hard line under a triple-click, across its soft
+  // wraps, including the newline that ends it.
+  private fn line_expansion(local_x: Int, local_y: Int) node::SelectionExpansion? {
+    let laid_out = self.current_layout()
+    let state = view_state(self.internal)
+    let row = local_y + state.scroll_y
+    let inside = self.selection_accepts(local_x, local_y)
+    if (not inside) or row < 0 or row >= laid_out.lines.size() {
+      Maybe::new<node::SelectionExpansion>()
+    } else {
+      let value = self.editor_state.value()
+      let cursor = self.cursor_for_local(local_x, local_y, state.scroll_x, state.scroll_y)
+      let start = area_layout::hard_line_start(value, cursor)
+      mut end = area_layout::hard_line_end(value, cursor)
+      for glyph in laid_out.glyphs {
+        if glyph.newline and glyph.source_start == end {
+          end = glyph.source_end
+          break
+        }
+      }
+      self.expansion_from_bytes(start, end)
+    }
+  }
+
   private fn resolve_expansion(source_range: node::SelectionRange, source_revision: Int) node::SelectionExpansion? {
     if source_revision != self.source_revision or source_range.start < 0 or source_range.end > self.editor_state.value().size() {
       Maybe::new<node::SelectionExpansion>()
@@ -1046,8 +1102,16 @@ impl TextArea {
           self.lock_expansion(anchor_x, anchor_y, focus_x, focus_y)
         },
       ),
-      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(),
-      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(),
+      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(
+        fn(local_x: Int, local_y: Int) node::SelectionExpansion? {
+          self.word_expansion(local_x, local_y)
+        },
+      ),
+      Maybe::new<fn(Int, Int) node::SelectionExpansion?>(
+        fn(local_x: Int, local_y: Int) node::SelectionExpansion? {
+          self.line_expansion(local_x, local_y)
+        },
+      ),
       Maybe::new<fn(node::SelectionRange, node::SelectionRange, Int) node::SelectionExpansion?>(
         fn(logical_range: node::SelectionRange, source_range: node::SelectionRange, source_revision: Int) node::SelectionExpansion? {
           self.resolve_expansion(source_range, source_revision)

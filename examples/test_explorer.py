@@ -4,6 +4,7 @@
 import os
 import signal
 import sys
+import tempfile
 
 os.environ.setdefault("ARD", "ard")
 
@@ -22,6 +23,22 @@ from test_harness import (
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BIN = binary_path("explorer")
 
+# The explorer lists its working directory. A fixed listing keeps every step
+# deterministic: short names fit the narrow details pane on one line, and there
+# are more entries than visible rows so the list can scroll. gamma/ covers the
+# directory suffix. The explorer sorts case-insensitively.
+FIXTURE_FILES = ["alpha.txt", "beta.txt", "delta.txt", "epsilon.txt", "eta.txt", "theta.txt", "zeta.txt"]
+FIXTURE_DIRS = ["gamma"]
+LISTING = sorted(FIXTURE_FILES + [f"{name}/" for name in FIXTURE_DIRS], key=str.lower)
+
+
+def make_fixture(path):
+    for name in FIXTURE_FILES:
+        with open(os.path.join(path, name), "w") as handle:
+            handle.write(name)
+    for name in FIXTURE_DIRS:
+        os.mkdir(os.path.join(path, name))
+
 
 def click(fd, col, row):
     send(fd, f"\x1b[<0;{col + 1};{row + 1}M")
@@ -34,17 +51,25 @@ def wheel_down(fd, col, row):
 def main():
     os.chdir(ROOT)
     build("explorer")
-    pid, fd = spawn(BIN, rows=8, cols=90)
+    with tempfile.TemporaryDirectory(prefix="cooper-explorer-") as fixture:
+        make_fixture(fixture)
+        run(fixture)
+
+
+def run(fixture):
+    pid, fd = spawn(BIN, rows=8, cols=90, cwd=fixture)
     screen = Screen(8, 90)
     try:
         wait_for(fd, screen, "Cooper Explorer")
-        wait_for(fd, screen, "ard.toml")
+        wait_for(fd, screen, LISTING[0])
 
         wide_details = screen.line(4).find("Details")
         assert wide_details >= 40, "details pane was not horizontally positioned"
         first_label = screen.line(4)[:wide_details].lstrip("> ").rstrip(" │┃▲▼")
         second_label = screen.line(5)[:wide_details].lstrip("> ").rstrip(" │┃▲▼")
-        assert first_label and second_label, "explorer did not expose two persistent rows"
+        assert [first_label, second_label] == LISTING[:2], (
+            f"explorer did not list the fixture in order: {[first_label, second_label]}"
+        )
 
         # Initial focus belongs to Input; app policy moves Tab to the first row.
         send(fd, "\t")
@@ -66,7 +91,9 @@ def main():
         for _ in range(5):
             read_for(fd, screen, 0.1)
         visible_label = screen.line(5)[:narrow_details].lstrip("> ").rstrip(" │┃▲▼")
-        assert visible_label, "scroll did not expose another retained row"
+        assert visible_label in LISTING and visible_label != second_label, (
+            f"scroll did not expose another retained row: {visible_label!r}"
+        )
         click(fd, col=2, row=5)
         wait_for(fd, screen, f"Selected: {visible_label}")
 

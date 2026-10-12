@@ -139,14 +139,16 @@ def build(name, source=None):
     return output
 
 
-def spawn(binary, rows=24, cols=80, env=None):
-    """Fork a PTY and exec the binary. Returns (pid, fd)."""
+def spawn(binary, rows=24, cols=80, env=None, cwd=None):
+    """Fork a PTY and exec the binary, optionally in cwd. Returns (pid, fd)."""
     pid, fd = pty.fork()
     if pid == 0:
         os.environ["TERM"] = "xterm-256color"
         os.environ["VAXIS_LOG_LEVEL"] = "error"
         if env:
             os.environ.update(env)
+        if cwd:
+            os.chdir(cwd)
         os.execv(binary, [binary])
         sys.exit(1)
     _set_winsize(fd, rows, cols)

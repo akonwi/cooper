@@ -1,0 +1,533 @@
+use ard/testing
+
+use cooper/notification
+use cooper/program_status
+use cooper/runtime
+use cooper/testing as cooper_testing
+use go:strings
+
+private fn assert_panics(action: fn(), expected: Str) Void!Str {
+  let outcome = unsafe {
+    action()
+  }
+  match outcome {
+    ok(_) => testing::fail("expected panic containing {expected}"),
+    err(message) => {
+      testing::assert(
+        message.contains(expected),
+        "expected panic containing {expected}, got {message}",
+      )
+    },
+  }
+}
+
+private fn optional_number(name: Str, value: Int?) Str {
+  match value {
+    number => ":{name}={number}",
+    _ => "",
+  }
+}
+
+private fn optional_text(name: Str, value: Str?) Str {
+  match value {
+    text => ":{name}={text}",
+    _ => "",
+  }
+}
+
+private fn kind_name(kind: program_status::Kind?) Str {
+  match kind {
+    value => {
+      match value {
+        program_status::Kind::permission => ":kind=permission",
+        program_status::Kind::question => ":kind=question",
+        program_status::Kind::auth => ":kind=auth",
+      }
+    },
+    _ => "",
+  }
+}
+
+private fn describe(update: program_status::Update) Str {
+  match update {
+    program_status::Clear(clear) => "clear{optional_text("id", clear.id)}",
+    program_status::Report(report) => {
+      let state = match report.state {
+        program_status::Idle => "idle",
+        program_status::Working(working) => "working{optional_number("progress", working.progress)}",
+        program_status::Blocked(blocked) => {
+          "blocked{kind_name(blocked.kind)}{optional_number("progress", blocked.progress)}"
+        },
+        program_status::Done => "done",
+        program_status::Failed => "error",
+      }
+      "{state}{optional_text("id", report.id)}{optional_text("app", report.app)}{optional_text("title", report.title)}{optional_text("msg", report.message)}"
+    },
+  }
+}
+
+private fn sent(application: cooper_testing::TestApp) Str {
+  let parts = mut List::new<Str>()
+  for update in application.program_status_updates() {
+    parts.push(describe(update))
+  }
+  strings::Join(parts, " | ")
+}
+
+private fn expect_sent(application: cooper_testing::TestApp, expected: Str) Void!Str {
+  let actual = sent(application)
+  testing::assert(actual == expected, "expected `{expected}`, got `{actual}`")
+}
+
+test fn reports_carry_every_state_and_field() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  try testing::assert(
+    context.program_status(program_status::Report{state: program_status::Idle{}, app: "kit"}),
+    "idle is sent",
+  )
+  try testing::assert(
+    context.program_status(
+      program_status::Report{state: program_status::Working{progress: 40}, message: "Building"},
+    ),
+    "working is sent",
+  )
+  try testing::assert(
+    context.program_status(
+      program_status::Report{
+        state: program_status::Blocked{kind: program_status::Kind::permission},
+        id: "build/test",
+        title: "Tests",
+      },
+    ),
+    "blocked is sent",
+  )
+  try testing::assert(
+    context.program_status(program_status::Report{state: program_status::Done{}}),
+    "done is sent",
+  )
+  try testing::assert(
+    context.program_status(program_status::Report{state: program_status::Failed{}, message: ""}),
+    "error is sent",
+  )
+  try expect_sent(
+    application,
+    "idle:app=kit | working:progress=40:msg=Building | blocked:kind=permission:id=build/test:title=Tests | done | error",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn every_report_is_sent_including_repeats() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let working = program_status::Report{state: program_status::Working{}, app: "kit"}
+  let done = program_status::Report{
+    state: program_status::Done{},
+    app: "kit",
+    message: "Turn complete",
+  }
+  try testing::assert(context.program_status(working), "first working report")
+  try testing::assert(context.program_status(working), "a repeated working report is sent")
+  try testing::assert(context.program_status(done), "first completion")
+  try testing::assert(context.program_status(done), "a repeated completion is sent")
+  try expect_sent(
+    application,
+    "working:app=kit | working:app=kit | done:app=kit:msg=Turn complete | done:app=kit:msg=Turn complete",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn control_characters_in_text_are_replaced() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let _ = application.context.program_status(
+    program_status::Report{
+      state: program_status::Working{},
+      title: "a\tb",
+      message: "line one\nline two\x1b]\u0085\x7f!",
+    },
+  )
+  try expect_sent(application, "working:title=a b:msg=line one line two ]  !")
+  application.destroy()
+  Result::ok(())
+}
+
+test fn contract_violations_panic() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  try assert_panics(
+    fn() {
+      let _ = context.program_status(
+        program_status::Report{state: program_status::Working{progress: 101}},
+      )
+    },
+    "progress must be between 0 and 100",
+  )
+  try assert_panics(
+    fn() {
+      let _ = context.program_status(
+        program_status::Report{state: program_status::Blocked{progress: -1}},
+      )
+    },
+    "progress must be between 0 and 100",
+  )
+  try assert_panics(
+    fn() {
+      let _ = context.program_status(program_status::Report{state: program_status::Idle{}, app: ""})
+    },
+    "app must be 1-32 characters",
+  )
+  try assert_panics(
+    fn() {
+      let _ = context.program_status(
+        program_status::Report{state: program_status::Idle{}, app: "claude code"},
+      )
+    },
+    "app must be 1-32 characters",
+  )
+  try assert_panics(
+    fn() {
+      let _ = context.program_status(program_status::Report{state: program_status::Idle{}, id: ""})
+    },
+    "omit it to address the root record",
+  )
+  try assert_panics(
+    fn() {
+      let _ = context.program_status(
+        program_status::Report{state: program_status::Idle{}, id: "build//test"},
+      )
+    },
+    "program status id must be",
+  )
+  try assert_panics(
+    fn() {
+      let _ = context.program_status(
+        program_status::Report{state: program_status::Idle{}, id: "a/b/c/d/e/f/g/h/i"},
+      )
+    },
+    "program status id must be",
+  )
+  try assert_panics(
+    fn() {
+      let _ = context.program_status(
+        program_status::Report{state: program_status::Idle{}, id: "abcdefghijklmnopqrstuvwxyz0123456"},
+      )
+    },
+    "program status id must be",
+  )
+  try assert_panics(
+    fn() {
+      let _ = context.program_status(
+        program_status::Report{state: program_status::Idle{}, app: "abcdefghijklmnopqrstuvwxyz0123456"},
+      )
+    },
+    "app must be 1-32 characters",
+  )
+  for invalid in [
+    "/build",
+    "build/",
+    "a b",
+    "abcdefghijklmnopqrstuvwxyz012345/abcdefghijklmnopqrstuvwxyz012345/abcdefghijklmnopqrstuvwxyz012345/abcdefghijklmnopqrstuvwxyz012345",
+  ] {
+    try assert_panics(
+      fn() {
+        let _ = context.program_status(
+          program_status::Report{state: program_status::Idle{}, id: invalid},
+        )
+      },
+      "program status id must be",
+    )
+    try assert_panics(
+      fn() {
+        let _ = context.clear_program_status(invalid)
+      },
+      "program status id must be",
+    )
+  }
+  try assert_panics(
+    fn() {
+      let _ = context.clear_program_status("")
+    },
+    "omit it to address the root record",
+  )
+  try testing::assert(
+    context.program_status(
+      program_status::Report{
+        state: program_status::Idle{},
+        app: "claude-code_1.0+x",
+        id: "a/b/c/d/e/f/g/abcdefghijklmnopqrstuvwxyz012345",
+      },
+    ),
+    "the longest valid shapes are accepted",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn suspension_reports_live_work_idle_and_resume_restores_it() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let _ = context.program_status(
+    program_status::Report{
+      state: program_status::Working{progress: 50},
+      app: "kit",
+      title: "Kit",
+      message: "Thinking",
+    },
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Blocked{kind: program_status::Kind::question}, id: "ask"},
+  )
+  let _ = context.program_status(program_status::Report{state: program_status::Idle{}, id: "shell"})
+  let _ = context.program_status(program_status::Report{state: program_status::Done{}, id: "build"})
+  try expect_sent(
+    application,
+    "working:progress=50:app=kit:title=Kit:msg=Thinking | blocked:kind=question:id=ask | idle:id=shell | done:id=build",
+  )
+
+  try testing::assert(application.suspend(), "expected headless suspension")
+  let rejected_report = program_status::Report{state: program_status::Done{}}
+  try testing::assert(not context.program_status(rejected_report), "a suspended runtime rejects reports")
+  try testing::assert(not context.clear_all_program_status(), "a suspended runtime rejects clears")
+  try testing::assert(application.resume(), "expected headless resume")
+  try expect_sent(
+    application,
+    "working:progress=50:app=kit:title=Kit:msg=Thinking | blocked:kind=question:id=ask | idle:id=shell | done:id=build | idle:app=kit:title=Kit | idle:id=ask | working:progress=50:app=kit:title=Kit:msg=Thinking | blocked:kind=question:id=ask | idle:id=shell",
+  )
+  application.destroy()
+  Result::ok(())
+}
+
+test fn destruction_without_completions_clears_every_record() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let _ = context.program_status(program_status::Report{state: program_status::Working{}})
+  let _ = context.program_status(program_status::Report{state: program_status::Idle{}, id: "a"})
+  application.destroy()
+  try expect_sent(application, "working | idle:id=a | clear")
+  let rejected_report = program_status::Report{state: program_status::Idle{}}
+  testing::assert(
+    not context.program_status(rejected_report),
+    "a destroyed runtime rejects reports",
+  )
+}
+
+test fn destruction_keeps_completions_for_the_user() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Working{}, app: "kit"},
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Working{}, id: "deploy"},
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Working{}, id: "deploy/us"},
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Done{}, id: "deploy/eu"},
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Blocked{}, id: "lint"},
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Working{}, id: "lint/fix"},
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Failed{}, id: "test"},
+  )
+  application.destroy()
+  try expect_sent(
+    application,
+    "working:app=kit | working:id=deploy | working:id=deploy/us | done:id=deploy/eu | blocked:id=lint | working:id=lint/fix | error:id=test | idle:app=kit | idle:id=deploy | clear:id=deploy/us | clear:id=lint",
+  )
+  Result::ok(())
+}
+
+test fn an_idle_root_above_a_completion_is_left_in_place() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let _ = context.program_status(program_status::Report{state: program_status::Idle{}})
+  let _ = context.program_status(program_status::Report{state: program_status::Done{}, id: "build"})
+  application.destroy()
+  try expect_sent(application, "idle | done:id=build")
+  Result::ok(())
+}
+
+test fn clearing_forgets_a_record_and_its_descendants() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Working{}, id: "build"},
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Working{}, id: "build/test"},
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Working{}, id: "builder"},
+  )
+  try testing::assert(context.clear_program_status("build"), "clearing a record is sent")
+  try testing::assert(application.suspend(), "expected headless suspension")
+  try testing::assert(application.resume(), "expected headless resume")
+  try testing::assert(context.clear_all_program_status(), "clearing every record is sent")
+  application.destroy()
+  try expect_sent(
+    application,
+    "working:id=build | working:id=build/test | working:id=builder | clear:id=build | idle:id=builder | working:id=builder | clear",
+  )
+  Result::ok(())
+}
+
+test fn an_unsupported_terminal_receives_nothing() Void!Str {
+  let application = cooper_testing::new(8, 2, program_status_unsupported: true)
+  let context = application.context
+  let rejected_report = program_status::Report{state: program_status::Working{}}
+  try testing::assert(
+    not context.program_status(rejected_report),
+    "an unsupported terminal rejects reports",
+  )
+  try testing::assert(not context.clear_all_program_status(), "and clears")
+  try testing::assert(application.suspend(), "expected headless suspension")
+  try testing::assert(application.resume(), "expected headless resume")
+  application.destroy()
+  expect_sent(application, "")
+}
+
+test fn feature_detection_is_reported_without_gating_reports() Void!Str {
+  let undetected = cooper_testing::new(8, 2)
+  try testing::assert(
+    not undetected.context.program_status_supported(),
+    "terminals are undetected by default",
+  )
+  try testing::assert(
+    undetected.context.program_status(program_status::Report{state: program_status::Idle{}}),
+    "reports are sent without detection",
+  )
+  undetected.destroy()
+
+  let detected = cooper_testing::new(8, 2, program_status_detected: true)
+  try testing::assert(
+    detected.context.program_status_supported(),
+    "a terminal that answered the query is detected",
+  )
+  detected.destroy()
+  Result::ok(())
+}
+
+test fn a_detached_runtime_rejects_program_status() Void!Str {
+  let detached = runtime::new_detached()
+  let rejected_report = program_status::Report{state: program_status::Idle{}}
+  try testing::assert(
+    not detached.program_status(rejected_report),
+    "a runtime without a terminal cannot report",
+  )
+  try testing::assert(not detached.program_status_supported(), "and detects nothing")
+  detached.destroy_detached()
+  Result::ok(())
+}
+
+private fn environment(values: [Str: Str]) fn(Str) Str {
+  fn(name: Str) Str {
+    values.get(name).or("")
+  }
+}
+
+test fn program_status_is_enabled_outside_multiplexers_unless_disabled() Void!Str {
+  try testing::assert(
+    notification::internal_program_status_enabled("", environment([:])),
+    "enabled by default",
+  )
+  try testing::assert(
+    notification::internal_program_status_enabled("xterm-kitty", environment([:])),
+    "enabled for any terminal",
+  )
+  for setting in ["0", "false", "OFF", " off "] {
+    try testing::assert(
+      not notification::internal_program_status_enabled(
+        "ghostty",
+        environment(["COOPER_PROGRAM_STATUS": setting]),
+      ),
+      "COOPER_PROGRAM_STATUS={setting} disables",
+    )
+  }
+  try testing::assert(
+    not notification::internal_program_status_enabled("tmux 3.5", environment([:])),
+    "a tmux terminal identity disables",
+  )
+  try testing::assert(
+    not notification::internal_program_status_enabled(
+      "",
+      environment(["TMUX": "/tmp/tmux", "COOPER_PROGRAM_STATUS": "1"]),
+    ),
+    "a multiplexer wins over a forced enable",
+  )
+  try testing::assert(
+    not notification::internal_program_status_enabled("", environment(["ZELLIJ": "0"])),
+    "zellij disables",
+  )
+  testing::assert(
+    not notification::internal_program_status_enabled("", environment(["STY": "1.pts"])),
+    "screen disables",
+  )
+}
+
+test fn blocked_reports_carry_every_kind() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Blocked{kind: program_status::Kind::question, progress: 0}},
+  )
+  let _ = context.program_status(
+    program_status::Report{state: program_status::Blocked{kind: program_status::Kind::auth, progress: 100}},
+  )
+  try expect_sent(application, "blocked:kind=question:progress=0 | blocked:kind=auth:progress=100")
+  application.destroy()
+  Result::ok(())
+}
+
+test fn destruction_clears_child_records_by_id_without_a_root_record() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let _ = context.program_status(program_status::Report{state: program_status::Working{}, id: "a"})
+  let _ = context.program_status(program_status::Report{state: program_status::Idle{}, id: "b"})
+  application.destroy()
+  application.destroy()
+  expect_sent(application, "working:id=a | idle:id=b | clear:id=a | clear:id=b")
+}
+
+test fn reports_after_a_clear_or_completion_are_sent_again() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  let working = program_status::Report{state: program_status::Working{}, id: "a"}
+  let _ = context.program_status(working)
+  let _ = context.clear_program_status("a")
+  let _ = context.program_status(working)
+  let _ = context.program_status(program_status::Report{state: program_status::Done{}, id: "a"})
+  let _ = context.program_status(working)
+  application.destroy()
+  expect_sent(
+    application,
+    "working:id=a | clear:id=a | working:id=a | done:id=a | working:id=a | clear:id=a",
+  )
+}
+
+test fn records_are_capped_by_evicting_the_least_recently_updated() Void!Str {
+  let application = cooper_testing::new(8, 2)
+  let context = application.context
+  mut index = 0
+  while index < 257 {
+    let _ = context.program_status(
+      program_status::Report{state: program_status::Working{}, id: "r{index}"},
+    )
+    index =+ 1
+  }
+  try testing::assert(application.suspend(), "expected headless suspension")
+  let updates = application.program_status_updates()
+  try testing::assert(updates.size() == 257 + 256, "only 256 records are kept, got {updates.size()}")
+  let first_idle = describe(updates.at(257).expect("first suspend update"))
+  try testing::assert(first_idle == "idle:id=r1", "the oldest record is forgotten, got {first_idle}")
+  try testing::assert(application.resume(), "expected headless resume")
+  application.destroy()
+  Result::ok(())
+}

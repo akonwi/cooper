@@ -151,8 +151,15 @@ let _ = application.context.set_title("Cooper · 3")
 
 let _ = application.context.notify("Background task finished", title: "Cooper")
 let _ = application.context.progress(terminal_progress::State::indeterminate)
+let _ = application.context.program_status(
+  program_status::Report{state: program_status::Working{}, app: "cooper"},
+)
 let _ = application.context.bell()
 ```
+
+`program_status` reports idle, working, blocked, done, or failed state through
+the Program Status Protocol (OSC 7501). See
+[ADR 0027](./0027-define-program-status-reporting.md).
 
 `bell()` rings the terminal bell through the same serialized terminal output as
 titles, so it never interleaves with a frame. It reports whether the bell was

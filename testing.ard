@@ -4,6 +4,7 @@ use ard/unsafe
 use cooper/core/paint
 use cooper/event
 use cooper/notification
+use cooper/program_status
 use cooper/root
 use cooper/runtime
 use cooper/screen
@@ -136,6 +137,11 @@ private struct Bells {
   count: Int,
 }
 
+private struct ProgramStatusUpdates {
+  mutex: mut sync::Mutex,
+  values: [program_status::Update],
+}
+
 struct TestApp {
   context: mut runtime::Runtime,
   root: mut root::Root,
@@ -144,6 +150,7 @@ struct TestApp {
   terminal_progress_log: Any,
   terminal_title_log: Any,
   bell_log: Any,
+  program_status_log: Any,
 }
 
 private fn test_runtime(application: TestApp) mut runtime::Runtime {
@@ -168,13 +175,17 @@ fn new(
   terminal_progress_supported: Bool?,
   on_terminal_progress: fn(terminal_progress::Report)?,
   screen: screen::Config?,
+  program_status_unsupported: Bool?,
+  program_status_detected: Bool?,
 ) TestApp {
   let supported = notifications_supported.or(true)
   let progress_supported = terminal_progress_supported.or(true)
+  let program_status_sendable = not program_status_unsupported.or(false)
   let notification_log = mut SentNotifications{mutex: mut sync::Mutex{}, values: []}
   let terminal_progress_log = mut TerminalProgressReports{mutex: mut sync::Mutex{}, values: []}
   let terminal_title_log = mut TerminalTitles{mutex: mut sync::Mutex{}, values: []}
   let bell_log = mut Bells{mutex: mut sync::Mutex{}, count: 0}
+  let program_status_log = mut ProgramStatusUpdates{mutex: mut sync::Mutex{}, values: []}
   let opened = mut OpenedURLs{values: []}
   let runtime = runtime::new_headless(
     width,
@@ -219,6 +230,15 @@ fn new(
       bell_log.count = bell_log.count + 1
       bell_log.mutex.Unlock()
     },
+    fn(update: program_status::Update) Bool {
+      if program_status_sendable {
+        program_status_log.mutex.Lock()
+        program_status_log.values.push(update)
+        program_status_log.mutex.Unlock()
+      }
+      program_status_sendable
+    },
+    program_status_detected,
   )
   let root = root::new(runtime)
   runtime.start_test(root)
@@ -230,6 +250,7 @@ fn new(
     terminal_progress_log: terminal_progress_log,
     terminal_title_log: terminal_title_log,
     bell_log: bell_log,
+    program_status_log: program_status_log,
   }
 }
 
@@ -271,6 +292,22 @@ impl TestApp {
     let count = log.count
     log.mutex.Unlock()
     count
+  }
+
+  // The program status reports and clears sent so far, in order, including
+  // those Cooper sends on suspend, resume, and destruction. Readable after
+  // destruction.
+  fn program_status_updates() [program_status::Update] {
+    let log = unsafe::cast<mut ProgramStatusUpdates>(
+      self.program_status_log,
+    ).expect("TestApp program status must be created by Cooper")
+    log.mutex.Lock()
+    let output = mut List::new<program_status::Update>()
+    for update in log.values {
+      output.push(update)
+    }
+    log.mutex.Unlock()
+    output.@
   }
 
   fn terminal_titles() [Str] {

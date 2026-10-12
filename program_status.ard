@@ -1,0 +1,337 @@
+use go:strings
+use go:unicode
+
+// What a blocked program is waiting for.
+enum Kind {
+  // Approval to do something.
+  // An answer the user must type.
+  // A login, token, or credential.
+  permission,
+  question,
+  auth,
+}
+
+// At rest, waiting for the user's next instruction.
+struct Idle {}
+
+// Running. Absent progress means indeterminate.
+struct Working {
+  progress: Int?,
+}
+
+// Cannot continue until the user does something.
+struct Blocked {
+  kind: Kind?,
+  progress: Int?,
+}
+
+// Finished a piece of work the user has not seen yet.
+struct Done {}
+
+// Failed and stopped.
+struct Failed {}
+
+type State = Idle | Working | Blocked | Done | Failed
+
+// One Program Status Protocol (OSC 7501) report. Each report replaces its
+// record completely, so include app and title in every report that should
+// carry them.
+struct Report {
+  state: State,
+  // A stable program identifier, such as "kit".
+  app: Str?,
+  // A short label, for programs that report several records.
+  title: Str?,
+  // One human-readable line: what the record is doing, waiting for, or finished.
+  message: Str?,
+  // A child record's path, such as "build/test". Absent addresses the root record.
+  id: Str?,
+}
+
+// Removes a record and every record beneath it. Without an id it removes
+// every record.
+struct Clear {
+  id: Str?,
+}
+
+// A logical update delivered to the terminal.
+type Update = Report | Clear
+
+private fn valid_name_character(character: Rune) Bool {
+  character >= 'a' and character <= 'z' or character >= 'A' and character <= 'Z' or character >= '0' and character <= '9' or character == '_' or character == '.' or character == '+' or character == '-'
+}
+
+private fn valid_segment(value: Str) Bool {
+  mut length = 0
+  mut valid = true
+  for character in value {
+    length =+ 1
+    if not valid_name_character(character) {
+      valid = false
+    }
+  }
+  valid and length >= 1 and length <= 32
+}
+
+// Panics unless id matches the protocol's record path grammar.
+fn internal_validate_id(id: Str) {
+  if id == "" {
+    panic("program status id must not be empty; omit it to address the root record")
+  }
+  mut segments = 0
+  mut length = 0
+  mut segment = ""
+  mut valid = true
+  for character in id {
+    length =+ 1
+    if character == '/' {
+      segments =+ 1
+      valid = valid and valid_segment(segment)
+      segment = ""
+    } else {
+      segment = "{segment}{character}"
+    }
+  }
+  segments =+ 1
+  valid = valid and valid_segment(segment)
+  if (not valid) or length > 128 or segments > 8 {
+    panic(
+      "program status id must be at most 8 '/'-separated segments of 1-32 characters from [A-Za-z0-9_.+-], 128 bytes in total: {id}",
+    )
+  }
+}
+
+private fn validate_progress(progress: Int?) {
+  match progress {
+    value => {
+      if value < 0 or value > 100 {
+        panic("program status progress must be between 0 and 100")
+      }
+    },
+    _ => (),
+  }
+}
+
+// Replaces every control character with a space, as terminal titles are, so a
+// terminal never discards the report. Empty text is treated as absent, as
+// Vaxis omits it.
+private fn sanitize(value: Str?) Str? {
+  match value {
+    text => {
+      if text == "" {
+        Maybe::new<Str>()
+      } else {
+        let output = mut strings::Builder{}
+        for character in text {
+          if unicode::IsControl(Int32::from(character)) {
+            output.WriteByte(Byte::from(32))
+            ()
+          } else {
+            output.WriteRune(Int32::from(character))
+            ()
+          }
+        }
+        Maybe::new<Str>(output.String())
+      }
+    },
+    _ => Maybe::new<Str>(),
+  }
+}
+
+// Validates a report and returns it with control characters replaced. Contract
+// violations panic.
+fn internal_normalize(report: Report) Report {
+  match report.state {
+    Working(working) => validate_progress(working.progress),
+    Blocked(blocked) => validate_progress(blocked.progress),
+    _ => (),
+  }
+  match report.app {
+    app => {
+      if not valid_segment(app) {
+        panic("program status app must be 1-32 characters from [A-Za-z0-9_.+-]: {app}")
+      }
+    },
+    _ => (),
+  }
+  match report.id {
+    id => internal_validate_id(id),
+    _ => (),
+  }
+  Report{
+    state: report.state,
+    app: report.app,
+    title: sanitize(report.title),
+    message: sanitize(report.message),
+    id: report.id,
+  }
+}
+
+// Idle, working, and blocked records describe the running program. Done and
+// failed records belong to the terminal once sent.
+private fn live(report: Report) Bool {
+  match report.state {
+    Done => false,
+    Failed => false,
+    _ => true,
+  }
+}
+
+private fn idle(report: Report) Bool {
+  match report.state {
+    Idle => true,
+    _ => false,
+  }
+}
+
+private fn key(report: Report) Str {
+  report.id.or("")
+}
+
+// Whether the record at path lies within scope; the root scope "" holds every
+// record.
+private fn within(path: Str, scope: Str) Bool {
+  scope == "" or path == scope or path.starts_with("{scope}/")
+}
+
+private fn idle_copy(report: Report) Report {
+  Report{
+    state: Idle{},
+    app: report.app,
+    title: report.title,
+    id: report.id,
+  }
+}
+
+// The most records Cooper keeps, matching the protocol's per-terminal cap. The
+// least recently updated record is forgotten first, as the terminal evicts it.
+private fn record_limit() Int {
+  256
+}
+
+// The records Cooper has sent, one per id, from least to most recently updated.
+struct Records {
+  values: [Report],
+}
+
+fn internal_records() mut Records {
+  (mut Records{values: []})
+}
+
+impl Records {
+  fn mut internal_store(report: Report) {
+    let updated = mut List::new<Report>()
+    mut remaining = self.values.size()
+    for current in self.values {
+      if key(current) == key(report) {
+        remaining =- 1
+      }
+    }
+    // Forget the least recently updated records so the stored report fits.
+    mut excess = remaining + 1 - record_limit()
+    for current in self.values {
+      if key(current) != key(report) {
+        if excess > 0 {
+          excess =- 1
+        } else {
+          updated.push(current)
+        }
+      }
+    }
+    updated.push(report)
+    self.values = updated.@
+  }
+
+  // Forgets the record at id and every record beneath it; an absent id forgets
+  // every record.
+  fn mut internal_remove(id: Str?) {
+    let scope = id.or("")
+    let kept = mut List::new<Report>()
+    for current in self.values {
+      if not within(key(current), scope) {
+        kept.push(current)
+      }
+    }
+    self.values = kept.@
+  }
+
+  // Reports idle for each working or blocked record while the terminal is
+  // released. The records themselves are kept for resume.
+  fn internal_suspend_updates() [Update] {
+    let updates = mut List::new<Update>()
+    for current in self.values {
+      if live(current) and not idle(current) {
+        updates.push(idle_copy(current))
+      }
+    }
+    updates.@
+  }
+
+  // Sends the live records again once the terminal is reacquired. Done and
+  // failed records are never repeated: the user may already have dismissed them.
+  fn internal_restore_updates() [Update] {
+    let updates = mut List::new<Update>()
+    for current in self.values {
+      if live(current) {
+        updates.push(current)
+      }
+    }
+    updates.@
+  }
+
+  private fn holds_finished_within(scope: Str) Bool {
+    mut found = false
+    for current in self.values {
+      if (not live(current)) and within(key(current), scope) {
+        found = true
+      }
+    }
+    found
+  }
+
+  // Whether the live record at path can be cleared without removing a done or
+  // failed record beneath it.
+  private fn clearable(path: Str) Bool {
+    path != "" and not self.holds_finished_within(path)
+  }
+
+  // Removes the live records when the application is destroyed while leaving
+  // done and failed records for the user to find. Clearing a record also
+  // removes the records beneath it, so a live record above a done or failed
+  // record is reported idle instead. Clearing every record is reserved for a
+  // program that owns the root record and holds no done or failed record, since
+  // it would also remove records Cooper never sent.
+  fn internal_release_updates() [Update] {
+    let updates = mut List::new<Update>()
+    mut owns_root = false
+    for current in self.values {
+      if key(current) == "" {
+        owns_root = true
+      }
+    }
+    if owns_root and not self.holds_finished_within("") {
+      updates.push(Clear{})
+    } else {
+      for current in self.values {
+        if live(current) {
+          let path = key(current)
+          if self.clearable(path) {
+            mut covered = false
+            for other in self.values {
+              let ancestor = key(other)
+              if live(other) and ancestor != path and within(path, ancestor) and self.clearable(ancestor) {
+                covered = true
+              }
+            }
+            if not covered {
+              updates.push(Clear{id: current.id})
+            }
+          } else if not idle(current) {
+            updates.push(idle_copy(current))
+          }
+        }
+      }
+    }
+    updates.@
+  }
+}

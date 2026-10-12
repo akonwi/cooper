@@ -1,6 +1,7 @@
 use ard/async
 
 use cooper
+use cooper/program_status
 use cooper/terminal_progress
 use cooper/ui
 use go:time
@@ -10,7 +11,7 @@ fn main() {
   defer application.destroy()
   let status = ui::text(
     application.context,
-    content: "Notification fixture ready · T title · N/U notify · I/D/E/P/R progress · S suspend",
+    content: "Notification fixture ready · T title · N/U notify · I/D/E/P/R progress · W/B/K status · S suspend",
     styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
   )
   application.root.add(status)
@@ -41,29 +42,51 @@ fn main() {
       status.set_content("PROGRESS INDETERMINATE: {accepted}")
       received.prevent_default()
     } else if received.event_type == cooper::KeyEventType::press and received.matches("d") {
-      let accepted = context.progress(
-        terminal_progress::State::normal,
-        percent: 42,
-      )
+      let accepted = context.progress(terminal_progress::State::normal, percent: 42)
       status.set_content("PROGRESS NORMAL: {accepted}")
       received.prevent_default()
     } else if received.event_type == cooper::KeyEventType::press and received.matches("e") {
-      let accepted = context.progress(
-        terminal_progress::State::error,
-        percent: 75,
-      )
+      let accepted = context.progress(terminal_progress::State::error, percent: 75)
       status.set_content("PROGRESS ERROR: {accepted}")
       received.prevent_default()
     } else if received.event_type == cooper::KeyEventType::press and received.matches("p") {
-      let accepted = context.progress(
-        terminal_progress::State::paused,
-        percent: 25,
-      )
+      let accepted = context.progress(terminal_progress::State::paused, percent: 25)
       status.set_content("PROGRESS PAUSED: {accepted}")
       received.prevent_default()
     } else if received.event_type == cooper::KeyEventType::press and received.matches("r") {
       let accepted = context.progress(terminal_progress::State::remove)
       status.set_content("PROGRESS REMOVED: {accepted}")
+      received.prevent_default()
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("w") {
+      let accepted = context.program_status(
+        program_status::Report{
+          state: program_status::Working{progress: 40},
+          app: "kit",
+          message: "Thinking",
+        },
+      )
+      status.set_content("STATUS WORKING: {accepted}")
+      received.prevent_default()
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("b") {
+      let accepted = context.program_status(
+        program_status::Report{
+          state: program_status::Blocked{kind: program_status::Kind::permission},
+          app: "kit",
+          id: "ask",
+        },
+      )
+      status.set_content("STATUS BLOCKED: {accepted}")
+      received.prevent_default()
+    } else if received.event_type == cooper::KeyEventType::press and received.matches("k") {
+      let accepted = context.program_status(
+        program_status::Report{
+          state: program_status::Done{},
+          app: "kit",
+          message: "Built\nok",
+          id: "build",
+        },
+      )
+      status.set_content("STATUS DONE: {accepted}")
       received.prevent_default()
     } else if received.event_type == cooper::KeyEventType::press and received.matches("s") {
       match application.suspend() {

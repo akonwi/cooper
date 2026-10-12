@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """PTY validation for Cooper terminal-mediated desktop notifications."""
 
+import base64
 import os
 import signal
 import sys
@@ -32,6 +33,21 @@ def wait_for_text_and_bytes(fd, screen, text, needles, timeout=4.0):
     raise AssertionError(
         f"did not see {text!r} and {needles!r}; captured {captured!r}; screen:\n{screen.text()}"
     )
+
+
+def osc7501(body):
+    return b"\x1b]7501;" + body + b"\x1b\\"
+
+
+def b64(text):
+    return base64.b64encode(text.encode()).decode().encode()
+
+
+WORKING = osc7501(b"state=working:progress=40:app=kit:msg=" + b64("Thinking"))
+BLOCKED = osc7501(b"state=blocked:id=ask:kind=permission:app=kit")
+IDLE_ROOT = osc7501(b"state=idle:app=kit")
+IDLE_ASK = osc7501(b"state=idle:id=ask:app=kit")
+DONE_BUILD = osc7501(b"state=done:id=build:app=kit:msg=" + b64("Built ok"))
 
 
 def wait_exit_with_bytes(pid, fd, screen, timeout=2.0):
@@ -91,6 +107,14 @@ def run_supported():
         wait_for_bytes(fd, screen, b"\x1b]9;4;0\x1b\\")
         wait_for(fd, screen, "PROGRESS REMOVED: true")
 
+        send(fd, "w")
+        wait_for_bytes(fd, screen, WORKING)
+        wait_for(fd, screen, "STATUS WORKING: true")
+
+        send(fd, "b")
+        wait_for_bytes(fd, screen, BLOCKED)
+        wait_for(fd, screen, "STATUS BLOCKED: true")
+
         send(fd, "i")
         wait_for_bytes(fd, screen, b"\x1b]9;4;3\x1b\\")
         send(fd, "s")
@@ -102,10 +126,20 @@ def run_supported():
                 b"\x1b]9;4;0\x1b\\",
                 b"\x1b]2;Cooper Suspended\x1b\\",
                 b"\x1b]9;4;3\x1b\\",
+                IDLE_ROOT,
+                IDLE_ASK,
+                WORKING,
+                BLOCKED,
             ],
         )
         if suspend_output.count(b"\x1b]2;Cooper Suspended\x1b\\") != 1:
             raise AssertionError("suspended title was duplicated during resume")
+        if not suspend_output.index(IDLE_ROOT) < suspend_output.index(WORKING):
+            raise AssertionError("program status was not reported idle before being restored")
+
+        send(fd, "k")
+        wait_for_bytes(fd, screen, DONE_BUILD)
+        wait_for(fd, screen, "STATUS DONE: true")
         send(fd, "r")
         wait_for_bytes(fd, screen, b"\x1b]9;4;0\x1b\\")
 
@@ -118,6 +152,12 @@ def run_supported():
             raise AssertionError("active terminal progress was not removed during teardown")
         if b"\x1b]2;" in shutdown_output:
             raise AssertionError("terminal title was unexpectedly changed during teardown")
+        if IDLE_ROOT not in shutdown_output:
+            raise AssertionError("the working root record was not reported idle during teardown")
+        if osc7501(b"state=clear:id=ask") not in shutdown_output:
+            raise AssertionError("the blocked record was not cleared during teardown")
+        if osc7501(b"state=clear") in shutdown_output or b"state=done" in shutdown_output:
+            raise AssertionError("teardown removed or repeated the done record")
     finally:
         cleanup(fd, pid)
 
@@ -131,6 +171,7 @@ def run_disabled():
             "COOPER_NOTIFICATION_PROTOCOL": "osc777",
             "COOPER_NOTIFICATIONS": "0",
             "COOPER_TERMINAL_PROGRESS": "0",
+            "COOPER_PROGRAM_STATUS": "0",
         },
     )
     screen = Screen(5, 80)
@@ -149,6 +190,10 @@ def run_disabled():
         )
         if b"]9;4;" in progress_output:
             raise AssertionError("disabled terminal progress emitted OSC 9;4")
+        send(fd, "w")
+        status_output = wait_for_text_and_bytes(fd, screen, "STATUS WORKING: false", [])
+        if b"]7501;state" in status_output:
+            raise AssertionError("disabled program status emitted OSC 7501")
         send(fd, "\x03")
         status = wait_exit(pid, fd, screen, timeout=2.0)
         assert status == 0, f"disabled exit status {status}"

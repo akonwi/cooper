@@ -2868,6 +2868,14 @@ impl State {
                               self.paint_live(root)
                             }
                           },
+                          vaxis::VisibilityUpdate(update) => {
+                            // Vaxis withholds frames while the terminal reports
+                            // that it is hidden. Present the current tree once
+                            // it may be visible, since no other update may follow.
+                            if update.Visible {
+                              self.paint_live(root)
+                            }
+                          },
                           vaxis::ColorThemeUpdate(_) => self.request_theme_refresh(),
                           vaxis::PasteStartEvent(_) => self.live_paste_buffer.start(),
                           vaxis::PasteEndEvent(_) => {

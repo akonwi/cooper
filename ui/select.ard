@@ -525,7 +525,7 @@ private fn notify(listeners: [Listener], selected: Selection) {
 }
 
 private fn change_highlight(model: mut Model, requested: Int, emit: Bool) Bool {
-  if not model.live or model.options.size() == 0 {
+  if (not model.live) or model.options.size() == 0 {
     false
   } else {
     let index = clamp_index(requested, model.options.size())
@@ -591,7 +591,7 @@ private fn move_highlight(model: mut Model, delta: Int) Bool {
 }
 
 private fn set_selected(model: mut Model, index: Int, emit: Bool) Bool {
-  if not model.live or index < 0 or index >= model.options.size() {
+  if (not model.live) or index < 0 or index >= model.options.size() {
     false
   } else if model.selected == index {
     false
@@ -1011,7 +1011,7 @@ private fn unportal_popup(popup: mut Popup) {
           popup.node_ref.apply_style(popup_style(popup.model))
           popup.owner.add(popup.node_ref)
         }
-      } else if not popup.owner.destroyed and not popup.owner.destroying {
+      } else if (not popup.owner.destroyed) and not popup.owner.destroying {
         popup.node_ref.apply_style(popup_style(popup.model))
       }
     },
@@ -1719,7 +1719,7 @@ impl node::Renderable for Select {
     let inherited_background = ctx.background
     model.inherited_foreground = inherited_foreground
     model.inherited_background = inherited_background
-    if not same_optional_color(shared.popup.inherited_foreground, inherited_foreground) or not same_optional_color(shared.popup.inherited_background, inherited_background) {
+    if (not same_optional_color(shared.popup.inherited_foreground, inherited_foreground)) or not same_optional_color(shared.popup.inherited_background, inherited_background) {
       shared.popup.inherited_foreground = inherited_foreground
       shared.popup.inherited_background = inherited_background
       shared.popup.anchor_x = -1
@@ -2056,7 +2056,7 @@ impl Select {
       if not focused {
         focused = self.node_ref.focus()
       }
-      if (not focused) or not click_context_valid(shared.model, self.node_ref, revision, attachment) or shared.model.open {
+      if (not focused) or (not click_context_valid(shared.model, self.node_ref, revision, attachment)) or shared.model.open {
         false
       } else {
         match shared.model.presentation {

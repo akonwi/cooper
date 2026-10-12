@@ -372,7 +372,7 @@ impl Service {
       timeout.Cancel()
       let resolved = from_terminal(queried)
       state.lifecycle.Lock()
-      let accepted = not state.stopped and not state.suspended
+      let accepted = (not state.stopped) and not state.suspended
       if accepted {
         state.current = resolved
       }
@@ -403,7 +403,7 @@ impl Service {
     let state = service_state(self)
     mut changed = false
     state.lifecycle.Lock()
-    if not state.stopped and not state.suspended {
+    if (not state.stopped) and not state.suspended {
       state.suspended = true
       state.lifetime.mutex.Lock()
       state.lifetime.current.Cancel()
@@ -417,7 +417,7 @@ impl Service {
   fn mut internal_resume() {
     let state = service_state(self)
     state.lifecycle.Lock()
-    if not state.stopped and state.suspended {
+    if (not state.stopped) and state.suspended {
       state.lifetime.mutex.Lock()
       state.lifetime.current = contextbridge::WithCancel(context::Background())
       state.lifetime.mutex.Unlock()

@@ -956,7 +956,7 @@ impl Node {
     }
     if self.focusable != value {
       self.focusable = value
-      if not value and self.focused {
+      if (not value) and self.focused {
         (self.mount_blur_base.or(ignore_blur))(self.id)
       }
       self.request_render()

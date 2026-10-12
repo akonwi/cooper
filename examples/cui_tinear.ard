@@ -1312,7 +1312,7 @@ impl cui::Component for TinearScreen {
             CardProps{
               issue: item,
               selected: item.id == self.selected,
-              focused: item.id == self.selected and not self.searching and self.active_tab.is_empty() and (not self.global_search),
+              focused: item.id == self.selected and (not self.searching) and self.active_tab.is_empty() and (not self.global_search),
               hovered: item.id == self.hovered,
               dragging: self.dragging and self.pressed == item.id,
               mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
@@ -1501,7 +1501,7 @@ impl cui::Component for TinearScreen {
         cui::text(hints, styles: line(), text_style: ui::text_style(dim: true)),
       ],
       styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
-      focused: not has_selection and not self.searching and self.active_tab.is_empty() and (not self.global_search),
+      focused: (not has_selection) and (not self.searching) and self.active_tab.is_empty() and (not self.global_search),
       on_key: fn(received: mut cooper::KeyEvent, ctx: cui::Context) {
         if received.event_type == cooper::KeyEventType::press {
           self.hovered = ""

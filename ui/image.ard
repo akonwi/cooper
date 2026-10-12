@@ -32,7 +32,7 @@ private fn require_rgb(value: color::Color) {
 }
 
 fn data(width: Int, height: Int, pixels: [color::Color]) ImageData {
-  if not valid_size(width, height) or pixels.size() != width * height {
+  if (not valid_size(width, height)) or pixels.size() != width * height {
     panic("image data requires 1-4096 pixel dimensions and exactly width * height pixels")
   }
   let snapshot = mut List::new<color::Color>()
@@ -70,7 +70,7 @@ private fn copy_data(source: ImageData) ImageData {
 // application that decodes and scales its own images. Cell fallback composites
 // over matte (default black).
 fn rgba(width: Int, height: Int, bytes: [Byte], matte: color::Color?) ImageData {
-  if not valid_size(width, height) or bytes.size() != width * height * 4 {
+  if (not valid_size(width, height)) or bytes.size() != width * height * 4 {
     panic("image RGBA requires 1-4096 pixel dimensions and exactly width * height * 4 bytes")
   }
   let background = matte.or(color::rgb(0, 0, 0))

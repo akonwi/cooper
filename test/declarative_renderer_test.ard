@@ -373,7 +373,7 @@ test fn duplicate_keys_and_refs_across_components_preserve_existing_controls() V
       err(message) => try testing::assert(message.contains(expected), message),
     }
     try testing::assert(
-      not original.node_ref.is_destroyed() and model.left.current.expect("ref").node_ref.id == original.node_ref.id,
+      (not original.node_ref.is_destroyed()) and model.left.current.expect("ref").node_ref.id == original.node_ref.id,
       "prepare before changing controls or refs",
     )
   }
@@ -498,7 +498,7 @@ test fn unkeyed_state_follows_position_and_ref_reassignment_does_not_remount() V
   renderer.invalidate()
   app.flush()
   testing::assert(
-    not old_ref.current.is_some() and model.left.current.expect("new ref").node_ref.id == right.node_ref.id and record.created == 2,
+    (not old_ref.current.is_some()) and model.left.current.expect("new ref").node_ref.id == right.node_ref.id and record.created == 2,
     "ref replacement is not component replacement",
   )
 }

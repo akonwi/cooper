@@ -347,7 +347,7 @@ test fn blur_listener_destroying_pending_target_rejects_focus() Void!Str {
   let accepted = second.focus()
 
   try testing::assert(not accepted, "Expected destroyed pending target rejection")
-  try testing::assert(not first.is_focused() and not second.is_focused(), "Expected focus to clear")
+  try testing::assert((not first.is_focused()) and not second.is_focused(), "Expected focus to clear")
   application.destroy()
   testing::assert(first.node_ref.is_destroyed(), "Expected pending target cleanup")
 }
@@ -370,7 +370,7 @@ test fn reentrant_blur_listener_preserves_one_focused_control() Void!Str {
 
   try testing::assert(not accepted, "Expected redirected focus request to report false")
   try testing::assert(third.is_focused(), "Expected reentrant focus target")
-  try testing::assert(not first.is_focused() and not second.is_focused(), "Expected exactly one focused control")
+  try testing::assert((not first.is_focused()) and not second.is_focused(), "Expected exactly one focused control")
   application.destroy()
   testing::assert(third.node_ref.is_destroyed(), "Expected reentrant focus cleanup")
 }
@@ -390,12 +390,12 @@ test fn focus_is_explicit_and_detach_clears_without_fallback() Void!Str {
   let _ = second.on_focus(fn() { focused =+ 1 })
   let _ = second.on_blur(fn() { blurred =+ 1 })
 
-  try testing::assert(not first.is_focused() and not second.is_focused(), "Expected no initial focus")
+  try testing::assert((not first.is_focused()) and not second.is_focused(), "Expected no initial focus")
   try testing::assert(second.focus(), "Expected explicit focus")
   try testing::assert(second.is_focused() and focused == 1, "Expected focus listener")
 
   parent.remove(second)
-  try testing::assert(not second.is_focused() and blurred == 1, "Expected detach blur")
+  try testing::assert((not second.is_focused()) and blurred == 1, "Expected detach blur")
   try testing::assert(not first.is_focused(), "Expected no focus fallback")
 
   application.destroy()

@@ -85,7 +85,7 @@ test fn terminal_paste_buffer_aggregates_and_resets() Void!Str {
   buffer.reset()
   buffer.reset()
   let reset = buffer.finish()
-  try testing::assert(not reset.active and reset.value == "", "Reset must discard data and deactivate")
+  try testing::assert((not reset.active) and reset.value == "", "Reset must discard data and deactivate")
   Result::ok(())
 }
 

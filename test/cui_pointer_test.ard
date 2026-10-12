@@ -85,7 +85,7 @@ test fn declarative_text_selection_style_applies_and_updates_in_place() Void!Str
   app.flush()
   let initial = app.frame().cell(0, 0).expect("selected cell").style
   try testing::assert(
-    initial.bold and not initial.reverse and initial.background.expect("background").red == Uint8::from(80),
+    initial.bold and (not initial.reverse) and initial.background.expect("background").red == Uint8::from(80),
     "declarative selection patch applies to the retained Text",
   )
   renderer.update(fn() {
@@ -145,7 +145,7 @@ test fn declarative_text_area_selection_style_defaults_and_updates_in_place() Vo
   app.flush()
   let updated = app.frame().cell(0, 0).expect("updated selected area cell").style
   testing::assert(
-    not updated.reverse and updated.background.expect("updated area background").blue == Uint8::from(80),
+    (not updated.reverse) and updated.background.expect("updated area background").blue == Uint8::from(80),
     "TextArea selection patch updates without replacing the retained control",
   )
 }

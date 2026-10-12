@@ -80,7 +80,7 @@ test fn described_focus_is_applied_after_attachment_and_reconciled() Void!Str {
   )
   renderer.destroy()
   testing::assert(
-    not field.current.is_some() and not panel.current.is_some(),
+    (not field.current.is_some()) and not panel.current.is_some(),
     "teardown clears refs",
   )
 }

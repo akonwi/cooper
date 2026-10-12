@@ -75,7 +75,7 @@ test fn select_is_compact_closed_and_opens_anchored_option_menu() Void!Str {
 
   application.key(key("escape"))
   try testing::assert(
-    not control.is_open() and not control.selected().is_some(),
+    (not control.is_open()) and not control.selected().is_some(),
     "Expected Escape to close without selection",
   )
 
@@ -362,7 +362,7 @@ test fn select_options_snapshot_programmatic_selection_and_empty_state() Void!St
   )
   control.set_options([])
   try testing::assert(
-    not control.open() and not control.selected().is_some(),
+    (not control.open()) and not control.selected().is_some(),
     "Expected inert empty Select",
   )
 
@@ -637,7 +637,7 @@ test fn select_contents_closes_portal_and_restores_only_the_trigger() Void!Str {
   control.set_style(style::new(display: style::Display::contents))
   application.render()
   try testing::assert(
-    not control.is_open() and not control.is_focused() and blurred == 1,
+    (not control.is_open()) and (not control.is_focused()) and blurred == 1,
     "Contents closes popup and blurs owner once",
   )
   try testing::assert(
@@ -648,7 +648,7 @@ test fn select_contents_closes_portal_and_restores_only_the_trigger() Void!Str {
     application.frame().cell(0, 0).expect("trigger").grapheme == " " and application.frame().cell(0, 1).expect("popup").grapheme == " ",
     "Neither contents trigger nor popup paints",
   )
-  try testing::assert(not control.open() and not control.focus(), "Contents cannot reopen or focus")
+  try testing::assert((not control.open()) and not control.focus(), "Contents cannot reopen or focus")
   application.click(2, 2)
   try testing::assert(
     not control.selected_index().is_some(),
@@ -657,7 +657,7 @@ test fn select_contents_closes_portal_and_restores_only_the_trigger() Void!Str {
   control.set_style(visible)
   application.render()
   try testing::assert(
-    not control.is_open() and not control.is_focused(),
+    (not control.is_open()) and not control.is_focused(),
     "Returning to flex does not reopen or restore focus",
   )
   try testing::assert(
@@ -673,7 +673,7 @@ test fn select_contents_closes_portal_and_restores_only_the_trigger() Void!Str {
   control.set_style(style::new(display: style::Display::none))
   application.render()
   try testing::assert(
-    not control.is_open() and not control.is_focused() and blurred == 2,
+    (not control.is_open()) and (not control.is_focused()) and blurred == 2,
     "None also closes popup and clears focus",
   )
   try testing::assert(
@@ -683,7 +683,7 @@ test fn select_contents_closes_portal_and_restores_only_the_trigger() Void!Str {
   control.set_style(style::new(display: style::Display::contents))
   control.set_style(visible)
   testing::assert(
-    not control.is_open() and popup.parent.expect("retained popup") == control.node_ref,
+    (not control.is_open()) and popup.parent.expect("retained popup") == control.node_ref,
     "None/contents/flex transitions preserve closed ownership",
   )
 }
@@ -710,7 +710,7 @@ test fn select_node_contents_transition_is_not_undone_by_blur_cleanup() Void!Str
     "Blur cleanup must not overwrite the retained contents style",
   )
   try testing::assert(
-    not control.is_open() and not control.is_focused() and not control.open(),
+    (not control.is_open()) and (not control.is_focused()) and (not control.open()),
     "Direct retained transition closes and prevents reopening",
   )
   try testing::assert(
@@ -762,7 +762,7 @@ test fn select_contents_and_open_destruction_clean_up_portal_once() Void!Str {
       "No portal remains in root retained children",
     )
     try testing::assert(
-      not control.node_ref.is_focused() and not popup.parent.is_some(),
+      (not control.node_ref.is_focused()) and not popup.parent.is_some(),
       "No focus or popup attachment survives",
     )
     try testing::assert(

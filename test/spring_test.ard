@@ -424,7 +424,7 @@ test fn spring_rejects_invalid_numeric_contracts() Void!Str {
     "non-negative",
   )
   testing::assert(
-    not spring.is_playing() and spring.target() == 0.0,
+    (not spring.is_playing()) and spring.target() == 0.0,
     "invalid input must not mutate the spring",
   )
 }

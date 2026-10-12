@@ -94,11 +94,11 @@ test fn box_refs_retain_focus_and_clear_on_teardown() Void!Str {
   })
   app.flush()
   try testing::assert(
-    not panel.is_focused() and not panel.focus(),
+    (not panel.is_focused()) and not panel.focus(),
     "removing handler removes focusability",
   )
   renderer.destroy()
-  try testing::assert(not first.current.is_some() and not second.current.is_some(), "both refs clear")
+  try testing::assert((not first.current.is_some()) and not second.current.is_some(), "both refs clear")
   testing::assert(panel.node_ref.is_destroyed(), "renderer owns controls")
 }
 

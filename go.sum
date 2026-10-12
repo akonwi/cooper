@@ -6,6 +6,8 @@ github.com/akonwi/vaxis v0.0.0-20260924043154-8b235bfa5c08 h1:bdP08rikUTBl3QWysb
 github.com/akonwi/vaxis v0.0.0-20260924043154-8b235bfa5c08/go.mod h1:dCX9sQeac0iqnwOA7tENMZfkTSqg8IyIRFUPD0wxWwk=
 github.com/akonwi/vaxis v0.0.0-20260924195759-c1da75a3b1dc h1:2O2nOvfOIfVgsDNvfQGYumTu3Sn6WAoNuK/jm7G7NjI=
 github.com/akonwi/vaxis v0.0.0-20260924195759-c1da75a3b1dc/go.mod h1:dCX9sQeac0iqnwOA7tENMZfkTSqg8IyIRFUPD0wxWwk=
+github.com/akonwi/vaxis v0.0.0-20261012025929-59807cd81c13 h1:n7fSbV4yrv/5XihxpWU6ZlFO2SGllzIsPniVoB9FHqE=
+github.com/akonwi/vaxis v0.0.0-20261012025929-59807cd81c13/go.mod h1:dCX9sQeac0iqnwOA7tENMZfkTSqg8IyIRFUPD0wxWwk=
 github.com/rockorager/go-uucode v1.2.0 h1:xwUIndxE+z1PIrWALT7unu4L8x27qMsC/5X3aonJo6o=
 github.com/rockorager/go-uucode v1.2.0/go.mod h1:0BZXIGRvWIHt1ruBeViNGcuKyQ3+BRHQbgyXkqRCz38=
 github.com/rockorager/go-uucode v1.2.2 h1:bqVVrZtdwb8v4OB5BIw/aSAKXvGMbOjQwDTHsRC7XhU=

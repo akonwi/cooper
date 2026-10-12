@@ -1,7 +1,7 @@
-use cooper/ui/box
 use cooper/event
-use cooper/ui/style
 use cooper/testing as cooper_testing
+use cooper/ui/box
+use cooper/ui/style
 use cooper/ui/text
 use go:fmt
 use go:time
@@ -17,7 +17,10 @@ private fn absolute(z_index: Int) style::Style {
 
 fn main() {
   let application = cooper_testing::new(80, 24)
-  let overlap = box::new(application.context, styles: style::new(width: style::cells(80), height: style::cells(24)))
+  let overlap = box::new(
+    application.context,
+    styles: style::new(width: style::cells(80), height: style::cells(24)),
+  )
   mut top = Maybe::new<mut box::Box>()
   mut index = 0
   while index < 100 {
@@ -27,7 +30,9 @@ fn main() {
     index =+ 1
   }
   mut top_events = 0
-  let _ = top.expect("top overlap layer").on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = top.expect(
+    "top overlap layer",
+  ).on_mouse(fn(received: mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::move {
       top_events =+ 1
     }

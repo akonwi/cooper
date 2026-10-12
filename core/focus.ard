@@ -181,7 +181,7 @@ fn reveal(root: mut node::Renderable, target: mut node::Node) Bool {
             }
           }
         }
-        
+
         if current == root_node {
           scanning = false
         } else {
@@ -207,14 +207,14 @@ impl State {
   fn focused() (mut node::Node)? {
     self.focused_node
   }
-  
+
   fn is_focused(target: mut node::Node) Bool {
     match self.focused_node {
       current => current == target,
       _ => false,
     }
   }
-  
+
   private fn mut change(next: (mut node::Node)?) {
     mut changed = true
     match self.focused_node {
@@ -230,7 +230,7 @@ impl State {
         }
       },
     }
-    
+
     if changed {
       let previous = self.focused_node
       self.focused_node = next
@@ -249,17 +249,17 @@ impl State {
       }
     }
   }
-  
+
   fn mut clear() {
     self.change(Maybe::new<mut node::Node>())
   }
-  
+
   fn mut blur(target: mut node::Node) {
     if self.is_focused(target) {
       self.clear()
     }
   }
-  
+
   fn mut autofocus(root: mut node::Renderable, candidate: AutoFocusCandidate) Bool {
     if root.node() == candidate.root and autofocus_is_current(candidate) {
       self.focus(root, candidate.ancestor)
@@ -267,7 +267,7 @@ impl State {
       false
     }
   }
-  
+
   fn mut focus(root: mut node::Renderable, target: mut node::Node) Bool {
     mut accepted = false
     for candidate in targets(root) {
@@ -291,7 +291,7 @@ impl State {
     }
     self.is_focused(target)
   }
-  
+
   fn mut reconcile(root: mut node::Renderable) {
     match self.focused_node {
       current => {
@@ -308,7 +308,7 @@ impl State {
       _ => (),
     }
   }
-  
+
   fn mut take_reveal_request() Bool {
     let requested = self.reveal_requested
     self.reveal_requested = false

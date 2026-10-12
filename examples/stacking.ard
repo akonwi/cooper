@@ -216,10 +216,7 @@ private fn inspector_content(layers: [mut Layer], active: Int, autoplay: Bool) u
         style: ui::span_style(foreground: value),
       ),
       ui::span("CHILD Z\n", style: ui::span_style(foreground: label, bold: true)),
-      ui::span(
-        "99 (inside each parent)\n\n",
-        style: ui::span_style(foreground: ui::hex("#F472B6")),
-      ),
+      ui::span("99 (inside each parent)\n\n", style: ui::span_style(foreground: ui::hex("#F472B6"))),
       ui::span("AUTOPLAY  ", style: ui::span_style(foreground: label, bold: true)),
       ui::span(auto_label, style: ui::span_style(foreground: auto_color, bold: true)),
     ],
@@ -363,36 +360,9 @@ fn main() {
   inspector_panel.add(inspector_clip)
 
   let layers: [mut Layer] = [
-    make_layer(
-      ctx,
-      "ALPHA",
-      2,
-      1,
-      0,
-      ui::hex("#1D4ED8"),
-      ui::hex("#60A5FA"),
-      ui::hex("#1E40AF"),
-    ),
-    make_layer(
-      ctx,
-      "BRAVO",
-      11,
-      3,
-      1,
-      ui::hex("#6D28D9"),
-      ui::hex("#C4B5FD"),
-      ui::hex("#5B21B6"),
-    ),
-    make_layer(
-      ctx,
-      "CHARLIE",
-      20,
-      4,
-      2,
-      ui::hex("#047857"),
-      ui::hex("#6EE7B7"),
-      ui::hex("#065F46"),
-    ),
+    make_layer(ctx, "ALPHA", 2, 1, 0, ui::hex("#1D4ED8"), ui::hex("#60A5FA"), ui::hex("#1E40AF")),
+    make_layer(ctx, "BRAVO", 11, 3, 1, ui::hex("#6D28D9"), ui::hex("#C4B5FD"), ui::hex("#5B21B6")),
+    make_layer(ctx, "CHARLIE", 20, 4, 2, ui::hex("#047857"), ui::hex("#6EE7B7"), ui::hex("#065F46")),
   ]
   for layer in layers {
     stage_clip.add(layer.group)

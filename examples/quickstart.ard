@@ -44,11 +44,7 @@ fn main() {
     styles: ui::style(foreground: ui::hex("#FFFFFF")),
   )
   content.add(
-    ui::text(
-      ctx,
-      content: "Hello, Cooper!",
-      styles: ui::style(foreground: ui::hex("#DCE3FF")),
-    ),
+    ui::text(ctx, content: "Hello, Cooper!", styles: ui::style(foreground: ui::hex("#DCE3FF"))),
   )
   content.add(counter)
   content.add(

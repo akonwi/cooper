@@ -268,11 +268,7 @@ fn main() {
   )
   let scroller = ui::scroll_box(
     ctx,
-    styles: ui::style(
-      width: ui::percent(100.0),
-      height: ui::percent(100.0),
-      flex_shrink: 0.0,
-    ),
+    styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0), flex_shrink: 0.0),
   )
   mut index = 0
   while index < 8 {

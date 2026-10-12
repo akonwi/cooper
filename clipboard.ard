@@ -128,7 +128,7 @@ impl Clipboard {
       }
     }
   }
-  
+
   // Emits an OSC 52 write request. Terminal acceptance is not observable.
   fn mut write(value: Str) {
     let state = internal_state(self)
@@ -144,12 +144,12 @@ impl Clipboard {
     state.write_action(value)
     state.lifecycle.Unlock()
   }
-  
+
   // Emits an empty OSC 52 write request.
   fn mut clear() {
     self.write("")
   }
-  
+
   fn mut internal_suspend() Bool {
     let state = internal_state(self)
     if not state.read_guard.TryLock() {
@@ -166,7 +166,7 @@ impl Clipboard {
       available
     }
   }
-  
+
   fn mut internal_resume() {
     let state = internal_state(self)
     state.lifecycle.Lock()
@@ -176,7 +176,7 @@ impl Clipboard {
     }
     state.lifecycle.Unlock()
   }
-  
+
   fn mut internal_cancel() {
     let state = internal_state(self)
     state.lifecycle.Lock()
@@ -186,11 +186,11 @@ impl Clipboard {
     }
     state.lifecycle.Unlock()
   }
-  
+
   fn mut internal_stop() {
     let state = internal_state(self)
     self.internal_cancel()
-    
+
     // Cancellation unblocks an active read before Vaxis is released.
     state.read_guard.Lock()
     state.read_guard.Unlock()

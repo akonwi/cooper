@@ -74,7 +74,16 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
     "Expected color aliases",
   )
   try testing::assert(
-    ui::contains(ui::Rect{x: 0, y: 0, width: 2, height: 2}, 1, 1),
+    ui::contains(
+      ui::Rect{
+        x: 0,
+        y: 0,
+        width: 2,
+        height: 2,
+      },
+      1,
+      1,
+    ),
     "Expected geometry aliases",
   )
   try testing::assert(label.wrap() == ui::TextWrap::word, "Expected ui::TextWrap alias")
@@ -93,9 +102,7 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
     notes.scrollbar_options().visibility == ui::ScrollbarVisibility::automatic,
     "Expected automatic TextArea scrollbar",
   )
-  notes.set_scrollbar_options(
-    ui::scrollbar_options(visibility: ui::ScrollbarVisibility::hidden),
-  )
+  notes.set_scrollbar_options(ui::scrollbar_options(visibility: ui::ScrollbarVisibility::hidden))
   try testing::assert(
     notes.scrollbar_options().visibility == ui::ScrollbarVisibility::hidden,
     "Expected configurable TextArea scrollbar",

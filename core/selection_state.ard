@@ -323,33 +323,34 @@ impl State {
     }
     self.revision_value =+ 1
   }
-  
+
   fn revision() Int {
     self.revision_value
   }
-  
+
   fn current() selection::Selection? {
     self.snapshot
   }
-  
+
   fn has_selection() Bool {
     self.session.is_some()
   }
-  
+
   fn owns(target: mut node::Node) Bool {
     match self.session {
       active => active.anchor.control == target,
       _ => false,
     }
   }
-  
+
   fn retains_id(target_id: Int) Bool {
     match self.session {
       active => {
-        active.anchor.control.id == target_id or (match active.focus_control {
+        let focus_matches = match active.focus_control {
           focused => focused.id == target_id,
           _ => false,
-        })
+        }
+        active.anchor.control.id == target_id or focus_matches
       },
       _ => false,
     }
@@ -361,14 +362,14 @@ impl State {
       _ => false,
     }
   }
-  
+
   fn generation() Int? {
     match self.session {
       active => Maybe::new<Int>(active.generation),
       _ => Maybe::new<Int>(),
     }
   }
-  
+
   fn mut start(root: mut node::Renderable, target: mut node::Node, x: Int, y: Int) Bool {
     let bounds = target.layout().screen
     let local_x = x - bounds.x
@@ -415,7 +416,7 @@ impl State {
       true
     }
   }
-  
+
   fn mut expand_word(target: mut node::Node, x: Int, y: Int, expected_generation: Int) Bool {
     match self.session {
       active => {
@@ -457,7 +458,7 @@ impl State {
       _ => false,
     }
   }
-  
+
   fn mut expand_line(target: mut node::Node, x: Int, y: Int, expected_generation: Int) Bool {
     match self.session {
       active => {
@@ -544,7 +545,7 @@ impl State {
       _ => false,
     }
   }
-  
+
   fn mut finish(expected_generation: Int) Bool {
     match self.session {
       active => {
@@ -607,7 +608,7 @@ impl State {
       _ => false,
     }
   }
-  
+
   fn mut clear_generation(expected_generation: Int) Bool {
     match self.session {
       active => {
@@ -620,7 +621,7 @@ impl State {
       _ => false,
     }
   }
-  
+
   fn mut clear() Bool {
     let changed = self.session.is_some() or self.snapshot.is_some() or self.touched.size() > 0
     if changed {
@@ -636,7 +637,7 @@ impl State {
     }
     changed
   }
-  
+
   fn mut reconcile(root: mut node::Renderable) {
     let previous = self.snapshot
     match self.session {
@@ -787,7 +788,7 @@ impl State {
       self.bump()
     }
   }
-  
+
   fn mut destroy() {
     for old in self.touched {
       if not old.is_destroyed() {

@@ -53,11 +53,7 @@ private fn specimen_content() ui::StyledText {
       ui::span("FG + BG   ", style: ui::span_style(foreground: label, bold: true)),
       ui::span(
         " BADGE ",
-        style: ui::span_style(
-          foreground: ui::hex("#082F49"),
-          background: ui::hex("#FDE047"),
-          bold: true,
-        ),
+        style: ui::span_style(foreground: ui::hex("#082F49"), background: ui::hex("#FDE047"), bold: true),
       ),
     ],
   )
@@ -78,29 +74,17 @@ private fn badge_content() ui::StyledText {
       ui::span("SPANS      ", style: ui::span_style(foreground: ui::hex("#67E8F9"), bold: true)),
       ui::span(
         " READY ",
-        style: ui::span_style(
-          foreground: ui::hex("#052E16"),
-          background: ui::hex("#4ADE80"),
-          bold: true,
-        ),
+        style: ui::span_style(foreground: ui::hex("#052E16"), background: ui::hex("#4ADE80"), bold: true),
       ),
       ui::span(" "),
       ui::span(
         " WARN ",
-        style: ui::span_style(
-          foreground: ui::hex("#422006"),
-          background: ui::hex("#FACC15"),
-          bold: true,
-        ),
+        style: ui::span_style(foreground: ui::hex("#422006"), background: ui::hex("#FACC15"), bold: true),
       ),
       ui::span(" "),
       ui::span(
         " ERROR ",
-        style: ui::span_style(
-          foreground: ui::hex("#450A0A"),
-          background: ui::hex("#F87171"),
-          bold: true,
-        ),
+        style: ui::span_style(foreground: ui::hex("#450A0A"), background: ui::hex("#F87171"), bold: true),
       ),
     ],
   )

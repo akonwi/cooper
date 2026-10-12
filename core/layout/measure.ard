@@ -47,7 +47,7 @@ impl Axis {
   fn is_fixed() Bool {
     self.mode == cache::SizingMode::stretch_fit or self.mode == cache::SizingMode::fit_content and numeric::is_defined(self.available) and self.available <= 0.0
   }
-  
+
   fn fixed_size() Float32 {
     let size = match numeric::is_undefined(self.available) or self.mode == cache::SizingMode::fit_content and self.available < 0.0 {
       true => Float32::from(0.0),
@@ -55,7 +55,7 @@ impl Axis {
     }
     self.bound(size)
   }
-  
+
   // CalculateLayout.cpp: constrainMaxSizeForMode. Available size includes
   // margins here; maximum is an already-resolved border-box constraint.
   fn constrain_max(margin: Float32) Axis {
@@ -77,7 +77,7 @@ impl Axis {
     }
     result.@
   }
-  
+
   // CalculateLayout.cpp: calculateAvailableInnerDimension. Unlike callback
   // inner_size, this uses resolved min/max and does not always floor at zero.
   // Available space has already had margins removed by the caller.
@@ -96,7 +96,7 @@ impl Axis {
     }
     available
   }
-  
+
   fn without_margin(margin: Float32) Axis {
     Axis{
       available: self.available - margin,
@@ -106,7 +106,7 @@ impl Axis {
       maximum: self.maximum,
     }
   }
-  
+
   fn bound(value: Float32) Float32 {
     // Pinned Yoga checks maximum first and returns immediately. Cooper's
     // minimum-wins ADR policy must normalize conflicting bounds upstream.
@@ -118,14 +118,14 @@ impl Axis {
     }
     numeric::max_or_defined(bounded, self.padding_border)
   }
-  
+
   fn available_size() Float32 {
     match self.mode == cache::SizingMode::max_content {
       true => numeric::undefined(),
       false => self.available,
     }
   }
-  
+
   fn inner_size() Float32 {
     let available = self.available_size()
     match numeric::is_undefined(available) {
@@ -133,7 +133,7 @@ impl Axis {
       false => numeric::max_or_defined(Float32::from(0.0), available - self.padding_border),
     }
   }
-  
+
   fn measured_size(content: Float32) Float32 {
     let size = match self.mode == cache::SizingMode::stretch_fit {
       true => self.available_size(),

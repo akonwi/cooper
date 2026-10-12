@@ -1,7 +1,7 @@
+use cooper/testing as cooper_testing
 use cooper/ui/box
 use cooper/ui/scroll_box
 use cooper/ui/style
-use cooper/testing as cooper_testing
 use cooper/ui/text
 use go:fmt
 use go:time

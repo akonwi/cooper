@@ -187,7 +187,7 @@ test fn text_defaults_to_word_wrap_and_preserves_explicit_lines() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   try testing::assert(label.wrap() == text::TextWrap::word, "Expected default word wrapping")
   try testing::assert(label.layout().screen.height == 3, "Expected wrapped and explicit lines")
   try testing::assert(
@@ -202,7 +202,7 @@ test fn text_defaults_to_word_wrap_and_preserves_explicit_lines() Void!Str {
     application.frame().cell(0, 2).expect("wide lead").grapheme == "🙂",
     "Expected explicit wide line",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected wrapped Text cleanup")
 }
@@ -227,7 +227,7 @@ test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!St
   )
   application.root.add(label)
   application.render()
-  
+
   try testing::assert(label.layout().screen.height == 3, "Expected mixed Unicode line opportunities")
   try testing::assert(
     application.frame().cell(0, 0).expect("Latin line lead").grapheme == "H",
@@ -257,7 +257,7 @@ test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!St
     application.frame().cell(4, 2).expect("linked Latin word end").hyperlink.or("") == "https://example.com/world",
     "Expected hyperlink through wrapping",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected Unicode wrapped Text cleanup")
 }
@@ -279,7 +279,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
   )
   application.root.add(label)
   application.render()
-  
+
   try testing::assert(
     application.mouse_cursor() == event::MouseCursor::default_cursor,
     "Expected default cursor before pointer input",
@@ -299,7 +299,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
     application.mouse_cursor() == event::MouseCursor::pointer,
     "Expected pointer cursor over linked wide continuation",
   )
-  
+
   mut events = 0
   mut activated = ""
   let dispose = label.on_link(fn(received: mut text::LinkEvent) {
@@ -313,7 +313,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
   let dispose_later = label.on_link(fn(received: mut text::LinkEvent) {
     later_observed_prevention = received.is_default_prevented()
   })
-  
+
   application.click(2, 0)
   try testing::assert(
     events == 1 and activated == "https://example.com/docs",
@@ -323,7 +323,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
     application.opened_urls().size() == 1 and application.opened_urls().at(0).or("") == "https://example.com/docs",
     "Expected plain click to use the default link opener",
   )
-  
+
   application.click(3, 0)
   try testing::assert(
     events == 2 and later_observed_prevention and application.opened_urls().size() == 1,
@@ -337,7 +337,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
     events == 2 and application.opened_urls().size() == 2 and application.opened_urls().at(1).or("") == "https://example.com/wide",
     "Expected wide continuation click and idempotent listener disposal",
   )
-  
+
   application.click(
     2,
     0,
@@ -353,7 +353,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
     application.opened_urls().size() == 2,
     "Expected modified clicks and selection drags not to open links",
   )
-  
+
   application.destroy()
   try testing::assert(
     application.mouse_cursor() == event::MouseCursor::default_cursor,
@@ -376,7 +376,7 @@ test fn ancestor_prevention_and_route_invalidation_cancel_link_activation() Void
   parent.add(label)
   application.root.add(parent)
   application.render()
-  
+
   let stop_parent_default = parent.on_mouse(fn(received: mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::up {
       received.prevent_default()
@@ -388,7 +388,7 @@ test fn ancestor_prevention_and_route_invalidation_cancel_link_activation() Void
     "Expected ancestor prevent_default before deferred link activation",
   )
   stop_parent_default()
-  
+
   let invalidate_down = label.on_mouse(fn(received: mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       parent.set_style(style::new(display: style::Display::none))
@@ -403,7 +403,7 @@ test fn ancestor_prevention_and_route_invalidation_cancel_link_activation() Void
     "Expected invalidated down route not to preserve an armed link",
   )
   invalidate_down()
-  
+
   application.click(1, 0)
   try testing::assert(
     application.opened_urls().size() == 1,
@@ -425,7 +425,7 @@ test fn completely_clipped_wide_link_is_not_activatable() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   try testing::assert(
     application.frame().cell(3, 0).expect("cleared partial wide link").grapheme == " ",
     "Expected partial wide link not painted",
@@ -437,7 +437,7 @@ test fn completely_clipped_wide_link_is_not_activatable() Void!Str {
   )
   application.click(3, 0)
   try testing::assert(application.opened_urls().size() == 0, "Expected partial wide link not activated")
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected clipped link cleanup")
 }
@@ -451,7 +451,7 @@ test fn link_cursor_reconciles_after_content_changes_without_pointer_motion() Vo
   )
   application.root.add(label)
   application.render()
-  
+
   application.mouse_move(1, 0)
   try testing::assert(
     application.mouse_cursor() == event::MouseCursor::default_cursor,
@@ -469,7 +469,7 @@ test fn link_cursor_reconciles_after_content_changes_without_pointer_motion() Vo
     application.mouse_cursor() == event::MouseCursor::default_cursor,
     "Expected stationary pointer reconciled after link disappears",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected link cursor reconciliation cleanup")
 }
@@ -483,7 +483,7 @@ test fn double_clicking_link_opens_once_then_selects_word() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   application.click(1, 0)
   application.mouse_down(1, 0)
   application.advance_time(600)
@@ -496,7 +496,7 @@ test fn double_clicking_link_opens_once_then_selects_word() Void!Str {
     label.selected_text() == "docs",
     "Expected second press to preserve word selection behavior",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected double-click link cleanup")
 }
@@ -511,7 +511,7 @@ test fn non_selectable_link_double_click_still_activates_once() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   application.double_click(1, 0)
   try testing::assert(
     application.opened_urls().size() == 1,
@@ -521,7 +521,7 @@ test fn non_selectable_link_double_click_still_activates_once() Void!Str {
     not label.selection().is_some(),
     "Expected non-selectable linked Text to remain unselected",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected non-selectable link cleanup")
 }
@@ -537,7 +537,7 @@ test fn intervening_press_breaks_link_activation_dedupe() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   application.click(0, 0)
   application.click(1, 0)
   application.click(0, 0)
@@ -551,7 +551,7 @@ test fn intervening_press_breaks_link_activation_dedupe() Void!Str {
     application.opened_urls().size() == 3,
     "Expected scroll to break link double-click dedupe",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected intervening link click cleanup")
 }
@@ -566,7 +566,7 @@ test fn changed_url_at_same_cell_is_a_new_activation() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   application.click(0, 0)
   label.set_content(text::styled_text([text::span("x", link: "https://example.com/b")]))
   application.render()
@@ -575,7 +575,7 @@ test fn changed_url_at_same_cell_is_a_new_activation() Void!Str {
     application.opened_urls().size() == 2 and application.opened_urls().at(1).or("") == "https://example.com/b",
     "Expected changed URL not deduplicated at the same cell",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected changed URL cleanup")
 }
@@ -595,7 +595,7 @@ test fn link_dedupe_uses_screen_position_when_text_moves() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   application.click(1, 0)
   label.set_style(
     style::new(
@@ -611,7 +611,7 @@ test fn link_dedupe_uses_screen_position_when_text_moves() Void!Str {
     application.opened_urls().size() == 1 and label.selected_text() == "docs",
     "Expected moved Text to share pointer double-click identity at the same screen cell",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected moved link click cleanup")
 }
@@ -645,7 +645,7 @@ test fn horizontal_ellipsis_replaces_complete_glyph_and_clamps_selection() Void!
   )
   application.root.add(label)
   application.render()
-  
+
   let marker = application.frame().cell(3, 0).expect("horizontal ellipsis")
   try testing::assert(
     label.overflow() == text::TextOverflow::ellipsis and label.content() == "abc你z",
@@ -660,7 +660,7 @@ test fn horizontal_ellipsis_replaces_complete_glyph_and_clamps_selection() Void!
     application.frame().cell(4, 0).expect("cleared wide continuation").grapheme == " ",
     "Expected no partial wide glyph",
   )
-  
+
   application.drag(3, 0, 0, 0)
   try testing::assert(
     label.selected_text() == "abc" and application.selection().expect("ellipsis-clamped selection").selected_text == "abc",
@@ -670,7 +670,7 @@ test fn horizontal_ellipsis_replaces_complete_glyph_and_clamps_selection() Void!
     not application.frame().cell(3, 0).expect("unselected ellipsis").style.reverse,
     "Expected synthetic ellipsis not selected",
   )
-  
+
   label.set_overflow(text::TextOverflow::clip)
   application.render()
   try testing::assert(label.overflow() == text::TextOverflow::clip, "Expected overflow setter")
@@ -678,7 +678,7 @@ test fn horizontal_ellipsis_replaces_complete_glyph_and_clamps_selection() Void!
     application.frame().cell(3, 0).expect("restored clipped wide glyph").grapheme == "你" and application.frame().cell(4, 0).expect("restored wide link continuation").hyperlink.or("") == "https://example.com/wide",
     "Expected clip mode to restore complete linked wide glyph",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected horizontal ellipsis cleanup")
 }
@@ -703,7 +703,7 @@ test fn vertical_ellipsis_uses_last_visible_row_and_preceding_style() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   let marker = application.frame().cell(4, 1).expect("vertical ellipsis")
   try testing::assert(
     application.frame().cell(0, 0).expect("first visible line").grapheme == "o" and application.frame().cell(0, 1).expect("last visible line").grapheme == "t",
@@ -714,7 +714,7 @@ test fn vertical_ellipsis_uses_last_visible_row_and_preceding_style() Void!Str {
     "Expected marker after last visible source",
   )
   try testing::assert(marker.hyperlink.is_none(), "Expected vertical ellipsis to clear source hyperlink")
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected vertical ellipsis cleanup")
 }
@@ -730,7 +730,7 @@ test fn ellipsis_without_visible_source_is_synthetic_and_not_selectable() Void!S
   )
   application.root.add(label)
   application.render()
-  
+
   let marker = application.frame().cell(0, 0).expect("source-free ellipsis")
   try testing::assert(
     marker.grapheme == "…" and marker.style.bold,
@@ -745,7 +745,7 @@ test fn ellipsis_without_visible_source_is_synthetic_and_not_selectable() Void!S
     (not label.selection().is_some()) and copied.is_empty(),
     "Expected source-free synthetic marker not selectable",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected source-free ellipsis cleanup")
 }
@@ -776,7 +776,7 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   let emphasized = application.frame().cell(0, 0).expect("styled span cell").style
   let linked_cell = application.frame().cell(4, 0).expect("inherited span cell")
   let inherited = linked_cell.style
@@ -801,7 +801,7 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
     linked_cell.hyperlink.or("") == "https://example.com",
     "Expected linked span cell metadata",
   )
-  
+
   let snapshot = label.styled_content()
   try testing::assert(
     snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("first snapshot span").text == "RED",
@@ -814,13 +814,13 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
   let returned_spans = mut snapshot.spans
   returned_spans.set(0, text::span("getter mutation"))
   try testing::assert(label.content() == "RED plain", "Expected getter snapshot isolated from Text")
-  
+
   let direct_spans = mut List::new<text::Span>()
   direct_spans.push(text::span("direct"))
   label.set_content(text::StyledText{spans: direct_spans.@})
   direct_spans.set(0, text::span("caller mutation"))
   try testing::assert(label.content() == "direct", "Expected direct StyledText ingress snapshot")
-  
+
   label.set_content("plain")
   application.render()
   try testing::assert(
@@ -831,7 +831,7 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
     application.frame().cell(0, 0).expect("plain replacement cell").hyperlink.is_none(),
     "Expected plain replacement to clear hyperlink",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected styled Text cleanup")
 }
@@ -858,7 +858,7 @@ test fn styled_text_uses_first_scalar_style_for_cross_span_grapheme() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   let painted = application.frame().cell(0, 0).expect("cross-span grapheme")
   try testing::assert(painted.grapheme == "é", "Expected one cross-span grapheme")
   try testing::assert(
@@ -873,7 +873,7 @@ test fn styled_text_uses_first_scalar_style_for_cross_span_grapheme() Void!Str {
     painted.hyperlink.or("") == "https://example.com/first",
     "Expected first scalar hyperlink for cross-span grapheme",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected cross-span Text cleanup")
 }
@@ -888,7 +888,7 @@ test fn text_character_wrap_never_splits_a_grapheme() Void!Str {
   )
   application.root.add(label)
   application.render()
-  
+
   try testing::assert(label.layout().screen.height == 2, "Expected character wrap height")
   try testing::assert(
     application.frame().cell(1, 0).expect("first line end").grapheme == "b",
@@ -898,7 +898,7 @@ test fn text_character_wrap_never_splits_a_grapheme() Void!Str {
     application.frame().cell(0, 1).expect("second line lead").grapheme == "🙂",
     "Expected intact grapheme",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected character Text cleanup")
 }
@@ -933,7 +933,7 @@ test fn common_colors_follow_tree_inheritance_not_sibling_paint_order() Void!Str
   parent.add(front)
   application.root.add(parent)
   application.render()
-  
+
   let painted = application.frame().cell(0, 0).expect("overlapping Text")
   try testing::assert(painted.grapheme == "b", "Expected later sibling paint")
   try testing::assert(
@@ -944,7 +944,7 @@ test fn common_colors_follow_tree_inheritance_not_sibling_paint_order() Void!Str
     not painted.style.background.is_some(),
     "Expected no background leakage between siblings",
   )
-  
+
   application.destroy()
   testing::assert(front.node_ref.is_destroyed(), "Expected overlapping Text cleanup")
 }
@@ -974,7 +974,7 @@ test fn common_colors_inherit_through_visible_overflow() Void!Str {
   parent.add(child)
   application.root.add(parent)
   application.render()
-  
+
   let painted = application.frame().cell(1, 0).expect("overflowing Text")
   try testing::assert(painted.grapheme == "x", "Expected visible overflow paint")
   try testing::assert(
@@ -985,7 +985,7 @@ test fn common_colors_inherit_through_visible_overflow() Void!Str {
     painted.style.background.expect("inherited background").blue == Uint8::from(12),
     "Expected background inheritance outside parent bounds",
   )
-  
+
   application.destroy()
   testing::assert(child.node_ref.is_destroyed(), "Expected overflowing Text cleanup")
 }
@@ -1011,7 +1011,7 @@ test fn text_exposes_styles_content_wrapping_and_common_api() Void!Str {
     ),
   )
   application.render()
-  
+
   try testing::assert(label.content() == "new", "Expected Text content getter")
   try testing::assert(label.wrap() == text::TextWrap::character, "Expected Text wrap getter")
   try testing::assert(label.text_style().bold, "Expected TextStyle getter")
@@ -1033,7 +1033,7 @@ test fn text_exposes_styles_content_wrapping_and_common_api() Void!Str {
     painted.style.background.expect("common background").blue == Uint8::from(70),
     "Expected inherited common background",
   )
-  
+
   application.destroy()
   testing::assert(label.node_ref.is_destroyed(), "Expected styled Text cleanup")
 }

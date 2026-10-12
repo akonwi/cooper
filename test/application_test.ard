@@ -17,10 +17,10 @@ test fn test_app_renders_the_permanent_root_tree() Void!Str {
   let application = cooper_testing::new(12, 2)
   let message = text::new(application.context, content: "Hello")
   application.root.add(message)
-  
+
   application.render()
   let frame = application.frame()
-  
+
   try testing::assert(application.root.child_count() == 1, "Expected one Root child")
   try testing::assert(frame.width() == 12 and frame.height() == 2, "Expected configured frame size")
   try cooper_testing::assert_contains(frame.text(), "Hello")
@@ -63,12 +63,12 @@ test fn test_app_flushes_app_lifetime_dispatch_and_scheduled_frames() Void!Str {
   let message = text::new(application.context, content: "Before")
   application.root.add(message)
   application.render()
-  
+
   let accepted = application.context.dispatch(fn() {
     message.set_content("After")
   })
   let drained = application.flush()
-  
+
   try testing::assert(accepted.is_ok(), "Expected live Runtime dispatch")
   try testing::assert(drained == 1, "Expected one flushed action")
   try cooper_testing::assert_contains(application.frame().text(), "After")
@@ -92,9 +92,9 @@ test fn test_app_destroy_from_dispatch_stops_at_the_action_boundary() Void!Str {
   let _ = application.context.dispatch(fn() {
     later_action_ran = true
   })
-  
+
   let drained = application.flush()
-  
+
   try testing::assert(drained == 1, "Expected only the destroying action to run")
   try testing::assert(not later_action_ran, "Expected queued work after destruction to be suppressed")
   try cooper_testing::assert_contains(application.frame().text(), "After")
@@ -118,7 +118,7 @@ test fn terminal_focus_is_deduplicated_and_independent_of_control_focus() Void!S
       status.set_content("terminal:lost")
     }
   })
-  
+
   try testing::assert(
     not application.terminal_focus().is_some(),
     "Expected initially unknown terminal focus",
@@ -128,7 +128,7 @@ test fn terminal_focus_is_deduplicated_and_independent_of_control_focus() Void!S
   try testing::assert(calls == 1, "Expected duplicate terminal focus coalescing")
   try testing::assert(field.is_focused(), "Expected terminal focus not to alter control focus")
   try cooper_testing::assert_contains(application.frame().text(), "terminal:gained")
-  
+
   application.set_terminal_focus(event::TerminalFocus::lost)
   try testing::assert(
     calls == 2 and application.terminal_focus().or(event::TerminalFocus::gained) == event::TerminalFocus::lost,
@@ -136,7 +136,7 @@ test fn terminal_focus_is_deduplicated_and_independent_of_control_focus() Void!S
   )
   try testing::assert(field.is_focused(), "Expected terminal blur not to blur control")
   try cooper_testing::assert_contains(application.frame().text(), "terminal:lost")
-  
+
   remove()
   remove()
   application.set_terminal_focus(event::TerminalFocus::gained)
@@ -152,9 +152,9 @@ test fn terminal_focus_listener_can_destroy_test_app_safely() Void!Str {
   let _ = application.on_terminal_focus(fn(value: event::TerminalFocus) {
     application.destroy()
   })
-  
+
   application.set_terminal_focus(event::TerminalFocus::lost)
-  
+
   testing::assert(
     application.context.is_destroyed(),
     "Expected terminal-focus destruction at callback boundary",
@@ -164,7 +164,7 @@ test fn terminal_focus_listener_can_destroy_test_app_safely() Void!Str {
 test fn destroyed_runtime_rejects_platform_link_opening() Void!Str {
   let application = cooper_testing::new(4, 1)
   application.destroy()
-  
+
   try testing::assert(
     application.context.open_url("https://example.com").is_err(),
     "Expected destroyed Runtime to reject URL opening",
@@ -184,7 +184,7 @@ test fn platform_link_opening_serializes_with_destruction() Void!Str {
   })
   application.destroy()
   let _ = completed.receiver().recv()
-  
+
   testing::assert(
     application.context.open_url("https://example.com/late").is_err(),
     "Expected URL rejection after concurrent teardown",
@@ -195,13 +195,13 @@ test fn test_app_resize_and_destruction_are_deterministic() Void!Str {
   let application = cooper_testing::new(4, 1)
   let cancellation = application.context.cancellation
   application.root.add(text::new(application.context, content: "resize"))
-  
+
   application.resize(8, 2)
   try testing::assert(
     application.frame().width() == 8 and application.frame().height() == 2,
     "Expected resized headless frame",
   )
-  
+
   application.destroy()
   application.destroy()
   testing::assert(cancelled(cancellation), "Expected App-lifetime cancellation")

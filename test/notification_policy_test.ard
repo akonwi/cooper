@@ -129,7 +129,7 @@ test fn term_features_codes_and_protocol_precedence_are_preserved() Void!Str {
     fn(_: Str, _: Str) {},
   )
   try testing::assert(not false_positive.notify("message", ""), "Noo is not the No capability")
-  
+
   let identity_wins = mut Log{calls: []}
   let identified = notification::internal_backend(
     fn() Str {
@@ -153,7 +153,7 @@ test fn term_features_codes_and_protocol_precedence_are_preserved() Void!Str {
     identity_wins.calls.at(0).expect("identity").title == "message",
     "identity precedes features",
   )
-  
+
   let features_win = mut Log{calls: []}
   let featured = notification::internal_backend(
     fn() Str {
@@ -195,7 +195,7 @@ test fn osc9_combines_title_and_unsupported_protocols_do_not_emit() Void!Str {
     log.calls.at(0).expect("call").body == "Cooper: tests passed ",
     "expected combined OSC 9 body",
   )
-  
+
   let unsupported = notification::internal_backend(
     fn() Str {
       "kitty 0.40"
@@ -231,7 +231,7 @@ test fn environment_precedence_and_multiplexer_guards_are_preserved() Void!Str {
     log.calls.at(0).expect("forced call").body == "Cooper: done",
     "expected forced format",
   )
-  
+
   let multiplexed = notification::internal_backend(
     fn() Str {
       ""

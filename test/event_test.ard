@@ -1,14 +1,18 @@
 use ard/testing
 
-use cooper/runtime
-use cooper/ui/box
 use cooper/event
+use cooper/testing as cooper_testing
+use cooper/ui/box
 use cooper/ui/input
 use cooper/ui/style
-use cooper/testing as cooper_testing
 
 private fn modifiers() event::Modifiers {
-  event::Modifiers{shift: false, ctrl: false, alt: false, super: false}
+  event::Modifiers{
+    shift: false,
+    ctrl: false,
+    alt: false,
+    super: false,
+  }
 }
 
 private fn key(name: Str, text: Str) mut event::KeyEvent {
@@ -65,7 +69,10 @@ test fn app_and_control_key_listeners_run_in_order_and_dispose() Void!Str {
     received.stop_propagation()
   })
   application.key(key("z", "z"))
-  try testing::assert(calls.size() == 6 and calls.at(5).or("") == "app-second", "Expected App stop to suppress focused delivery")
+  try testing::assert(
+    calls.size() == 6 and calls.at(5).or("") == "app-second",
+    "Expected App stop to suppress focused delivery",
+  )
   application.destroy()
   testing::assert(application.context.is_destroyed(), "Expected listener test cleanup")
 }
@@ -167,13 +174,7 @@ test fn mouse_listeners_target_then_bubble_with_local_coordinates() Void!Str {
   application.render()
 
   application.mouse(
-    event::mouse(
-      event::MouseEventType::down,
-      event::MouseButton::left,
-      2,
-      0,
-      modifiers(),
-    ),
+    event::mouse(event::MouseEventType::down, event::MouseButton::left, 2, 0, modifiers()),
   )
 
   try testing::assert(
@@ -186,24 +187,36 @@ test fn mouse_listeners_target_then_bubble_with_local_coordinates() Void!Str {
 
 test fn mouse_autofocus_uses_left_button_and_nearest_focusable_ancestor() Void!Str {
   let application = cooper_testing::new(6, 1)
-  let parent = box::new(application.context, styles: style::new(width: style::cells(6), height: style::cells(1)))
-  let child = box::new(application.context, styles: style::new(width: style::cells(3), height: style::cells(1)))
+  let parent = box::new(
+    application.context,
+    styles: style::new(width: style::cells(6), height: style::cells(1)),
+  )
+  let child = box::new(
+    application.context,
+    styles: style::new(width: style::cells(3), height: style::cells(1)),
+  )
   parent.set_focusable(true)
   parent.add(child)
   application.root.add(parent)
   application.render()
 
-  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::right, 0, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::down, event::MouseButton::right, 0, 0, modifiers()),
+  )
   try testing::assert(not parent.is_focused(), "Expected right button not to autofocus")
 
   let remove_prevention = child.on_mouse(fn(received: mut event::MouseEvent) {
     received.prevent_default()
   })
-  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()),
+  )
   try testing::assert(not parent.is_focused(), "Expected prevented ancestor autofocus")
 
   remove_prevention()
-  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()),
+  )
   try testing::assert(parent.is_focused(), "Expected nearest focusable ancestor")
 
   application.destroy()
@@ -212,9 +225,18 @@ test fn mouse_autofocus_uses_left_button_and_nearest_focusable_ancestor() Void!S
 
 test fn mouse_autofocus_rejects_reparented_original_route() Void!Str {
   let application = cooper_testing::new(6, 1)
-  let first = box::new(application.context, styles: style::new(width: style::cells(3), height: style::cells(1)))
-  let second = box::new(application.context, styles: style::new(width: style::cells(3), height: style::cells(1)))
-  let child = box::new(application.context, styles: style::new(width: style::cells(3), height: style::cells(1)))
+  let first = box::new(
+    application.context,
+    styles: style::new(width: style::cells(3), height: style::cells(1)),
+  )
+  let second = box::new(
+    application.context,
+    styles: style::new(width: style::cells(3), height: style::cells(1)),
+  )
+  let child = box::new(
+    application.context,
+    styles: style::new(width: style::cells(3), height: style::cells(1)),
+  )
   first.set_focusable(true)
   second.set_focusable(true)
   first.add(child)
@@ -227,34 +249,51 @@ test fn mouse_autofocus_rejects_reparented_original_route() Void!Str {
   })
   application.render()
 
-  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()),
+  )
 
   try testing::assert(not first.is_focused(), "Expected stale original ancestor not to focus")
-  try testing::assert(not second.is_focused(), "Expected reparent destination not to replace captured ancestor")
+  try testing::assert(
+    not second.is_focused(),
+    "Expected reparent destination not to replace captured ancestor",
+  )
   application.destroy()
   testing::assert(child.node_ref.is_destroyed(), "Expected reparented autofocus cleanup")
 }
 
 test fn mouse_listener_cannot_corrupt_input_local_default() Void!Str {
   let application = cooper_testing::new(5, 1)
-  let field = input::new(application.context, value: "hello", styles: style::new(width: style::cells(5), height: style::cells(1)))
+  let field = input::new(
+    application.context,
+    value: "hello",
+    styles: style::new(width: style::cells(5), height: style::cells(1)),
+  )
   application.root.add(field)
   let _ = field.on_mouse(fn(received: mut event::MouseEvent) {
     received.local_x = 99
   })
   application.render()
 
-  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()),
+  )
   application.key(key("x", "X"))
 
-  try testing::assert(field.value() == "hXello", "Expected built-in mouse default to receive rebound local coordinates, got {field.value()}")
+  try testing::assert(
+    field.value() == "hXello",
+    "Expected built-in mouse default to receive rebound local coordinates, got {field.value()}",
+  )
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected local default cleanup")
 }
 
 test fn mouse_default_reloads_geometry_after_listener_layout_mutation() Void!Str {
   let application = cooper_testing::new(5, 1)
-  let parent = box::new(application.context, styles: style::new(width: style::cells(5), height: style::cells(1)))
+  let parent = box::new(
+    application.context,
+    styles: style::new(width: style::cells(5), height: style::cells(1)),
+  )
   let field = input::new(
     application.context,
     value: "abc",
@@ -280,18 +319,30 @@ test fn mouse_default_reloads_geometry_after_listener_layout_mutation() Void!Str
   })
   application.render()
 
-  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 1, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::down, event::MouseButton::left, 1, 0, modifiers()),
+  )
   application.key(key("x", "X"))
 
-  try testing::assert(field.value() == "Xabc", "Expected default to use post-listener geometry, got {field.value()}")
+  try testing::assert(
+    field.value() == "Xabc",
+    "Expected default to use post-listener geometry, got {field.value()}",
+  )
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected geometry mutation cleanup")
 }
 
 test fn hidden_ancestor_suppresses_target_mouse_default() Void!Str {
   let application = cooper_testing::new(6, 1)
-  let parent = box::new(application.context, styles: style::new(width: style::cells(6), height: style::cells(1)))
-  let field = input::new(application.context, value: "hello", styles: style::new(width: style::cells(6), height: style::cells(1)))
+  let parent = box::new(
+    application.context,
+    styles: style::new(width: style::cells(6), height: style::cells(1)),
+  )
+  let field = input::new(
+    application.context,
+    value: "hello",
+    styles: style::new(width: style::cells(6), height: style::cells(1)),
+  )
   parent.add(field)
   application.root.add(parent)
   let _ = field.on_mouse(fn(received: mut event::MouseEvent) {
@@ -301,13 +352,18 @@ test fn hidden_ancestor_suppresses_target_mouse_default() Void!Str {
   })
   application.render()
 
-  application.mouse(event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::down, event::MouseButton::left, 0, 0, modifiers()),
+  )
   parent.set_style(style::new(width: style::cells(6), height: style::cells(1)))
   application.render()
   field.focus()
   application.key(key("x", "X"))
 
-  try testing::assert(field.value() == "helloX", "Expected hidden ancestor to suppress stale target default, got {field.value()}")
+  try testing::assert(
+    field.value() == "helloX",
+    "Expected hidden ancestor to suppress stale target default, got {field.value()}",
+  )
   application.destroy()
   testing::assert(field.node_ref.is_destroyed(), "Expected hidden route cleanup")
 }
@@ -370,7 +426,10 @@ test fn reentrant_blur_listener_preserves_one_focused_control() Void!Str {
 
   try testing::assert(not accepted, "Expected redirected focus request to report false")
   try testing::assert(third.is_focused(), "Expected reentrant focus target")
-  try testing::assert((not first.is_focused()) and not second.is_focused(), "Expected exactly one focused control")
+  try testing::assert(
+    (not first.is_focused()) and not second.is_focused(),
+    "Expected exactly one focused control",
+  )
   application.destroy()
   testing::assert(third.node_ref.is_destroyed(), "Expected reentrant focus cleanup")
 }
@@ -387,8 +446,12 @@ test fn focus_is_explicit_and_detach_clears_without_fallback() Void!Str {
 
   mut focused = 0
   mut blurred = 0
-  let _ = second.on_focus(fn() { focused =+ 1 })
-  let _ = second.on_blur(fn() { blurred =+ 1 })
+  let _ = second.on_focus(fn() {
+    focused =+ 1
+  })
+  let _ = second.on_blur(fn() {
+    blurred =+ 1
+  })
 
   try testing::assert((not first.is_focused()) and not second.is_focused(), "Expected no initial focus")
   try testing::assert(second.focus(), "Expected explicit focus")

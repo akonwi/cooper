@@ -133,6 +133,14 @@ private fn supports_progress(terminal_id: Str, getenv: fn(Str) Str) Bool {
   }
 }
 
+// Program status reports are sent by default: OSC 7501 has a number of its
+// own, and terminals must ignore OSCs they do not know. Multiplexers would
+// swallow them, and COOPER_PROGRAM_STATUS=0|false|off disables them. A forced
+// enable does not override a multiplexer.
+fn internal_program_status_enabled(terminal_id: Str, getenv: fn(Str) Str) Bool {
+  (not disabled(getenv("COOPER_PROGRAM_STATUS"))) and not in_multiplexer(terminal_id, getenv)
+}
+
 private fn sanitize(value: Str) Str {
   let bytes = value.bytes()
   mut byte_index = 0

@@ -21,6 +21,7 @@ use go:cooper/ffi/urlopen
 use go:cooper/ffi/vaxisbridge
 use cooper/keymap
 use cooper/notification
+use cooper/program_status
 use cooper/screen
 use cooper/terminal_progress
 use cooper/theme
@@ -156,6 +157,69 @@ private fn reject_terminal_progress(state: terminal_progress::State, percent: In
 
 private fn ignore_terminal_title(value: Str) {}
 
+private fn reject_program_status(update: program_status::Update) Bool {
+  false
+}
+
+private fn undetected_program_status() Bool {
+  false
+}
+
+private fn vaxis_blocked_kind(kind: program_status::Kind) vaxis::ProgramBlockedKind {
+  match kind {
+    program_status::Kind::permission => vaxis::ProgramBlockedPermission,
+    program_status::Kind::question => vaxis::ProgramBlockedQuestion,
+    program_status::Kind::auth => vaxis::ProgramBlockedAuth,
+  }
+}
+
+// Converts a validated report at the Vaxis boundary. Vaxis encodes the wire
+// body, truncates title and message to the protocol limits, and omits empty
+// text.
+private fn vaxis_program_status(report: program_status::Report) vaxis::ProgramStatus {
+  let wire_state = match report.state {
+    program_status::Idle => vaxis::ProgramIdle,
+    program_status::Working => vaxis::ProgramWorking,
+    program_status::Blocked => vaxis::ProgramBlocked,
+    program_status::Done => vaxis::ProgramDone,
+    program_status::Failed => vaxis::ProgramError,
+  }
+  let progress: Int? = match report.state {
+    program_status::Working(working) => working.progress,
+    program_status::Blocked(blocked) => blocked.progress,
+    _ => Maybe::new<Int>(),
+  }
+  let kind: program_status::Kind? = match report.state {
+    program_status::Blocked(blocked) => blocked.kind,
+    _ => Maybe::new<program_status::Kind>(),
+  }
+  match kind {
+    value => {
+      vaxis::ProgramStatus{
+        State: wire_state,
+        ID: report.id.or(""),
+        Kind: vaxis_blocked_kind(value),
+        Progress: progress.or(0),
+        HasProgress: progress.is_some(),
+        App: report.app.or(""),
+        Title: report.title.or(""),
+        Msg: report.message.or(""),
+      }
+    },
+    _ => {
+      vaxis::ProgramStatus{
+        State: wire_state,
+        ID: report.id.or(""),
+        Progress: progress.or(0),
+        HasProgress: progress.is_some(),
+        App: report.app.or(""),
+        Title: report.title.or(""),
+        Msg: report.message.or(""),
+      }
+    },
+  }
+}
+
 struct KeyListener {
   id: Int,
   handler: fn(mut event::KeyEvent),
@@ -233,6 +297,11 @@ private struct State {
   terminal_title_supported: Bool,
   // Rings the terminal bell. Runtimes without a terminal ignore it.
   bell_action: fn(),
+  // Delivers a program status update and reports whether it was sent.
+  program_status_action: fn(program_status::Update) Bool,
+  // Whether the terminal answered the program status feature query.
+  program_status_detected: fn() Bool,
+  program_status_records: mut program_status::Records,
   render_request: fn(),
   width_measurer: fn(Str) Int,
   open_url_action: fn(Str) Void!Error,
@@ -396,6 +465,9 @@ private fn state(
     terminal_title_action: terminal_title_action,
     terminal_title_supported: terminal_title_supported,
     bell_action: ignore_bell,
+    program_status_action: reject_program_status,
+    program_status_detected: undetected_program_status,
+    program_status_records: program_status::internal_records(),
     render_request: retained_render_request,
     width_measurer: retained_width_measurer,
     open_url_action: open_url_action,
@@ -573,6 +645,23 @@ private fn new_live_state(
       created.bell_action = fn() {
         terminal.Bell()
       }
+      let program_status_enabled = notification::internal_program_status_enabled(
+        terminal.TerminalID(),
+        fn(name: Str) Str {
+          os::Getenv(name)
+        },
+      )
+      if program_status_enabled {
+        created.program_status_action = fn(update: program_status::Update) Bool {
+          match update {
+            program_status::Report(report) => terminal.SetProgramStatus(vaxis_program_status(report)).is_ok(),
+            program_status::Clear(clear) => terminal.ClearProgramStatus(clear.id.or("")).is_ok(),
+          }
+        }
+        created.program_status_detected = fn() Bool {
+          terminal.CanProgramStatus()
+        }
+      }
       Result::ok(created)
     },
     err(error) => {
@@ -591,6 +680,8 @@ private fn new_headless_state(
   terminal_title_action: fn(Str),
   screen_config: screen::Config?,
   bell_action: fn()?,
+  program_status_action: (fn(program_status::Update) Bool)?,
+  program_status_detected: Bool?,
 ) mut State {
   if width < 0 or height < 0 {
     panic("headless application dimensions must be non-negative")
@@ -618,6 +709,11 @@ private fn new_headless_state(
     screen_config,
   )
   created.bell_action = bell_action.or(ignore_bell)
+  created.program_status_action = program_status_action.or(reject_program_status)
+  let detected = program_status_detected.or(false)
+  created.program_status_detected = fn() Bool {
+    detected
+  }
   created
 }
 
@@ -1554,6 +1650,7 @@ impl State {
     self.pointer_cursor_initialized = false
     if self.headless {
       self.clear_terminal_progress_locked()
+      self.release_program_status_locked()
     }
     if not self.terminal_closed {
       mut close_terminal = true
@@ -1573,6 +1670,7 @@ impl State {
           if close_terminal {
             if not self.terminal_suspended {
               self.clear_terminal_progress_locked()
+              self.release_program_status_locked()
             }
             self.graphics.clear()
             self.last_frame.images = []
@@ -2173,6 +2271,66 @@ impl State {
     }
   }
 
+  fn mut program_status(report: program_status::Report) Bool {
+    let normalized = program_status::internal_normalize(report)
+    self.lifecycle.Lock()
+    defer self.lifecycle.Unlock()
+    let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 7
+    mut accepted = false
+    if active and not self.resources_stopped {
+      accepted = (self.program_status_action)(normalized)
+      if accepted {
+        self.program_status_records.internal_store(normalized)
+      }
+    }
+    accepted
+  }
+
+  fn mut clear_program_status(id: Str) Bool {
+    program_status::internal_validate_id(id)
+    self.send_program_status_clear(Maybe::new<Str>(id))
+  }
+
+  fn mut clear_all_program_status() Bool {
+    self.send_program_status_clear(Maybe::new<Str>())
+  }
+
+  private fn mut send_program_status_clear(id: Str?) Bool {
+    self.lifecycle.Lock()
+    defer self.lifecycle.Unlock()
+    let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 7
+    mut accepted = false
+    if active and not self.resources_stopped {
+      accepted = (self.program_status_action)(program_status::Clear{id: id})
+      if accepted {
+        self.program_status_records.internal_remove(id)
+      }
+    }
+    accepted
+  }
+
+  fn mut program_status_supported() Bool {
+    (self.program_status_detected)()
+  }
+
+  private fn mut send_program_status_updates_locked(updates: [program_status::Update]) {
+    for update in updates {
+      let _ = (self.program_status_action)(update)
+    }
+  }
+
+  // Reports working and blocked records idle while the terminal is released.
+  private fn mut suspend_program_status_locked() {
+    self.send_program_status_updates_locked(self.program_status_records.internal_suspend_updates())
+  }
+
+  // Leaves done and failed records for the user and removes the rest. The
+  // records are forgotten so a repeated release sends nothing.
+  private fn mut release_program_status_locked() {
+    self.send_program_status_updates_locked(self.program_status_records.internal_release_updates())
+    self.program_status_records.internal_remove(Maybe::new<Str>())
+  }
+
   private fn mut restore_terminal_progress_locked() {
     if self.terminal_progress_state != terminal_progress::State::remove {
       self.terminal_progress_action(self.terminal_progress_state, self.terminal_progress_percent)
@@ -2189,6 +2347,9 @@ impl State {
     let committed = self.phase == transition
     if committed {
       self.restore_terminal_progress_locked()
+      self.send_program_status_updates_locked(
+        self.program_status_records.internal_restore_updates(),
+      )
       self.phase = target
       if reset_pointer {
         self.pointer_cursor_initialized = false
@@ -2495,6 +2656,7 @@ impl State {
         outcome = self.drain_output_locked()
         if outcome.is_ok() {
           self.clear_terminal_progress_locked()
+          self.suspend_program_status_locked()
           self.graphics.clear()
           terminal.SetMouseShape(vaxis::MouseShapeDefault)
           if self.screen_config.mode == screen::Mode::alt {
@@ -3159,6 +3321,7 @@ impl State {
     if available {
       self.submit_output_locked()
       self.clear_terminal_progress_locked()
+      self.suspend_program_status_locked()
       self.terminal_suspended = true
     }
     available
@@ -3219,6 +3382,8 @@ fn new_headless(
   terminal_title_action: fn(Str),
   screen_config: screen::Config?,
   bell_action: fn()?,
+  program_status_action: (fn(program_status::Update) Bool)?,
+  program_status_detected: Bool?,
 ) mut Runtime {
   public_runtime(
     new_headless_state(
@@ -3230,6 +3395,8 @@ fn new_headless(
       terminal_title_action,
       screen_config,
       bell_action,
+      program_status_action,
+      program_status_detected,
     ),
   )
 }
@@ -3407,6 +3574,32 @@ impl Runtime {
 
   fn mut progress(progress_state: terminal_progress::State, percent: Int?) Bool {
     internal_state(self).progress(progress_state, percent)
+  }
+
+  // program_status reports what the program is doing through the Program Status
+  // Protocol (OSC 7501) and returns whether the report was sent. Every report is
+  // sent, so repeating one recreates a record the terminal lost. It is rejected
+  // while suspended, stopping, or destroyed.
+  fn mut program_status(report: program_status::Report) Bool {
+    internal_state(self).program_status(report)
+  }
+
+  // clear_program_status removes the record at id and every record beneath it.
+  // Use clear_all_program_status to remove the root record.
+  fn mut clear_program_status(id: Str) Bool {
+    internal_state(self).clear_program_status(id)
+  }
+
+  // clear_all_program_status removes every program status record.
+  fn mut clear_all_program_status() Bool {
+    internal_state(self).clear_all_program_status()
+  }
+
+  // program_status_supported reports whether the terminal answered the Program
+  // Status Protocol feature query at startup. Reports are sent regardless,
+  // because terminals that act on them may not answer the query.
+  fn mut program_status_supported() Bool {
+    internal_state(self).program_status_supported()
   }
 
   fn mut bind_root(root: mut node::Node) {

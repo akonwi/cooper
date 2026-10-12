@@ -67,11 +67,12 @@ selection, and rich text.
   [framework guide](docs/declarative.md).
 - **Keymaps** — Typed commands, scoped bindings, control remapping, and
   discoverable shortcut labels. See the [keymap guide](docs/keymaps.md).
-- **Clipboard, notifications, progress, title** — Runtime-exposed terminal
+- **Clipboard, notifications, progress, program status, title** — Runtime-exposed terminal
   services. See [ADR 0006](docs/adrs/0006-define-terminal-clipboard-access.md),
   [ADR 0009](docs/adrs/0009-define-terminal-mediated-notifications.md),
   [ADR 0010](docs/adrs/0010-define-terminal-progress-reporting.md),
-  [ADR 0012](docs/adrs/0012-define-terminal-title-updates.md).
+  [ADR 0012](docs/adrs/0012-define-terminal-title-updates.md),
+  [ADR 0027](docs/adrs/0027-define-program-status-reporting.md).
 
 ## Examples
 

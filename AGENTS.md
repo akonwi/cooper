@@ -105,6 +105,7 @@ cui.ard          declarative component layer (experimental)
 event.ard        Cooper-owned events, controls, and propagation state
 keymap.ard       typed commands, scoped bindings, and shortcut discovery
 notification.ard accepted notification request snapshots
+program_status.ard Program Status Protocol (OSC 7501) reports and records
 root.ard         permanent Runtime-bound Root
 runtime.ard      application capabilities, retained ownership, lifecycle, and backend state
 screen.ard       terminal screen mode configuration

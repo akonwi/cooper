@@ -178,7 +178,7 @@ fn paint_border(ctx: mut paint::Context, configured_style: layout_style::Style, 
         }
       }
       let title_text = title.or("")
-      if not title_text.is_empty() and width > 4 {
+      if (not title_text.is_empty()) and width > 4 {
         ctx.write_overlay(2, 0, " {title_text} ", text_style: border_style)
         ctx.write_overlay(width - 1, 0, border_glyphs.top_right, text_style: border_style)
       }

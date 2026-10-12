@@ -179,7 +179,7 @@ test fn contents_anchor_and_descendants_translate_once_through_scroll() Void!Str
     "Contents overflow must not clip hits",
   )
   try testing::assert(
-    not group.node().set_scroll_x(3) and not group.node().set_scroll_y(2),
+    (not group.node().set_scroll_x(3)) and not group.node().set_scroll_y(2),
     "Contents cannot scroll",
   )
   testing::assert(
@@ -247,7 +247,7 @@ test fn contents_focus_and_scroll_transitions_preserve_descendant_identity() Voi
   try testing::assert(group.node().set_scroll_y(2), "Initial box scroll")
   group.set_style(style::new(display: style::Display::contents, overflow: style::Overflow::scroll))
   try testing::assert(
-    not group.node().is_focused() and blurred == 1 and (not group.node().focus()),
+    (not group.node().is_focused()) and blurred == 1 and (not group.node().focus()),
     "Entering contents must blur only itself and reject refocus",
   )
   try testing::assert(
@@ -289,7 +289,7 @@ test fn contents_selection_passes_through_hidden_overflow() Void!Str {
   label.set_style(style::new(display: style::Display::contents))
   app.render()
   try testing::assert(
-    not label.node().is_selectable() and not label.node().start_selection(0, 0),
+    (not label.node().is_selectable()) and not label.node().start_selection(0, 0),
     "Contents leaf cannot contribute selection cells",
   )
   testing::assert(

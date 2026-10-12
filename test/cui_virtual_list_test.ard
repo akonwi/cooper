@@ -619,7 +619,7 @@ test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled(
   app.drag(19, 4, 19, 0)
   app.flush()
   try testing::assert(
-    not list.is_following_edge() and list.scroll_top() == 0,
+    (not list.is_following_edge()) and list.scroll_top() == 0,
     "Dragging the scrollbar away from a followed edge unpins it",
   )
   app.drag(19, 0, 19, 4)
@@ -632,7 +632,7 @@ test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled(
   let _ = list.scroll_by(-3)
   app.flush()
   try testing::assert(
-    not list.is_following_edge() and list.scroll_top() == 3 and (not list.last_item_visible()),
+    (not list.is_following_edge()) and list.scroll_top() == 3 and (not list.last_item_visible()),
     "Scrolling away stops following and reports the latest item out of view",
   )
   renderer.update(fn() {
@@ -674,7 +674,7 @@ test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled(
   })
   app.flush()
   try testing::assert(
-    not list.is_following_edge() and list.scroll_top() == 8,
+    (not list.is_following_edge()) and list.scroll_top() == 8,
     "Programmatic unpin freezes the viewport",
   )
   try testing::assert(list.scroll_to_edge(cui::ScrollEdge::end), "End jump accepted")
@@ -698,7 +698,7 @@ test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled(
   })
   app.flush()
   testing::assert(
-    not list.is_following_edge() and list.scroll_top() == 13 and list.last_item_visible(),
+    (not list.is_following_edge()) and list.scroll_top() == 13 and list.last_item_visible(),
     "A tall final item can be positioned at its start without resuming follow",
   )
 }
@@ -846,7 +846,7 @@ test fn following_start_tracks_prepends_until_scrolling_away() Void!Str {
   let _ = list.scroll_by(3)
   app.flush()
   try testing::assert(
-    not list.is_following_edge() and list.scroll_top() == 3 and (not list.first_item_visible()),
+    (not list.is_following_edge()) and list.scroll_top() == 3 and (not list.first_item_visible()),
     "Scrolling down stops start following",
   )
   renderer.update(fn() {

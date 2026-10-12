@@ -318,7 +318,7 @@ test fn scroll_box_non_recursive_destroy_preserves_public_children_only() Void!S
   viewport.destroy()
   try testing::assert(viewport.node_ref.is_destroyed(), "Expected ScrollBox root destruction")
   try testing::assert(
-    not child.node_ref.is_destroyed() and not child.node_ref.parent.is_some(),
+    (not child.node_ref.is_destroyed()) and not child.node_ref.parent.is_some(),
     "Expected detached public child preservation",
   )
   try testing::assert(blur_calls == 1, "Expected idempotent reentrant ScrollBox destruction")

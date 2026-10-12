@@ -1849,7 +1849,7 @@ impl Text {
         break
       }
     }
-    if not accepted and has_source {
+    if (not accepted) and has_source {
       match view.ellipsis {
         marker => {
           accepted = marker.y == local_y and local_x >= marker.x and local_x < marker.x + marker.width

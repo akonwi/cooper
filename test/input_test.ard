@@ -242,7 +242,7 @@ test fn input_mouse_selection_replaces_range_and_clears_global_selection() Void!
   try testing::assert(field.value() == "aXef", "Expected typing to replace selected Input range")
   try testing::assert(inputs == 1, "Expected one input event for range replacement")
   try testing::assert(
-    not field.selection().is_some() and not application.selection().is_some(),
+    (not field.selection().is_some()) and not application.selection().is_some(),
     "Expected replacement to clear selection",
   )
   application.destroy()
@@ -267,7 +267,7 @@ test fn input_double_click_selects_word_runs_for_editing() Void!Str {
   application.key(key("x", text: "X"))
   try testing::assert(field.value() == "can't...Xstop", "Expected typing to replace the selected run")
   try testing::assert(
-    not field.selection().is_some() and not application.selection().is_some(),
+    (not field.selection().is_some()) and not application.selection().is_some(),
     "Expected replacement to clear double-click selection",
   )
 
@@ -385,7 +385,7 @@ test fn collapsed_input_selection_is_consumed_before_repeated_typing() Void!Str 
     "Expected collapsed click anchor not to select inserted text",
   )
   try testing::assert(
-    not field.selection().is_some() and not application.selection().is_some(),
+    (not field.selection().is_some()) and not application.selection().is_some(),
     "Expected first edit to consume collapsed selection",
   )
   application.destroy()

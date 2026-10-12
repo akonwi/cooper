@@ -62,7 +62,7 @@ test fn scroll_ref_preserves_position_and_identity_on_reorder() Void!Str {
   )
   renderer.destroy()
   testing::assert(
-    not ref.current.is_some() and panel.node_ref.is_destroyed(),
+    (not ref.current.is_some()) and panel.node_ref.is_destroyed(),
     "renderer owns cleanup",
   )
 }
@@ -94,7 +94,7 @@ test fn scroll_refs_reject_duplicate_and_foreign_ownership() Void!Str {
     err(message) => try testing::assert(message.contains("two views"), message),
   }
   testing::assert(
-    not duplicate.current.is_some() and ref.current.expect("owner unchanged").node_ref.id == original.node_ref.id,
+    (not duplicate.current.is_some()) and ref.current.expect("owner unchanged").node_ref.id == original.node_ref.id,
     "validation occurs before mutation",
   )
 }

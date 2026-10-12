@@ -46,7 +46,7 @@ test fn text_selection_exposes_range_text_and_default_style() Void!Str {
 
   application.clear_selection()
   let _ = application.flush()
-  try testing::assert(not application.selection().is_some() and not message.selection().is_some(), "Expected global and local selection clear")
+  try testing::assert((not application.selection().is_some()) and not message.selection().is_some(), "Expected global and local selection clear")
   try testing::assert(final_text == "cleared", "Expected clear notification")
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected Text selection cleanup")
@@ -789,7 +789,7 @@ test fn post_hover_anchor_invalidation_skips_stale_selection_notification() Void
   try testing::assert(message.node_ref.is_destroyed(), "Expected post-frame hover to invalidate anchor")
   try testing::assert(stale_final == 0, "Expected stale final selection notification suppression")
   let _ = application.flush()
-  try testing::assert(not application.selection().is_some() and clears == 1, "Expected cleared selection after invalidated frame")
+  try testing::assert((not application.selection().is_some()) and clears == 1, "Expected cleared selection after invalidated frame")
   application.destroy()
   testing::assert(overlay.node_ref.is_destroyed(), "Expected stale notification cleanup")
 }

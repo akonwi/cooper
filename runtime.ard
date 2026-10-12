@@ -3176,7 +3176,7 @@ impl State {
   }
 
   fn mut start_test(root: mut node::Renderable) {
-    if not self.owns_root(root) or self.is_retained_destroyed() {
+    if (not self.owns_root(root)) or self.is_retained_destroyed() {
       panic("application Root does not belong to this Runtime")
     }
     self.begin_phase(false, 2)

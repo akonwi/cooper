@@ -800,7 +800,7 @@ impl Scrollbar {
 
   private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
     let shared = internal_state(self.internal)
-    if not visible(shared) or mouse.is_default_prevented() {
+    if (not visible(shared)) or mouse.is_default_prevented() {
       event_delivery::Disposition::ignored
     } else if mouse.event_type == event::MouseEventType::down and mouse.button == event::MouseButton::left {
       let size = axis_size(self.node_ref, self.orientation())

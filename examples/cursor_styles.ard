@@ -231,7 +231,7 @@ fn main() {
             let _ = field.perform(ui::InputAction::move_right)
           }
           received.prevent_default()
-        } else if not received.text.is_empty() or received.matches("backspace") or received.matches("delete") or received.matches("return") {
+        } else if (not received.text.is_empty()) or received.matches("backspace") or received.matches("delete") or received.matches("return") {
           received.prevent_default()
         }
       } else if demo.vim and received.matches("escape") {

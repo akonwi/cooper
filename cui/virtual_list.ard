@@ -629,7 +629,7 @@ impl VirtualList {
           let resized = self.width != viewport.width
           let height_changed = self.height != viewport.height
           self.height = viewport.height
-          if not self.restore and not resized and not height_changed {
+          if (not self.restore) and (not resized) and (not height_changed) {
             let observed = scroll.scroll_top()
             if self.top != observed {
               changed = true

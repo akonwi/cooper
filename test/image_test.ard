@@ -164,7 +164,7 @@ test fn image_replacement_survives_suspend_resize_detach_and_idempotent_destroy(
   image.destroy()
   app.render()
   testing::assert(
-    not image.source.is_some() and not app.frame().text().contains("▀"),
+    (not image.source.is_some()) and not app.frame().text().contains("▀"),
     "Expected cleanup to release node's source and clear cells",
   )
 }
@@ -225,7 +225,7 @@ test fn native_image_regions_preserve_paint_order_and_exclude_popup_cells() Void
       }
       let covered = x >= 1 and x < 3 and y >= 1 and y < 3
       try testing::assert(
-        covered and count == 0 or not covered and count == 1,
+        covered and count == 0 or (not covered) and count == 1,
         "Expected exact nonoverlapping popup exclusion, including earlier text",
       )
       x =+ 1
@@ -432,4 +432,15 @@ test fn image_decodes_png_alpha_jpeg_and_rejects_bad_or_oversized_input() Void!S
     },
     ok(_) => testing::assert(false, "Expected oversized image failure"),
   }
+}
+
+test fn image_snapshots_reject_a_mismatched_size_even_with_valid_dimensions() Void!Str {
+  let short_pixels = unsafe {
+    let _ = ui::image_data(2, 2, [ui::rgb(1, 2, 3)])
+  }
+  try testing::assert(short_pixels.is_err(), "too few pixels for valid dimensions must panic")
+  let short_bytes = unsafe {
+    let _ = ui::image_rgba(2, 2, [Byte::from(0), Byte::from(0), Byte::from(0), Byte::from(255)])
+  }
+  testing::assert(short_bytes.is_err(), "too few RGBA bytes for valid dimensions must panic")
 }

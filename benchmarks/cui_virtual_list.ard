@@ -153,7 +153,7 @@ fn main() {
   let scroll_us = time::Since(scrolled).Microseconds()
   let final_text = app.frame().text()
   // Deltas total 74 cells: row 37 starts at 73, so its detail line is first.
-  if not final_text.starts_with("detail=37:0") or not final_text.contains("row=38 author=4") {
+  if (not final_text.starts_with("detail=37:0")) or not final_text.contains("row=38 author=4") {
     panic("scroll workload did not paint the expected loaded rows")
   }
   let mounted_rows = match eager {

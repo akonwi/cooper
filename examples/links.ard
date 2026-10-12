@@ -102,15 +102,9 @@ private fn make_card(
 }
 
 private fn header_content(drag_enabled: Bool, link_activity: Str) ui::StyledText {
-  mut status = ui::span(
-    "OFF",
-    style: ui::span_style(foreground: ui::hex("#F87171"), bold: true),
-  )
+  mut status = ui::span("OFF", style: ui::span_style(foreground: ui::hex("#F87171"), bold: true))
   if drag_enabled {
-    status = ui::span(
-      "ON",
-      style: ui::span_style(foreground: ui::hex("#34D399"), bold: true),
-    )
+    status = ui::span("ON", style: ui::span_style(foreground: ui::hex("#34D399"), bold: true))
   }
   ui::styled_text(
     [
@@ -118,19 +112,13 @@ private fn header_content(drag_enabled: Bool, link_activity: Str) ui::StyledText
         "Cooper Interactive Link Demo\n",
         style: ui::span_style(foreground: ui::hex("#38BDF8"), bold: true),
       ),
-      ui::span(
-        "Click the links to open them. ",
-        style: ui::span_style(foreground: ui::hex("#94A3B8")),
-      ),
+      ui::span("Click the links to open them. ", style: ui::span_style(foreground: ui::hex("#94A3B8"))),
       ui::span("Press ", style: ui::span_style(foreground: ui::hex("#64748B"))),
       ui::span("d", style: ui::span_style(foreground: ui::hex("#FBBF24"), bold: true)),
       ui::span(" to toggle drag mode: ", style: ui::span_style(foreground: ui::hex("#64748B"))),
       status,
       ui::span("\n"),
-      ui::span(
-        "({link_activity})",
-        style: ui::span_style(foreground: ui::hex("#64748B"), italic: true),
-      ),
+      ui::span("({link_activity})", style: ui::span_style(foreground: ui::hex("#64748B"), italic: true)),
     ],
   )
 }
@@ -138,10 +126,7 @@ private fn header_content(drag_enabled: Bool, link_activity: Str) ui::StyledText
 private fn project_content() ui::StyledText {
   ui::styled_text(
     [
-      ui::span(
-        "♥ Project Info\n\n",
-        style: ui::span_style(foreground: ui::hex("#F472B6"), bold: true),
-      ),
+      ui::span("♥ Project Info\n\n", style: ui::span_style(foreground: ui::hex("#F472B6"), bold: true)),
       ui::span("Source: ", style: ui::span_style(foreground: ui::hex("#E2E8F0"))),
       ui::span(
         "GitHub Repository",
@@ -197,10 +182,7 @@ private fn documentation_content() ui::StyledText {
 private fn connect_content() ui::StyledText {
   ui::styled_text(
     [
-      ui::span(
-        "👋 Connect\n\n",
-        style: ui::span_style(foreground: ui::hex("#2DD4BF"), bold: true),
-      ),
+      ui::span("👋 Connect\n\n", style: ui::span_style(foreground: ui::hex("#2DD4BF"), bold: true)),
       ui::span(
         "Cooper Issues",
         style: ui::span_style(foreground: ui::hex("#60A5FA")),

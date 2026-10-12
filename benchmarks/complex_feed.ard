@@ -79,7 +79,7 @@ private fn card(ctx: mut runtime::Runtime, index: Int) mut box::Box {
       Maybe::new<Int>(),
     ),
   )
-  
+
   let gallery = box::new(
     ctx,
     styles: style::new(width: style::percent(100.0), flex_shrink: 0.0, gap: style::cells(1)),
@@ -188,7 +188,7 @@ fn prepare(eager: Bool) Session {
     application.context,
     styles: fixed_height(total_height(mounted, entry_count())),
   )
-  
+
   if not eager {
     // The initial window starts at entry zero, so the actual virtual top extent
     // is zero. Keep the spacer mounted to make both virtual extents explicit.
@@ -211,7 +211,7 @@ fn prepare(eager: Bool) Session {
   shell.add(footer)
   application.root.add(shell)
   application.render()
-  
+
   // These checks also make the constants an explicit measurement assertion:
   // card heights arise from wrapped/nested content rather than uniform rows.
   let measured_short = cards.at(0).expect("first card").layout().local.height
@@ -219,7 +219,7 @@ fn prepare(eager: Bool) Session {
   if measured_short != short_height() or measured_tall != tall_height() {
     panic("representative complex-feed card heights changed: {measured_short}/{measured_tall}")
   }
-  
+
   Session{
     step: fn(step_index: Int) {
       if step_index < 0 or step_index >= 40 {

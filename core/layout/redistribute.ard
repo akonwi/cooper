@@ -50,7 +50,7 @@ fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distributio
     )
     frozen.push(fixed)
   }
-  
+
   mut passes = line.items.size() + 1
   while passes > 0 {
     passes = passes - 1
@@ -69,7 +69,7 @@ fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distributio
     if weights == 0.0 {
       break
     }
-    
+
     // CSS low-factor behavior: fractional factors claim only their fraction
     // of the original free space rather than being normalized to one.
     let proportional = match remaining_free_space >= 0.0 {
@@ -79,7 +79,7 @@ fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distributio
     if factors < 1.0 and proportional {
       free = remaining_free_space * factors
     }
-    
+
     mut violation = Float32::from(0.0)
     for item, index in line.items {
       if not frozen.at(index).expect("freeze state") {
@@ -100,7 +100,7 @@ fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distributio
       }
     }
   }
-  
+
   mut distributed = Float32::from(0.0)
   for item, index in line.items {
     distributed = distributed + sizes.at(index).expect("distributed size") - item.basis

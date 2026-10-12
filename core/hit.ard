@@ -22,7 +22,7 @@ private fn test_node(current: mut node::Node, x: Int, y: Int, inherited_clip: ge
       style::Overflow::scroll => geometry::intersect(inherited_clip, bounds),
       _ => inherited_clip,
     }
-    
+
     if not geometry::contains(node_clip, x, y) {
       Maybe::new<Hit>()
     } else {
@@ -34,7 +34,7 @@ private fn test_node(current: mut node::Node, x: Int, y: Int, inherited_clip: ge
         let child = stacked.at(index).expect("retained hit child index")
         found = test_node(child, x, y, node_clip)
       }
-      
+
       match found {
         hit => Maybe::new<Hit>(hit),
         _ => {

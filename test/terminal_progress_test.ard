@@ -2,8 +2,8 @@ use ard/async
 use ard/testing
 
 use cooper/terminal_progress
-use go:time
 use cooper/testing as cooper_testing
+use go:time
 
 private fn assert_panics(action: fn(), expected: Str) Void!Str {
   let outcome = unsafe {
@@ -11,10 +11,12 @@ private fn assert_panics(action: fn(), expected: Str) Void!Str {
   }
   match outcome {
     ok(_) => testing::fail("expected panic containing {expected}"),
-    err(message) => testing::assert(
-      message.contains(expected),
-      "expected panic containing {expected}, got {message}",
-    ),
+    err(message) => {
+      testing::assert(
+        message.contains(expected),
+        "expected panic containing {expected}, got {message}",
+      )
+    },
   }
 }
 
@@ -133,10 +135,7 @@ test fn resume_restores_progress_before_accepting_a_new_update() Void!Str {
     updated.receiver().recv() => true,
     _ => false,
   }
-  try testing::assert(
-    not update_finished_early,
-    "Expected progress updates to wait for restoration",
-  )
+  try testing::assert(not update_finished_early, "Expected progress updates to wait for restoration")
 
   release_restore.send(true)
   try testing::assert(resumed.receiver().recv().or(false), "Expected headless resume")
@@ -240,10 +239,7 @@ test fn invalid_terminal_progress_contracts_panic() Void!Str {
   )
   try assert_panics(
     fn() {
-      let _ = application.context.progress(
-        terminal_progress::State::indeterminate,
-        percent: 0,
-      )
+      let _ = application.context.progress(terminal_progress::State::indeterminate, percent: 0)
     },
     "indeterminate terminal progress cannot include a percent",
   )

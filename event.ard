@@ -54,12 +54,7 @@ struct KeyEvent {
   internal_state: Any,
 }
 
-fn key(
-  name: Str,
-  text: Str,
-  event_type: KeyEventType,
-  modifiers: Modifiers,
-) mut KeyEvent {
+fn key(name: Str, text: Str, event_type: KeyEventType, modifiers: Modifiers) mut KeyEvent {
   (mut KeyEvent{
     name: name,
     text: text,
@@ -86,13 +81,7 @@ impl KeyEvent {
     propagation_state(self.internal_state).default_prevented
   }
 
-  fn matches(
-    name: Str,
-    shift: Bool?,
-    ctrl: Bool?,
-    alt: Bool?,
-    super: Bool?,
-  ) Bool {
+  fn matches(name: Str, shift: Bool?, ctrl: Bool?, alt: Bool?, super: Bool?) Bool {
     self.name == name and self.modifiers.shift == shift.or(false) and self.modifiers.ctrl == ctrl.or(false) and self.modifiers.alt == alt.or(false) and self.modifiers.super == super.or(false)
   }
 }

@@ -101,7 +101,7 @@ test fn clipboard_terminal_stop_cancels_real_context_and_joins_read() Void!Str {
 
 test fn clipboard_headless_read_write_and_clear() Void!Str {
   let application = cooper_testing::new(8, 2)
-  
+
   let initial = application.context.clipboard.read().expect("clipboard read")
   try testing::assert(initial == "", "Expected empty test clipboard")
   application.context.clipboard.write("copied text")
@@ -110,7 +110,7 @@ test fn clipboard_headless_read_write_and_clear() Void!Str {
   application.context.clipboard.clear()
   let cleared = application.context.clipboard.read().expect("clipboard read")
   try testing::assert(cleared == "", "Expected clipboard clear")
-  
+
   application.destroy()
   testing::assert(
     application.context.clipboard.read().is_err(),
@@ -134,7 +134,7 @@ test fn clipboard_rejects_a_concurrent_read() Void!Str {
     fn() {},
     fn() {},
   )
-  
+
   async::start(fn() {
     outcome.succeeded = service.read().is_ok()
     done.close()
@@ -144,7 +144,7 @@ test fn clipboard_rejects_a_concurrent_read() Void!Str {
   release.close()
   done.receiver().recv()
   try testing::assert(outcome.succeeded, "Expected original clipboard read completion")
-  
+
   service.internal_stop()
   testing::assert(service.read().is_err(), "Expected stopped clipboard read rejection")
 }
@@ -165,7 +165,7 @@ test fn clipboard_rejects_suspend_while_a_read_is_active() Void!Str {
     fn() {},
     fn() {},
   )
-  
+
   async::start(fn() {
     outcome.succeeded = service.read().is_ok()
     done.close()
@@ -175,7 +175,7 @@ test fn clipboard_rejects_suspend_while_a_read_is_active() Void!Str {
   cancelled.close()
   done.receiver().recv()
   try testing::assert(not outcome.succeeded, "Expected released clipboard read error")
-  
+
   try testing::assert(service.internal_suspend(), "Expected idle clipboard suspension")
   try testing::assert(service.read().is_err(), "Expected clipboard read rejection while suspended")
   service.internal_resume()
@@ -201,7 +201,7 @@ test fn clipboard_stop_cancels_and_joins_an_active_read() Void!Str {
       cancelled.close()
     },
   )
-  
+
   async::start(fn() {
     outcome.succeeded = service.read().is_ok()
     done.close()
@@ -209,6 +209,6 @@ test fn clipboard_stop_cancels_and_joins_an_active_read() Void!Str {
   entered.receiver().recv()
   service.internal_stop()
   done.receiver().recv()
-  
+
   testing::assert(not outcome.succeeded, "Expected active clipboard read cancellation")
 }

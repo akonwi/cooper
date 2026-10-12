@@ -10,11 +10,7 @@ private fn row_style() ui::Style {
   ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
-private fn entry_row(
-  ctx: mut cooper::Runtime,
-  label: Str,
-  activate: fn(Str),
-) mut ui::Box {
+private fn entry_row(ctx: mut cooper::Runtime, label: Str, activate: fn(Str)) mut ui::Box {
   let row = ui::box(ctx, styles: row_style())
   let label_text = ui::text(ctx, content: "  {label}", styles: row_style())
   row.add(label_text)
@@ -160,11 +156,7 @@ fn main() {
 
   let listing = ui::scroll_box(
     ctx,
-    styles: ui::style(
-      width: ui::percent(50.0),
-      height: ui::percent(100.0),
-      flex_grow: 1.0,
-    ),
+    styles: ui::style(width: ui::percent(50.0), height: ui::percent(100.0), flex_grow: 1.0),
   )
   let loading = ui::text(ctx, content: "Loading directory…", styles: row_style())
   listing.add(loading)
@@ -182,7 +174,9 @@ fn main() {
   let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release and received.matches("tab") and search.is_focused() {
       match rows.at(0) {
-        row => { let _ = row.focus() },
+        row => {
+          let _ = row.focus()
+        },
         _ => (),
       }
       received.prevent_default()

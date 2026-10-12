@@ -1,9 +1,9 @@
 use ard/testing
 
 use cooper/event
+use cooper/testing as cooper_testing
 use cooper/ui/scrollbar
 use cooper/ui/style
-use cooper/testing as cooper_testing
 use go:math
 
 private fn key(name: Str) mut event::KeyEvent {

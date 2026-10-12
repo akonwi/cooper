@@ -1,14 +1,19 @@
 use ard/testing
 
+use cooper/event
+use cooper/testing as cooper_testing
 use cooper/ui/box
 use cooper/ui/color
-use cooper/event
 use cooper/ui/scroll_box
 use cooper/ui/style
-use cooper/testing as cooper_testing
 
 private fn modifiers() event::Modifiers {
-  event::Modifiers{shift: false, ctrl: false, alt: false, super: false}
+  event::Modifiers{
+    shift: false,
+    ctrl: false,
+    alt: false,
+    super: false,
+  }
 }
 
 private fn lane() style::Style {
@@ -57,8 +62,12 @@ test fn left_drag_captures_source_and_orders_release_routes() Void!Str {
   row.add(target)
   application.root.add(row)
   let log = mut EventLog{value: ""}
-  let _ = source.on_mouse(fn(received: mut event::MouseEvent) { append_event(log, "source", received) })
-  let _ = target.on_mouse(fn(received: mut event::MouseEvent) { append_event(log, "target", received) })
+  let _ = source.on_mouse(fn(received: mut event::MouseEvent) {
+    append_event(log, "source", received)
+  })
+  let _ = target.on_mouse(fn(received: mut event::MouseEvent) {
+    append_event(log, "target", received)
+  })
 
   application.drag(0, 0, 4, 0)
 
@@ -75,7 +84,9 @@ test fn same_drag_source_and_target_receive_one_up() Void!Str {
   let source = box::new(application.context, styles: cell())
   application.root.add(source)
   let log = mut EventLog{value: ""}
-  let _ = source.on_mouse(fn(received: mut event::MouseEvent) { append_event(log, "source", received) })
+  let _ = source.on_mouse(fn(received: mut event::MouseEvent) {
+    append_event(log, "source", received)
+  })
 
   application.drag(0, 0, 1, 0)
 
@@ -96,8 +107,12 @@ test fn non_left_drag_follows_hit_testing_without_drop() Void!Str {
   row.add(target)
   application.root.add(row)
   let log = mut EventLog{value: ""}
-  let _ = source.on_mouse(fn(received: mut event::MouseEvent) { append_event(log, "source", received) })
-  let _ = target.on_mouse(fn(received: mut event::MouseEvent) { append_event(log, "target", received) })
+  let _ = source.on_mouse(fn(received: mut event::MouseEvent) {
+    append_event(log, "source", received)
+  })
+  let _ = target.on_mouse(fn(received: mut event::MouseEvent) {
+    append_event(log, "target", received)
+  })
 
   application.drag(0, 0, 4, 0, button: event::MouseButton::right)
 
@@ -134,14 +149,24 @@ test fn unrelated_buttons_do_not_release_left_capture() Void!Str {
   })
 
   application.mouse_down(0, 0)
-  application.mouse(event::mouse(event::MouseEventType::drag, event::MouseButton::left, 1, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::drag, event::MouseButton::left, 1, 0, modifiers()),
+  )
   application.mouse_down(4, 0, button: event::MouseButton::right)
-  application.mouse(event::mouse(event::MouseEventType::drag, event::MouseButton::right, 4, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::drag, event::MouseButton::right, 4, 0, modifiers()),
+  )
   application.mouse_up(4, 0, button: event::MouseButton::right)
-  try testing::assert(source_ends == 0 and target_drags == 1 and target_drops == 0, "Expected unrelated button to leave capture active")
+  try testing::assert(
+    source_ends == 0 and target_drags == 1 and target_drops == 0,
+    "Expected unrelated button to leave capture active",
+  )
   application.mouse_up(4, 0)
 
-  try testing::assert(source_ends == 1 and target_drops == 1, "Expected later left release to complete capture")
+  try testing::assert(
+    source_ends == 1 and target_drops == 1,
+    "Expected later left release to complete capture",
+  )
   application.destroy()
   testing::assert(target.node_ref.is_destroyed(), "Expected multi-button cleanup")
 }
@@ -175,11 +200,19 @@ test fn no_button_up_clears_pending_left_press() Void!Str {
 
   application.mouse_down(0, 0)
   application.mouse_up(0, 0, button: event::MouseButton::none)
-  application.mouse(event::mouse(event::MouseEventType::drag, event::MouseButton::left, 4, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::drag, event::MouseButton::left, 4, 0, modifiers()),
+  )
   application.mouse_up(4, 0)
 
-  try testing::assert(source_drags == 0 and source_ends == 0, "Expected released press not to become capture")
-  try testing::assert(target_drags == 1 and target_drops == 0, "Expected drag after released press to remain hit-routed")
+  try testing::assert(
+    source_drags == 0 and source_ends == 0,
+    "Expected released press not to become capture",
+  )
+  try testing::assert(
+    target_drags == 1 and target_drops == 0,
+    "Expected drag after released press to remain hit-routed",
+  )
   application.destroy()
   testing::assert(target.node_ref.is_destroyed(), "Expected no-button release cleanup")
 }
@@ -218,11 +251,21 @@ test fn invalidated_capture_skips_later_source_and_drop_routes() Void!Str {
   let application = cooper_testing::new(6, 1)
   let source = box::new(
     application.context,
-    styles: style::new(position: style::Position::absolute, width: style::cells(3), height: style::cells(1), left: style::cells(0)),
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(3),
+      height: style::cells(1),
+      left: style::cells(0),
+    ),
   )
   let target = box::new(
     application.context,
-    styles: style::new(position: style::Position::absolute, width: style::cells(3), height: style::cells(1), left: style::cells(3)),
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(3),
+      height: style::cells(1),
+      left: style::cells(3),
+    ),
   )
   application.root.add(source)
   application.root.add(target)
@@ -242,11 +285,16 @@ test fn invalidated_capture_skips_later_source_and_drop_routes() Void!Str {
   })
 
   application.mouse_down(0, 0)
-  application.mouse(event::mouse(event::MouseEventType::drag, event::MouseButton::left, 4, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::drag, event::MouseButton::left, 4, 0, modifiers()),
+  )
   application.mouse_up(4, 0)
 
   try testing::assert(source.node_ref.is_destroyed(), "Expected drag callback to invalidate capture")
-  try testing::assert(target_ups == 1 and target_drops == 0, "Expected invalid capture to fall back to ordinary up")
+  try testing::assert(
+    target_ups == 1 and target_drops == 0,
+    "Expected invalid capture to fall back to ordinary up",
+  )
   application.destroy()
   testing::assert(target.node_ref.is_destroyed(), "Expected invalid capture cleanup")
 }
@@ -270,7 +318,9 @@ test fn layout_change_reconciles_hover_without_motion() Void!Str {
   application.root.add(left)
   application.root.add(right)
   let log = mut EventLog{value: ""}
-  let _ = left.on_mouse(fn(received: mut event::MouseEvent) { append_event(log, "left", received) })
+  let _ = left.on_mouse(fn(received: mut event::MouseEvent) {
+    append_event(log, "left", received)
+  })
   let _ = right.on_mouse(fn(received: mut event::MouseEvent) {
     append_event(log, "right", received)
     if received.event_type == event::MouseEventType::over {
@@ -288,18 +338,33 @@ test fn layout_change_reconciles_hover_without_motion() Void!Str {
   right.set_style(right_style.@)
   application.render()
 
-  try testing::assert(log.value == "out:left;over:right;", "Expected layout-driven hover transition, got {log.value}")
-  try testing::assert(not application.frame().cell(0, 0).expect("committed hover cell").style.background.is_some(), "Expected hover mutation after committed frame")
+  try testing::assert(
+    log.value == "out:left;over:right;",
+    "Expected layout-driven hover transition, got {log.value}",
+  )
+  try testing::assert(
+    not application.frame().cell(0, 0).expect("committed hover cell").style.background.is_some(),
+    "Expected hover mutation after committed frame",
+  )
   let _ = application.flush()
-  try testing::assert(application.frame().cell(0, 0).expect("follow-up hover cell").style.background.is_some(), "Expected hover callback redraw to remain pending")
+  try testing::assert(
+    application.frame().cell(0, 0).expect("follow-up hover cell").style.background.is_some(),
+    "Expected hover callback redraw to remain pending",
+  )
   application.destroy()
   testing::assert(right.node_ref.is_destroyed(), "Expected hover reconciliation cleanup")
 }
 
 test fn scroll_without_hit_falls_back_to_focused_control() Void!Str {
   let application = cooper_testing::new(6, 1)
-  let view = scroll_box::new(application.context, styles: style::new(width: style::cells(2), height: style::cells(1)))
-  let content = box::new(application.context, styles: style::new(width: style::cells(2), height: style::cells(3), flex_shrink: 0.0))
+  let view = scroll_box::new(
+    application.context,
+    styles: style::new(width: style::cells(2), height: style::cells(1)),
+  )
+  let content = box::new(
+    application.context,
+    styles: style::new(width: style::cells(2), height: style::cells(3), flex_shrink: 0.0),
+  )
   view.add(content)
   application.root.add(view)
   application.render()
@@ -307,7 +372,10 @@ test fn scroll_without_hit_falls_back_to_focused_control() Void!Str {
 
   application.scroll(5, 0, 1)
 
-  try testing::assert(view.scroll_top() == 2, "Expected focused scroll fallback outside hit controls: focused {focused}, width {view.layout().screen.width}, max {view.maximum_scroll_top()}, top {view.scroll_top()}")
+  try testing::assert(
+    view.scroll_top() == 2,
+    "Expected focused scroll fallback outside hit controls: focused {focused}, width {view.layout().screen.width}, max {view.maximum_scroll_top()}, top {view.scroll_top()}",
+  )
   application.destroy()
   testing::assert(content.node_ref.is_destroyed(), "Expected focused scroll cleanup")
 }

@@ -1,7 +1,7 @@
-use cooper/ui/box
 use cooper/event
-use cooper/ui/style
 use cooper/testing as cooper_testing
+use cooper/ui/box
+use cooper/ui/style
 use cooper/ui/text
 use go:fmt
 use go:time
@@ -22,7 +22,12 @@ private fn pointer_move() mut event::MouseEvent {
     event::MouseButton::none,
     1,
     1,
-    event::Modifiers{shift: false, ctrl: false, alt: false, super: false},
+    event::Modifiers{
+      shift: false,
+      ctrl: false,
+      alt: false,
+      super: false,
+    },
   )
 }
 

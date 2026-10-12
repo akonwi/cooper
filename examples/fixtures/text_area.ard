@@ -42,7 +42,7 @@ fn main() {
   root.add(frame)
   root.add(status)
   application.root.add(root)
-  
+
   let _ = area.on_input(fn(value: Str) {
     status.set_content("value: {strings::ReplaceAll(value, "\n", "↵")}")
   })
@@ -59,6 +59,6 @@ fn main() {
       status.set_content("status: focused")
     }
   })
-  
+
   application.run().expect("run TextArea fixture")
 }

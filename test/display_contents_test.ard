@@ -52,14 +52,14 @@ impl node::Renderable for Probe {
   fn node() mut node::Node {
     self.retained
   }
-  
+
   fn mount(ctx: node::MountContext) {}
-  
+
   fn paint(ctx: mut paint::Context) {
     self.paints.push(1)
     ctx.show_cursor(0, 0)
   }
-  
+
   fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
     self.events =+ 1
     event_delivery::Disposition::ignored

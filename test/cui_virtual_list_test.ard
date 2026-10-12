@@ -1157,7 +1157,11 @@ test fn both_cross_row_selection_endpoints_are_pinned() Void!Str {
 test fn removing_a_pinned_selection_endpoint_clears_selection_and_releases_the_row() Void!Str {
   let app = headless::new(30, 8)
   defer app.destroy()
-  let data = mut Model{items: items(200), builds: 0, ref: cui::virtual_list_ref()}
+  let data = mut Model{
+    items: items(200),
+    builds: 0,
+    ref: cui::virtual_list_ref(),
+  }
   let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data: data}))
   defer renderer.destroy()
   app.flush()
@@ -1182,7 +1186,10 @@ test fn removing_a_pinned_selection_endpoint_clears_selection_and_releases_the_r
     data.items = remaining.@
   })
   app.flush()
-  try testing::assert(app.selection().is_none(), "removing the endpoint key clears disconnected selection")
+  try testing::assert(
+    app.selection().is_none(),
+    "removing the endpoint key clears disconnected selection",
+  )
   testing::assert(
     list.mounted_count() < 40,
     "removing the endpoint returns to the ordinary bounded mounted range",

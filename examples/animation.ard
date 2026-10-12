@@ -17,21 +17,13 @@ fn main() {
     application.context,
     content: "●",
     selectable: false,
-    styles: ui::style(
-      position: ui::Position::absolute,
-      left: ui::cells(0),
-      top: ui::cells(0),
-    ),
+    styles: ui::style(position: ui::Position::absolute, left: ui::cells(0), top: ui::cells(0)),
   )
   let status = ui::text(
     application.context,
     content: "START",
     selectable: false,
-    styles: ui::style(
-      position: ui::Position::absolute,
-      left: ui::cells(0),
-      top: ui::cells(2),
-    ),
+    styles: ui::style(position: ui::Position::absolute, left: ui::cells(0), top: ui::cells(2)),
   )
   root.add(marker)
   root.add(status)

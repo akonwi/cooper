@@ -298,22 +298,35 @@ test fn declarative_box_refreshes_semantic_copy_text_for_an_active_selection() V
   let app = headless::new(8, 2)
   defer app.destroy()
   let model = mut CopyModel{value: Maybe::new("first")}
-  let renderer = renderer::mount(app.context, app.root, cui::child(copy_provider, CopyProps{model: model}))
+  let renderer = renderer::mount(
+    app.context,
+    app.root,
+    cui::child(copy_provider, CopyProps{model: model}),
+  )
   defer renderer.destroy()
   app.flush()
   app.drag(0, 0, 2, 0)
   app.flush()
-  try testing::assert(app.selection().expect("initial selection").copy_text.or("") == "first", "initial semantic copy text")
+  try testing::assert(
+    app.selection().expect("initial selection").copy_text.or("") == "first",
+    "initial semantic copy text",
+  )
 
   renderer.update(fn() {
     model.value = Maybe::new("second")
   })
   app.flush()
-  try testing::assert(app.selection().expect("updated selection").copy_text.or("") == "second", "updated semantic copy text")
+  try testing::assert(
+    app.selection().expect("updated selection").copy_text.or("") == "second",
+    "updated semantic copy text",
+  )
 
   renderer.update(fn() {
     model.value = Maybe::new<Str>()
   })
   app.flush()
-  testing::assert(app.selection().expect("cleared selection provider").copy_text.is_none(), "removed semantic copy text")
+  testing::assert(
+    app.selection().expect("cleared selection provider").copy_text.is_none(),
+    "removed semantic copy text",
+  )
 }

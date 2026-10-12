@@ -35,7 +35,7 @@ fn main() {
   ctx.compute_layout(row, 90, 4)
   emit("shrink.a", a.layout().local)
   emit("shrink.b", b.layout().local)
-  
+
   // Percent references must change after reparenting and root resize.
   let other = box::new(ctx)
   a.set_style(style::new(width: style::percent(25.0), height: style::percent(50.0)))
@@ -47,7 +47,7 @@ fn main() {
   emit("resize", a.layout().local)
   ctx.compute_layout(other, 0, 0)
   emit("zero", a.layout().local)
-  
+
   let column = box::new(ctx, styles: style::new(align_items: style::Align::start))
   let label = text::new(ctx, content: "abc", styles: style::new(flex_shrink: 0.0))
   let tail = box::new(
@@ -67,7 +67,7 @@ fn main() {
   ctx.compute_layout(column, 10, 10)
   emit("text.resized", label.layout().local)
   emit("text.resized_tail", tail.layout().local)
-  
+
   // Explicitly documented ADR 0016 divergence, not a blanket exclusion.
   label.set_style(style::new(width: style::max_content(), flex_shrink: 0.0))
   ctx.compute_layout(column, 5, 10)

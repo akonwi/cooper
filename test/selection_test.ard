@@ -1,13 +1,13 @@
 use ard/testing
 
+use cooper/event
+use cooper/testing as cooper_testing
 use cooper/ui/box
 use cooper/ui/color
-use cooper/event
 use cooper/ui/scroll_box
 use cooper/ui/scrollbar
 use cooper/ui/selection
 use cooper/ui/style
-use cooper/testing as cooper_testing
 use cooper/ui/text
 
 private fn fixed(width: Int, height: Int?) style::Style {
@@ -15,7 +15,12 @@ private fn fixed(width: Int, height: Int?) style::Style {
 }
 
 private fn modifiers(ctrl: Bool?) event::Modifiers {
-  event::Modifiers{shift: false, ctrl: ctrl.or(false), alt: false, super: false}
+  event::Modifiers{
+    shift: false,
+    ctrl: ctrl.or(false),
+    alt: false,
+    super: false,
+  }
 }
 
 test fn text_selection_exposes_range_text_and_default_style() Void!Str {
@@ -38,15 +43,33 @@ test fn text_selection_exposes_range_text_and_default_style() Void!Str {
 
   let selected = application.selection().expect("global text selection")
   let local = message.selection().expect("local text selection")
-  try testing::assert(selected.selected_text == "Hello" and (not selected.is_dragging), "Expected final selected text")
-  try testing::assert(local.start == 0 and local.end == 5 and message.selected_text() == "Hello", "Expected half-open local range")
-  try testing::assert(final_text == "Hello" and (not final_dragging), "Expected post-commit final selection callback")
-  try testing::assert(application.frame().cell(0, 0).expect("selected cell").style.reverse, "Expected default reverse selection style")
-  try testing::assert(not application.frame().cell(5, 0).expect("unselected cell").style.reverse, "Expected base style outside selection")
+  try testing::assert(
+    selected.selected_text == "Hello" and not selected.is_dragging,
+    "Expected final selected text",
+  )
+  try testing::assert(
+    local.start == 0 and local.end == 5 and message.selected_text() == "Hello",
+    "Expected half-open local range",
+  )
+  try testing::assert(
+    final_text == "Hello" and not final_dragging,
+    "Expected post-commit final selection callback",
+  )
+  try testing::assert(
+    application.frame().cell(0, 0).expect("selected cell").style.reverse,
+    "Expected default reverse selection style",
+  )
+  try testing::assert(
+    not application.frame().cell(5, 0).expect("unselected cell").style.reverse,
+    "Expected base style outside selection",
+  )
 
   application.clear_selection()
   let _ = application.flush()
-  try testing::assert((not application.selection().is_some()) and not message.selection().is_some(), "Expected global and local selection clear")
+  try testing::assert(
+    (not application.selection().is_some()) and not message.selection().is_some(),
+    "Expected global and local selection clear",
+  )
   try testing::assert(final_text == "cleared", "Expected clear notification")
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected Text selection cleanup")
@@ -61,11 +84,26 @@ test fn double_click_selects_complete_word_and_finalizes_selection() Void!Str {
 
   let selected = application.selection().expect("double-click selection")
   let local = message.selection().expect("double-click local range")
-  try testing::assert(selected.selected_text == "Hello" and (not selected.is_dragging), "Expected finalized complete word selection")
-  try testing::assert(selected.anchor.x == 0 and selected.focus.x == 4 and selected.bounds.width == 5, "Expected word visual endpoints")
-  try testing::assert(local.start == 0 and local.end == 5 and message.selected_text() == "Hello", "Expected half-open word range")
-  try testing::assert(application.frame().cell(4, 0).expect("last selected cell").style.reverse, "Expected last word cell selected")
-  try testing::assert(not application.frame().cell(5, 0).expect("following cell").style.reverse, "Expected following space unselected")
+  try testing::assert(
+    selected.selected_text == "Hello" and not selected.is_dragging,
+    "Expected finalized complete word selection",
+  )
+  try testing::assert(
+    selected.anchor.x == 0 and selected.focus.x == 4 and selected.bounds.width == 5,
+    "Expected word visual endpoints",
+  )
+  try testing::assert(
+    local.start == 0 and local.end == 5 and message.selected_text() == "Hello",
+    "Expected half-open word range",
+  )
+  try testing::assert(
+    application.frame().cell(4, 0).expect("last selected cell").style.reverse,
+    "Expected last word cell selected",
+  )
+  try testing::assert(
+    not application.frame().cell(5, 0).expect("following cell").style.reverse,
+    "Expected following space unselected",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected double-click selection cleanup")
 }
@@ -132,8 +170,16 @@ test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str 
     application.context,
     content: text::styled_text(
       [
-        text::span("Hel", style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true), link: "https://example.com/hello"),
-        text::span("lo", style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true), link: "https://example.com/world"),
+        text::span(
+          "Hel",
+          style: text::span_style(foreground: color::rgb(200, 10, 20), bold: true),
+          link: "https://example.com/hello",
+        ),
+        text::span(
+          "lo",
+          style: text::span_style(foreground: color::rgb(10, 20, 200), italic: true),
+          link: "https://example.com/world",
+        ),
       ],
     ),
     styles: fixed(5),
@@ -145,23 +191,45 @@ test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str 
   let first = application.frame().cell(0, 0).expect("selected first rich span").style
   let second = application.frame().cell(4, 0).expect("selected second rich span").style
   try testing::assert(message.selected_text() == "Hello", "Expected word selection across style boundary")
-  try testing::assert(first.reverse and first.bold and first.foreground.expect("first selected color").red == Uint8::from(200), "Expected selected first span style")
-  try testing::assert(second.reverse and second.italic and second.foreground.expect("second selected color").blue == Uint8::from(200), "Expected selected second span style")
-  try testing::assert(application.frame().cell(0, 0).expect("selected first link").hyperlink.or("") == "https://example.com/hello" and application.frame().cell(4, 0).expect("selected second link").hyperlink.or("") == "https://example.com/world", "Expected selection overlay to preserve per-span hyperlinks")
+  try testing::assert(
+    first.reverse and first.bold and first.foreground.expect("first selected color").red == Uint8::from(200),
+    "Expected selected first span style",
+  )
+  try testing::assert(
+    second.reverse and second.italic and second.foreground.expect("second selected color").blue == Uint8::from(200),
+    "Expected selected second span style",
+  )
+  try testing::assert(
+    application.frame().cell(0, 0).expect("selected first link").hyperlink.or("") == "https://example.com/hello" and application.frame().cell(4, 0).expect("selected second link").hyperlink.or("") == "https://example.com/world",
+    "Expected selection overlay to preserve per-span hyperlinks",
+  )
 
   message.set_content(
     text::styled_text(
       [
-        text::span("Hel", style: text::span_style(foreground: color::rgb(20, 200, 30)), link: "https://example.com/hello"),
+        text::span(
+          "Hel",
+          style: text::span_style(foreground: color::rgb(20, 200, 30)),
+          link: "https://example.com/hello",
+        ),
         text::span("lo", style: text::span_style(underline: true), link: "https://example.com/world"),
       ],
     ),
   )
   application.render()
   let restyled = application.frame().cell(0, 0).expect("restyled locked selection").style
-  try testing::assert(application.selection().expect("restyled source lock").selected_text == "Hello", "Expected presentation-only mutation to preserve source lock")
-  try testing::assert(restyled.reverse and restyled.foreground.expect("restyled color").green == Uint8::from(200), "Expected locked selection to adopt new span style")
-  try testing::assert(application.frame().cell(0, 0).expect("restyled selection link").hyperlink.or("") == "https://example.com/hello", "Expected source-locked selection hyperlink after presentation mutation")
+  try testing::assert(
+    application.selection().expect("restyled source lock").selected_text == "Hello",
+    "Expected presentation-only mutation to preserve source lock",
+  )
+  try testing::assert(
+    restyled.reverse and restyled.foreground.expect("restyled color").green == Uint8::from(200),
+    "Expected locked selection to adopt new span style",
+  )
+  try testing::assert(
+    application.frame().cell(0, 0).expect("restyled selection link").hyperlink.or("") == "https://example.com/hello",
+    "Expected source-locked selection hyperlink after presentation mutation",
+  )
 
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected rich word selection cleanup")
@@ -189,26 +257,52 @@ test fn finalized_rich_text_drag_preserves_selection_style_through_reflow() Void
   application.render()
 
   application.drag(0, 0, 18, 0)
-  try testing::assert(message.selected_text() == "SELECTABLE 你好世界", "Expected complete initial drag source")
+  try testing::assert(
+    message.selected_text() == "SELECTABLE 你好世界",
+    "Expected complete initial drag source",
+  )
   application.resize(5, 8)
 
-  try testing::assert(message.selected_text() == "SELECTABLE 你好世界", "Expected finalized drag source lock through reflow")
+  try testing::assert(
+    message.selected_text() == "SELECTABLE 你好世界",
+    "Expected finalized drag source lock through reflow",
+  )
   for y in [0, 1, 2, 3] {
     let selected = application.frame().cell(0, y).expect("reflowed selected row").style
-    try testing::assert(selected.background.expect("reflowed selection background").blue == Uint8::from(125) and selected.bold, "Expected selection styling on every wrapped row")
+    try testing::assert(
+      selected.background.expect("reflowed selection background").blue == Uint8::from(125) and selected.bold,
+      "Expected selection styling on every wrapped row",
+    )
   }
 
   application.resize(30, 8)
-  try testing::assert(application.frame().cell(11, 0).expect("restored single-line selection").style.background.expect("restored selection background").blue == Uint8::from(125), "Expected selection styling after reverse reflow")
+  try testing::assert(
+    application.frame().cell(
+      11,
+      0,
+    ).expect(
+      "restored single-line selection",
+    ).style.background.expect("restored selection background").blue == Uint8::from(125),
+    "Expected selection styling after reverse reflow",
+  )
   application.drag(18, 0, 0, 0)
   application.resize(5, 8)
   let reversed = application.selection().expect("reversed finalized selection")
-  try testing::assert(message.selected_text() == "SELECTABLE 你好世界", "Expected reversed drag source lock")
-  try testing::assert(reversed.anchor.y == 3 and reversed.focus.y == 0, "Expected reversed anchor direction preserved through reflow")
+  try testing::assert(
+    message.selected_text() == "SELECTABLE 你好世界",
+    "Expected reversed drag source lock",
+  )
+  try testing::assert(
+    reversed.anchor.y == 3 and reversed.focus.y == 0,
+    "Expected reversed anchor direction preserved through reflow",
+  )
 
   message.set_content("changed")
   application.render()
-  try testing::assert(not application.selection().is_some(), "Expected source mutation to invalidate finalized drag lock")
+  try testing::assert(
+    not application.selection().is_some(),
+    "Expected source mutation to invalidate finalized drag lock",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected finalized rich drag cleanup")
 }
@@ -245,20 +339,32 @@ test fn double_click_deadline_reflow_and_source_revision_are_deterministic() Voi
   application.advance_time(501)
   application.double_click(1, 1)
   try testing::assert(message.selected_text() == "hello", "Expected wrapped word source selection")
-  try testing::assert(application.selection().expect("wrapped global selection").selected_text == "hello", "Expected soft wrap not to alter copied word text")
+  try testing::assert(
+    application.selection().expect("wrapped global selection").selected_text == "hello",
+    "Expected soft wrap not to alter copied word text",
+  )
   message.set_style(fixed(5))
   application.render()
   let reflowed = application.selection().expect("reflowed word selection")
-  try testing::assert(message.selected_text() == "hello" and reflowed.anchor.x == 0 and reflowed.focus.x == 4, "Expected source-anchored selection after reflow")
+  try testing::assert(
+    message.selected_text() == "hello" and reflowed.anchor.x == 0 and reflowed.focus.x == 4,
+    "Expected source-anchored selection after reflow",
+  )
 
   message.set_content("world")
   application.render()
-  try testing::assert(not application.selection().is_some(), "Expected source mutation to invalidate word selection")
+  try testing::assert(
+    not application.selection().is_some(),
+    "Expected source mutation to invalidate word selection",
+  )
 
-  message.set_content("\u0301a")
+  message.set_content("́a")
   application.render()
   application.double_click(0, 0)
-  try testing::assert(message.selected_text() == "\u0301a", "Expected zero-width word mark preserved in source selection")
+  try testing::assert(
+    message.selected_text() == "́a",
+    "Expected zero-width word mark preserved in source selection",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected deterministic double-click cleanup")
 }
@@ -279,7 +385,10 @@ test fn reentrant_second_press_clear_does_not_resurrect_word_selection() Void!St
 
   application.double_click(1, 0)
 
-  try testing::assert(not application.selection().is_some(), "Expected reentrant clear to win over expansion")
+  try testing::assert(
+    not application.selection().is_some(),
+    "Expected reentrant clear to win over expansion",
+  )
   try testing::assert(not message.selection().is_some(), "Expected local word selection cleared")
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected reentrant double-click cleanup")
@@ -290,11 +399,20 @@ test fn reentrant_second_press_reparent_invalidates_word_selection() Void!Str {
   let message = text::new(
     application.context,
     content: "Hello",
-    styles: style::new(position: style::Position::absolute, width: style::cells(5), height: style::cells(1)),
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(5),
+      height: style::cells(1),
+    ),
   )
   let destination = box::new(
     application.context,
-    styles: style::new(position: style::Position::absolute, left: style::cells(5), width: style::cells(5), height: style::cells(1)),
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(5),
+      width: style::cells(5),
+      height: style::cells(1),
+    ),
   )
   application.root.add(message)
   application.root.add(destination)
@@ -310,8 +428,14 @@ test fn reentrant_second_press_reparent_invalidates_word_selection() Void!Str {
 
   application.double_click(1, 0)
 
-  try testing::assert(message.node_ref.parent.expect("reparented Text parent") == destination.node_ref, "Expected listener reparent")
-  try testing::assert(not application.selection().is_some(), "Expected stale attachment expansion cleared")
+  try testing::assert(
+    message.node_ref.parent.expect("reparented Text parent") == destination.node_ref,
+    "Expected listener reparent",
+  )
+  try testing::assert(
+    not application.selection().is_some(),
+    "Expected stale attachment expansion cleared",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected reparented double-click cleanup")
 }
@@ -328,7 +452,10 @@ test fn double_click_global_text_respects_ancestor_clipping() Void!Str {
   application.double_click(0, 0)
 
   try testing::assert(message.selected_text() == "hello", "Expected complete local word source")
-  try testing::assert(application.selection().expect("clipped double-click selection").selected_text == "he", "Expected global copy to include only visible fragments")
+  try testing::assert(
+    application.selection().expect("clipped double-click selection").selected_text == "he",
+    "Expected global copy to include only visible fragments",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected clipped double-click cleanup")
 }
@@ -337,11 +464,20 @@ test fn second_press_autofocus_reparent_invalidates_word_selection() Void!Str {
   let application = cooper_testing::new(10, 1)
   let source = box::new(
     application.context,
-    styles: style::new(position: style::Position::absolute, width: style::cells(5), height: style::cells(1)),
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(5),
+      height: style::cells(1),
+    ),
   )
   let destination = box::new(
     application.context,
-    styles: style::new(position: style::Position::absolute, left: style::cells(5), width: style::cells(5), height: style::cells(1)),
+    styles: style::new(
+      position: style::Position::absolute,
+      left: style::cells(5),
+      width: style::cells(5),
+      height: style::cells(1),
+    ),
   )
   let message = text::new(application.context, content: "Hello", styles: fixed(5))
   source.add(message)
@@ -350,11 +486,19 @@ test fn second_press_autofocus_reparent_invalidates_word_selection() Void!Str {
 
   application.click(1, 0)
   source.set_focusable(true)
-  let _ = source.on_focus(fn() { destination.add(message) })
+  let _ = source.on_focus(fn() {
+    destination.add(message)
+  })
   application.click(1, 0)
 
-  try testing::assert(message.node_ref.parent.expect("autofocus reparented parent") == destination.node_ref, "Expected autofocus listener reparent")
-  try testing::assert(not application.selection().is_some(), "Expected autofocus-invalidated expansion cleared")
+  try testing::assert(
+    message.node_ref.parent.expect("autofocus reparented parent") == destination.node_ref,
+    "Expected autofocus listener reparent",
+  )
+  try testing::assert(
+    not application.selection().is_some(),
+    "Expected autofocus-invalidated expansion cleared",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected autofocus reparent cleanup")
 }
@@ -378,9 +522,18 @@ test fn text_selection_patch_mutates_copy_of_base_style() Void!Str {
 
   let selected = application.frame().cell(0, 0).expect("custom selected cell").style
   let unselected = application.frame().cell(4, 0).expect("custom unselected cell").style
-  try testing::assert(selected.bold and selected.italic and (not selected.reverse), "Expected patch over copied base attributes")
-  try testing::assert(selected.background.expect("selection background").blue == Uint8::from(80), "Expected patched selection color")
-  try testing::assert((not unselected.bold) and unselected.italic and (not unselected.background.is_some()), "Expected base style preserved outside range")
+  try testing::assert(
+    selected.bold and selected.italic and (not selected.reverse),
+    "Expected patch over copied base attributes",
+  )
+  try testing::assert(
+    selected.background.expect("selection background").blue == Uint8::from(80),
+    "Expected patched selection color",
+  )
+  try testing::assert(
+    (not unselected.bold) and unselected.italic and (not unselected.background.is_some()),
+    "Expected base style preserved outside range",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected selection patch cleanup")
 }
@@ -405,11 +558,16 @@ test fn selection_reads_across_controls_in_visual_order() Void!Str {
   application.root.add(bottom)
 
   application.mouse_down(0, 0)
-  application.mouse(event::mouse(event::MouseEventType::drag, event::MouseButton::left, 4, 1, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::drag, event::MouseButton::left, 4, 1, modifiers()),
+  )
   application.mouse_up(4, 1)
 
   let selected = application.selection().expect("cross-control selection")
-  try testing::assert(selected.selected_text == "Hello World\nAgain", "Expected visual reading order, got {selected.selected_text}")
+  try testing::assert(
+    selected.selected_text == "Hello World\nAgain",
+    "Expected visual reading order, got {selected.selected_text}",
+  )
   application.destroy()
   testing::assert(bottom.node_ref.is_destroyed(), "Expected cross-control selection cleanup")
 }
@@ -434,9 +592,14 @@ test fn ctrl_click_extends_existing_selection_and_normal_click_clears() Void!Str
   application.drag(0, 0, 4, 0)
   application.mouse_down(10, 0, received_modifiers: modifiers(ctrl: true))
   application.mouse_up(10, 0, received_modifiers: modifiers(ctrl: true))
-  try testing::assert(application.selection().expect("extended selection").selected_text == "Hello World", "Expected Ctrl extension")
+  try testing::assert(
+    application.selection().expect("extended selection").selected_text == "Hello World",
+    "Expected Ctrl extension",
+  )
 
-  let remove = clear_target.on_mouse(fn(received: mut event::MouseEvent) { received.prevent_default() })
+  let remove = clear_target.on_mouse(fn(received: mut event::MouseEvent) {
+    received.prevent_default()
+  })
   application.click(12, 0)
   try testing::assert(application.selection().is_some(), "Expected prevent_default to preserve selection")
   remove()
@@ -457,7 +620,10 @@ test fn tabs_preserve_source_ranges_while_selecting_expanded_cells() Void!Str {
   let local = message.selection().expect("tab local selection")
   try testing::assert(local.start == 0 and local.end == 10, "Expected tab-expanded display offsets")
   try testing::assert(message.selected_text() == "a\tb", "Expected source tab text preservation")
-  try testing::assert(application.selection().expect("tab global selection").selected_text == "a        b", "Expected visible expanded tab fragments")
+  try testing::assert(
+    application.selection().expect("tab global selection").selected_text == "a        b",
+    "Expected visible expanded tab fragments",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected tab selection cleanup")
 }
@@ -469,10 +635,19 @@ test fn finalized_text_drag_preserves_selected_zero_width_source() Void!Str {
 
   application.drag(0, 0, 2, 0)
 
-  try testing::assert(message.selected_text() == "ab\u200b", "Expected finalized source lock to retain trailing zero-width glyph")
-  try testing::assert(application.selection().expect("zero-width global selection").selected_text == "ab", "Expected global copy to contain visible fragments only")
+  try testing::assert(
+    message.selected_text() == "ab\u200b",
+    "Expected finalized source lock to retain trailing zero-width glyph",
+  )
+  try testing::assert(
+    application.selection().expect("zero-width global selection").selected_text == "ab",
+    "Expected global copy to contain visible fragments only",
+  )
   application.destroy()
-  testing::assert(message.node_ref.is_destroyed(), "Expected zero-width finalized selection cleanup")
+  testing::assert(
+    message.node_ref.is_destroyed(),
+    "Expected zero-width finalized selection cleanup",
+  )
 }
 
 test fn fully_ellipsized_source_lock_restores_selection_when_revealed() Void!Str {
@@ -490,12 +665,24 @@ test fn fully_ellipsized_source_lock_restores_selection_when_revealed() Void!Str
   application.drag(4, 0, 5, 0)
   try testing::assert(message.selected_text() == "ef", "Expected initial source lock")
   application.resize(3, 1)
-  try testing::assert(application.selection().expect("retained hidden source lock").selected_text == "", "Expected fully omitted lock retained without copied source")
-  try testing::assert(not application.frame().cell(2, 0).expect("unselected hidden marker").style.reverse, "Expected marker excluded from hidden lock")
+  try testing::assert(
+    application.selection().expect("retained hidden source lock").selected_text == "",
+    "Expected fully omitted lock retained without copied source",
+  )
+  try testing::assert(
+    not application.frame().cell(2, 0).expect("unselected hidden marker").style.reverse,
+    "Expected marker excluded from hidden lock",
+  )
 
   application.resize(6, 1)
-  try testing::assert(message.selected_text() == "ef" and application.selection().expect("restored source lock").selected_text == "ef", "Expected hidden source lock restored")
-  try testing::assert(application.frame().cell(4, 0).expect("restored selected source").style.reverse and application.frame().cell(5, 0).expect("restored selected end").style.reverse, "Expected restored selection styling")
+  try testing::assert(
+    message.selected_text() == "ef" and application.selection().expect("restored source lock").selected_text == "ef",
+    "Expected hidden source lock restored",
+  )
+  try testing::assert(
+    application.frame().cell(4, 0).expect("restored selected source").style.reverse and application.frame().cell(5, 0).expect("restored selected end").style.reverse,
+    "Expected restored selection styling",
+  )
 
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected hidden source lock cleanup")
@@ -516,8 +703,14 @@ test fn word_lock_reveals_suffix_previously_behind_ellipsis() Void!Str {
   application.double_click(2, 0)
   try testing::assert(message.selected_text() == "ab", "Expected marker-clamped visible word prefix")
   application.resize(6, 1)
-  try testing::assert(message.selected_text() == "abcdef" and application.selection().expect("expanded revealed word").selected_text == "abcdef", "Expected full word lock after revealing suffix")
-  try testing::assert(application.frame().cell(5, 0).expect("revealed selected suffix").style.reverse, "Expected revealed suffix selection style")
+  try testing::assert(
+    message.selected_text() == "abcdef" and application.selection().expect("expanded revealed word").selected_text == "abcdef",
+    "Expected full word lock after revealing suffix",
+  )
+  try testing::assert(
+    application.frame().cell(5, 0).expect("revealed selected suffix").style.reverse,
+    "Expected revealed suffix selection style",
+  )
 
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected ellipsis word lock cleanup")
@@ -538,9 +731,18 @@ test fn cross_control_selection_excludes_ellipsized_source_and_marker() Void!Str
 
   application.drag(0, 0, 0, 1)
 
-  try testing::assert(truncated.selected_text() == "abc", "Expected omitted Text source excluded from local selection")
-  try testing::assert(application.selection().expect("ellipsis cross-control selection").selected_text == "abc\nX", "Expected global selection to exclude omitted source and synthetic marker")
-  try testing::assert(not application.frame().cell(3, 0).expect("cross-control ellipsis marker").style.reverse, "Expected cross-control selection not to style marker")
+  try testing::assert(
+    truncated.selected_text() == "abc",
+    "Expected omitted Text source excluded from local selection",
+  )
+  try testing::assert(
+    application.selection().expect("ellipsis cross-control selection").selected_text == "abc\nX",
+    "Expected global selection to exclude omitted source and synthetic marker",
+  )
+  try testing::assert(
+    not application.frame().cell(3, 0).expect("cross-control ellipsis marker").style.reverse,
+    "Expected cross-control selection not to style marker",
+  )
   application.destroy()
   testing::assert(truncated.node_ref.is_destroyed(), "Expected ellipsis cross-control cleanup")
 }
@@ -562,9 +764,18 @@ test fn ellipsis_retains_zero_width_source_locally_but_not_in_global_copy() Void
 
   application.drag(0, 0, 0, 2)
 
-  try testing::assert(truncated.selected_text() == "\u200b", "Expected retained zero-width source in local selection")
-  try testing::assert(application.selection().expect("visible zero-width copy").selected_text == "X\nY", "Expected zero-width source excluded from visible global copy")
-  try testing::assert(application.frame().cell(0, 1).expect("zero-width ellipsis marker").grapheme == "…" and (not application.frame().cell(0, 1).expect("unselected zero-width marker").style.reverse), "Expected synthetic marker outside selection")
+  try testing::assert(
+    truncated.selected_text() == "\u200b",
+    "Expected retained zero-width source in local selection",
+  )
+  try testing::assert(
+    application.selection().expect("visible zero-width copy").selected_text == "X\nY",
+    "Expected zero-width source excluded from visible global copy",
+  )
+  try testing::assert(
+    application.frame().cell(0, 1).expect("zero-width ellipsis marker").grapheme == "…" and not application.frame().cell(0, 1).expect("unselected zero-width marker").style.reverse,
+    "Expected synthetic marker outside selection",
+  )
   application.destroy()
   testing::assert(truncated.node_ref.is_destroyed(), "Expected zero-width ellipsis cleanup")
 }
@@ -581,9 +792,18 @@ test fn clipping_limits_fragments_but_not_logical_text_range() Void!Str {
   application.drag(0, 0, 1, 0)
 
   let local = message.selection().expect("clipped logical selection")
-  try testing::assert(local.start == 0 and local.end == 2 and message.selected_text() == "你", "Expected complete logical wide selection")
-  try testing::assert(application.selection().expect("clipped global selection").selected_text == "", "Expected partial wide fragment exclusion")
-  try testing::assert(not application.frame().cell(0, 0).expect("clipped wide cell").style.reverse, "Expected no partial wide selection paint")
+  try testing::assert(
+    local.start == 0 and local.end == 2 and message.selected_text() == "你",
+    "Expected complete logical wide selection",
+  )
+  try testing::assert(
+    application.selection().expect("clipped global selection").selected_text == "",
+    "Expected partial wide fragment exclusion",
+  )
+  try testing::assert(
+    not application.frame().cell(0, 0).expect("clipped wide cell").style.reverse,
+    "Expected no partial wide selection paint",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected clipped selection cleanup")
 }
@@ -616,22 +836,42 @@ test fn expanded_selection_container_does_not_shrink() Void!Str {
   let application = cooper_testing::new(6, 1)
   let group = box::new(
     application.context,
-    styles: style::new(position: style::Position::absolute, width: style::cells(6), height: style::cells(1)),
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(6),
+      height: style::cells(1),
+    ),
   )
   let anchor = text::new(
     application.context,
     content: "A",
-    styles: style::new(position: style::Position::absolute, width: style::cells(1), height: style::cells(1), left: style::cells(0)),
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(1),
+      height: style::cells(1),
+      left: style::cells(0),
+    ),
   )
   let inside = text::new(
     application.context,
     content: "C",
-    styles: style::new(position: style::Position::absolute, width: style::cells(1), height: style::cells(1), left: style::cells(4)),
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(1),
+      height: style::cells(1),
+      left: style::cells(4),
+    ),
   )
   let outside = text::new(
     application.context,
     content: "B",
-    styles: style::new(position: style::Position::absolute, width: style::cells(1), height: style::cells(1), left: style::cells(2), z_index: 1),
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(1),
+      height: style::cells(1),
+      left: style::cells(2),
+      z_index: 1,
+    ),
   )
   group.add(anchor)
   group.add(inside)
@@ -639,11 +879,18 @@ test fn expanded_selection_container_does_not_shrink() Void!Str {
   application.root.add(outside)
 
   application.mouse_down(0, 0)
-  application.mouse(event::mouse(event::MouseEventType::drag, event::MouseButton::left, 2, 0, modifiers()))
-  application.mouse(event::mouse(event::MouseEventType::drag, event::MouseButton::left, 4, 0, modifiers()))
+  application.mouse(
+    event::mouse(event::MouseEventType::drag, event::MouseButton::left, 2, 0, modifiers()),
+  )
+  application.mouse(
+    event::mouse(event::MouseEventType::drag, event::MouseButton::left, 4, 0, modifiers()),
+  )
   application.mouse_up(4, 0)
 
-  try testing::assert(application.selection().expect("expanded container selection").selected_text == "ABC", "Expected expanded container to retain outside sibling")
+  try testing::assert(
+    application.selection().expect("expanded container selection").selected_text == "ABC",
+    "Expected expanded container to retain outside sibling",
+  )
   application.destroy()
   testing::assert(outside.node_ref.is_destroyed(), "Expected expanded container cleanup")
 }
@@ -656,7 +903,7 @@ test fn reentrant_clear_applies_after_notification_and_before_next_frame() Void!
   let _ = application.on_selection_change(fn(value: selection::Selection?) {
     match value {
       current => {
-        if (not current.is_dragging) and (not current.selected_text.is_empty()) {
+        if (not current.is_dragging) and not current.selected_text.is_empty() {
           application.clear_selection()
         }
       },
@@ -666,10 +913,19 @@ test fn reentrant_clear_applies_after_notification_and_before_next_frame() Void!
 
   application.drag(0, 0, 3, 0)
 
-  try testing::assert(not application.selection().is_some(), "Expected reentrant clear to update internal snapshot")
-  try testing::assert(application.frame().cell(0, 0).expect("pre-clear frame").style.reverse, "Expected clear notification to wait for painted frame")
+  try testing::assert(
+    not application.selection().is_some(),
+    "Expected reentrant clear to update internal snapshot",
+  )
+  try testing::assert(
+    application.frame().cell(0, 0).expect("pre-clear frame").style.reverse,
+    "Expected clear notification to wait for painted frame",
+  )
   let _ = application.flush()
-  try testing::assert(not application.frame().cell(0, 0).expect("cleared frame").style.reverse, "Expected queued clear frame")
+  try testing::assert(
+    not application.frame().cell(0, 0).expect("cleared frame").style.reverse,
+    "Expected queued clear frame",
+  )
   try testing::assert(cleared == 1, "Expected one post-commit clear notification")
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected reentrant clear cleanup")
@@ -677,10 +933,19 @@ test fn reentrant_clear_applies_after_notification_and_before_next_frame() Void!
 
 test fn selection_after_scroll_uses_translated_visual_rows() Void!Str {
   let application = cooper_testing::new(32, 2)
-  let view = scroll_box::new(application.context, styles: style::new(width: style::cells(32), height: style::cells(2)))
+  let view = scroll_box::new(
+    application.context,
+    styles: style::new(width: style::cells(32), height: style::cells(2)),
+  )
   mut index = 0
   while index < 5 {
-    view.add(text::new(application.context, content: "scroll row {index}: selectable content", styles: fixed(32)))
+    view.add(
+      text::new(
+        application.context,
+        content: "scroll row {index}: selectable content",
+        styles: fixed(32),
+      ),
+    )
     index =+ 1
   }
   application.root.add(view)
@@ -691,16 +956,28 @@ test fn selection_after_scroll_uses_translated_visual_rows() Void!Str {
   application.drag(0, 0, 10, 1)
 
   let selected = application.selection().expect("scrolled selection").selected_text
-  try testing::assert(selected == "scroll row 3: selectable conten\nscroll row ", "Expected translated scrolled selection beside the stable scrollbar gutter, got {selected}")
+  try testing::assert(
+    selected == "scroll row 3: selectable conten\nscroll row ",
+    "Expected translated scrolled selection beside the stable scrollbar gutter, got {selected}",
+  )
 
   let _ = view.scroll_to(0)
   application.render()
-  try testing::assert(application.selection().expect("offscreen retained selection").selected_text == "", "Expected offscreen selected controls not replacement rows")
-  try testing::assert(not application.frame().cell(0, 0).expect("unselected replacement row").style.reverse, "Expected scrolling not to select newly visible text")
+  try testing::assert(
+    application.selection().expect("offscreen retained selection").selected_text == "",
+    "Expected offscreen selected controls not replacement rows",
+  )
+  try testing::assert(
+    not application.frame().cell(0, 0).expect("unselected replacement row").style.reverse,
+    "Expected scrolling not to select newly visible text",
+  )
 
   let _ = view.scroll_to(3)
   application.render()
-  try testing::assert(application.selection().expect("restored scrolled selection").selected_text == selected, "Expected logical selection restoration after scrolling back")
+  try testing::assert(
+    application.selection().expect("restored scrolled selection").selected_text == selected,
+    "Expected logical selection restoration after scrolling back",
+  )
   application.destroy()
   testing::assert(view.node_ref.is_destroyed(), "Expected scrolled selection cleanup")
 }
@@ -730,10 +1007,16 @@ test fn selection_after_horizontal_scroll_uses_translated_visual_columns() Void!
 
   let _ = view.scroll_to_x(0)
   application.render()
-  try testing::assert(application.selection().expect("offscreen horizontal selection").selected_text == "", "Expected hidden horizontal selection fragment")
+  try testing::assert(
+    application.selection().expect("offscreen horizontal selection").selected_text == "",
+    "Expected hidden horizontal selection fragment",
+  )
   let _ = view.scroll_to_x(3)
   application.render()
-  try testing::assert(application.selection().expect("restored horizontal selection").selected_text == selected, "Expected horizontal selection restoration")
+  try testing::assert(
+    application.selection().expect("restored horizontal selection").selected_text == selected,
+    "Expected horizontal selection restoration",
+  )
 
   application.destroy()
   testing::assert(view.node_ref.is_destroyed(), "Expected horizontal selection cleanup")
@@ -744,7 +1027,11 @@ test fn post_hover_anchor_invalidation_skips_stale_selection_notification() Void
   let message = text::new(
     application.context,
     content: "Hello",
-    styles: style::new(position: style::Position::absolute, width: style::cells(5), height: style::cells(1)),
+    styles: style::new(
+      position: style::Position::absolute,
+      width: style::cells(5),
+      height: style::cells(1),
+    ),
   )
   let overlay = box::new(
     application.context,
@@ -777,7 +1064,7 @@ test fn post_hover_anchor_invalidation_skips_stale_selection_notification() Void
   let _ = application.on_selection_change(fn(value: selection::Selection?) {
     match value {
       current => {
-        if (not current.is_dragging) and (not current.selected_text.is_empty()) {
+        if (not current.is_dragging) and not current.selected_text.is_empty() {
           stale_final =+ 1
         }
       },
@@ -789,7 +1076,10 @@ test fn post_hover_anchor_invalidation_skips_stale_selection_notification() Void
   try testing::assert(message.node_ref.is_destroyed(), "Expected post-frame hover to invalidate anchor")
   try testing::assert(stale_final == 0, "Expected stale final selection notification suppression")
   let _ = application.flush()
-  try testing::assert((not application.selection().is_some()) and clears == 1, "Expected cleared selection after invalidated frame")
+  try testing::assert(
+    (not application.selection().is_some()) and clears == 1,
+    "Expected cleared selection after invalidated frame",
+  )
   application.destroy()
   testing::assert(overlay.node_ref.is_destroyed(), "Expected stale notification cleanup")
 }
@@ -803,13 +1093,19 @@ test fn disabling_or_destroying_anchor_clears_selection() Void!Str {
 
   message.set_selectable(false)
   application.render()
-  try testing::assert(not application.selection().is_some(), "Expected disabling anchor to clear selection")
+  try testing::assert(
+    not application.selection().is_some(),
+    "Expected disabling anchor to clear selection",
+  )
 
   message.set_selectable(true)
   application.drag(0, 0, 3, 0)
   message.destroy()
   application.render()
-  try testing::assert(not application.selection().is_some(), "Expected destroyed anchor to clear selection")
+  try testing::assert(
+    not application.selection().is_some(),
+    "Expected destroyed anchor to clear selection",
+  )
   application.destroy()
   testing::assert(message.node_ref.is_destroyed(), "Expected anchor invalidation cleanup")
 }

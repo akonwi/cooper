@@ -804,15 +804,25 @@ impl State {
       })
     }
     if description.kind == view::Kind::text_area {
-      let _ = text_area(
-        control,
-      ).on_input(fn(value: Str) {
+      let field = text_area(control)
+      let _ = field.on_input(fn(value: Str) {
         if self.active and live(mounted) and (not mounted.applying) {
           match mounted.description.on_input {
             handler => handler(value, mounted.context),
             _ => (),
           }
           self.invalidate()
+        }
+      })
+      let _ = field.on_submit(fn(value: Str) {
+        if self.active and live(mounted) {
+          match mounted.description.on_submit {
+            handler => {
+              handler(value, mounted.context)
+              self.invalidate()
+            },
+            _ => (),
+          }
         }
       })
     } else if description.kind == view::Kind::select_input or description.kind == view::Kind::tab_select {

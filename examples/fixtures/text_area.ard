@@ -1,4 +1,5 @@
 use cooper
+use cooper/keymap
 use cooper/ui
 use go:strings
 
@@ -30,6 +31,10 @@ fn main() {
     ctx,
     placeholder: "Write multiple lines…",
     styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
+    key_bindings: ui::default_text_area_bindings().bind(
+      keymap::key("return", ctrl: true),
+      ui::TextAreaAction::submit,
+    ),
   )
   let status = ui::text(
     ctx,
@@ -46,11 +51,8 @@ fn main() {
   let _ = area.on_input(fn(value: Str) {
     status.set_content("value: {strings::ReplaceAll(value, "\n", "↵")}")
   })
-  let _ = area.on_key(fn(received: mut cooper::KeyEvent) {
-    if received.matches("return", ctrl: true) {
-      received.prevent_default()
-      status.set_content("submit: {strings::ReplaceAll(area.value(), "\n", "↵")}")
-    }
+  let _ = area.on_submit(fn(value: Str) {
+    status.set_content("submit: {strings::ReplaceAll(value, "\n", "↵")}")
   })
   let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
     if received.matches("tab") {

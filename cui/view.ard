@@ -462,6 +462,7 @@ fn text_area(
   focused: Bool?,
   autofocus: Bool?,
   on_input: fn(Str, context::Context)?,
+  on_submit: fn(Str, context::Context)?,
   on_key: fn(mut event::KeyEvent, context::Context)?,
   on_mouse: fn(mut event::MouseEvent, context::Context)?,
   ref: (mut TextAreaRef)?,
@@ -484,6 +485,7 @@ fn text_area(
   result.focused = focused
   result.autofocus = autofocus.or(false)
   result.on_input = on_input
+  result.on_submit = on_submit
   result.on_key = on_key
   result.on_mouse = on_mouse
   result.text_area_ref = ref

@@ -1204,6 +1204,10 @@ impl TextArea {
     self.node_ref.on_value(1, handler)
   }
 
+  fn mut on_submit(handler: fn(Str)) fn() {
+    self.node_ref.on_value(2, handler)
+  }
+
   fn cursor_style() text_cursor::CursorStyle {
     self.caret_style
   }
@@ -1473,7 +1477,10 @@ impl TextArea {
       self.viewport_ref.clear_global_selection()
       let _ = self.clear_local_selection()
     }
-    if changed.text_changed {
+    if changed.submit_requested {
+      self.node_ref.emit_value(2, self.editor_state.value())
+      event_delivery::Disposition::handled
+    } else if changed.text_changed {
       self.reset_preferred_column()
       self.changed(true)
     } else if changed.cursor_changed or changed.selection_changed {

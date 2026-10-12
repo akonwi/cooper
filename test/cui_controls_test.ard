@@ -21,6 +21,8 @@ struct Model {
   changes: Int,
   highlights: Int,
   submits: Int,
+  area_submits: Int,
+  submitted_value: Str,
   inputs: Int,
   keys: Int,
   contexts: [cui::Context],
@@ -94,6 +96,11 @@ impl cui::Component for Form {
             self.model.value = value
           }
         },
+        on_submit: fn(value: Str, ctx: cui::Context) {
+          self.model.area_submits =+ 1
+          self.model.submitted_value = value
+          self.model.contexts.push(ctx)
+        },
         on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
           self.model.keys =+ 1
           self.model.contexts.push(ctx)
@@ -135,6 +142,8 @@ private fn model() mut Model {
     changes: 0,
     highlights: 0,
     submits: 0,
+    area_submits: 0,
+    submitted_value: "",
     inputs: 0,
     keys: 0,
     contexts: [],
@@ -257,6 +266,12 @@ test fn textarea_normalized_controlled_edits_reorder_and_context_cleanup() Void!
   try testing::assert(
     area.value() == "alpha\nbeta" and data.inputs == 0,
     "initial normalization without feedback",
+  )
+  let _ = area.perform(ui::TextAreaAction::submit)
+  app.flush()
+  try testing::assert(
+    data.area_submits == 1 and data.submitted_value == "alpha\nbeta",
+    "submit action reaches the declarative callback with the current value",
   )
   app.key(key("end"))
   app.key(key("left", shift: true))

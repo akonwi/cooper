@@ -85,6 +85,7 @@ fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn()
 fn mut on_focus(handler: fn()) fn()
 fn mut on_blur(handler: fn()) fn()
 fn mut on_input(handler: fn(Str)) fn()
+fn mut on_submit(handler: fn(Str)) fn()
 
 fn style() style::Style
 fn mut set_style(value: style::Style)
@@ -95,9 +96,10 @@ fn mut destroy(recursive: Bool?)
 `ui` re-exports `TextArea` and `ui::text_area`.
 
 TextArea intentionally has no minimum/maximum length, commit baseline,
-`on_change`, `submit`, or `on_submit`. Those remain Input-specific validation
-and form-commit behavior. Applications submit multiline values through their
-own key listener or command router.
+`on_change`, or dedicated `submit` method. Those remain Input-specific
+validation and form-commit behavior. `Action::submit` emits the current value
+through `on_submit` without validating or mutating it; applications choose the
+keys that perform that action.
 
 ### Source and callback behavior
 
@@ -121,7 +123,8 @@ contract.
 
 User key and paste listeners run before built-in behavior. `prevent_default`
 therefore lets an application reserve commands such as Ctrl+Enter without
-inserting text. Cooper does not add a TextArea-specific submit chord.
+inserting text. Cooper does not add a TextArea-specific submit chord; applications
+bind one to `Action::submit` when needed.
 
 ### Layout and viewport
 

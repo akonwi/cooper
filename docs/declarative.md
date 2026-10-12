@@ -496,10 +496,11 @@ setters, preserving cursor and selection state.
 `cui::text_area(value, ...)` adds multiline editing with `placeholder`, `wrap`,
 `text_style`, `placeholder_style`, `selectable`, `selection_style`, and
 `scrollbar_options`. Its selection-style callback has the same patch semantics
-and reverse-video default as `cui::text`. Enter
-inserts a newline; there is no single-line `on_submit` event. Use `on_key` for an
-application-specific save shortcut. `text_area_ref()` exposes the retained
-TextArea for selection, paste listeners, and other imperative editing APIs.
+and reverse-video default as `cui::text`. Enter inserts a newline by default.
+Applications can map a key to `ui::TextAreaAction::submit` and receive the current
+value through `on_submit`; submission does not mutate the value.
+`text_area_ref()` exposes the retained TextArea for selection, paste listeners,
+and other imperative editing APIs.
 
 `cui::select_input(options, ...)` and `cui::tab_select(options, ...)` use ordinary
 `ui::SelectOption` values. Their `config` arguments accept `ui::SelectConfig` and

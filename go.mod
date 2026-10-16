@@ -4,7 +4,7 @@ go 1.27.0
 
 // Ard source imports these modules directly through the Go backend.
 require (
-	github.com/akonwi/vaxis v0.0.0-20261012025929-59807cd81c13
+	github.com/akonwi/vaxis v0.0.0-20261016154026-5276e8c6cce1
 	github.com/rockorager/go-uucode v1.2.2
 	golang.org/x/image v0.46.0
 )

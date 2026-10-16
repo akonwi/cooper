@@ -11,12 +11,18 @@ state such as an application name, unread count, active workspace, or current
 resource. Tinear needs to update its Inbox count without importing Vaxis or
 writing terminal control sequences from application code.
 
-Vaxis exposes `Vaxis.SetTitle(string)`, which emits OSC 2 but returns no delivery
-status and does not preserve the previous terminal title. Terminal title-stack
+Cooper's Vaxis fork exposes `Vaxis.SetTitleAndIconName(string)`, which emits
+OSC 0 but returns no delivery status and does not preserve the previous
+terminal title. Terminal title-stack
 save/restore protocols are inconsistent and are not represented by Vaxis.
 Title content is an untrusted terminal control field, so Cooper must prevent
-embedded control characters from terminating OSC 2 or injecting another
+embedded control characters from terminating OSC 0 or injecting another
 sequence.
+
+Terminals differ in which title they display. Most keep one title that both
+OSC 0 and OSC 2 set. Others, such as iTerm2, keep the window title (OSC 2) and
+the icon name (OSC 1) separately and label tabs with the icon name, so OSC 2
+alone never reaches the tab.
 
 A title update is terminal chrome rather than a retained control. Runtime owns
 App-lifetime terminal-mediated capabilities and is available to controllers and
@@ -46,11 +52,17 @@ request a Cooper frame.
 An empty string is an explicit request for an empty title. Cooper does not
 interpret it as absence and does not add a separate clear operation.
 
+### Title sequence
+
+Cooper emits OSC 0, which sets both the window title and the icon name, so the
+title labels the window or tab in every terminal that displays either.
+Applications cannot set the two separately.
+
 ### Sanitization and coalescing
 
 Cooper replaces every C0 or C1 control character with one space before the
 value reaches Vaxis. This includes BEL, ESC, newlines, tabs, and string
-terminators that could escape OSC 2. Ard strings are valid Unicode, so no
+terminators that could escape OSC 0. Ard strings are valid Unicode, so no
 additional malformed UTF-8 boundary is needed.
 
 The runtime retains the most recently emitted normalized value and coalesces
@@ -75,7 +87,7 @@ new decision.
 `TestApp.terminal_titles()` returns the ordered normalized title emissions and
 remains readable after destruction. Headless tests cover sanitization,
 coalescing, empty titles, suspended emission, background-fiber serialization,
-and rejection after destruction. PTY coverage verifies the OSC 2 bytes emitted
+and rejection after destruction. PTY coverage verifies the OSC 0 bytes emitted
 by Vaxis.
 
 ## Consequences
@@ -85,7 +97,8 @@ control strings. Runtime keeps the capability usable from long-lived
 controllers and background work, while lifecycle rejection remains explicit.
 
 The API cannot confirm that a terminal displayed the title because Vaxis and
-OSC 2 provide no acknowledgement. Leaving the final title after process exit is
+OSC 0 provide no acknowledgement. Terminals that show the icon name somewhere
+other than a tab, such as a minimized window label, show the title there too. Leaving the final title after process exit is
 intentional and matches the selected lifecycle contract.
 
 ## Related
@@ -94,4 +107,4 @@ intentional and matches the selected lifecycle contract.
 - [ADR 0009: Define Terminal-Mediated Notifications](./0009-define-terminal-mediated-notifications.md)
 - [ADR 0010: Define Terminal Progress Reporting](./0010-define-terminal-progress-reporting.md)
 - [ADR 0013: Consolidate Context into Runtime](./0013-consolidate-context-into-runtime.md)
-- [Vaxis `SetTitle`](https://pkg.go.dev/go.rockorager.dev/vaxis#Vaxis.SetTitle)
+- [Vaxis fork](https://github.com/akonwi/vaxis/tree/cooper-distribution)

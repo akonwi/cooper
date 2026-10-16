@@ -76,7 +76,7 @@ def run_supported():
         wait_for(fd, screen, "Notification fixture ready")
 
         send(fd, "t")
-        wait_for_bytes(fd, screen, b"\x1b]2;Cooper Title\x1b\\")
+        wait_for_bytes(fd, screen, b"\x1b]0;Cooper Title\x1b\\")
         wait_for(fd, screen, "TITLE ACCEPTED: true")
 
         send(fd, "n")
@@ -124,7 +124,7 @@ def run_supported():
             "SUSPENDED REJECTED · RESUMED",
             [
                 b"\x1b]9;4;0\x1b\\",
-                b"\x1b]2;Cooper Suspended\x1b\\",
+                b"\x1b]0;Cooper Suspended\x1b\\",
                 b"\x1b]9;4;3\x1b\\",
                 IDLE_ROOT,
                 IDLE_ASK,
@@ -132,7 +132,7 @@ def run_supported():
                 BLOCKED,
             ],
         )
-        if suspend_output.count(b"\x1b]2;Cooper Suspended\x1b\\") != 1:
+        if suspend_output.count(b"\x1b]0;Cooper Suspended\x1b\\") != 1:
             raise AssertionError("suspended title was duplicated during resume")
         if not suspend_output.index(IDLE_ROOT) < suspend_output.index(WORKING):
             raise AssertionError("program status was not reported idle before being restored")
@@ -150,7 +150,7 @@ def run_supported():
         assert status == 0, f"exit status {status}"
         if b"\x1b]9;4;0\x1b\\" not in shutdown_output:
             raise AssertionError("active terminal progress was not removed during teardown")
-        if b"\x1b]2;" in shutdown_output:
+        if b"\x1b]0;" in shutdown_output:
             raise AssertionError("terminal title was unexpectedly changed during teardown")
         if IDLE_ROOT not in shutdown_output:
             raise AssertionError("the working root record was not reported idle during teardown")

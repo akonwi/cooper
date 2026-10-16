@@ -624,7 +624,7 @@ private fn new_live_state(
           )
         },
         fn(value: Str) {
-          terminal.SetTitle(value)
+          terminal.SetTitleAndIconName(value)
         },
         true,
         Maybe::new<fn()>(),

@@ -271,7 +271,7 @@ test fn baseline_self_alignment_uses_physical_top_of_expanded_lines() Void!Str {
   let ctx = runtime::new_detached()
   defer ctx.destroy_detached()
   let parent = box::new(ctx)
-  let children = mut List::new<mut box::Box>()
+  let children = &mut List::new<&mut box::Box>()
   for height in [1, 3, 1, 3] {
     let child = box::new(
       ctx,

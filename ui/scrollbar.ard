@@ -43,7 +43,7 @@ fn action_name(action: Action) Str {
 }
 
 fn default_bindings(orientation: Orientation) keymap::Bindings<Action> {
-  let entries = mut List::new<keymap::Mapping<Action>>()
+  let entries = &mut List::new<keymap::Mapping<Action>>()
   match orientation {
     Orientation::vertical => {
       entries.push(keymap::mapping(keymap::key("up"), Action::backward))
@@ -58,7 +58,7 @@ fn default_bindings(orientation: Orientation) keymap::Bindings<Action> {
   entries.push(keymap::mapping(keymap::key("page_down"), Action::page_forward))
   entries.push(keymap::mapping(keymap::key("home"), Action::home))
   entries.push(keymap::mapping(keymap::key("end"), Action::end))
-  keymap::bindings(entries.@)
+  keymap::bindings(entries.*)
 }
 
 struct State {
@@ -172,7 +172,7 @@ private struct Listener {
 }
 
 private struct InternalState {
-  runtime: mut runtime::Runtime,
+  runtime: &mut runtime::Runtime,
   orientation: Orientation,
   value: State,
   options: Options,
@@ -189,7 +189,7 @@ private struct InternalState {
 }
 
 struct Scrollbar {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
   internal: Any,
 }
 
@@ -200,8 +200,8 @@ private struct TrackGeometry {
   thumb_size: Int,
 }
 
-private fn internal_state(value: Any) mut InternalState {
-  unsafe::cast<mut InternalState>(value).expect("Scrollbar must be created by Cooper")
+private fn internal_state(value: Any) &mut InternalState {
+  unsafe::cast<&mut InternalState>(value).expect("Scrollbar must be created by Cooper")
 }
 
 private fn default_track(orientation: Orientation) Str {
@@ -233,7 +233,8 @@ private fn default_end_arrow(orientation: Orientation) Str {
 }
 
 private fn patched(base: text::TextStyle, patch: text::SpanStyle?) text::TextStyle {
-  let resolved = mut base
+  mut base = base
+  let resolved = &mut base
   match patch {
     value => {
       match value.foreground {
@@ -279,7 +280,7 @@ private fn patched(base: text::TextStyle, patch: text::SpanStyle?) text::TextSty
     },
     _ => (),
   }
-  resolved.@
+  resolved.*
 }
 
 private fn resolve_appearance(orientation: Orientation, value: Appearance?) ResolvedAppearance {
@@ -311,7 +312,8 @@ private fn validate_appearance(measure_width: fn(Str) Int, value: ResolvedAppear
 }
 
 private fn configured(value: layout_style::Style, orientation: Orientation, visibility: Visibility) layout_style::Style {
-  let applied = mut value
+  mut value = value
+  let applied = &mut value
   applied.flex_shrink = 0.0
   match orientation {
     Orientation::vertical => { applied.width = layout_style::cells(1) },
@@ -322,16 +324,16 @@ private fn configured(value: layout_style::Style, orientation: Orientation, visi
   } else {
     applied.display = layout_style::Display::flex
   }
-  applied.@
+  applied.*
 }
 
 fn new(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   orientation: Orientation,
   state: State?,
   options: Options?,
   styles: layout_style::Style?,
-) mut Scrollbar {
+) &mut Scrollbar {
   internal_new(
     ctx,
     orientation,
@@ -351,13 +353,13 @@ private fn scrollbar_options() Options {
 }
 
 fn internal_new(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   orientation: Orientation,
   initial_state: State,
   initial_options: Options,
   styles: layout_style::Style,
   focusable: Bool,
-) mut Scrollbar {
+) &mut Scrollbar {
   if initial_options.scroll_step < 1 {
     panic("Scrollbar scroll_step must be positive")
   }
@@ -370,7 +372,7 @@ fn internal_new(
   let retained = context_state.create_node(
     configured(styles, orientation, initial_options.visibility),
   )
-  let shared = mut InternalState{
+  let shared = &mut InternalState{
     runtime: context_state,
     orientation: orientation,
     value: normalize_state(initial_state),
@@ -386,7 +388,7 @@ fn internal_new(
     listeners: [],
     key_bindings: default_bindings(orientation),
   }
-  let created = mut Scrollbar{node_ref: retained, internal: shared}
+  let created = &mut Scrollbar{node_ref: retained, internal: shared}
   retained.bind(created)
   retained.set_focusable(focusable and visible(shared))
   retained.on_cleanup(fn() {
@@ -416,11 +418,11 @@ private fn text_style(value: text::TextStyle) paint::CellStyle {
   )
 }
 
-private fn visible(shared: mut InternalState) Bool {
+private fn visible(shared: &mut InternalState) Bool {
   shared.options.visibility == Visibility::always or shared.options.visibility == Visibility::automatic and maximum_for(shared.value) > 0
 }
 
-private fn axis_size(retained: mut node::Node, orientation: Orientation) Int {
+private fn axis_size(retained: &mut node::Node, orientation: Orientation) Int {
   let bounds = retained.layout().screen
   match orientation {
     Orientation::vertical => bounds.height,
@@ -428,7 +430,7 @@ private fn axis_size(retained: mut node::Node, orientation: Orientation) Int {
   }
 }
 
-private fn track_geometry(shared: mut InternalState, size: Int) TrackGeometry {
+private fn track_geometry(shared: &mut InternalState, size: Int) TrackGeometry {
   mut start = 0
   mut length = size
   if shared.options.show_arrows and size >= 3 {
@@ -474,7 +476,7 @@ private fn track_geometry(shared: mut InternalState, size: Int) TrackGeometry {
   }
 }
 
-private fn coordinate(orientation: Orientation, mouse: mut event::MouseEvent) Int {
+private fn coordinate(orientation: Orientation, mouse: &mut event::MouseEvent) Int {
   match orientation {
     Orientation::vertical => mouse.local_y,
     Orientation::horizontal => mouse.local_x,
@@ -482,7 +484,7 @@ private fn coordinate(orientation: Orientation, mouse: mut event::MouseEvent) In
 }
 
 private fn write_cell(
-  ctx: mut paint::Context,
+  ctx: &mut paint::Context,
   orientation: Orientation,
   position: Int,
   glyph: Str,
@@ -494,7 +496,7 @@ private fn write_cell(
   }
 }
 
-private fn notify(shared: mut InternalState, position: Int) {
+private fn notify(shared: &mut InternalState, position: Int) {
   let listeners = shared.listeners
   for listener in listeners {
     listener.handler(position)
@@ -502,13 +504,13 @@ private fn notify(shared: mut InternalState, position: Int) {
 }
 
 impl node::Renderable for Scrollbar {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     let shared = internal_state(self.internal)
     if visible(shared) {
       let orientation = self.orientation()
@@ -537,7 +539,7 @@ impl node::Renderable for Scrollbar {
     }
   }
 
-  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     if ctx.is_default_prevented() {
       event_delivery::Disposition::ignored
     } else {
@@ -734,13 +736,13 @@ impl Scrollbar {
     shared.next_listener_id =+ 1
     shared.listeners.push(Listener{id: id, handler: handler})
     fn() {
-      let retained = mut List::new<Listener>()
+      let retained = &mut List::new<Listener>()
       for listener in shared.listeners {
         if listener.id != id {
           retained.push(listener)
         }
       }
-      shared.listeners = retained.@
+      shared.listeners = retained.*
     }
   }
 
@@ -756,15 +758,15 @@ impl Scrollbar {
     self.node_ref.is_focused()
   }
 
-  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+  fn mut on_key(handler: fn(&mut event::KeyEvent)) fn() {
     self.node_ref.on_key(handler)
   }
 
-  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+  fn mut on_paste(handler: fn(&mut event::PasteEvent)) fn() {
     self.node_ref.on_paste(handler)
   }
 
-  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+  fn mut on_mouse(handler: fn(&mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
 
@@ -798,7 +800,7 @@ impl Scrollbar {
     }
   }
 
-  private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
+  private fn mut handle_mouse(ctx: &mut event_delivery::Context, mouse: &mut event::MouseEvent) event_delivery::Disposition {
     let shared = internal_state(self.internal)
     if (not visible(shared)) or mouse.is_default_prevented() {
       event_delivery::Disposition::ignored
@@ -856,12 +858,12 @@ impl Scrollbar {
     }
   }
 
-  private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
+  private fn mut handle_key(ctx: &mut event_delivery::Context, key: &mut event::KeyEvent) event_delivery::Disposition {
     let shared = internal_state(self.internal)
     if not visible(shared) {
       event_delivery::Disposition::ignored
     } else {
-      match shared.key_bindings.resolve(key.@) {
+      match shared.key_bindings.resolve(key.*) {
         mapping => {
           key.prevent_default()
           match mapping.action {

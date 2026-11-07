@@ -10,7 +10,7 @@ private fn row_style() ui::Style {
   ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
-private fn entry_row(ctx: mut cooper::Runtime, label: Str, activate: fn(Str)) mut ui::Box {
+private fn entry_row(ctx: &mut cooper::Runtime, label: Str, activate: fn(Str)) &mut ui::Box {
   let row = ui::box(ctx, styles: row_style())
   let label_text = ui::text(ctx, content: "  {label}", styles: row_style())
   row.add(label_text)
@@ -23,13 +23,13 @@ private fn entry_row(ctx: mut cooper::Runtime, label: Str, activate: fn(Str)) mu
     label_text.set_content("  {label}")
     label_text.set_text_style(ui::text_style())
   })
-  let _ = row.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = row.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release and received.matches("return") {
       activate(label)
       received.prevent_default()
     }
   })
-  let _ = row.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = row.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
       activate(label)
     }
@@ -43,7 +43,7 @@ private fn alphabetic(left: Str, right: Str) Bool {
 
 private fn read_names(path: Str) [Str]!Error {
   let entries = try os::ReadDir(path)
-  let names = mut List::new<Str>()
+  let names = &mut List::new<Str>()
   for entry in entries {
     mut suffix = ""
     if entry.IsDir() {
@@ -52,16 +52,16 @@ private fn read_names(path: Str) [Str]!Error {
     names.push("{entry.Name()}{suffix}")
   }
   names.sort(alphabetic)
-  Result::ok(names.@)
+  Result::ok(names.*)
 }
 
 private fn start_directory_load(
-  ctx: mut cooper::Runtime,
+  ctx: &mut cooper::Runtime,
   path: Str,
-  listing: mut ui::ScrollBox,
-  loading: mut ui::Text,
-  selection: mut ui::Text,
-  rows: mut [mut ui::Box],
+  listing: &mut ui::ScrollBox,
+  loading: &mut ui::Text,
+  selection: &mut ui::Text,
+  rows: &mut [&mut ui::Box],
 ) {
   let cancellation = ctx.cancellation
   let dispatch = ctx.dispatch
@@ -137,14 +137,14 @@ fn main() {
       gap: ui::cells(2),
     ),
   )
-  let details_style = mut ui::style(
+  let details_style = &mut ui::style(
     width: ui::percent(50.0),
     height: ui::percent(100.0),
     flex_grow: 1.0,
     align_items: ui::Align::start,
   )
   details_style.overflow = ui::Overflow::hidden
-  let details = ui::box(ctx, styles: details_style.@)
+  let details = ui::box(ctx, styles: details_style.*)
   let details_title = ui::text(
     ctx,
     content: "Details",
@@ -160,7 +160,7 @@ fn main() {
   )
   let loading = ui::text(ctx, content: "Loading directory…", styles: row_style())
   listing.add(loading)
-  let rows = mut List::new<mut ui::Box>()
+  let rows = &mut List::new<&mut ui::Box>()
   start_directory_load(ctx, cwd, listing, loading, selection, rows)
 
   panes.add(listing)
@@ -171,7 +171,7 @@ fn main() {
   application.root.add(root)
 
   search.focus()
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release and received.matches("tab") and search.is_focused() {
       match rows.at(0) {
         row => {

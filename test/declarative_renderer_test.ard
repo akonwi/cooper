@@ -6,7 +6,7 @@ use cooper/event
 use cooper/testing as headless
 use cooper/ui
 
-private fn key(name: Str, text: Str?, shift: Bool?) mut event::KeyEvent {
+private fn key(name: Str, text: Str?, shift: Bool?) &mut event::KeyEvent {
   event::key(
     name,
     text.or(""),
@@ -30,8 +30,8 @@ struct Log {
   refs_ready: Bool,
 }
 
-private fn log() mut Log {
-  (mut Log{
+private fn log() &mut Log {
+  &mut Log{
     created: 0,
     mounted: 0,
     inputs: 0,
@@ -39,20 +39,20 @@ private fn log() mut Log {
     closed: [],
     probe: fn() {},
     refs_ready: true,
-  })
+  }
 }
 
 struct Draw {
   render: fn() d::View,
-  log: mut Log,
+  log: &mut Log,
 }
 
 struct Root {
-  props: mut Draw,
+  props: &mut Draw,
 }
 
-private fn root(props: mut Draw) mut Root {
-  (mut Root{props: props})
+private fn root(props: &mut Draw) &mut Root {
+  &mut Root{props: props}
 }
 
 impl d::Component for Root {
@@ -65,19 +65,19 @@ impl d::Component for Root {
 struct RowProps {
   name: Str,
   label: Str,
-  ref: mut d::InputRef,
-  log: mut Log,
+  ref: &mut d::InputRef,
+  log: &mut Log,
   changed: fn(Str),
 }
 
 struct Row {
-  props: mut RowProps,
+  props: &mut RowProps,
   value: Str,
 }
 
-private fn row(props: mut RowProps) mut Row {
+private fn row(props: &mut RowProps) &mut Row {
   props.log.created =+ 1
-  (mut Row{props: props, value: props.name})
+  &mut Row{props: props, value: props.name}
 }
 
 impl d::Component for Row {
@@ -112,23 +112,23 @@ impl d::Lifecycle for Row {
 struct Rows {
   order: [Str],
   label: Str,
-  left: mut d::InputRef,
-  right: mut d::InputRef,
+  left: &mut d::InputRef,
+  right: &mut d::InputRef,
   latest: Str,
 }
 
-private fn rows() mut Rows {
-  (mut Rows{
+private fn rows() &mut Rows {
+  &mut Rows{
     order: ["left", "right"],
     label: "old",
     left: d::input_ref(),
     right: d::input_ref(),
     latest: "",
-  })
+  }
 }
 
-private fn collection(model: mut Rows, record: mut Log, keyed: Bool?) d::View {
-  let children = mut List::new<d::View>()
+private fn collection(model: &mut Rows, record: &mut Log, keyed: Bool?) d::View {
+  let children = &mut List::new<d::View>()
   for name in model.order {
     mut ref = model.right
     if name == "left" {
@@ -155,7 +155,7 @@ private fn collection(model: mut Rows, record: mut Log, keyed: Bool?) d::View {
       ),
     )
   }
-  d::scroll_box([d::box(children.@)], styles: ui::style(width: ui::cells(20), height: ui::cells(3)))
+  d::scroll_box([d::box(children.*)], styles: ui::style(width: ui::cells(20), height: ui::cells(3)))
 }
 
 test fn keyed_collection_retains_state_focus_selection_and_latest_props_without_reconstruction() Void!Str {
@@ -264,16 +264,16 @@ test fn committed_removal_reinsertion_resets_state_but_coalesced_absence_does_no
 }
 
 struct GroupProps {
-  model: mut Rows,
-  log: mut Log,
+  model: &mut Rows,
+  log: &mut Log,
 }
 
 struct Group {
-  props: mut GroupProps,
+  props: &mut GroupProps,
 }
 
-private fn group(props: mut GroupProps) mut Group {
-  (mut Group{props: props})
+private fn group(props: &mut GroupProps) &mut Group {
+  &mut Group{props: props}
 }
 
 impl d::Component for Group {
@@ -504,11 +504,11 @@ test fn unkeyed_state_follows_position_and_ref_reassignment_does_not_remount() V
 }
 
 struct Other {
-  props: mut RowProps,
+  props: &mut RowProps,
 }
 
-private fn other(props: mut RowProps) mut Other {
-  (mut Other{props: props})
+private fn other(props: &mut RowProps) &mut Other {
+  &mut Other{props: props}
 }
 
 impl d::Component for Other {

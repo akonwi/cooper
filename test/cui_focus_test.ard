@@ -13,13 +13,13 @@ struct Model {
   context: cui::Context?,
 }
 struct Draw {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Screen {
-  props: mut Draw,
+  props: &mut Draw,
 }
-private fn screen(props: mut Draw) mut Screen {
-  (mut Screen{props: props})
+private fn screen(props: &mut Draw) &mut Screen {
+  &mut Screen{props: props}
 }
 impl cui::Component for Screen {
   fn mut render() cui::View {
@@ -40,7 +40,7 @@ test fn described_focus_is_applied_after_attachment_and_reconciled() Void!Str {
   defer app.destroy()
   let panel = cui::box_ref()
   let field = cui::input_ref()
-  let model = mut Model{
+  let model = &mut Model{
     context: Maybe::new<cui::Context>(),
     view: cui::box(
       [
@@ -135,7 +135,7 @@ test fn described_focus_reveals_nested_scroll_content() Void!Str {
 test fn keys_bubble_once_and_keep_prevention_separate_from_propagation() Void!Str {
   let app = headless::new(24, 8)
   defer app.destroy()
-  let calls = mut List::new<Str>()
+  let calls = &mut List::new<Str>()
   let field = cui::input_ref()
   let renderer = renderer::mount(
     app.context,
@@ -145,13 +145,13 @@ test fn keys_bubble_once_and_keep_prevention_separate_from_propagation() Void!St
         cui::child(
           screen,
           Draw{
-            model: mut Model{
+            model: &mut Model{
               context: Maybe::new<cui::Context>(),
               view: cui::input(
                 "",
                 focused: true,
                 ref: field,
-                on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+                on_key: fn(key: &mut event::KeyEvent, ctx: cui::Context) {
                   calls.push("child")
                   if key.matches("a") {
                     key.stop_propagation()
@@ -165,7 +165,7 @@ test fn keys_bubble_once_and_keep_prevention_separate_from_propagation() Void!St
           },
         ),
       ],
-      on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+      on_key: fn(key: &mut event::KeyEvent, ctx: cui::Context) {
         calls.push("parent")
         key.prevent_default()
       },
@@ -204,7 +204,7 @@ test fn autofocus_runs_once_per_control_mount_including_late_mounts() Void!Str {
   defer app.destroy()
   let first = cui::input_ref()
   let second = cui::input_ref()
-  let model = mut Model{
+  let model = &mut Model{
     context: Maybe::new<cui::Context>(),
     view: cui::box(
       [
@@ -257,7 +257,7 @@ test fn explicit_false_blurs_but_omitted_focus_leaves_user_focus_alone() Void!St
   let app = headless::new(24, 8)
   defer app.destroy()
   let field = cui::input_ref()
-  let model = mut Model{context: Maybe::new<cui::Context>(), view: cui::input("field", ref: field, focused: false)}
+  let model = &mut Model{context: Maybe::new<cui::Context>(), view: cui::input("field", ref: field, focused: false)}
   let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
   defer mounted.destroy()
   app.flush()
@@ -280,7 +280,7 @@ test fn deferred_ref_focus_resolves_after_commit_and_expires_when_absent() Void!
   defer app.destroy()
   let target = cui::input_ref()
   let other = cui::input_ref()
-  let model = mut Model{
+  let model = &mut Model{
     context: Maybe::new<cui::Context>(),
     view: cui::box([cui::input("other", key: "other", ref: other, autofocus: true)]),
   }
@@ -344,8 +344,8 @@ test fn deferred_focus_is_cancelled_with_requesting_component_or_renderer() Void
   let app = headless::new(24, 8)
   defer app.destroy()
   let target = cui::input_ref()
-  let owner = mut Model{view: cui::text("worker"), context: Maybe::new<cui::Context>()}
-  let outer = mut Model{
+  let owner = &mut Model{view: cui::text("worker"), context: Maybe::new<cui::Context>()}
+  let outer = &mut Model{
     context: Maybe::new<cui::Context>(),
     view: cui::box(
       [
@@ -440,7 +440,7 @@ test fn autofocus_rejects_controlled_focus_and_does_not_wait_for_visibility() Vo
     try testing::assert(result.is_err(), "controlled focus and autofocus conflict")
   }
   let target = cui::input_ref()
-  let model = mut Model{
+  let model = &mut Model{
     context: Maybe::new<cui::Context>(),
     view: cui::input("hidden", ref: target, autofocus: true, styles: ui::style(display: ui::Display::none)),
   }

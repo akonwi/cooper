@@ -7,7 +7,7 @@ use cooper/core/layout/measure
 use cooper/ui/style
 
 fn leaf_visit(
-  child: mut layout::Node,
+  child: &mut layout::Node,
   width: measure::Axis,
   height: measure::Axis,
   margin_row: Float32,
@@ -80,7 +80,7 @@ test fn children_prepare_single_flex_bypasses_but_two_flex_measure() Void!Str {
     cache::SizingMode::stretch_fit,
     1,
     fn(
-      child: mut layout::Node,
+      child: &mut layout::Node,
       width: measure::Axis,
       height: measure::Axis,
       mr: Float32,
@@ -106,7 +106,7 @@ test fn children_prepare_single_flex_bypasses_but_two_flex_measure() Void!Str {
     cache::SizingMode::stretch_fit,
     2,
     fn(
-      child: mut layout::Node,
+      child: &mut layout::Node,
       width: measure::Axis,
       height: measure::Axis,
       mr: Float32,
@@ -162,7 +162,7 @@ test fn children_prepare_uses_processed_cross_dimension_and_width_based_vertical
     cache::SizingMode::fit_content,
     3,
     fn(
-      child: mut layout::Node,
+      child: &mut layout::Node,
       w: measure::Axis,
       h: measure::Axis,
       mr: Float32,

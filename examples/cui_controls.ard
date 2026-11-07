@@ -12,8 +12,8 @@ struct Form {
   locked: Bool,
   reverse: Bool,
 }
-private fn form(props: mut Props) mut Form {
-  (mut Form{
+private fn form(props: &mut Props) &mut Form {
+  &mut Form{
     focus: 0,
     section: Maybe::new(0),
     priority: Maybe::new<Int>(),
@@ -21,7 +21,7 @@ private fn form(props: mut Props) mut Form {
     highlight: "Overview",
     locked: false,
     reverse: false,
-  })
+  }
 }
 impl cui::Component for Form {
   fn mut render() cui::View {
@@ -38,7 +38,7 @@ impl cui::Component for Form {
       on_highlight: fn(choice: ui::SelectSelection, ctx: cui::Context) {
         self.highlight = choice.option.label
       },
-      on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+      on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
         if mouse.event_type == cooper::MouseEventType::down {
           self.focus = 0
         }
@@ -62,7 +62,7 @@ impl cui::Component for Form {
       on_highlight: fn(choice: ui::SelectSelection, ctx: cui::Context) {
         self.highlight = choice.option.label
       },
-      on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+      on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
         if mouse.event_type == cooper::MouseEventType::down {
           self.focus = 1
         }
@@ -84,7 +84,7 @@ impl cui::Component for Form {
           self.notes = value
         }
       },
-      on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+      on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
         if mouse.event_type == cooper::MouseEventType::down {
           self.focus = 2
         }
@@ -110,7 +110,7 @@ impl cui::Component for Form {
         padding: ui::edges(ui::cells(1)),
         gap: ui::cells(1),
       ),
-      on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+      on_key: fn(key: &mut cooper::KeyEvent, ctx: cui::Context) {
         if key.event_type == cooper::KeyEventType::press {
           if key.matches("tab") {
             self.focus = (self.focus + 1) % 3

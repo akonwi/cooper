@@ -12,7 +12,7 @@ private fn assert_panics(action: fn(), expected: Str) Void!Str {
   }
 }
 
-private fn assert_reference(index: mut virtual_extent::Index, heights: [Int]) Void!Str {
+private fn assert_reference(index: &mut virtual_extent::Index, heights: [Int]) Void!Str {
   try testing::assert(index.count() == heights.size(), "reference count")
   mut sum = 0
   for height, row in heights {
@@ -210,13 +210,13 @@ test fn virtual_extent_overflow_is_checked_before_mutation() Void!Str {
 }
 
 test fn virtual_extent_large_deterministic_reference() Void!Str {
-  let keys = mut List::new<Str>()
-  let heights = mut List::new<Int>()
+  let keys = &mut List::new<Str>()
+  let heights = &mut List::new<Int>()
   for mut row = 0; row < 2053; row =+ 1 {
     keys.push("key-{row}")
     heights.push(4)
   }
-  let index = virtual_extent::new(keys.@, 4)
+  let index = virtual_extent::new(keys.*, 4)
   for mut turn = 0; turn < 7000; turn =+ 1 {
     let row = (turn * 1297 + 53) % 2053
     let remainder = (turn * 43 + row * 7) % 29
@@ -225,19 +225,19 @@ test fn virtual_extent_large_deterministic_reference() Void!Str {
     try testing::assert(index.set_height(row, height) == (previous != height), "changed flag at {turn}")
     heights.set(row, height)
     if turn % 1000 == 0 {
-      try assert_reference(index, heights.@)
+      try assert_reference(index, heights.*)
     }
   }
-  try assert_reference(index, heights.@)
-  let reordered = mut List::new<Str>()
-  let reversed_heights = mut List::new<Int>()
+  try assert_reference(index, heights.*)
+  let reordered = &mut List::new<Str>()
+  let reversed_heights = &mut List::new<Int>()
   for mut row = 0; row < 2053; row =+ 1 {
     let old = 2052 - row
     reordered.push(keys.at(old).expect("reference key"))
     reversed_heights.push(heights.at(old).expect("reference height"))
   }
-  index.replace(reordered.@, 31)
-  try assert_reference(index, reversed_heights.@)
+  index.replace(reordered.*, 31)
+  try assert_reference(index, reversed_heights.*)
   for mut row = 0; row < 2053; row =+ 1 {
     let key = reordered.at(row).expect("reference key")
     try testing::assert(index.key(row) == key and index.position(key).or(-1) == row, "reordered key {row}")

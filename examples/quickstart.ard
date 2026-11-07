@@ -58,7 +58,7 @@ fn main() {
   background.add(panel)
   application.root.add(background)
 
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release {
       if received.matches("q") {
         application.destroy()

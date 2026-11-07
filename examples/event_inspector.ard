@@ -2,7 +2,7 @@ use cooper
 use cooper/ui
 
 struct Marker {
-  view: mut ui::Text,
+  view: &mut ui::Text,
   x: Int,
   y: Int,
   visible: Bool,
@@ -10,9 +10,9 @@ struct Marker {
 
 struct Card {
   name: Str,
-  panel: mut ui::Box,
-  specimen: mut ui::Text,
-  label: mut ui::Text,
+  panel: &mut ui::Box,
+  specimen: &mut ui::Text,
+  label: &mut ui::Text,
   default_label: Str,
   latched: Bool,
   x: Int,
@@ -38,9 +38,9 @@ struct DemoState {
   moved: Bool,
   next_z: Int,
   last_event: Str,
-  cursor: mut Marker,
-  trails: [mut Marker],
-  activations: [mut Marker],
+  cursor: &mut Marker,
+  trails: [&mut Marker],
+  activations: [&mut Marker],
 }
 
 private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
@@ -73,7 +73,7 @@ private fn marker_style(x: Int, y: Int, z: Int, visible: Bool) ui::Style {
   )
 }
 
-private fn make_marker(ctx: mut cooper::Runtime, z: Int) mut Marker {
+private fn make_marker(ctx: &mut cooper::Runtime, z: Int) &mut Marker {
   let view = ui::text(
     ctx,
     content: "",
@@ -82,7 +82,7 @@ private fn make_marker(ctx: mut cooper::Runtime, z: Int) mut Marker {
     wrap: ui::TextWrap::none,
     overflow: ui::TextOverflow::clip,
   )
-  let marker = mut Marker{
+  let marker = &mut Marker{
     view: view,
     x: 0,
     y: 0,
@@ -91,7 +91,7 @@ private fn make_marker(ctx: mut cooper::Runtime, z: Int) mut Marker {
   marker
 }
 
-private fn show_marker(marker: mut Marker, x: Int, y: Int, z: Int, glyph: Str, tint: ui::Color) {
+private fn show_marker(marker: &mut Marker, x: Int, y: Int, z: Int, glyph: Str, tint: ui::Color) {
   marker.x = x
   marker.y = y
   marker.visible = true
@@ -100,13 +100,13 @@ private fn show_marker(marker: mut Marker, x: Int, y: Int, z: Int, glyph: Str, t
   marker.view.set_style(marker_style(x, y, z, true))
 }
 
-private fn hide_marker(marker: mut Marker, z: Int) {
+private fn hide_marker(marker: &mut Marker, z: Int) {
   marker.visible = false
   marker.view.set_content("")
   marker.view.set_style(marker_style(marker.x, marker.y, z, false))
 }
 
-private fn card_style(card: mut Card, dragging: Bool) ui::Style {
+private fn card_style(card: &mut Card, dragging: Bool) ui::Style {
   mut fill = card.fill
   mut border = card.border
   if dragging {
@@ -129,13 +129,13 @@ private fn card_style(card: mut Card, dragging: Bool) ui::Style {
   )
 }
 
-private fn apply_card(card: mut Card, dragging: Bool) {
+private fn apply_card(card: &mut Card, dragging: Bool) {
   card.panel.set_style(card_style(card, dragging))
   card.panel.set_title(card.name)
 }
 
 private fn make_card(
-  ctx: mut cooper::Runtime,
+  ctx: &mut cooper::Runtime,
   name: Str,
   x: Int,
   y: Int,
@@ -146,7 +146,7 @@ private fn make_card(
   border: ui::Color,
   specimen_text: Str,
   default_label: Str,
-) mut Card {
+) &mut Card {
   let specimen = ui::text(
     ctx,
     content: specimen_text,
@@ -165,7 +165,7 @@ private fn make_card(
     overflow: ui::TextOverflow::ellipsis,
     text_style: ui::text_style(foreground: ui::hex("#E2E8F0")),
   )
-  let placeholder = mut Card{
+  let placeholder = &mut Card{
     name: name,
     panel: ui::box(ctx),
     specimen: specimen,
@@ -190,7 +190,7 @@ private fn make_card(
   placeholder
 }
 
-private fn reset_card(card: mut Card) {
+private fn reset_card(card: &mut Card) {
   card.x = card.home_x
   card.y = card.home_y
   card.z = 100
@@ -199,24 +199,24 @@ private fn reset_card(card: mut Card) {
   card.label.set_content(card.default_label)
 }
 
-private fn reset_cards(cards: [mut Card]) {
+private fn reset_cards(cards: [&mut Card]) {
   for card in cards {
     reset_card(card)
   }
 }
 
-private fn update_status(state: mut DemoState, status: mut ui::Text) {
+private fn update_status(state: &mut DemoState, status: &mut ui::Text) {
   status.set_content(
     "{state.last_event} · trails {state.trail_count}/{state.trails.size()} · cells {state.activation_count} · C clear · R reset · Ctrl+C quit",
   )
 }
 
-private fn stage_point(stage: mut ui::Box, received: mut cooper::MouseEvent) ui::Point {
+private fn stage_point(stage: &mut ui::Box, received: &mut cooper::MouseEvent) ui::Point {
   let screen = stage.layout().screen
   ui::Point{x: received.x - screen.x - 1, y: received.y - screen.y - 1}
 }
 
-private fn drop_target(cards: [mut Card], source: Int, stage: mut ui::Box, x: Int, y: Int) Int {
+private fn drop_target(cards: [&mut Card], source: Int, stage: &mut ui::Box, x: Int, y: Int) Int {
   let stage_screen = stage.layout().screen
   let inside_stage = x > stage_screen.x and x < stage_screen.x + stage_screen.width - 1 and y > stage_screen.y and y < stage_screen.y + stage_screen.height - 1
   mut found = -1
@@ -235,9 +235,9 @@ private fn drop_target(cards: [mut Card], source: Int, stage: mut ui::Box, x: In
 }
 
 private fn add_trail(
-  state: mut DemoState,
-  stage: mut ui::Box,
-  received: mut cooper::MouseEvent,
+  state: &mut DemoState,
+  stage: &mut ui::Box,
+  received: &mut cooper::MouseEvent,
   dragging: Bool,
 ) {
   if state.trails.size() > 0 {
@@ -262,9 +262,9 @@ private fn add_trail(
 }
 
 private fn toggle_activation(
-  state: mut DemoState,
-  stage: mut ui::Box,
-  received: mut cooper::MouseEvent,
+  state: &mut DemoState,
+  stage: &mut ui::Box,
+  received: &mut cooper::MouseEvent,
 ) {
   let point = stage_point(stage, received)
   let screen = stage.layout().screen
@@ -306,7 +306,7 @@ private fn toggle_activation(
   }
 }
 
-private fn clear_marks(state: mut DemoState) {
+private fn clear_marks(state: &mut DemoState) {
   hide_marker(state.cursor, 3)
   for marker in state.trails {
     hide_marker(marker, 1)
@@ -384,7 +384,7 @@ fn main() {
     ),
   )
 
-  let prepared_trails = mut List::new<mut Marker>()
+  let prepared_trails = &mut List::new<&mut Marker>()
   mut trail_index = 0
   while trail_index < 32 {
     let marker = make_marker(ctx, 1)
@@ -392,7 +392,7 @@ fn main() {
     stage.add(marker.view)
     trail_index =+ 1
   }
-  let prepared_activations = mut List::new<mut Marker>()
+  let prepared_activations = &mut List::new<&mut Marker>()
   mut activation_index = 0
   while activation_index < 24 {
     let marker = make_marker(ctx, 2)
@@ -403,7 +403,7 @@ fn main() {
   let cursor = make_marker(ctx, 3)
   stage.add(cursor.view)
 
-  let cards: [mut Card] = [
+  let cards: [&mut Card] = [
     make_card(
       ctx,
       "BOX 1",
@@ -501,7 +501,7 @@ fn main() {
   root.add(footer)
   application.root.add(root)
 
-  let state = mut DemoState{
+  let state = &mut DemoState{
     trail_cursor: 0,
     trail_count: 0,
     activation_cursor: 0,
@@ -513,15 +513,15 @@ fn main() {
     next_z: 101,
     last_event: "ready",
     cursor: cursor,
-    trails: prepared_trails.@,
-    activations: prepared_activations.@,
+    trails: prepared_trails.*,
+    activations: prepared_activations.*,
   }
 
   for card, index in cards {
     let target = card
     let target_index = index
     let target_name = card.name
-    let _ = card.panel.on_mouse(fn(received: mut cooper::MouseEvent) {
+    let _ = card.panel.on_mouse(fn(received: &mut cooper::MouseEvent) {
       if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
         for candidate in cards {
           apply_card(candidate, false)
@@ -612,7 +612,7 @@ fn main() {
     })
   }
 
-  let _ = stage.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = stage.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if received.event_type == cooper::MouseEventType::move {
       add_trail(state, stage, received, false)
       update_status(state, status)
@@ -626,7 +626,7 @@ fn main() {
     }
   })
 
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release {
       if received.matches("c") {
         clear_marks(state)

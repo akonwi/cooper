@@ -8,9 +8,9 @@ use cooper/ui/style
 use cooper/ui/text
 use go:math
 
-private fn rejects_style(child: mut box::Box, value: mut style::Style, expected: Str) Void!Str {
+private fn rejects_style(child: &mut box::Box, value: &mut style::Style, expected: Str) Void!Str {
   let outcome = unsafe {
-    child.set_style(value.@)
+    child.set_style(value.*)
   }
   match outcome {
     ok(_) => testing::fail("Expected invalid {expected} to panic at set_style"),
@@ -685,46 +685,46 @@ test fn directly_constructed_nonfinite_and_out_of_range_lengths_are_rejected_by_
     style::Length{kind: style::LengthKind::percent, value: 100.5},
   ]
   for length in invalid {
-    mut value = mut style::new()
+    mut value = &mut style::new()
     value.width = length
     try rejects_style(child, value, "width")
-    value = mut style::new()
+    value = &mut style::new()
     value.height = length
     try rejects_style(child, value, "height")
-    value = mut style::new()
+    value = &mut style::new()
     value.min_width = length
     try rejects_style(child, value, "min_width")
-    value = mut style::new()
+    value = &mut style::new()
     value.min_height = length
     try rejects_style(child, value, "min_height")
-    value = mut style::new()
+    value = &mut style::new()
     value.max_width = length
     try rejects_style(child, value, "max_width")
-    value = mut style::new()
+    value = &mut style::new()
     value.max_height = length
     try rejects_style(child, value, "max_height")
-    value = mut style::new()
+    value = &mut style::new()
     value.flex_basis = length
     try rejects_style(child, value, "flex_basis")
-    value = mut style::new()
+    value = &mut style::new()
     value.top = length
     try rejects_style(child, value, "top")
-    value = mut style::new()
+    value = &mut style::new()
     value.right = length
     try rejects_style(child, value, "right")
-    value = mut style::new()
+    value = &mut style::new()
     value.bottom = length
     try rejects_style(child, value, "bottom")
-    value = mut style::new()
+    value = &mut style::new()
     value.left = length
     try rejects_style(child, value, "left")
-    value = mut style::new()
+    value = &mut style::new()
     value.gap = length
     try rejects_style(child, value, "gap")
-    value = mut style::new()
+    value = &mut style::new()
     value.padding = all_edges(length)
     try rejects_style(child, value, "padding.top")
-    value = mut style::new()
+    value = &mut style::new()
     value.margin = all_edges(length)
     try rejects_style(child, value, "margin.top")
   }
@@ -743,36 +743,36 @@ test fn setters_validate_property_specific_units_scalar_payloads_and_flex_factor
     style::LengthKind::fit_content,
     style::LengthKind::stretch,
   ] {
-    let value = mut style::new()
+    let value = &mut style::new()
     value.width = style::Length{kind: kind, value: 1.0}
     try rejects_style(child, value, "does not accept a numeric value")
   }
   for length in [style::auto(), style::max_content(), style::fit_content(), style::stretch()] {
-    mut value = mut style::new()
+    mut value = &mut style::new()
     value.gap = length
     try rejects_style(child, value, "gap")
-    value = mut style::new()
+    value = &mut style::new()
     value.padding = all_edges(length)
     try rejects_style(child, value, "padding.top")
     if length.kind != style::LengthKind::auto {
-      value = mut style::new()
+      value = &mut style::new()
       value.margin = all_edges(length)
       try rejects_style(child, value, "margin.top")
-      value = mut style::new()
+      value = &mut style::new()
       value.left = length
       try rejects_style(child, value, "left")
     }
   }
-  mut value = mut style::new()
+  mut value = &mut style::new()
   value.min_width = style::auto()
   try rejects_style(child, value, "min_width does not accept auto")
-  value = mut style::new()
+  value = &mut style::new()
   value.min_height = style::auto()
   try rejects_style(child, value, "min_height does not accept auto")
-  value = mut style::new()
+  value = &mut style::new()
   value.max_width = style::auto()
   try rejects_style(child, value, "max_width does not accept auto")
-  value = mut style::new()
+  value = &mut style::new()
   value.max_height = style::auto()
   try rejects_style(child, value, "max_height does not accept auto")
   for factor in [
@@ -781,10 +781,10 @@ test fn setters_validate_property_specific_units_scalar_payloads_and_flex_factor
     Float32::fit(math::Inf(1)),
     Float32::fit(math::Inf(-1)),
   ] {
-    value = mut style::new()
+    value = &mut style::new()
     value.flex_grow = factor
     try rejects_style(child, value, "flex_grow")
-    value = mut style::new()
+    value = &mut style::new()
     value.flex_shrink = factor
     try rejects_style(child, value, "flex_shrink")
   }
@@ -798,12 +798,12 @@ test fn setters_accept_zero_full_percent_and_intrinsic_units_without_narrowing_v
   let child = box::new(ctx)
   parent.add(child)
   for amount in [0.0, 100.0] {
-    let value = mut style::new()
+    let value = &mut style::new()
     value.width = style::Length{kind: style::LengthKind::percent, value: Float32::fit(amount)}
     value.height = style::Length{kind: style::LengthKind::percent, value: Float32::fit(amount)}
     value.flex_grow = 0.0
     value.flex_shrink = 0.0
-    child.set_style(value.@)
+    child.set_style(value.*)
     ctx.compute_layout(parent, 40, 20)
     if amount == 0.0 {
       try rect(child.layout().local, 0, 0, 0, 0)
@@ -822,7 +822,7 @@ test fn setters_accept_zero_full_percent_and_intrinsic_units_without_narrowing_v
     style::fit_content(),
     style::stretch(),
   ] {
-    let value = mut style::new()
+    let value = &mut style::new()
     value.width = length
     value.height = length
     value.min_width = length
@@ -830,7 +830,7 @@ test fn setters_accept_zero_full_percent_and_intrinsic_units_without_narrowing_v
     value.max_width = length
     value.max_height = length
     value.flex_basis = length
-    child.set_style(value.@)
+    child.set_style(value.*)
     try testing::assert(child.style().min_height.kind == length.kind, "Expected accepted constraint kind")
   }
   ctx.destroy_detached()
@@ -1523,10 +1523,10 @@ test fn every_padding_and_margin_edge_is_validated_independently() Void!Str {
   mut index = 0
   for edge in edges {
     let name = names.at(index).expect("edge name")
-    let padding = mut style::new()
+    let padding = &mut style::new()
     padding.padding = edge
     try rejects_style(child, padding, "padding.{name}")
-    let margin = mut style::new()
+    let margin = &mut style::new()
     margin.margin = edge
     try rejects_style(child, margin, "margin.{name}")
     index =+ 1

@@ -2,7 +2,7 @@ use cooper/core/node
 use cooper/ui/style
 use go:math
 
-private fn collect_node(current: mut node::Node, targets: mut [mut node::Node]) {
+private fn collect_node(current: &mut node::Node, targets: &mut [&mut node::Node]) {
   if (not current.is_destroyed()) and current.style().display != style::Display::none {
     if current.is_focusable() {
       targets.push(current)
@@ -13,35 +13,35 @@ private fn collect_node(current: mut node::Node, targets: mut [mut node::Node]) 
   }
 }
 
-fn targets(root: mut node::Renderable) [mut node::Node] {
+fn targets(root: mut node::Renderable) [&mut node::Node] {
   let retained = root.node()
   if retained.parent.is_some() {
     panic("retained focus lookup requires a detached root")
   }
-  let found = mut List::new<mut node::Node>()
+  let found = &mut List::new<&mut node::Node>()
   collect_node(retained, found)
-  found.@
+  found.*
 }
 
 struct AutoFocusCandidate {
-  root: mut node::Node,
-  target: mut node::Node,
+  root: &mut node::Node,
+  target: &mut node::Node,
   target_generation: Int,
-  ancestor: mut node::Node,
+  ancestor: &mut node::Node,
   ancestor_generation: Int,
 }
 
-fn capture_autofocus(root: mut node::Renderable, target: mut node::Node) AutoFocusCandidate? {
+fn capture_autofocus(root: mut node::Renderable, target: &mut node::Node) AutoFocusCandidate? {
   let root_node = root.node()
-  mut current = Maybe::new<mut node::Node>(target)
-  mut ancestor = Maybe::new<mut node::Node>()
+  mut current = Maybe::new<&mut node::Node>(target)
+  mut ancestor = Maybe::new<&mut node::Node>()
   mut found_root = false
   mut scanning = true
   while scanning {
     match current {
       retained => {
         if (not ancestor.is_some()) and retained.is_focusable() {
-          ancestor = Maybe::new<mut node::Node>(retained)
+          ancestor = Maybe::new<&mut node::Node>(retained)
         }
         if retained == root_node {
           found_root = true
@@ -77,7 +77,7 @@ private fn autofocus_is_current(candidate: AutoFocusCandidate) Bool {
   if (not candidate.target.is_mounted()) or candidate.target.attachment_generation() != candidate.target_generation or (not candidate.ancestor.is_mounted()) or candidate.ancestor.attachment_generation() != candidate.ancestor_generation {
     false
   } else {
-    mut current = Maybe::new<mut node::Node>(candidate.target)
+    mut current = Maybe::new<&mut node::Node>(candidate.target)
     mut found_ancestor = false
     mut found_root = false
     mut scanning = true
@@ -125,7 +125,7 @@ private fn saturating_subtract(left: Int, right: Int) Int {
   }
 }
 
-fn reveal(root: mut node::Renderable, target: mut node::Node) Bool {
+fn reveal(root: mut node::Renderable, target: &mut node::Node) Bool {
   let root_node = root.node()
   mut ancestor = target.parent
   mut moved = false
@@ -195,27 +195,27 @@ fn reveal(root: mut node::Renderable, target: mut node::Node) Bool {
 }
 
 struct State {
-  focused_node: (mut node::Node)?,
+  focused_node: (&mut node::Node)?,
   reveal_requested: Bool,
 }
 
-fn new() mut State {
-  (mut State{focused_node: Maybe::new<mut node::Node>(), reveal_requested: false})
+fn new() &mut State {
+  &mut State{focused_node: Maybe::new<&mut node::Node>(), reveal_requested: false}
 }
 
 impl State {
-  fn focused() (mut node::Node)? {
+  fn focused() (&mut node::Node)? {
     self.focused_node
   }
 
-  fn is_focused(target: mut node::Node) Bool {
+  fn is_focused(target: &mut node::Node) Bool {
     match self.focused_node {
       current => current == target,
       _ => false,
     }
   }
 
-  private fn mut change(next: (mut node::Node)?) {
+  private fn mut change(next: (&mut node::Node)?) {
     mut changed = true
     match self.focused_node {
       current => {
@@ -251,10 +251,10 @@ impl State {
   }
 
   fn mut clear() {
-    self.change(Maybe::new<mut node::Node>())
+    self.change(Maybe::new<&mut node::Node>())
   }
 
-  fn mut blur(target: mut node::Node) {
+  fn mut blur(target: &mut node::Node) {
     if self.is_focused(target) {
       self.clear()
     }
@@ -268,7 +268,7 @@ impl State {
     }
   }
 
-  fn mut focus(root: mut node::Renderable, target: mut node::Node) Bool {
+  fn mut focus(root: mut node::Renderable, target: &mut node::Node) Bool {
     mut accepted = false
     for candidate in targets(root) {
       if candidate == target {
@@ -276,7 +276,7 @@ impl State {
       }
     }
     if accepted {
-      self.change(Maybe::new<mut node::Node>(target))
+      self.change(Maybe::new<&mut node::Node>(target))
       mut retained = false
       for candidate in targets(root) {
         if candidate == target {

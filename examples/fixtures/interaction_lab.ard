@@ -152,7 +152,7 @@ fn main() {
       selectable: false,
     ),
   )
-  let source_style = mut absolute_panel(
+  let source_style = &mut absolute_panel(
     0,
     18,
     3,
@@ -161,10 +161,10 @@ fn main() {
     border_color: ui::rgb(120, 150, 210),
   )
   source_style.top = ui::cells(1)
-  let source = ui::box(ctx, title: "SOURCE", styles: source_style.@)
+  let source = ui::box(ctx, title: "SOURCE", styles: source_style.*)
   let source_label = ui::text(ctx, content: " drag me →      ", styles: row(), selectable: false)
   source.add(source_label)
-  let drop_style = mut absolute_panel(
+  let drop_style = &mut absolute_panel(
     42,
     18,
     3,
@@ -173,7 +173,7 @@ fn main() {
     border_color: ui::rgb(120, 120, 135),
   )
   drop_style.top = ui::cells(1)
-  let drop_zone = ui::box(ctx, title: "DROP ZONE", styles: drop_style.@)
+  let drop_zone = ui::box(ctx, title: "DROP ZONE", styles: drop_style.*)
   drop_zone.add(ui::text(ctx, content: " release here", styles: row(), selectable: false))
   drag_lane.add(source)
   drag_lane.add(drop_zone)
@@ -187,14 +187,14 @@ fn main() {
       selectable: false,
     ),
   )
-  let hover_left_style = mut absolute_panel(
+  let hover_left_style = &mut absolute_panel(
     0,
     18,
     3,
     border: ui::Border::single,
     border_color: ui::rgb(95, 95, 110),
   )
-  let hover_right_style = mut absolute_panel(
+  let hover_right_style = &mut absolute_panel(
     38,
     18,
     3,
@@ -203,7 +203,7 @@ fn main() {
   )
   hover_left_style.top = ui::cells(1)
   hover_right_style.top = ui::cells(1)
-  let hover_left = ui::box(ctx, title: "LEFT: hover", styles: hover_left_style.@)
+  let hover_left = ui::box(ctx, title: "LEFT: hover", styles: hover_left_style.*)
   let hover_left_label = ui::text(
     ctx,
     content: " pointer outside",
@@ -211,7 +211,7 @@ fn main() {
     selectable: false,
   )
   hover_left.add(hover_left_label)
-  let hover_right = ui::box(ctx, title: "RIGHT: hover", styles: hover_right_style.@)
+  let hover_right = ui::box(ctx, title: "RIGHT: hover", styles: hover_right_style.*)
   let hover_right_label = ui::text(
     ctx,
     content: " pointer outside",
@@ -239,7 +239,7 @@ fn main() {
       ],
     ),
     styles: ui::style(width: ui::percent(100.0), height: ui::cells(3), flex_shrink: 0.0),
-    selection_style: fn(value: mut ui::TextStyle) {
+    selection_style: fn(value: &mut ui::TextStyle) {
       value.background = Maybe::new(ui::rgb(45, 75, 125))
       value.bold = true
     },
@@ -355,12 +355,12 @@ fn main() {
     focus_card.set_title("FOCUSABLE ANCESTOR — click its nested child")
     focus_status.set_content("focus: none — click nested child")
   })
-  let _ = front.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = front.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if received.event_type == cooper::MouseEventType::down {
       stack_status.set_content("stack: FRONT ✓ won overlap")
     }
   })
-  let _ = back.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = back.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if received.event_type == cooper::MouseEventType::down {
       stack_status.set_content("stack: BACK")
     }
@@ -369,17 +369,17 @@ fn main() {
   mut drag_offset_x = 0
   mut drag_offset_y = 0
   mut source_moved = false
-  let _ = source.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = source.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
       drag_offset_x = received.local_x
       drag_offset_y = received.local_y
       source_moved = false
       source_style.border_color = Maybe::new(ui::rgb(245, 190, 80))
-      source.set_style(source_style.@)
+      source.set_style(source_style.*)
       source.set_title("DRAGGING…")
       source_label.set_content(" drag me →      ")
       drop_style.border_color = Maybe::new(ui::rgb(110, 180, 240))
-      drop_zone.set_style(drop_style.@)
+      drop_zone.set_style(drop_style.*)
       drop_zone.set_title("DROP ZONE")
       drag_status.set_content("drag: SOURCE armed — move toward DROP ZONE")
     } else if received.event_type == cooper::MouseEventType::drag and received.button == cooper::MouseButton::left {
@@ -392,39 +392,39 @@ fn main() {
       source_style.top = ui::cells(
         clamp_position(received.y - lane.y - drag_offset_y, 1, lane.height - 3),
       )
-      source.set_style(source_style.@)
+      source.set_style(source_style.*)
       drag_status.set_content("drag: SOURCE is moving (left-button capture active)")
     } else if received.event_type == cooper::MouseEventType::drag_end and received.button == cooper::MouseButton::left {
       source_style.z_index = 3
       source_style.border_color = Maybe::new(ui::rgb(120, 150, 210))
-      source.set_style(source_style.@)
+      source.set_style(source_style.*)
       source.set_title("SOURCE")
       drop_style.border_color = Maybe::new(ui::rgb(120, 120, 135))
-      drop_zone.set_style(drop_style.@)
+      drop_zone.set_style(drop_style.*)
       drag_status.set_content("drag: capture ended — checking release target")
     } else if received.event_type == cooper::MouseEventType::up and received.button == cooper::MouseButton::left {
       source_style.z_index = 3
-      source.set_style(source_style.@)
+      source.set_style(source_style.*)
       if not source_moved {
         source.set_title("SOURCE")
         source_style.border_color = Maybe::new(ui::rgb(120, 150, 210))
-        source.set_style(source_style.@)
+        source.set_style(source_style.*)
         drop_style.border_color = Maybe::new(ui::rgb(120, 120, 135))
-        drop_zone.set_style(drop_style.@)
+        drop_zone.set_style(drop_style.*)
         drag_status.set_content("drag: click only — move while holding left")
       }
       source_moved = false
     }
   })
-  let _ = drop_zone.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = drop_zone.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if received.event_type == cooper::MouseEventType::drop {
       source_style.z_index = 3
       source_style.border_color = Maybe::new(ui::rgb(80, 220, 140))
-      source.set_style(source_style.@)
+      source.set_style(source_style.*)
       source.set_title("DROPPED ✓")
       source_label.set_content(" dropped here ✓ ")
       drop_style.border_color = Maybe::new(ui::rgb(80, 220, 140))
-      drop_zone.set_style(drop_style.@)
+      drop_zone.set_style(drop_style.*)
       drop_zone.set_title("DROP ZONE ✓")
       drag_status.set_content("drag: dropped in zone ✓")
     } else if received.event_type == cooper::MouseEventType::drag {
@@ -435,31 +435,31 @@ fn main() {
       }
     }
   })
-  let _ = hover_left.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = hover_left.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if received.event_type == cooper::MouseEventType::over {
       hover_left_style.border_color = Maybe::new(ui::rgb(80, 220, 200))
-      hover_left.set_style(hover_left_style.@)
+      hover_left.set_style(hover_left_style.*)
       hover_left.set_title("LEFT ● OVER")
       hover_left_label.set_content(" pointer here ✓")
       hover_status.set_content("hover: LEFT ✓ pointer inside")
     } else if received.event_type == cooper::MouseEventType::out {
       hover_left_style.border_color = Maybe::new(ui::rgb(95, 95, 110))
-      hover_left.set_style(hover_left_style.@)
+      hover_left.set_style(hover_left_style.*)
       hover_left.set_title("LEFT: hover")
       hover_left_label.set_content(" pointer outside")
       hover_status.set_content("hover: LEFT out")
     }
   })
-  let _ = hover_right.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = hover_right.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if received.event_type == cooper::MouseEventType::over {
       hover_right_style.border_color = Maybe::new(ui::rgb(80, 220, 200))
-      hover_right.set_style(hover_right_style.@)
+      hover_right.set_style(hover_right_style.*)
       hover_right.set_title("RIGHT ● OVER")
       hover_right_label.set_content(" pointer here ✓")
       hover_status.set_content("hover: RIGHT ✓ pointer inside")
     } else if received.event_type == cooper::MouseEventType::out {
       hover_right_style.border_color = Maybe::new(ui::rgb(95, 95, 110))
-      hover_right.set_style(hover_right_style.@)
+      hover_right.set_style(hover_right_style.*)
       hover_right.set_title("RIGHT: hover")
       hover_right_label.set_content(" pointer outside")
       hover_status.set_content("hover: RIGHT out")
@@ -487,7 +487,7 @@ fn main() {
   })
 
   mut swapped = false
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release and received.matches("m") and (not editor.is_focused()) {
       if swapped {
         hover_left_style.left = ui::cells(0)
@@ -497,8 +497,8 @@ fn main() {
         hover_right_style.left = ui::cells(0)
       }
       swapped = not swapped
-      hover_left.set_style(hover_left_style.@)
-      hover_right.set_style(hover_right_style.@)
+      hover_left.set_style(hover_left_style.*)
+      hover_right.set_style(hover_right_style.*)
       last_status.set_content("last: m swapped hover tile layout")
       received.prevent_default()
     }

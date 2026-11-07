@@ -12,18 +12,18 @@ struct Model {
   selected: Int,
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Screen {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn screen(props: mut Props) mut Screen {
-  (mut Screen{model: props.model})
+private fn screen(props: &mut Props) &mut Screen {
+  &mut Screen{model: props.model}
 }
 
 impl cui::Component for Screen {
   fn mut render() cui::View {
-    let rows = mut List::new<cui::View>()
+    let rows = &mut List::new<cui::View>()
     mut index = 0
     while index < self.model.count {
       let id = index
@@ -41,7 +41,7 @@ impl cui::Component for Screen {
       index =+ 1
     }
     cui::scroll_box(
-      rows.@,
+      rows.*,
       styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
     )
   }
@@ -59,7 +59,7 @@ fn main() {
   }
   for count in [250, 500, 1000] {
     let app = testing::new(100, 30)
-    let model = mut Model{count: count, selected: 0}
+    let model = &mut Model{count: count, selected: 0}
     let start = time::Now()
     let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model: model}))
     app.flush()

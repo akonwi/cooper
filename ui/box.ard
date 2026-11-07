@@ -88,13 +88,13 @@ private fn same_color(left: color::Color?, right: color::Color?) Bool {
 }
 
 struct Box {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
   title_text: Str,
 }
 
-fn new(ctx: mut runtime::Runtime, styles: layout_style::Style?, title: Str?) mut Box {
+fn new(ctx: &mut runtime::Runtime, styles: layout_style::Style?, title: Str?) &mut Box {
   let retained = ctx.create_node(styles.or(layout_style::new()))
-  let box = mut Box{node_ref: retained, title_text: title.or("")}
+  let box = &mut Box{node_ref: retained, title_text: title.or("")}
   retained.bind(box)
   if retained.style().border != layout_style::Border::none {
     retained.set_border_width(1)
@@ -103,23 +103,23 @@ fn new(ctx: mut runtime::Runtime, styles: layout_style::Style?, title: Str?) mut
 }
 
 impl node::Renderable for Box {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     paint_border(ctx, self.node_ref.style(), self.title_text)
     paint_dividers(ctx, self.node_ref, self.node_ref.style())
   }
 
-  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     event_delivery::Disposition::ignored
   }
 }
 
-fn paint_border(ctx: mut paint::Context, configured_style: layout_style::Style, title: Str?) {
+fn paint_border(ctx: &mut paint::Context, configured_style: layout_style::Style, title: Str?) {
   if configured_style.border != layout_style::Border::none {
     let width = ctx.bounds.width
     let height = ctx.bounds.height
@@ -188,8 +188,8 @@ fn paint_border(ctx: mut paint::Context, configured_style: layout_style::Style, 
 
 // paint_dividers extends structural divider rows across the parent's border.
 private fn paint_dividers(
-  ctx: mut paint::Context,
-  parent: mut node::Node,
+  ctx: &mut paint::Context,
+  parent: &mut node::Node,
   configured_style: layout_style::Style,
 ) {
   if configured_style.border != layout_style::Border::none and ctx.bounds.width >= 2 {
@@ -235,10 +235,10 @@ impl Box {
   }
 
   fn mut set_border(value: Border) {
-    let updated = mut self.node_ref.style()
+    let updated = &mut self.node_ref.style()
     if updated.border != value {
       updated.border = value
-      self.set_style(updated.@)
+      self.set_style(updated.*)
     }
   }
 
@@ -247,10 +247,10 @@ impl Box {
   }
 
   fn mut set_border_color(value: color::Color?) {
-    let updated = mut self.node_ref.style()
+    let updated = &mut self.node_ref.style()
     if not same_color(updated.border_color, value) {
       updated.border_color = value
-      self.set_style(updated.@)
+      self.set_style(updated.*)
     }
   }
 
@@ -300,15 +300,15 @@ impl Box {
     self.node_ref.is_focused()
   }
 
-  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+  fn mut on_key(handler: fn(&mut event::KeyEvent)) fn() {
     self.node_ref.on_key(handler)
   }
 
-  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+  fn mut on_paste(handler: fn(&mut event::PasteEvent)) fn() {
     self.node_ref.on_paste(handler)
   }
 
-  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+  fn mut on_mouse(handler: fn(&mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
 

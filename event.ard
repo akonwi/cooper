@@ -9,19 +9,19 @@ private struct PropagationState {
   click_epoch: Int,
 }
 
-private fn new_propagation_state() mut PropagationState {
-  (mut PropagationState{
+private fn new_propagation_state() &mut PropagationState {
+  &mut PropagationState{
     propagation_stopped: false,
     default_prevented: false,
     deferred_defaults: [],
     timestamp_ms: 0,
     press_serial: 0,
     click_epoch: 0,
-  })
+  }
 }
 
-private fn propagation_state(value: Any) mut PropagationState {
-  unsafe::cast<mut PropagationState>(value).expect("event state must be created by Cooper")
+private fn propagation_state(value: Any) &mut PropagationState {
+  unsafe::cast<&mut PropagationState>(value).expect("event state must be created by Cooper")
 }
 
 enum DispatchError {
@@ -54,14 +54,14 @@ struct KeyEvent {
   internal_state: Any,
 }
 
-fn key(name: Str, text: Str, event_type: KeyEventType, modifiers: Modifiers) mut KeyEvent {
-  (mut KeyEvent{
+fn key(name: Str, text: Str, event_type: KeyEventType, modifiers: Modifiers) &mut KeyEvent {
+  &mut KeyEvent{
     name: name,
     text: text,
     event_type: event_type,
     modifiers: modifiers,
     internal_state: new_propagation_state(),
-  })
+  }
 }
 
 impl KeyEvent {
@@ -91,8 +91,8 @@ struct PasteEvent {
   internal_state: Any,
 }
 
-fn paste(text: Str) mut PasteEvent {
-  (mut PasteEvent{text: text, internal_state: new_propagation_state()})
+fn paste(text: Str) &mut PasteEvent {
+  &mut PasteEvent{text: text, internal_state: new_propagation_state()}
 }
 
 impl PasteEvent {
@@ -160,8 +160,8 @@ fn mouse(
   scroll_x: Int?,
   scroll_y: Int?,
   is_dragging: Bool?,
-) mut MouseEvent {
-  (mut MouseEvent{
+) &mut MouseEvent {
+  &mut MouseEvent{
     event_type: event_type,
     button: button,
     x: x,
@@ -173,14 +173,14 @@ fn mouse(
     scroll_y: scroll_y.or(0),
     is_dragging: is_dragging.or(false),
     internal_state: new_propagation_state(),
-  })
+  }
 }
 
-fn internal_defer_default(received: mut MouseEvent, action: fn()) {
+fn internal_defer_default(received: &mut MouseEvent, action: fn()) {
   propagation_state(received.internal_state).deferred_defaults.push(action)
 }
 
-fn internal_run_deferred_defaults(received: mut MouseEvent) {
+fn internal_run_deferred_defaults(received: &mut MouseEvent) {
   let state = propagation_state(received.internal_state)
   let actions = state.deferred_defaults
   state.deferred_defaults = []
@@ -191,31 +191,31 @@ fn internal_run_deferred_defaults(received: mut MouseEvent) {
   }
 }
 
-fn internal_discard_deferred_defaults(received: mut MouseEvent) {
+fn internal_discard_deferred_defaults(received: &mut MouseEvent) {
   propagation_state(received.internal_state).deferred_defaults = []
 }
 
-fn internal_set_timestamp(received: mut MouseEvent, timestamp_ms: Int64) {
+fn internal_set_timestamp(received: &mut MouseEvent, timestamp_ms: Int64) {
   propagation_state(received.internal_state).timestamp_ms = timestamp_ms
 }
 
-fn internal_timestamp(received: mut MouseEvent) Int64 {
+fn internal_timestamp(received: &mut MouseEvent) Int64 {
   propagation_state(received.internal_state).timestamp_ms
 }
 
-fn internal_set_press_serial(received: mut MouseEvent, serial: Int) {
+fn internal_set_press_serial(received: &mut MouseEvent, serial: Int) {
   propagation_state(received.internal_state).press_serial = serial
 }
 
-fn internal_press_serial(received: mut MouseEvent) Int {
+fn internal_press_serial(received: &mut MouseEvent) Int {
   propagation_state(received.internal_state).press_serial
 }
 
-fn internal_set_click_epoch(received: mut MouseEvent, epoch: Int) {
+fn internal_set_click_epoch(received: &mut MouseEvent, epoch: Int) {
   propagation_state(received.internal_state).click_epoch = epoch
 }
 
-fn internal_click_epoch(received: mut MouseEvent) Int {
+fn internal_click_epoch(received: &mut MouseEvent) Int {
   propagation_state(received.internal_state).click_epoch
 }
 

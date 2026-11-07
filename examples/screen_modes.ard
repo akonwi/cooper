@@ -31,7 +31,7 @@ fn main() {
   }
   let app = cooper::app(screen: configuration).expect("create screen example")
   defer app.destroy()
-  let output = mut Output{count: 0}
+  let output = &mut Output{count: 0}
   let status = ui::text(
     app.context,
     content: "SCREEN READY",
@@ -53,7 +53,7 @@ fn main() {
   if app.context.append_output("before start") {
     panic("output must be rejected before start")
   }
-  let _ = app.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = app.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type == cooper::KeyEventType::press {
       if received.matches("escape") {
         let _ = app.context.append_output("final output")

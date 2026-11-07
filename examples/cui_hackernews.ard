@@ -10,7 +10,7 @@ private fn line() ui::Style {
   ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
-private fn reading_selection(value: mut ui::TextStyle) {
+private fn reading_selection(value: &mut ui::TextStyle) {
   value.foreground = Maybe::new(ui::indexed(15))
   value.background = Maybe::new(ui::indexed(24))
   value.reverse = false
@@ -22,7 +22,7 @@ private fn fill() ui::Style {
 
 struct PageProps {
   client: api::Client,
-  cache: mut [Str: api::Item],
+  cache: &mut [Str: api::Item],
   feed: Str,
   story: Int,
   active: Bool,
@@ -37,14 +37,14 @@ struct CommentRow {
 // Requests run off-thread; queue, cache, and selection are UI-thread-only.
 // The component owns scheduling, while Context owns callback lifetime.
 struct Page {
-  props: mut PageProps,
+  props: &mut PageProps,
   roots: [Int],
   queue: [Int],
-  seen: mut [Str: Bool],
-  items: mut [Str: api::Item],
-  errors: mut [Str: Str],
-  collapsed: mut [Str: Bool],
-  pages: mut [Str: Int],
+  seen: &mut [Str: Bool],
+  items: &mut [Str: api::Item],
+  errors: &mut [Str: Str],
+  collapsed: &mut [Str: Bool],
+  pages: &mut [Str: Int],
   next: Int,
   running: Int,
   loaded: Int,
@@ -52,20 +52,20 @@ struct Page {
   visible: [Int],
   loading_feed: Bool,
   error: Str,
-  scroll: mut cui::VirtualListRef,
+  scroll: &mut cui::VirtualListRef,
   context: cui::Context?,
 }
 
-private fn page(props: mut PageProps) mut Page {
-  (mut Page{
+private fn page(props: &mut PageProps) &mut Page {
+  &mut Page{
     props: props,
     roots: [],
     queue: [],
-    seen: mut Map::new<Bool>(),
-    items: mut Map::new<api::Item>(),
-    errors: mut Map::new<Str>(),
-    collapsed: mut Map::new<Bool>(),
-    pages: mut Map::new<Int>(),
+    seen: &mut Map::new<Bool>(),
+    items: &mut Map::new<api::Item>(),
+    errors: &mut Map::new<Str>(),
+    collapsed: &mut Map::new<Bool>(),
+    pages: &mut Map::new<Int>(),
     next: 0,
     running: 0,
     loaded: 0,
@@ -75,7 +75,7 @@ private fn page(props: mut PageProps) mut Page {
     error: "",
     scroll: cui::virtual_list_ref(),
     context: Maybe::new<cui::Context>(),
-  })
+  }
 }
 
 impl Page {
@@ -173,7 +173,7 @@ impl Page {
       if not self.error.is_empty() {
         self.start(ctx)
       } else {
-        let pending = mut List::new<Int>()
+        let pending = &mut List::new<Int>()
         for id in self.queue {
           if self.errors.get(id.to_str()).is_some() {
             pending.push(id)
@@ -185,8 +185,8 @@ impl Page {
           }
         }
         self.next = 0
-        self.queue = pending.@
-        self.errors = mut Map::new<Str>()
+        self.queue = pending.*
+        self.errors = &mut Map::new<Str>()
         self.pump(ctx)
       }
     }
@@ -243,7 +243,7 @@ impl Page {
   }
 
   // Flatten loaded data only; offscreen rows do not construct any views.
-  fn mut collect(id: Int, depth: Int, rows: mut [CommentRow], visited: mut [Str: Bool]) {
+  fn mut collect(id: Int, depth: Int, rows: &mut [CommentRow], visited: &mut [Str: Bool]) {
     if not visited.get(id.to_str()).or(false) {
       visited.set(id.to_str(), true)
       match self.items.get(id.to_str()) {
@@ -302,10 +302,10 @@ impl Page {
         if indent > 20 {
           indent = 20
         }
-        let padding = mut ui::edges()
+        let padding = &mut ui::edges()
         padding.left = ui::cells(indent + 1)
         padding.right = ui::cells(1)
-        let body = mut List::new<cui::View>()
+        let body = &mut List::new<cui::View>()
         body.push(
           cui::text(
             label,
@@ -343,7 +343,7 @@ impl Page {
           background = ui::indexed(236)
         }
         cui::box(
-          body.@,
+          body.*,
           key: id.to_str(),
           focused: self.props.active and id == self.selected,
           styles: ui::style(
@@ -352,7 +352,7 @@ impl Page {
             padding: padding.@,
             background: background,
           ),
-          on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+          on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
             if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
               self.activate(id, ctx)
               mouse.prevent_default()
@@ -375,9 +375,9 @@ impl cui::Lifecycle for Page {
 
 impl cui::Component for Page {
   fn mut render() cui::View {
-    let rows = mut List::new<CommentRow>()
+    let rows = &mut List::new<CommentRow>()
     self.visible = []
-    let visited = mut Map::new<Bool>()
+    let visited = &mut Map::new<Bool>()
     for id in self.roots {
       self.collect(id, 0, rows, visited)
     }
@@ -459,7 +459,7 @@ impl cui::Component for Page {
     if self.loading_feed == false and self.roots.size() == 0 and self.error.is_empty() {
       status = "No stories."
     }
-    let styles = mut fill()
+    let styles = &mut fill()
     if not self.props.active {
       styles.display = ui::Display::none
     }
@@ -467,7 +467,7 @@ impl cui::Component for Page {
       [
         cui::text(status, styles: line()),
         cui::virtual_list(
-          rows.@,
+          rows.*,
           item_key: fn(row: CommentRow) Str {
             row.id.to_str()
           },
@@ -478,7 +478,7 @@ impl cui::Component for Page {
           styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
         ),
       ],
-      styles: styles.@,
+      styles: styles.*,
       focused: self.props.active and self.visible.size() == 0,
       commands: [move, activate, scroll, more, retry],
       bindings: bindings,
@@ -492,19 +492,19 @@ struct AppProps {
 }
 struct News {
   client: api::Client,
-  cache: mut [Str: api::Item],
+  cache: &mut [Str: api::Item],
   feed: Str,
   story: Int,
   context: cui::Context?,
 }
-private fn news(props: mut AppProps) mut News {
-  (mut News{
+private fn news(props: &mut AppProps) &mut News {
+  &mut News{
     client: props.client,
-    cache: mut Map::new<api::Item>(),
+    cache: &mut Map::new<api::Item>(),
     feed: "top",
     story: 0,
     context: Maybe::new<cui::Context>(),
-  })
+  }
 }
 
 impl cui::Lifecycle for News {
@@ -563,7 +563,7 @@ impl cui::Component for News {
         self.story != 0
       },
     )
-    let bindings = mut List::new<keymap::Binding>()
+    let bindings = &mut List::new<keymap::Binding>()
     bindings.push(keymap::binding(keymap::key("escape"), back.with()))
     mut feeds = ""
     for feed, index in ["top", "new", "ask", "show"] {
@@ -576,7 +576,7 @@ impl cui::Component for News {
       ctx => { shortcuts = (ctx.shortcuts)() },
       _ => (),
     }
-    let pages = mut List::new<cui::View>()
+    let pages = &mut List::new<cui::View>()
     pages.push(
       cui::child(
         page,
@@ -617,14 +617,14 @@ impl cui::Component for News {
           text_style: ui::text_style(foreground: ui::indexed(208), bold: true),
         ),
         cui::box(
-          pages.@,
+          pages.*,
           styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
         ),
         cui::text(shortcut_help(shortcuts), styles: line()),
       ],
       styles: fill(),
       commands: [select_feed, back],
-      bindings: bindings.@,
+      bindings: bindings.*,
       binding_scope: keymap::ScopeMode::focus_within,
     )
   }

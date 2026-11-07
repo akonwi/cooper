@@ -136,8 +136,8 @@ struct State {
   measurements: [Measurement],
 }
 
-fn new_state() mut State {
-  (mut State{
+fn new_state() &mut State {
+  &mut State{
     generation: 0,
     config_version: 0,
     last_owner_direction: Direction::inherit,
@@ -145,7 +145,7 @@ fn new_state() mut State {
     computed_flex_basis_generation: 0,
     cached_layout: empty(),
     measurements: [],
-  })
+  }
 }
 
 fn same_spec(a: Measurement, b: Measurement) Bool {
@@ -227,12 +227,12 @@ impl State {
     if perform_layout {
       self.cached_layout = result
     } else {
-      let entries = mut List::new<Measurement>()
+      let entries = &mut List::new<Measurement>()
       for entry in self.measurements {
         entries.push(entry)
       }
       entries.push(result)
-      self.measurements = entries.@
+      self.measurements = entries.*
     }
   }
 

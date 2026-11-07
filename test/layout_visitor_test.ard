@@ -21,7 +21,7 @@ fn zero() Float32 {
   Float32::from(0.0)
 }
 
-fn fixed(width: Int, height: Int) mut layout::Node {
+fn fixed(width: Int, height: Int) &mut layout::Node {
   let node = layout::new()
   node.apply(style::new(width: style::cells(width), height: style::cells(height)), 0)
   node
@@ -148,11 +148,11 @@ test fn asymmetric_grow_and_shrink_bounds_reach_nested_children() Void!Str {
 
 test fn nested_cache_reuses_and_dirty_invalidation_remeasures() Void!Str {
   mut calls = 0
-  let content = mut layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
+  let content = &mut layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
   let leaf = layout::new()
   leaf.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
     calls =+ 1
-    content.@
+    content.*
   })
   let nested = layout::new()
   nested.insert(leaf, 0)
@@ -299,12 +299,12 @@ test fn cross_stretch_respects_wrapped_overflow_and_auto_margins() Void!Str {
     mut index = 0
     while index < count {
       let child = layout::new()
-      let margin = mut style::edges()
+      let margin = &mut style::edges()
       if scenario == 1 {
         margin.top = style::auto()
         margin.bottom = style::cells(1)
       }
-      child.apply(style::new(width: style::cells(6), margin: margin.@), 0)
+      child.apply(style::new(width: style::cells(6), margin: margin.*), 0)
       child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
         layout::MeasureSize{width: Float32::from(6.0), height: Float32::from(2.0)}
       })
@@ -352,12 +352,12 @@ test fn line_stretch_revisits_children_after_cross_extent_is_known() Void!Str {
     })
     root.insert(child, 0)
     root.insert(fixed(4, 5), 1)
-    let height = mut axis(20.0, cache::SizingMode::fit_content)
+    let height = &mut axis(20.0, cache::SizingMode::fit_content)
     height.minimum = Float32::fit(minimum)
     visitor::visit(
       root,
       axis(10.0, cache::SizingMode::stretch_fit),
-      height.@,
+      height.*,
       zero(),
       zero(),
       1,

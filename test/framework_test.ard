@@ -34,7 +34,7 @@ private fn fixed(width: Int, height: Int) style::Style {
   style::new(width: style::cells(width), height: style::cells(height), flex_shrink: 0.0)
 }
 
-private fn shifted_wheel_down() mut framework_event::MouseEvent {
+private fn shifted_wheel_down() &mut framework_event::MouseEvent {
   framework_event::mouse(
     framework_event::MouseEventType::scroll,
     framework_event::MouseButton::none,
@@ -50,7 +50,7 @@ private fn shifted_wheel_down() mut framework_event::MouseEvent {
   )
 }
 
-private fn wheel_down() mut framework_event::MouseEvent {
+private fn wheel_down() &mut framework_event::MouseEvent {
   framework_event::mouse(
     framework_event::MouseEventType::scroll,
     framework_event::MouseButton::none,
@@ -67,47 +67,47 @@ private fn wheel_down() mut framework_event::MouseEvent {
 }
 
 private struct EventProbe {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
   deliveries: Int,
   focus_on_event: Bool,
   stop_event: Bool,
-  destroy_on_event: (mut node::Node)?,
-  reparent_on_event: (mut node::Node)?,
-  reparent_destination: (mut node::Node)?,
+  destroy_on_event: (&mut node::Node)?,
+  reparent_on_event: (&mut node::Node)?,
+  reparent_destination: (&mut node::Node)?,
   last_local_x: Int?,
   mounts: Int,
   mounted_dispatch: (fn(fn()) Void!framework_event::DispatchError)?,
   cancellation: Receiver<Void>?,
-  add_on_first_mount: (mut node::Node)?,
+  add_on_first_mount: (&mut node::Node)?,
 }
 
 private fn event_probe(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   initial_style: style::Style,
   focus_on_target: Bool?,
   stop_event: Bool?,
-) mut EventProbe {
+) &mut EventProbe {
   let retained = ctx.create_node(initial_style)
-  let probe = mut EventProbe{
+  let probe = &mut EventProbe{
     node_ref: retained,
     deliveries: 0,
     focus_on_event: focus_on_target.or(false),
     stop_event: stop_event.or(false),
-    destroy_on_event: Maybe::new<mut node::Node>(),
-    reparent_on_event: Maybe::new<mut node::Node>(),
-    reparent_destination: Maybe::new<mut node::Node>(),
+    destroy_on_event: Maybe::new<&mut node::Node>(),
+    reparent_on_event: Maybe::new<&mut node::Node>(),
+    reparent_destination: Maybe::new<&mut node::Node>(),
     last_local_x: Maybe::new<Int>(),
     mounts: 0,
     mounted_dispatch: Maybe::new<fn(fn()) Void!framework_event::DispatchError>(),
     cancellation: Maybe::new<Receiver<Void>>(),
-    add_on_first_mount: Maybe::new<mut node::Node>(),
+    add_on_first_mount: Maybe::new<&mut node::Node>(),
   }
   retained.bind(probe)
   probe
 }
 
 impl node::Renderable for EventProbe {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
@@ -123,9 +123,9 @@ impl node::Renderable for EventProbe {
     }
   }
 
-  fn paint(ctx: mut paint::Context) {}
+  fn paint(ctx: &mut paint::Context) {}
 
-  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     self.deliveries =+ 1
     self.last_local_x = ctx.local_x
     match self.destroy_on_event {
@@ -305,13 +305,13 @@ test fn retained_paint_buffer_initializes_exactly_its_cell_count() Void!Str {
 
 test fn retained_tree_paints_directly_into_one_clipped_buffer() Void!Str {
   let ctx = runtime::new_detached()
-  let root_style = mut style::new(
+  let root_style = &mut style::new(
     width: style::cells(3),
     height: style::cells(1),
     align_items: style::Align::start,
   )
   root_style.overflow = style::Overflow::hidden
-  let root = box::new(ctx, styles: root_style.@)
+  let root = box::new(ctx, styles: root_style.*)
   let label = text::new(ctx, content: "hello", styles: style::new(flex_shrink: 0.0))
   root.add(label)
   ctx.compute_layout(root, 3, 1)
@@ -347,9 +347,9 @@ test fn retained_node_overflow_clips_its_own_paint() Void!Str {
       align_items: style::Align::start,
     ),
   )
-  let label_style = mut style::new(width: style::cells(3), flex_shrink: 0.0)
+  let label_style = &mut style::new(width: style::cells(3), flex_shrink: 0.0)
   label_style.overflow = style::Overflow::hidden
-  let label = text::new(ctx, content: "hello", styles: label_style.@)
+  let label = text::new(ctx, content: "hello", styles: label_style.*)
   root.add(label)
   ctx.compute_layout(root, 5, 1)
   let buffer = paint::new_buffer(5, 1)
@@ -369,9 +369,9 @@ test fn retained_node_overflow_clips_its_own_paint() Void!Str {
 
 test fn retained_display_none_skips_paint() Void!Str {
   let ctx = runtime::new_detached()
-  let hidden_style = mut style::new(width: style::cells(1), height: style::cells(1))
+  let hidden_style = &mut style::new(width: style::cells(1), height: style::cells(1))
   hidden_style.display = style::Display::none
-  let label = text::new(ctx, content: "x", styles: hidden_style.@)
+  let label = text::new(ctx, content: "x", styles: hidden_style.*)
   ctx.compute_layout(label, 1, 1)
   let buffer = paint::new_buffer(1, 1)
   label.node().paint(buffer)
@@ -441,13 +441,13 @@ test fn retained_text_uses_one_measurer_for_layout_and_paint() Void!Str {
 
 test fn retained_style_replacement_clears_spacing() Void!Str {
   let ctx = runtime::new_detached()
-  let padded = mut style::new(
+  let padded = &mut style::new(
     width: style::cells(10),
     height: style::cells(3),
     align_items: style::Align::start,
   )
   padded.padding = style::edges(style::cells(2))
-  let root = box::new(ctx, styles: padded.@)
+  let root = box::new(ctx, styles: padded.*)
   let child = box::new(ctx, styles: fixed(1, 1))
   root.add(child)
   ctx.compute_layout(root, 10, 3)
@@ -471,7 +471,7 @@ test fn retained_paint_clears_partially_clipped_wide_spans() Void!Str {
     width: 3,
     height: 1,
   }
-  let full = mut paint::Context{
+  let full = &mut paint::Context{
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
@@ -486,7 +486,7 @@ test fn retained_paint_clears_partially_clipped_wide_spans() Void!Str {
     width: 1,
     height: 1,
   }
-  let clipped = mut paint::Context{
+  let clipped = &mut paint::Context{
     buffer: buffer,
     bounds: bounds,
     clip: narrow,
@@ -513,7 +513,7 @@ test fn retained_paint_clears_overwritten_wide_spans() Void!Str {
     width: 3,
     height: 1,
   }
-  let ctx = mut paint::Context{
+  let ctx = &mut paint::Context{
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
@@ -594,9 +594,9 @@ test fn retained_hit_testing_obeys_ancestor_clipping() Void!Str {
       align_items: style::Align::start,
     ),
   )
-  let clipped_style = mut fixed(2, 1)
+  let clipped_style = &mut fixed(2, 1)
   clipped_style.overflow = style::Overflow::hidden
-  let clipped = box::new(ctx, styles: clipped_style.@)
+  let clipped = box::new(ctx, styles: clipped_style.*)
   let child = box::new(ctx, styles: fixed(4, 1))
   clipped.add(child)
   root.add(clipped)
@@ -615,10 +615,10 @@ test fn retained_hit_testing_obeys_ancestor_clipping() Void!Str {
 test fn retained_hit_testing_visits_later_overlapping_children_first() Void!Str {
   let ctx = runtime::new_detached()
   let root = box::new(ctx, styles: fixed(2, 1))
-  let overlay_style = mut fixed(2, 1)
+  let overlay_style = &mut fixed(2, 1)
   overlay_style.position = style::Position::absolute
-  let first = box::new(ctx, styles: overlay_style.@)
-  let second = box::new(ctx, styles: overlay_style.@)
+  let first = box::new(ctx, styles: overlay_style.*)
+  let second = box::new(ctx, styles: overlay_style.*)
   root.add(first)
   root.add(second)
   ctx.compute_layout(root, 2, 1)
@@ -633,22 +633,22 @@ test fn retained_hit_testing_visits_later_overlapping_children_first() Void!Str 
 test fn retained_z_index_controls_stable_paint_and_hit_order() Void!Str {
   let ctx = runtime::new_detached()
   let root = box::new(ctx, styles: fixed(2, 1))
-  let front_style = mut style::new(
+  let front_style = &mut style::new(
     position: style::Position::absolute,
     width: style::cells(2),
     height: style::cells(1),
     background: color::rgb(200, 0, 0),
     z_index: 2,
   )
-  let back_style = mut style::new(
+  let back_style = &mut style::new(
     position: style::Position::absolute,
     width: style::cells(2),
     height: style::cells(1),
     background: color::rgb(0, 0, 200),
     z_index: 1,
   )
-  let front = box::new(ctx, styles: front_style.@)
-  let back = box::new(ctx, styles: back_style.@)
+  let front = box::new(ctx, styles: front_style.*)
+  let back = box::new(ctx, styles: back_style.*)
   root.add(front)
   root.add(back)
   ctx.compute_layout(root, 2, 1)
@@ -667,7 +667,7 @@ test fn retained_z_index_controls_stable_paint_and_hit_order() Void!Str {
   try testing::assert(initial_background.red == Uint8::from(200), "Expected higher z-index paint")
 
   back_style.z_index = 3
-  back.set_style(back_style.@)
+  back.set_style(back_style.*)
   let raised_hit = hit::test(root, 0, 0).expect("raised z-index hit")
   try testing::assert(
     raised_hit.target == back.node(),
@@ -758,7 +758,7 @@ test fn mount_callback_can_attach_child_without_double_mounting() Void!Str {
   let ctx = runtime::new_detached()
   let root = event_probe(ctx, fixed(2, 1))
   let child = event_probe(ctx, fixed(2, 1))
-  root.add_on_first_mount = Maybe::new<mut node::Node>(child.node())
+  root.add_on_first_mount = Maybe::new<&mut node::Node>(child.node())
 
   root.node().mount_root(immediate_dispatch)
 
@@ -805,7 +805,7 @@ test fn retained_attachment_scopes_cancel_and_refresh_on_reattach() Void!Str {
   let root = event_probe(ctx, fixed(2, 1))
   let child = event_probe(ctx, fixed(2, 1))
   root.add(child)
-  let queue = mut dispatch_runtime::new_dispatch_queue()
+  let queue = &mut dispatch_runtime::new_dispatch_queue()
   let base = fn(action: fn()) Void!framework_event::DispatchError {
     if queue.post(action) {
       Result::ok(())
@@ -863,7 +863,7 @@ test fn retained_router_delivers_mouse_target_then_bubbles_by_node_reference() V
   ctx.compute_layout(root, 4, 1)
   root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
-  let received = mut framework_event::mouse(
+  let received = framework_event::mouse(
     framework_event::MouseEventType::down,
     framework_event::MouseButton::left,
     1,
@@ -893,11 +893,11 @@ test fn retained_router_stops_after_target_destruction() Void!Str {
   let root = event_probe(ctx, fixed(2, 1))
   let child = event_probe(ctx, fixed(2, 1))
   root.add(child)
-  child.destroy_on_event = Maybe::new<mut node::Node>(child.node())
+  child.destroy_on_event = Maybe::new<&mut node::Node>(child.node())
   ctx.compute_layout(root, 2, 1)
   root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
-  let received = mut framework_event::mouse(
+  let received = framework_event::mouse(
     framework_event::MouseEventType::down,
     framework_event::MouseButton::left,
     0,
@@ -930,12 +930,12 @@ test fn retained_router_stops_when_bubble_reparents_target_attachment() Void!Str
   former_parent.add(child)
   root.add(former_parent)
   root.add(new_parent)
-  former_parent.reparent_on_event = Maybe::new<mut node::Node>(child.node())
-  former_parent.reparent_destination = Maybe::new<mut node::Node>(new_parent.node())
+  former_parent.reparent_on_event = Maybe::new<&mut node::Node>(child.node())
+  former_parent.reparent_destination = Maybe::new<&mut node::Node>(new_parent.node())
   ctx.compute_layout(root, 4, 1)
   root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
-  let received = mut framework_event::mouse(
+  let received = framework_event::mouse(
     framework_event::MouseEventType::down,
     framework_event::MouseButton::left,
     0,
@@ -970,7 +970,7 @@ test fn retained_router_honors_bubble_propagation_stop() Void!Str {
   ctx.compute_layout(root, 2, 1)
   root.node().mount_root(immediate_dispatch)
   let focused = focus::new()
-  let received = mut framework_event::mouse(
+  let received = framework_event::mouse(
     framework_event::MouseEventType::down,
     framework_event::MouseButton::left,
     0,
@@ -1084,7 +1084,7 @@ test fn retained_later_wide_paint_invalidates_cursor_on_continuation() Void!Str 
     width: 2,
     height: 1,
   }
-  let ctx = mut paint::Context{
+  let ctx = &mut paint::Context{
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
@@ -1108,7 +1108,7 @@ test fn retained_scroll_translates_clips_paint_and_hit_geometry() Void!Str {
       align_items: style::Align::start,
     ),
   )
-  let labels = mut List::new<mut text::Text>()
+  let labels = &mut List::new<&mut text::Text>()
   for value in ["0", "1", "2", "3", "4"] {
     let label = text::new(ctx, content: value)
     labels.push(label)
@@ -1286,7 +1286,7 @@ test fn retained_focus_reveal_scrolls_horizontal_descendant_into_view() Void!Str
 test fn retained_focus_reveal_scrolls_direct_descendant_identity() Void!Str {
   let ctx = runtime::new_detached()
   let content = box::new(ctx, styles: fixed(2, 5))
-  let rows = mut List::new<mut box::Box>()
+  let rows = &mut List::new<&mut box::Box>()
   for _index in 0..5 {
     let row = box::new(ctx, styles: fixed(2, 1))
     row.set_focusable(true)
@@ -1315,7 +1315,7 @@ test fn retained_focus_reveal_scrolls_direct_descendant_identity() Void!Str {
 test fn retained_nested_scroll_reveal_settles_inside_out() Void!Str {
   let ctx = runtime::new_detached()
   let inner_content = box::new(ctx, styles: fixed(2, 5))
-  let rows = mut List::new<mut box::Box>()
+  let rows = &mut List::new<&mut box::Box>()
   for _index in 0..5 {
     let row = box::new(ctx, styles: fixed(2, 1))
     rows.push(row)
@@ -1405,7 +1405,7 @@ test fn hidden_subtree_reflows_gap_and_restores_changed_measurement_and_hits() V
   try layout_rect(following.layout().local, 0, 0, 6, 1)
   try testing::assert(not group.is_focused(), "Hidden subtree must lose focus")
   mut following_pressed = false
-  let _ = following.on_mouse(fn(received: mut framework_event::MouseEvent) {
+  let _ = following.on_mouse(fn(received: &mut framework_event::MouseEvent) {
     if received.event_type == framework_event::MouseEventType::down {
       following_pressed = true
     }

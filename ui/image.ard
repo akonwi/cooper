@@ -35,8 +35,8 @@ fn data(width: Int, height: Int, pixels: [color::Color]) ImageData {
   if (not valid_size(width, height)) or pixels.size() != width * height {
     panic("image data requires 1-4096 pixel dimensions and exactly width * height pixels")
   }
-  let snapshot = mut List::new<color::Color>()
-  let rgba = mut List::new<Byte>()
+  let snapshot = &mut List::new<color::Color>()
+  let rgba = &mut List::new<Byte>()
   for value in pixels {
     require_rgb(value)
     snapshot.push(value)
@@ -48,22 +48,22 @@ fn data(width: Int, height: Int, pixels: [color::Color]) ImageData {
   ImageData{
     width: width,
     height: height,
-    pixels: snapshot.@,
-    rgba: rgba.@,
+    pixels: snapshot.*,
+    rgba: rgba.*,
   }
 }
 
 private fn copy_data(source: ImageData) ImageData {
-  let copied = mut data(source.width, source.height, source.pixels)
+  let copied = &mut data(source.width, source.height, source.pixels)
   if source.rgba.size() != source.width * source.height * 4 {
     panic("image source requires width * height * 4 RGBA bytes")
   }
-  let bytes = mut List::new<Byte>()
+  let bytes = &mut List::new<Byte>()
   for value in source.rgba {
     bytes.push(value)
   }
-  copied.rgba = bytes.@
-  copied.@
+  copied.rgba = bytes.*
+  copied.*
 }
 
 // Snapshot straight-alpha RGBA8 bytes in row-major order, as produced by an
@@ -75,8 +75,8 @@ fn rgba(width: Int, height: Int, bytes: [Byte], matte: color::Color?) ImageData 
   }
   let background = matte.or(color::rgb(0, 0, 0))
   require_rgb(background)
-  let pixels = mut List::new<color::Color>()
-  let copied = mut List::new<Byte>()
+  let pixels = &mut List::new<color::Color>()
+  let copied = &mut List::new<Byte>()
   mut index = 0
   while index < bytes.size() {
     let red = bytes.at(index).expect("red")
@@ -99,8 +99,8 @@ fn rgba(width: Int, height: Int, bytes: [Byte], matte: color::Color?) ImageData 
   ImageData{
     width: width,
     height: height,
-    pixels: pixels.@,
-    rgba: copied.@,
+    pixels: pixels.*,
+    rgba: copied.*,
   }
 }
 
@@ -114,36 +114,36 @@ fn decode(encoded: [Byte], matte: color::Color?) ImageData!Str {
   } else {
     // Ard cannot represent image.Decode's three return values. Calling each
     // decoder directly also registers only the formats this API supports.
-    match png::DecodeConfig(bytes::NewReader(mut encoded)) {
+    match png::DecodeConfig(bytes::NewReader(encoded)) {
       ok(config) => {
         if not valid_size(config.Width, config.Height) {
           Result::err("image dimensions must be between 1 and 4096 pixels")
         } else {
-          match png::Decode(bytes::NewReader(mut encoded)) {
+          match png::Decode(bytes::NewReader(encoded)) {
             ok(value) => Result::ok(snapshot(value, background)),
             err(_) => Result::err("invalid PNG image"),
           }
         }
       },
       err(_) => {
-        match jpeg::DecodeConfig(bytes::NewReader(mut encoded)) {
+        match jpeg::DecodeConfig(bytes::NewReader(encoded)) {
           ok(config) => {
             if not valid_size(config.Width, config.Height) {
               Result::err("image dimensions must be between 1 and 4096 pixels")
             } else {
-              match jpeg::Decode(bytes::NewReader(mut encoded)) {
+              match jpeg::Decode(bytes::NewReader(encoded)) {
                 ok(value) => Result::ok(snapshot(value, background)),
                 err(_) => Result::err("invalid JPEG image"),
               }
             }
           },
           err(_) => {
-            match webp::DecodeConfig(bytes::NewReader(mut encoded)) {
+            match webp::DecodeConfig(bytes::NewReader(encoded)) {
               ok(config) => {
                 if not valid_size(config.Width, config.Height) {
                   Result::err("image dimensions must be between 1 and 4096 pixels")
                 } else {
-                  match webp::Decode(bytes::NewReader(mut encoded)) {
+                  match webp::Decode(bytes::NewReader(encoded)) {
                     ok(value) => Result::ok(snapshot(value, background)),
                     err(_) => Result::err("invalid WebP image"),
                   }
@@ -167,8 +167,8 @@ private fn snapshot(source: decoded_image::Image, background: color::Color) Imag
   let bounds = source.Bounds()
   let width = bounds.Max.X - bounds.Min.X
   let height = bounds.Max.Y - bounds.Min.Y
-  let pixels = mut List::new<color::Color>()
-  let rgba = mut List::new<Byte>()
+  let pixels = &mut List::new<color::Color>()
+  let rgba = &mut List::new<Byte>()
   mut y = bounds.Min.Y
   while y < bounds.Max.Y {
     mut x = bounds.Min.X
@@ -197,8 +197,8 @@ private fn snapshot(source: decoded_image::Image, background: color::Color) Imag
   ImageData{
     width: width,
     height: height,
-    pixels: pixels.@,
-    rgba: rgba.@,
+    pixels: pixels.*,
+    rgba: rgba.*,
   }
 }
 
@@ -235,14 +235,14 @@ private fn fitted(source: ImageData, bounds: geometry::Rect, cell_width: Int, ce
 }
 
 struct Image {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
   source: ImageData?,
   revision: Int,
 }
 
-fn new(ctx: mut runtime::Runtime, source: ImageData, styles: layout_style::Style?) mut Image {
+fn new(ctx: &mut runtime::Runtime, source: ImageData, styles: layout_style::Style?) &mut Image {
   let retained = ctx.create_node(styles.or(layout_style::new()))
-  let control = mut Image{
+  let control = &mut Image{
     node_ref: retained,
     source: Maybe::new<ImageData>(copy_data(source)),
     revision: 1,
@@ -263,17 +263,17 @@ fn new(ctx: mut runtime::Runtime, source: ImageData, styles: layout_style::Style
 }
 
 impl node::Renderable for Image {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     event_delivery::Disposition::ignored
   }
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     box::paint_border(ctx, self.node_ref.style())
     match self.source {
       source => {

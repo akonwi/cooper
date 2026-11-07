@@ -16,7 +16,7 @@ use cooper/ui/style
 // raw inputs at this internal boundary and remain the caller's responsibility.
 
 struct Prepared {
-  children: [mut layout::Node],
+  children: [&mut layout::Node],
   outer_basis: Float32,
 }
 
@@ -37,7 +37,7 @@ fn intrinsic_basis(value: style::Length, natural: Float32, available: Float32) F
   }
 }
 
-fn resolve_insets(node: mut layout::Node, owner_width: Float32) {
+fn resolve_insets(node: &mut layout::Node, owner_width: Float32) {
   let border = Float32::fit(node.border)
   node.insets = layout::Insets{
     left: numbers::Widen(resolved_or_zero(node.value.padding.left, owner_width) + border),
@@ -48,7 +48,7 @@ fn resolve_insets(node: mut layout::Node, owner_width: Float32) {
   node.percent_width = numbers::Widen(owner_width)
 }
 
-fn zero_own_geometry(node: mut layout::Node) {
+fn zero_own_geometry(node: &mut layout::Node) {
   node.x = 0.0
   node.y = 0.0
   node.width = 0.0
@@ -74,7 +74,7 @@ fn zero_own_geometry(node: mut layout::Node) {
   node.allocation = Maybe::new<layout::Allocation>()
 }
 
-fn zero_none(node: mut layout::Node) {
+fn zero_none(node: &mut layout::Node) {
   zero_own_geometry(node)
   node.measured_width = 0.0
   node.measured_height = 0.0
@@ -85,7 +85,7 @@ fn zero_none(node: mut layout::Node) {
   }
 }
 
-fn flatten(node: mut layout::Node, result: mut [mut layout::Node]) {
+fn flatten(node: &mut layout::Node, result: &mut [&mut layout::Node]) {
   for child in node.children {
     match child.value.display {
       style::Display::contents => {
@@ -100,7 +100,7 @@ fn flatten(node: mut layout::Node, result: mut [mut layout::Node]) {
 
 // CalculateLayout.cpp cleanupContentsNodesRecursively: only walk contents
 // paths. Box descendants must remain unvisited during fixed measurement.
-fn cleanup_contents(node: mut layout::Node) {
+fn cleanup_contents(node: &mut layout::Node) {
   for child in node.children {
     if child.value.display == style::Display::contents {
       zero_own_geometry(child)
@@ -131,13 +131,13 @@ fn axis(
 }
 
 fn prepare(
-  parent: mut layout::Node,
+  parent: &mut layout::Node,
   inner_width: Float32,
   inner_height: Float32,
   width_mode: cache::SizingMode,
   height_mode: cache::SizingMode,
   generation: Int,
-  visit: fn(mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int) Void,
+  visit: fn(&mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int) Void,
 ) Prepared {
   let percent_width = match parent.intrinsic_policy and parent.intrinsic_width_definite == false {
     true => numeric::undefined(),
@@ -147,7 +147,7 @@ fn prepare(
     true => numeric::undefined(),
     false => inner_height,
   }
-  let flattened: mut [mut layout::Node] = mut []
+  let flattened: &mut [&mut layout::Node] = &mut []
   flatten(parent, flattened)
   let row = parent.value.flex_direction == style::FlexDirection::row or parent.value.flex_direction == style::FlexDirection::row_reverse
   let main_mode = match row {
@@ -155,7 +155,7 @@ fn prepare(
     false => height_mode,
   }
 
-  mut single = Maybe::new<mut layout::Node>()
+  mut single = Maybe::new<&mut layout::Node>()
   if main_mode == cache::SizingMode::stretch_fit {
     mut valid = true
     for child in flattened {
@@ -166,16 +166,16 @@ fn prepare(
         if single.is_some() or numeric::inexact_equals(child.value.flex_grow, Float32::from(0.0)) or numeric::inexact_equals(child.value.flex_shrink, Float32::from(0.0)) {
           valid = false
         } else {
-          single = Maybe::new<mut layout::Node>(child)
+          single = Maybe::new<&mut layout::Node>(child)
         }
       }
     }
     if not valid {
-      single = Maybe::new<mut layout::Node>()
+      single = Maybe::new<&mut layout::Node>()
     }
   }
 
-  let flowing: mut [mut layout::Node] = mut []
+  let flowing: &mut [&mut layout::Node] = &mut []
   mut total = Float32::from(0.0)
   for child in flattened {
     if child.value.display == style::Display::none {
@@ -295,5 +295,5 @@ fn prepare(
       total = total + (child.cache_state.computed_flex_basis + main_margin)
     }
   }
-  Prepared{children: flowing.@, outer_basis: total}
+  Prepared{children: flowing.*, outer_basis: total}
 }

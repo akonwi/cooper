@@ -6,7 +6,7 @@ use cooper/ui/scrollbar
 use cooper/ui/style
 use go:math
 
-private fn key(name: Str) mut event::KeyEvent {
+private fn key(name: Str) &mut event::KeyEvent {
   event::key(
     name,
     "",
@@ -267,10 +267,10 @@ test fn scrollbar_prevent_default_suppresses_pointer_and_keyboard_behavior() Voi
     state: scrollbar::state(viewport_size: 1, content_size: 10),
     styles: style::new(height: style::cells(5)),
   )
-  let _ = bar.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = bar.on_mouse(fn(received: &mut event::MouseEvent) {
     received.prevent_default()
   })
-  let _ = bar.on_key(fn(received: mut event::KeyEvent) {
+  let _ = bar.on_key(fn(received: &mut event::KeyEvent) {
     received.prevent_default()
   })
   application.root.add(bar)

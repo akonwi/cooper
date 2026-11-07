@@ -231,10 +231,10 @@ private struct Model {
 }
 
 private struct Popup {
-  node_ref: mut node::Node,
-  model: mut Model,
-  owner: mut node::Node,
-  scrollbar: mut scrollbar_control::Scrollbar,
+  node_ref: &mut node::Node,
+  model: &mut Model,
+  owner: &mut node::Node,
+  scrollbar: &mut scrollbar_control::Scrollbar,
   measure_width: fn(Str) Int,
   anchor_x: Int,
   anchor_y: Int,
@@ -245,16 +245,16 @@ private struct Popup {
 }
 
 private struct InternalState {
-  model: mut Model,
-  popup: mut Popup,
+  model: &mut Model,
+  popup: &mut Popup,
   remove_scroll_listener: fn(),
   layout_style: layout_style::Style,
   measure_width: fn(Str) Int,
-  runtime: mut runtime::Runtime,
+  runtime: &mut runtime::Runtime,
 }
 
 struct Select {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
   internal: Any,
 }
 
@@ -325,16 +325,16 @@ fn default_tab_bindings() keymap::Bindings<Action> {
   )
 }
 
-private fn internal_state(value: Any) mut InternalState {
-  unsafe::cast<mut InternalState>(value).expect("Select must be created by Cooper")
+private fn internal_state(value: Any) &mut InternalState {
+  unsafe::cast<&mut InternalState>(value).expect("Select must be created by Cooper")
 }
 
 private fn copy_options(values: [Option]) [Option] {
-  let output = mut List::new<Option>()
+  let output = &mut List::new<Option>()
   for value in values {
     output.push(value)
   }
-  output.@
+  output.*
 }
 
 private fn clamp_index(value: Int, count: Int) Int {
@@ -400,7 +400,8 @@ private fn same_optional_color(first: color::Color?, second: color::Color?) Bool
 }
 
 private fn patched(base: text::TextStyle, patch: text::SpanStyle?) text::TextStyle {
-  let resolved = mut base
+  mut base = base
+  let resolved = &mut base
   match patch {
     value => {
       match value.foreground {
@@ -446,7 +447,7 @@ private fn patched(base: text::TextStyle, patch: text::SpanStyle?) text::TextSty
     },
     _ => (),
   }
-  resolved.@
+  resolved.*
 }
 
 private fn paint_style(value: text::TextStyle) paint::CellStyle {
@@ -465,8 +466,8 @@ private fn paint_style(value: text::TextStyle) paint::CellStyle {
 }
 
 private fn glyphs(value: Str, measure_width: fn(Str) Int) [Glyph] {
-  let iterator = mut unicode::NewGraphemeIterator(value)
-  let output = mut List::new<Glyph>()
+  let iterator = &mut unicode::NewGraphemeIterator(value)
+  let output = &mut List::new<Glyph>()
   mut reading = true
   while reading {
     match iterator.Next() {
@@ -477,7 +478,7 @@ private fn glyphs(value: Str, measure_width: fn(Str) Int) [Glyph] {
       _ => { reading = false },
     }
   }
-  output.@
+  output.*
 }
 
 private fn single_line(value: Str) Str {
@@ -510,7 +511,7 @@ private fn fit(value: Str, width: Int, measure_width: fn(Str) Int) Str {
   }
 }
 
-private fn selection_at(model: mut Model, index: Int) Selection? {
+private fn selection_at(model: &mut Model, index: Int) Selection? {
   match model.options.at(index) {
     value => Maybe::new<Selection>(Selection{index: index, option: value}),
     _ => Maybe::new<Selection>(),
@@ -524,7 +525,7 @@ private fn notify(listeners: [Listener], selected: Selection) {
   }
 }
 
-private fn change_highlight(model: mut Model, requested: Int, emit: Bool) Bool {
+private fn change_highlight(model: &mut Model, requested: Int, emit: Bool) Bool {
   if (not model.live) or model.options.size() == 0 {
     false
   } else {
@@ -544,7 +545,7 @@ private fn change_highlight(model: mut Model, requested: Int, emit: Bool) Bool {
   }
 }
 
-private fn move_highlight(model: mut Model, delta: Int) Bool {
+private fn move_highlight(model: &mut Model, delta: Int) Bool {
   if model.highlighted < 0 or model.options.size() == 0 or delta == 0 {
     false
   } else {
@@ -590,7 +591,7 @@ private fn move_highlight(model: mut Model, delta: Int) Bool {
   }
 }
 
-private fn set_selected(model: mut Model, index: Int, emit: Bool) Bool {
+private fn set_selected(model: &mut Model, index: Int, emit: Bool) Bool {
   if (not model.live) or index < 0 or index >= model.options.size() {
     false
   } else if model.selected == index {
@@ -607,7 +608,7 @@ private fn set_selected(model: mut Model, index: Int, emit: Bool) Bool {
   }
 }
 
-private fn advance_revision(model: mut Model) {
+private fn advance_revision(model: &mut Model) {
   if model.revision == math::MaxInt {
     panic("Select state revision overflow")
   }
@@ -615,8 +616,8 @@ private fn advance_revision(model: mut Model) {
 }
 
 private fn click_context_valid(
-  model: mut Model,
-  owner: mut node::Node,
+  model: &mut Model,
+  owner: &mut node::Node,
   revision: Int,
   attachment: Int,
 ) Bool {
@@ -624,8 +625,8 @@ private fn click_context_valid(
 }
 
 private fn activate_click(
-  model: mut Model,
-  owner: mut node::Node,
+  model: &mut Model,
+  owner: &mut node::Node,
   index: Int,
   revision: Int,
   attachment: Int,
@@ -696,7 +697,7 @@ private fn window_offset(index: Int, count: Int, visible: Int) Int {
   }
 }
 
-private fn clamp_menu_offset(model: mut Model, visible: Int) {
+private fn clamp_menu_offset(model: &mut Model, visible: Int) {
   mut maximum = model.options.size() - visible
   if maximum < 0 {
     maximum = 0
@@ -709,7 +710,7 @@ private fn clamp_menu_offset(model: mut Model, visible: Int) {
   }
 }
 
-private fn ensure_menu_highlight(model: mut Model, config: SelectConfig) {
+private fn ensure_menu_highlight(model: &mut Model, config: SelectConfig) {
   mut visible = config.max_visible
   if model.menu_visible > 0 {
     visible = model.menu_visible
@@ -731,7 +732,7 @@ private fn ensure_menu_highlight(model: mut Model, config: SelectConfig) {
   }
 }
 
-private fn scroll_menu(model: mut Model, config: SelectConfig, delta: Int) Bool {
+private fn scroll_menu(model: &mut Model, config: SelectConfig, delta: Int) Bool {
   mut visible = config.max_visible
   if model.menu_visible > 0 {
     visible = model.menu_visible
@@ -765,7 +766,7 @@ private fn scroll_menu(model: mut Model, config: SelectConfig, delta: Int) Bool 
   }
 }
 
-private fn scroll_menu_from_track(model: mut Model, config: SelectConfig, height: Int, y: Int) Bool {
+private fn scroll_menu_from_track(model: &mut Model, config: SelectConfig, height: Int, y: Int) Bool {
   if y <= 0 {
     scroll_menu(model, config, -1)
   } else if y >= height - 1 {
@@ -807,7 +808,8 @@ private fn tab_height(config: TabConfig) Int {
 }
 
 private fn configured(value: layout_style::Style, presentation: Presentation) layout_style::Style {
-  let applied = mut value
+  mut value = value
+  let applied = &mut value
   match presentation {
     SelectConfig => {
       applied.height = layout_style::cells(1)
@@ -821,20 +823,20 @@ private fn configured(value: layout_style::Style, presentation: Presentation) la
       }
     },
   }
-  applied.@
+  applied.*
 }
 
-private fn owner_style(model: mut Model) layout_style::Style {
+private fn owner_style(model: &mut Model) layout_style::Style {
   configured(model.layout_style, model.presentation)
 }
 
-private fn sync_owner_style(owner: mut node::Node, model: mut Model) {
+private fn sync_owner_style(owner: &mut node::Node, model: &mut Model) {
   if model.live {
     owner.apply_style(owner_style(model))
   }
 }
 
-private fn popup_height(model: mut Model) Int {
+private fn popup_height(model: &mut Model) Int {
   mut visible = 0
   match model.presentation {
     SelectConfig => {
@@ -849,7 +851,7 @@ private fn popup_height(model: mut Model) Int {
   visible
 }
 
-private fn popup_style(model: mut Model) layout_style::Style {
+private fn popup_style(model: &mut Model) layout_style::Style {
   layout_style::new(
     display: layout_style::Display::none,
     position: layout_style::Position::absolute,
@@ -869,7 +871,7 @@ private struct PopupAnchor {
   height: Int,
 }
 
-private fn popup_anchor(popup: mut Popup) PopupAnchor {
+private fn popup_anchor(popup: &mut Popup) PopupAnchor {
   let owner = popup.owner.layout().screen
   mut root_bounds = geometry::Rect{
     x: 0,
@@ -923,7 +925,7 @@ private fn popup_anchor(popup: mut Popup) PopupAnchor {
   }
 }
 
-private fn popup_open_style(popup: mut Popup) layout_style::Style {
+private fn popup_open_style(popup: &mut Popup) layout_style::Style {
   let anchor = popup_anchor(popup)
   layout_style::new(
     display: layout_style::Display::flex,
@@ -939,15 +941,15 @@ private fn popup_open_style(popup: mut Popup) layout_style::Style {
   )
 }
 
-private fn application_root(owner: mut node::Node) (mut node::Node)? {
-  mut walking = Maybe::new<mut node::Node>(owner)
-  mut found = Maybe::new<mut node::Node>()
+private fn application_root(owner: &mut node::Node) (&mut node::Node)? {
+  mut walking = Maybe::new<&mut node::Node>(owner)
+  mut found = Maybe::new<&mut node::Node>()
   mut searching = true
   while searching {
     match walking {
       current => {
         if current.application_root {
-          found = Maybe::new<mut node::Node>(current)
+          found = Maybe::new<&mut node::Node>(current)
           searching = false
         } else {
           walking = current.parent
@@ -959,7 +961,7 @@ private fn application_root(owner: mut node::Node) (mut node::Node)? {
   found
 }
 
-private fn sync_popup_anchor(popup: mut Popup) Bool {
+private fn sync_popup_anchor(popup: &mut Popup) Bool {
   let anchor = popup_anchor(popup)
   match popup.model.presentation {
     SelectConfig => { popup.model.menu_visible = visible_list_items(anchor.height, it) },
@@ -977,7 +979,7 @@ private fn sync_popup_anchor(popup: mut Popup) Bool {
   }
 }
 
-private fn portal_popup(popup: mut Popup) Bool {
+private fn portal_popup(popup: &mut Popup) Bool {
   match application_root(popup.owner) {
     root => {
       match popup.node_ref.parent {
@@ -994,7 +996,7 @@ private fn portal_popup(popup: mut Popup) Bool {
   }
 }
 
-private fn unportal_popup(popup: mut Popup) {
+private fn unportal_popup(popup: &mut Popup) {
   popup.anchor_x = -1
   popup.anchor_y = -1
   popup.anchor_width = -1
@@ -1019,7 +1021,7 @@ private fn unportal_popup(popup: mut Popup) {
   }
 }
 
-private fn sync_popup(popup: mut Popup) Bool {
+private fn sync_popup(popup: &mut Popup) Bool {
   if popup.model.open {
     match popup.node_ref.parent {
       parent => {
@@ -1047,7 +1049,7 @@ private fn default_scrollbar_appearance() scrollbar_control::Appearance {
   )
 }
 
-private fn scrollbar_appearance(model: mut Model) scrollbar_control::Appearance {
+private fn scrollbar_appearance(model: &mut Model) scrollbar_control::Appearance {
   let base = default_scrollbar_appearance()
   match model.appearance.scrollbar {
     local => {
@@ -1065,7 +1067,7 @@ private fn scrollbar_appearance(model: mut Model) scrollbar_control::Appearance 
   }
 }
 
-private fn bar_options(model: mut Model) scrollbar_control::Options {
+private fn bar_options(model: &mut Model) scrollbar_control::Options {
   mut visibility = scrollbar_control::Visibility::hidden
   mut show_arrows = false
   match model.presentation {
@@ -1102,14 +1104,14 @@ private fn validate_appearance(value: Appearance, measure_width: fn(Str) Int) {
 }
 
 private fn internal_new(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   options: [Option],
   presentation: Presentation?,
   highlighted_index: Int?,
   selected_index: Int?,
   appearance: Appearance?,
   styles: layout_style::Style?,
-) mut Select {
+) &mut Select {
   let selected_presentation = presentation.or(Presentation::menu())
   validate_presentation(selected_presentation)
   let selected_appearance = appearance.or(select_appearance())
@@ -1121,7 +1123,7 @@ private fn internal_new(
   let initial_style = styles.or(layout_style::new())
   let retained = context_state.create_node(configured(initial_style, selected_presentation))
   let copied = copy_options(options)
-  let model = mut Model{
+  let model = &mut Model{
     live: true,
     options: copied,
     highlighted: initial_highlight(highlighted_index, copied.size()),
@@ -1185,7 +1187,7 @@ private fn internal_new(
       _ => (),
     }
   })
-  let popup = mut Popup{
+  let popup = &mut Popup{
     node_ref: popup_node,
     model: model,
     owner: retained,
@@ -1198,7 +1200,7 @@ private fn internal_new(
     inherited_foreground: Maybe::new<color::Color>(),
     inherited_background: Maybe::new<color::Color>(),
   }
-  let shared = mut InternalState{
+  let shared = &mut InternalState{
     model: model,
     popup: popup,
     remove_scroll_listener: remove_scroll_listener,
@@ -1206,7 +1208,7 @@ private fn internal_new(
     measure_width: measure_width,
     runtime: context_state,
   }
-  let created = mut Select{node_ref: retained, internal: shared}
+  let created = &mut Select{node_ref: retained, internal: shared}
   retained.bind(created)
   retained.set_focusable(true)
   popup_node.bind(popup)
@@ -1221,7 +1223,7 @@ private fn internal_new(
   popup_node.add(bar.node_ref)
   retained.add(popup_node)
   let pointer_bar = bar
-  let _ = bar.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = bar.on_mouse(fn(received: &mut event::MouseEvent) {
     mut overflow = false
     mut visible = 0
     match model.presentation {
@@ -1288,14 +1290,14 @@ private fn select_appearance() Appearance {
 }
 
 fn new(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   options: [Option],
   config: SelectConfig?,
   highlighted_index: Int?,
   selected_index: Int?,
   appearance: Appearance?,
   styles: layout_style::Style?,
-) mut Select {
+) &mut Select {
   internal_new(
     ctx,
     options,
@@ -1308,14 +1310,14 @@ fn new(
 }
 
 fn tabs(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   options: [Option],
   config: TabConfig?,
   highlighted_index: Int?,
   selected_index: Int?,
   appearance: Appearance?,
   styles: layout_style::Style?,
-) mut Select {
+) &mut Select {
   internal_new(
     ctx,
     options,
@@ -1327,7 +1329,7 @@ fn tabs(
   )
 }
 
-private fn state_style(model: mut Model, index: Int, description: Bool, focused: Bool) text::TextStyle {
+private fn state_style(model: &mut Model, index: Int, description: Bool, focused: Bool) text::TextStyle {
   mut resolved = text::style(
     foreground: model.inherited_foreground,
     background: model.inherited_background,
@@ -1361,12 +1363,12 @@ private fn state_style(model: mut Model, index: Int, description: Bool, focused:
   resolved
 }
 
-private fn indicator_style(model: mut Model) text::TextStyle {
+private fn indicator_style(model: &mut Model) text::TextStyle {
   patched(text::style(dim: true), model.appearance.indicator)
 }
 
 private fn fill_line(
-  ctx: mut paint::Context,
+  ctx: &mut paint::Context,
   y: Int,
   start: Int,
   width: Int,
@@ -1380,8 +1382,8 @@ private fn fill_line(
 }
 
 private fn paint_list(
-  ctx: mut paint::Context,
-  model: mut Model,
+  ctx: &mut paint::Context,
+  model: &mut Model,
   config: SelectConfig,
   focused: Bool,
   measure_width: fn(Str) Int,
@@ -1456,8 +1458,8 @@ private fn paint_list(
 }
 
 private fn paint_tabs(
-  ctx: mut paint::Context,
-  model: mut Model,
+  ctx: &mut paint::Context,
+  model: &mut Model,
   config: TabConfig,
   focused: Bool,
   measure_width: fn(Str) Int,
@@ -1527,8 +1529,8 @@ private fn paint_tabs(
 }
 
 private fn paint_trigger(
-  ctx: mut paint::Context,
-  model: mut Model,
+  ctx: &mut paint::Context,
+  model: &mut Model,
   config: SelectConfig,
   focused: Bool,
   measure_width: fn(Str) Int,
@@ -1562,7 +1564,7 @@ private fn paint_trigger(
   }
 }
 
-private fn option_index_at_y(model: mut Model, config: SelectConfig, height: Int, y: Int) Int? {
+private fn option_index_at_y(model: &mut Model, config: SelectConfig, height: Int, y: Int) Int? {
   let item_height = list_item_height(config)
   mut visible = visible_list_items(height, config)
   if visible > config.max_visible {
@@ -1580,13 +1582,13 @@ private fn option_index_at_y(model: mut Model, config: SelectConfig, height: Int
 }
 
 impl node::Renderable for Popup {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     let background = patched(
       text::style(
         foreground: self.model.inherited_foreground,
@@ -1623,7 +1625,7 @@ impl node::Renderable for Popup {
     }
   }
 
-  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     if ctx.is_default_prevented() {
       event_delivery::Disposition::ignored
     } else {
@@ -1706,13 +1708,13 @@ impl node::Renderable for Popup {
 }
 
 impl node::Renderable for Select {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     let shared = internal_state(self.internal)
     let model = shared.model
     let inherited_foreground = ctx.foreground
@@ -1733,7 +1735,7 @@ impl node::Renderable for Select {
     }
   }
 
-  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     if ctx.is_default_prevented() {
       event_delivery::Disposition::ignored
     } else {
@@ -2193,13 +2195,13 @@ impl Select {
     let id = self.next_listener()
     model.highlight_listeners.push(Listener{id: id, handler: handler})
     fn() {
-      let retained = mut List::new<Listener>()
+      let retained = &mut List::new<Listener>()
       for listener in model.highlight_listeners {
         if listener.id != id {
           retained.push(listener)
         }
       }
-      model.highlight_listeners = retained.@
+      model.highlight_listeners = retained.*
     }
   }
 
@@ -2209,13 +2211,13 @@ impl Select {
     let id = self.next_listener()
     model.change_listeners.push(Listener{id: id, handler: handler})
     fn() {
-      let retained = mut List::new<Listener>()
+      let retained = &mut List::new<Listener>()
       for listener in model.change_listeners {
         if listener.id != id {
           retained.push(listener)
         }
       }
-      model.change_listeners = retained.@
+      model.change_listeners = retained.*
     }
   }
 
@@ -2225,13 +2227,13 @@ impl Select {
     let id = self.next_listener()
     model.submit_listeners.push(Listener{id: id, handler: handler})
     fn() {
-      let retained = mut List::new<Listener>()
+      let retained = &mut List::new<Listener>()
       for listener in model.submit_listeners {
         if listener.id != id {
           retained.push(listener)
         }
       }
-      model.submit_listeners = retained.@
+      model.submit_listeners = retained.*
     }
   }
 
@@ -2260,15 +2262,15 @@ impl Select {
     self.node_ref.is_focused()
   }
 
-  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+  fn mut on_key(handler: fn(&mut event::KeyEvent)) fn() {
     self.node_ref.on_key(handler)
   }
 
-  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+  fn mut on_paste(handler: fn(&mut event::PasteEvent)) fn() {
     self.node_ref.on_paste(handler)
   }
 
-  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+  fn mut on_mouse(handler: fn(&mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
 
@@ -2284,7 +2286,7 @@ impl Select {
     self.node_ref.layout()
   }
 
-  private fn mut handled(ctx: mut event_delivery::Context, changed: Bool) event_delivery::Disposition {
+  private fn mut handled(ctx: &mut event_delivery::Context, changed: Bool) event_delivery::Disposition {
     if changed {
       ctx.preserve_focus_scroll()
       ctx.request_redraw()
@@ -2294,9 +2296,9 @@ impl Select {
     }
   }
 
-  private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
+  private fn mut handle_key(ctx: &mut event_delivery::Context, key: &mut event::KeyEvent) event_delivery::Disposition {
     let model = internal_state(self.internal).model
-    match model.key_bindings.resolve(key.@) {
+    match model.key_bindings.resolve(key.*) {
       mapping => {
         match mapping.action {
           action => {
@@ -2319,7 +2321,7 @@ impl Select {
     }
   }
 
-  private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
+  private fn mut handle_mouse(ctx: &mut event_delivery::Context, mouse: &mut event::MouseEvent) event_delivery::Disposition {
     let model = internal_state(self.internal).model
     match model.presentation {
       SelectConfig => {

@@ -18,7 +18,7 @@ struct State {
 fn prepare(lines: [Str]) Session {
   let app = headless::new(80, 24)
   let content = box::new(app.context)
-  let rows = mut List::new<mut text::Text>()
+  let rows = &mut List::new<&mut text::Text>()
   for index in 0..24 {
     let row = text::new(
       app.context,
@@ -31,7 +31,7 @@ fn prepare(lines: [Str]) Session {
   }
   app.root.add(content)
   app.render()
-  let state = mut State{offset: 0}
+  let state = &mut State{offset: 0}
   Session{
     step: fn(direction: Int) {
       mut next = state.offset + direction

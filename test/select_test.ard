@@ -17,16 +17,16 @@ private fn choice(index: Int) select_control::Option {
 }
 
 private fn choices(count: Int) [select_control::Option] {
-  let values = mut List::new<select_control::Option>()
+  let values = &mut List::new<select_control::Option>()
   mut index = 0
   while index < count {
     values.push(choice(index))
     index =+ 1
   }
-  values.@
+  values.*
 }
 
-private fn key(name: Str, shift: Bool?) mut event::KeyEvent {
+private fn key(name: Str, shift: Bool?) &mut event::KeyEvent {
   event::key(
     name,
     "",
@@ -255,7 +255,7 @@ test fn select_popup_layers_above_later_siblings() Void!Str {
     ),
   )
   mut cover_clicks = 0
-  let _ = cover.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = cover.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       cover_clicks =+ 1
     }
@@ -340,10 +340,10 @@ test fn select_portal_stays_private_and_parent_destruction_is_safe() Void!Str {
 
 test fn select_options_snapshot_programmatic_selection_and_empty_state() Void!Str {
   let application = cooper_testing::new(16, 6)
-  let source = mut choices(3)
+  let source = &mut choices(3)
   let control = select_control::new(
     application.context,
-    source.@,
+    source.*,
     config: select_control::config(show_descriptions: false),
     styles: style::new(width: style::cells(16)),
   )
@@ -372,7 +372,7 @@ test fn select_options_snapshot_programmatic_selection_and_empty_state() Void!St
 
 test fn tab_select_retains_horizontal_navigation_activation_and_overflow() Void!Str {
   let application = cooper_testing::new(12, 3)
-  let tabs: mut select_control::TabSelect = select_control::tabs(
+  let tabs: &mut select_control::TabSelect = select_control::tabs(
     application.context,
     choices(6),
     config: select_control::tab_config(tab_width: 6, wrap_selection: true),

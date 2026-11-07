@@ -9,7 +9,7 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
   let inline: ui::Span = ui::span("Name", style: ui::span_style(underline: true))
   let rich: ui::StyledText = ui::styled_text([inline])
   let content: ui::TextContent = rich
-  let panel: mut ui::Box = ui::box(
+  let panel: &mut ui::Box = ui::box(
     ctx,
     styles: ui::style(
       foreground: ui::indexed(7),
@@ -19,25 +19,25 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
     ),
     title: "Profile",
   )
-  let label: mut ui::Text = ui::text(
+  let label: &mut ui::Text = ui::text(
     ctx,
     content: content,
     wrap: ui::TextWrap::word,
     text_style: emphasized,
     overflow: ui::TextOverflow::ellipsis,
   )
-  let _ = label.on_link(fn(received: mut ui::LinkEvent) {
+  let _ = label.on_link(fn(received: &mut ui::LinkEvent) {
     received.prevent_default()
   })
-  let field: mut ui::Input = ui::input(ctx, placeholder: "Ada")
-  let notes: mut ui::TextArea = ui::text_area(
+  let field: &mut ui::Input = ui::input(ctx, placeholder: "Ada")
+  let notes: &mut ui::TextArea = ui::text_area(
     ctx,
     placeholder: "Notes",
     wrap: ui::TextWrap::word,
     styles: ui::style(min_height: ui::cells(2)),
   )
-  let viewport: mut ui::ScrollBox = ui::scroll_box(ctx, styles: ui::style(height: ui::cells(1)))
-  let bar: mut ui::Scrollbar = ui::scrollbar(
+  let viewport: &mut ui::ScrollBox = ui::scroll_box(ctx, styles: ui::style(height: ui::cells(1)))
+  let bar: &mut ui::Scrollbar = ui::scrollbar(
     ctx,
     ui::ScrollbarOrientation::vertical,
     state: ui::scrollbar_state(viewport_size: 1, content_size: 2),
@@ -47,12 +47,12 @@ test fn ui_reexports_control_types_and_constructors() Void!Str {
     ),
   )
 
-  let menu: mut ui::Select = ui::select_input(
+  let menu: &mut ui::Select = ui::select_input(
     ctx,
     [ui::select_option("Open", description: "Open a file", value: "open")],
     config: ui::select_config(show_indicator: true),
   )
-  let tabs: mut ui::TabSelect = ui::tab_select(
+  let tabs: &mut ui::TabSelect = ui::tab_select(
     ctx,
     [ui::select_option("Home", value: "home")],
     config: ui::select_tab_config(show_description: false),

@@ -10,7 +10,7 @@ private fn fixed() style::Style {
   style::new(width: style::cells(8), height: style::cells(3))
 }
 
-private fn key_event(name: Str, value: Str?, kind: event::KeyEventType?) mut event::KeyEvent {
+private fn key_event(name: Str, value: Str?, kind: event::KeyEventType?) &mut event::KeyEvent {
   event::key(
     name,
     value.or(""),

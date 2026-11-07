@@ -32,19 +32,19 @@ private struct ViewState {
 }
 
 private struct Part {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
 }
 
 impl node::Renderable for Part {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {}
+  fn paint(ctx: &mut paint::Context) {}
 
-  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     event_delivery::Disposition::ignored
   }
 }
@@ -132,7 +132,7 @@ fn action_name(action: Action) Str {
 }
 
 fn default_bindings() keymap::Bindings<Action> {
-  let entries = mut List::new<keymap::Mapping<Action>>()
+  let entries = &mut List::new<keymap::Mapping<Action>>()
   entries.push(keymap::mapping(keymap::key("return"), Action::insert_newline))
   entries.push(keymap::mapping(keymap::key("up"), Action::move_up))
   entries.push(keymap::mapping(keymap::key("down"), Action::move_down))
@@ -195,19 +195,19 @@ fn default_bindings() keymap::Bindings<Action> {
   add("z", Action::redo, shift: true, super: true)
   add("-", Action::undo, ctrl: true)
   add(".", Action::redo, ctrl: true)
-  keymap::bindings(entries.@)
+  keymap::bindings(entries.*)
 }
 
 struct TextArea {
-  node_ref: mut node::Node,
-  viewport_ref: mut node::Node,
-  vertical_bar: mut scrollbar::Scrollbar,
-  editor_state: mut editor::State,
+  node_ref: &mut node::Node,
+  viewport_ref: &mut node::Node,
+  vertical_bar: &mut scrollbar::Scrollbar,
+  editor_state: &mut editor::State,
   placeholder_text: Str,
   wrap_mode: text::TextWrap,
   value_style: text::TextStyle,
   placeholder_text_style: text::TextStyle,
-  selection_patch: fn(mut text::TextStyle),
+  selection_patch: fn(&mut text::TextStyle),
   selected_style: text::TextStyle,
   selection_generation: Int,
   selection_version: Int,
@@ -227,8 +227,8 @@ struct TextArea {
   caret_style: text_cursor::CursorStyle,
 }
 
-private fn view_state(value: Any) mut ViewState {
-  unsafe::cast<mut ViewState>(value).expect("TextArea must be created by Cooper")
+private fn view_state(value: Any) &mut ViewState {
+  unsafe::cast<&mut ViewState>(value).expect("TextArea must be created by Cooper")
 }
 
 private fn normalize_newlines(value: Str) Str {
@@ -253,14 +253,15 @@ private fn same_text_style(left: text::TextStyle, right: text::TextStyle) Bool {
   same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike and left.hidden == right.hidden
 }
 
-private fn default_selection_style(value: mut text::TextStyle) {
+private fn default_selection_style(value: &mut text::TextStyle) {
   value.reverse = not value.reverse
 }
 
-private fn apply_style_patch(base: text::TextStyle, patch: fn(mut text::TextStyle)) text::TextStyle {
-  let selected = mut base
+private fn apply_style_patch(base: text::TextStyle, patch: fn(&mut text::TextStyle)) text::TextStyle {
+  mut base = base
+  let selected = &mut base
   patch(selected)
-  selected.@
+  selected.*
 }
 
 private fn cell_style(value: text::TextStyle) paint::CellStyle {
@@ -317,11 +318,12 @@ private fn default_text_area_style() layout_style::Style {
 }
 
 private fn configured(value: layout_style::Style) layout_style::Style {
-  let applied = mut value
+  mut value = value
+  let applied = &mut value
   applied.overflow = layout_style::Overflow::hidden
   applied.flex_direction = layout_style::FlexDirection::column
   applied.flex_wrap = layout_style::FlexWrap::no_wrap
-  applied.@
+  applied.*
 }
 
 private fn wrapper_style() layout_style::Style {
@@ -348,9 +350,9 @@ private fn viewport_style() layout_style::Style {
   )
 }
 
-private fn part(ctx: mut runtime::Runtime, styles: layout_style::Style) mut Part {
+private fn part(ctx: &mut runtime::Runtime, styles: layout_style::Style) &mut Part {
   let retained = ctx.create_node(styles)
-  let created = mut Part{node_ref: retained}
+  let created = &mut Part{node_ref: retained}
   retained.bind(created)
   created
 }
@@ -364,7 +366,7 @@ private fn wheel_step(value: Int) Int {
 }
 
 fn new(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   value: Str?,
   placeholder: Str?,
   wrap: text::TextWrap?,
@@ -372,15 +374,15 @@ fn new(
   text_style: text::TextStyle?,
   placeholder_style: text::TextStyle?,
   selectable: Bool?,
-  selection_style: fn(mut text::TextStyle)?,
+  selection_style: fn(&mut text::TextStyle)?,
   scrollbar_options: scrollbar::Options?,
   key_bindings: keymap::Bindings<Action>?,
   cursor_style: text_cursor::CursorStyle?,
-) mut TextArea {
+) &mut TextArea {
   let initial_value = normalize_newlines(value.or(""))
   let base_style = text_style.or(text::style())
   let patch = selection_style.or(default_selection_style)
-  let internal_state = mut ViewState{
+  let internal_state = &mut ViewState{
     scroll_x: 0,
     scroll_y: 0,
     preferred_x: Maybe::new<Int>(),
@@ -398,11 +400,11 @@ fn new(
     layout_style::new(),
     false,
   )
-  let area = mut TextArea{
+  let area = &mut TextArea{
     node_ref: retained,
     viewport_ref: viewport.node_ref,
     vertical_bar: vertical_bar,
-    editor_state: mut editor::new(initial_value),
+    editor_state: &mut editor::new(initial_value),
     placeholder_text: normalize_newlines(placeholder.or("")),
     wrap_mode: wrap.or(text::TextWrap::word),
     value_style: base_style,
@@ -518,13 +520,13 @@ fn new(
 }
 
 impl node::Renderable for TextArea {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     let value = self.editor_state.value()
     let state = view_state(self.internal)
     let laid_out = self.current_layout()
@@ -605,7 +607,7 @@ impl node::Renderable for TextArea {
     }
   }
 
-  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     match ctx.mouse_event {
       mouse => self.handle_mouse(ctx, mouse),
       _ => {
@@ -1033,7 +1035,7 @@ impl TextArea {
       match self.byte_selection() {
         selected => {
           let selected_range = self.selected_range.expect("TextArea selected range")
-          let fragments = mut List::new<node::SelectionFragment>()
+          let fragments = &mut List::new<node::SelectionFragment>()
           let clip_right = local.clip.x + local.clip.width
           let clip_bottom = local.clip.y + local.clip.height
           let intersects = width > 0 and height > 0 and local.clip.x < width and clip_right > 0 and local.clip.y < height and clip_bottom > 0
@@ -1081,7 +1083,7 @@ impl TextArea {
             start: selected_range.start,
             end: selected_range.end,
             source_text: Maybe::new<Str>(),
-            fragments: fragments.@,
+            fragments: fragments.*,
           }
         },
         _ => node::empty_selection_result(),
@@ -1180,15 +1182,15 @@ impl TextArea {
     self.node_ref.is_focused()
   }
 
-  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+  fn mut on_key(handler: fn(&mut event::KeyEvent)) fn() {
     self.node_ref.on_key(handler)
   }
 
-  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+  fn mut on_paste(handler: fn(&mut event::PasteEvent)) fn() {
     self.node_ref.on_paste(handler)
   }
 
-  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+  fn mut on_mouse(handler: fn(&mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
 
@@ -1293,7 +1295,7 @@ impl TextArea {
     self.selected_text_value
   }
 
-  fn mut set_selection_style(patch: fn(mut text::TextStyle)) {
+  fn mut set_selection_style(patch: fn(&mut text::TextStyle)) {
     self.node_ref.require_live()
     self.selection_patch = patch
     self.selected_style = apply_style_patch(self.value_style, patch)
@@ -1640,7 +1642,7 @@ impl TextArea {
     }
   }
 
-  private fn mut scroll_by(ctx: mut event_delivery::Context, delta_x: Int, delta_y: Int) event_delivery::Disposition {
+  private fn mut scroll_by(ctx: &mut event_delivery::Context, delta_x: Int, delta_y: Int) event_delivery::Disposition {
     let laid_out = self.current_layout()
     let state = view_state(self.internal)
     let previous_x = state.scroll_x
@@ -1659,7 +1661,7 @@ impl TextArea {
     }
   }
 
-  private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
+  private fn mut handle_mouse(ctx: &mut event_delivery::Context, mouse: &mut event::MouseEvent) event_delivery::Disposition {
     if mouse.event_type == event::MouseEventType::scroll {
       mut changed = false
       mut remaining = false
@@ -1721,8 +1723,8 @@ impl TextArea {
     }
   }
 
-  private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
-    match self.bindings.resolve(key.@) {
+  private fn mut handle_key(ctx: &mut event_delivery::Context, key: &mut event::KeyEvent) event_delivery::Disposition {
+    match self.bindings.resolve(key.*) {
       configured => {
         match configured.action {
           action => {

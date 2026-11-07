@@ -65,9 +65,9 @@ fn virtual_list(
   scrollbar_options: ui::ScrollbarOptions?,
   key: Str?,
   styles: ui::Style?,
-  ref: (mut VirtualListRef)?,
-  on_key: fn(mut event::KeyEvent, Context)?,
-  on_mouse: fn(mut event::MouseEvent, Context)?,
+  ref: (&mut VirtualListRef)?,
+  on_key: fn(&mut event::KeyEvent, Context)?,
+  on_mouse: fn(&mut event::MouseEvent, Context)?,
   sticky_scroll: ScrollEdge?,
   on_update: fn(VirtualListUpdate, Context)?,
 ) View {
@@ -76,14 +76,14 @@ fn virtual_list(
   if estimate <= 0 or extra < 0 or row_height.or(1) <= 0 {
     panic("VirtualList heights must be positive and overscan non-negative")
   }
-  let keys = mut List::new<Str>()
-  let snapshot = mut List::new<$T>()
+  let keys = &mut List::new<Str>()
+  let snapshot = &mut List::new<$T>()
   for item in items {
     keys.push(item_key(item))
     snapshot.push(item)
   }
-  let source = mut virtual::Source{
-    keys: keys.@,
+  let source = &mut virtual::Source{
+    keys: keys.*,
     build: fn(index: Int) View {
       render_item(snapshot.at(index).expect("virtual row index"))
     },
@@ -103,7 +103,7 @@ fn virtual_list(
 
 // Both types are inferred from the ordinary constructor and props value.
 fn child(
-  create: fn(mut $P) mut $C,
+  create: fn(&mut $P) &mut $C,
   props: $P,
   key: Str?,
   commands: [keymap::Command]?,
@@ -115,20 +115,20 @@ fn child(
     view::Specification{
       props: props,
       matches: fn(instance: Any, previous_props: Any) Bool {
-        unsafe::cast<mut $C>(instance).is_some() and unsafe::cast<$P>(previous_props).is_some()
+        unsafe::cast<&mut $C>(instance).is_some() and unsafe::cast<$P>(previous_props).is_some()
       },
-      create: fn() mut view::Instance {
+      create: fn() &mut view::Instance {
         mut current = props
-        let concrete = create(mut current)
+        let concrete = create(&mut current)
         let component = unsafe::cast<mut Component>(concrete).expect("child must implement Component")
-        (mut view::Instance{
+        &mut view::Instance{
           concrete: concrete,
           component: component,
           receive: fn(next: Any) {
             current = unsafe::cast<$P>(next).expect("matching component props")
           },
           mounted: false,
-        })
+        }
       },
     },
     key,

@@ -15,7 +15,7 @@ private fn modifiers() event::Modifiers {
   }
 }
 
-private fn key(name: Str, text: Str) mut event::KeyEvent {
+private fn key(name: Str, text: Str) &mut event::KeyEvent {
   event::key(name, text, event::KeyEventType::press, modifiers())
 }
 
@@ -38,14 +38,14 @@ test fn app_and_control_key_listeners_run_in_order_and_dispose() Void!Str {
   application.render()
   try testing::assert(field.focus(), "Expected explicit Input focus")
 
-  mut calls: mut [Str] = mut []
-  let remove_first = application.on_key(fn(received: mut event::KeyEvent) {
+  mut calls: &mut [Str] = &mut []
+  let remove_first = application.on_key(fn(received: &mut event::KeyEvent) {
     calls.push("app-first")
   })
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut event::KeyEvent) {
     calls.push("app-second")
   })
-  let _ = field.on_key(fn(received: mut event::KeyEvent) {
+  let _ = field.on_key(fn(received: &mut event::KeyEvent) {
     calls.push("field")
     received.prevent_default()
   })
@@ -65,7 +65,7 @@ test fn app_and_control_key_listeners_run_in_order_and_dispose() Void!Str {
     "Expected idempotent listener removal",
   )
 
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut event::KeyEvent) {
     received.stop_propagation()
   })
   application.key(key("z", "z"))
@@ -84,7 +84,7 @@ test fn paste_uses_separate_app_and_control_delivery() Void!Str {
   application.render()
   field.focus()
   mut app_pastes = 0
-  let remove = application.on_paste(fn(received: mut event::PasteEvent) {
+  let remove = application.on_paste(fn(received: &mut event::PasteEvent) {
     app_pastes =+ 1
     received.prevent_default()
   })
@@ -105,7 +105,7 @@ test fn stop_propagation_does_not_prevent_control_default() Void!Str {
   application.root.add(field)
   application.render()
   field.focus()
-  let _ = field.on_key(fn(received: mut event::KeyEvent) {
+  let _ = field.on_key(fn(received: &mut event::KeyEvent) {
     received.stop_propagation()
   })
 
@@ -126,7 +126,7 @@ test fn app_listener_hiding_focused_control_clears_before_delivery() Void!Str {
   let _ = field.on_blur(fn() {
     refocused = field.focus()
   })
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut event::KeyEvent) {
     field.node_ref.apply_style(style::new(display: style::Display::none))
   })
 
@@ -160,15 +160,15 @@ test fn mouse_listeners_target_then_bubble_with_local_coordinates() Void!Str {
   )
   parent.add(child)
   application.root.add(parent)
-  mut calls: mut [Str] = mut []
-  let _ = child.on_mouse(fn(received: mut event::MouseEvent) {
+  mut calls: &mut [Str] = &mut []
+  let _ = child.on_mouse(fn(received: &mut event::MouseEvent) {
     calls.push("child:first:{received.local_x}")
     received.local_x = 99
   })
-  let _ = child.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = child.on_mouse(fn(received: &mut event::MouseEvent) {
     calls.push("child:second:{received.local_x}")
   })
-  let _ = parent.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = parent.on_mouse(fn(received: &mut event::MouseEvent) {
     calls.push("parent:{received.local_x}")
   })
   application.render()
@@ -205,7 +205,7 @@ test fn mouse_autofocus_uses_left_button_and_nearest_focusable_ancestor() Void!S
   )
   try testing::assert(not parent.is_focused(), "Expected right button not to autofocus")
 
-  let remove_prevention = child.on_mouse(fn(received: mut event::MouseEvent) {
+  let remove_prevention = child.on_mouse(fn(received: &mut event::MouseEvent) {
     received.prevent_default()
   })
   application.mouse(
@@ -242,7 +242,7 @@ test fn mouse_autofocus_rejects_reparented_original_route() Void!Str {
   first.add(child)
   application.root.add(first)
   application.root.add(second)
-  let _ = child.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = child.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       second.add(child)
     }
@@ -270,7 +270,7 @@ test fn mouse_listener_cannot_corrupt_input_local_default() Void!Str {
     styles: style::new(width: style::cells(5), height: style::cells(1)),
   )
   application.root.add(field)
-  let _ = field.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = field.on_mouse(fn(received: &mut event::MouseEvent) {
     received.local_x = 99
   })
   application.render()
@@ -306,7 +306,7 @@ test fn mouse_default_reloads_geometry_after_listener_layout_mutation() Void!Str
   )
   parent.add(field)
   application.root.add(parent)
-  let _ = field.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = field.on_mouse(fn(received: &mut event::MouseEvent) {
     field.set_style(
       style::new(
         position: style::Position::absolute,
@@ -345,7 +345,7 @@ test fn hidden_ancestor_suppresses_target_mouse_default() Void!Str {
   )
   parent.add(field)
   application.root.add(parent)
-  let _ = field.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = field.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       parent.set_style(style::new(display: style::Display::none))
     }

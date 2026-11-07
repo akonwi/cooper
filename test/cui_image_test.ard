@@ -6,7 +6,7 @@ use cooper/testing as headless
 use cooper/ui
 
 private fn solid(width: Int, height: Int, red: Int, green: Int, blue: Int, alpha: Int) ui::ImageData {
-  let bytes = mut List::new<Byte>()
+  let bytes = &mut List::new<Byte>()
   mut index = 0
   while index < width * height {
     bytes.push(Byte::fit(red))
@@ -15,7 +15,7 @@ private fn solid(width: Int, height: Int, red: Int, green: Int, blue: Int, alpha
     bytes.push(Byte::fit(alpha))
     index =+ 1
   }
-  ui::image_rgba(width, height, bytes.@, Maybe::new(ui::rgb(0, 0, 200)))
+  ui::image_rgba(width, height, bytes.*, Maybe::new(ui::rgb(0, 0, 200)))
 }
 
 private fn same(value: ui::Color?, red: Int, green: Int, blue: Int) Bool {
@@ -44,15 +44,15 @@ struct Model {
 }
 
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 
 struct Host {
-  props: mut Props,
+  props: &mut Props,
 }
 
-private fn host(props: mut Props) mut Host {
-  (mut Host{props: props})
+private fn host(props: &mut Props) &mut Host {
+  &mut Host{props: props}
 }
 
 impl cui::Component for Host {
@@ -70,7 +70,7 @@ impl cui::Component for Host {
 test fn declarative_images_paint_and_replace_their_source_by_identity() Void!Str {
   let application = headless::new(2, 1)
   defer application.destroy()
-  let model = mut Model{source: solid(2, 2, 255, 0, 0, 255), source_id: "red"}
+  let model = &mut Model{source: solid(2, 2, 255, 0, 0, 255), source_id: "red"}
   let mounted = renderer::mount(
     application.context,
     application.root,

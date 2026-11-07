@@ -38,8 +38,8 @@ fn weight(item: flex::Item, growing: Bool) Float32 {
 
 fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distribution {
   let growing = remaining_free_space >= 0.0
-  let sizes = mut List::new<Float32>()
-  let frozen = mut List::new<Bool>()
+  let sizes = &mut List::new<Float32>()
+  let frozen = &mut List::new<Bool>()
   for item in line.items {
     let fixed = factor(item, growing) == 0.0
     sizes.push(
@@ -106,7 +106,7 @@ fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distributio
     distributed = distributed + sizes.at(index).expect("distributed size") - item.basis
   }
   flex::Distribution{
-    sizes: sizes.@,
+    sizes: sizes.*,
     remaining_free_space: remaining_free_space - distributed,
     distributed_free_space: distributed,
     total_flex_grow_factors: line.total_flex_grow_factors,

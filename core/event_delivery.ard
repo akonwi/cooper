@@ -20,39 +20,39 @@ struct Outcome {
   preserve_focus_scroll: Bool,
 }
 
-fn new_outcome() mut Outcome {
-  (mut Outcome{
+fn new_outcome() &mut Outcome {
+  &mut Outcome{
     handled: false,
     redraw: false,
     quit: false,
     preserve_focus_scroll: false,
-  })
+  }
 }
 
 struct Context {
-  key_event: (mut event::KeyEvent)?,
-  paste_event: (mut event::PasteEvent)?,
-  mouse_event: (mut event::MouseEvent)?,
+  key_event: (&mut event::KeyEvent)?,
+  paste_event: (&mut event::PasteEvent)?,
+  mouse_event: (&mut event::MouseEvent)?,
   local_x: Int?,
   local_y: Int?,
   focused: Bool,
-  outcome: mut Outcome,
+  outcome: &mut Outcome,
   focus_request: fn() Bool,
   dispatch: fn(fn()) Void!event::DispatchError,
 }
 
 fn context(
-  key_event: (mut event::KeyEvent)?,
-  paste_event: (mut event::PasteEvent)?,
-  mouse_event: (mut event::MouseEvent)?,
+  key_event: (&mut event::KeyEvent)?,
+  paste_event: (&mut event::PasteEvent)?,
+  mouse_event: (&mut event::MouseEvent)?,
   local_x: Int?,
   local_y: Int?,
   focused: Bool,
-  outcome: mut Outcome,
+  outcome: &mut Outcome,
   focus_request: (fn() Bool)?,
   dispatch: (fn(fn()) Void!event::DispatchError)?,
-) mut Context {
-  (mut Context{
+) &mut Context {
+  &mut Context{
     key_event: key_event,
     paste_event: paste_event,
     mouse_event: mouse_event,
@@ -62,7 +62,7 @@ fn context(
     outcome: outcome,
     focus_request: focus_request.or(reject_focus),
     dispatch: dispatch.or(stopped_dispatch),
-  })
+  }
 }
 
 impl Context {

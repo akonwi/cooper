@@ -242,7 +242,7 @@ test fn intrinsic_constraint_available_space_excludes_main_axis_margins() Void!S
           true => style::cells(0),
           false => style::cells(30),
         }
-        let configured = mut style::new(
+        let configured = &mut style::new(
           width: style::cells(2),
           height: style::cells(3),
           flex_shrink: 0.0,
@@ -274,7 +274,7 @@ test fn intrinsic_constraint_available_space_excludes_main_axis_margins() Void!S
             configured.max_height = bound
           }
         }
-        label.set_style(configured.@)
+        label.set_style(configured.*)
         ctx.compute_layout(parent, 20, 10)
         let expected = match row {
           true => {

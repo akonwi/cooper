@@ -15,7 +15,7 @@ private fn distance(value: Int) Int {
 
 // A deterministic pixel-art fixture; optionally pass a PNG/JPEG/WebP path instead.
 private fn landscape() ui::ImageData {
-  let pixels = mut List::new<ui::Color>()
+  let pixels = &mut List::new<ui::Color>()
   mut y = 0
   while y < 64 {
     mut x = 0
@@ -41,7 +41,7 @@ private fn landscape() ui::ImageData {
     }
     y =+ 1
   }
-  ui::image_data(96, 64, pixels.@)
+  ui::image_data(96, 64, pixels.*)
 }
 
 fn main() {
@@ -131,17 +131,17 @@ fn main() {
     ),
   )
   app.root.add(popup)
-  let _ = app.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = app.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type == cooper::KeyEventType::press {
       if received.matches("q") {
         app.destroy()
       } else if received.matches("p") {
-        let next = mut popup.style()
+        let next = &mut popup.style()
         next.display = match next.display {
           ui::Display::none => ui::Display::flex,
           _ => ui::Display::none,
         }
-        popup.set_style(next.@)
+        popup.set_style(next.*)
       } else if received.matches("down") or received.matches("up") {
         let delta = match received.matches("down") {
           true => 1,

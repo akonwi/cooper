@@ -97,12 +97,12 @@ struct LinkEvent {
   internal_state: Any,
 }
 
-private fn new_link_event(url: Str) mut LinkEvent {
-  (mut LinkEvent{url: url, internal_state: mut LinkEventState{default_prevented: false}})
+private fn new_link_event(url: Str) &mut LinkEvent {
+  &mut LinkEvent{url: url, internal_state: &mut LinkEventState{default_prevented: false}}
 }
 
-private fn link_event_state(value: Any) mut LinkEventState {
-  unsafe::cast<mut LinkEventState>(value).expect("Text LinkEvent state must be created by Cooper")
+private fn link_event_state(value: Any) &mut LinkEventState {
+  unsafe::cast<&mut LinkEventState>(value).expect("Text LinkEvent state must be created by Cooper")
 }
 
 impl LinkEvent {
@@ -117,7 +117,7 @@ impl LinkEvent {
 
 private struct LinkListener {
   id: Int,
-  handler: fn(mut LinkEvent),
+  handler: fn(&mut LinkEvent),
 }
 
 private struct LinkHit {
@@ -150,7 +150,7 @@ private struct LinkState {
 }
 
 private fn new_link_state(open_url: fn(Str) Void!Error) Any {
-  (mut LinkState{
+  &mut LinkState{
     open_url: open_url,
     armed_link: Maybe::new<Str>(),
     armed_attachment_generation: 0,
@@ -175,11 +175,11 @@ private fn new_link_state(open_url: fn(Str) Void!Error) Any {
     last_press_serial: 0,
     last_click_epoch: 0,
     last_attachment_generation: 0,
-  })
+  }
 }
 
-private fn link_state(value: Any) mut LinkState {
-  unsafe::cast<mut LinkState>(value).expect("Text link state must be created by Cooper")
+private fn link_state(value: Any) &mut LinkState {
+  unsafe::cast<&mut LinkState>(value).expect("Text link state must be created by Cooper")
 }
 
 private fn ignore_link(url: Str) Void!Error {
@@ -257,12 +257,12 @@ fn span(text: Str, style: SpanStyle?, link: Str?) Span {
 }
 
 private fn copy_spans(spans: [Span]) [Span] {
-  let copied = mut List::new<Span>()
+  let copied = &mut List::new<Span>()
   for value in spans {
     validate_link(value.link)
     copied.push(value)
   }
-  copied.@
+  copied.*
 }
 
 fn styled_text(spans: [Span]) StyledText {
@@ -279,21 +279,22 @@ private fn snapshot_content(content: TextContent) ContentSnapshot {
     Str(value) => styled_text([span(value)]),
     StyledText(value) => styled_text(value.spans),
   }
-  let parts = mut List::new<Str>()
+  let parts = &mut List::new<Str>()
   for value in styled.spans {
     parts.push(value.text)
   }
   ContentSnapshot{content: strings::Join(parts, ""), styled: styled}
 }
 
-private fn default_selection_style(value: mut TextStyle) {
+private fn default_selection_style(value: &mut TextStyle) {
   value.reverse = not value.reverse
 }
 
-private fn apply_style_patch(base: TextStyle, patch: fn(mut TextStyle)) TextStyle {
-  let selected = mut base
+private fn apply_style_patch(base: TextStyle, patch: fn(&mut TextStyle)) TextStyle {
+  mut base = base
+  let selected = &mut base
   patch(selected)
-  selected.@
+  selected.*
 }
 
 private fn cell_style(value: TextStyle, hyperlink: Str?) paint::CellStyle {
@@ -408,15 +409,16 @@ private struct StyleCache {
 }
 
 private fn new_style_cache(runs: [StyleRun]) Any {
-  (mut StyleCache{runs: runs})
+  &mut StyleCache{runs: runs}
 }
 
 private fn cached_style_runs(value: Any) [StyleRun] {
-  unsafe::cast<mut StyleCache>(value).expect("Text style cache").runs
+  unsafe::cast<&mut StyleCache>(value).expect("Text style cache").runs
 }
 
 private fn resolve_span_style(base: TextStyle, configured: SpanStyle) TextStyle {
-  let resolved = mut base
+  mut base = base
+  let resolved = &mut base
   match configured.foreground {
     value => { resolved.foreground = Maybe::new<color::Color>(value) },
     _ => (),
@@ -433,11 +435,11 @@ private fn resolve_span_style(base: TextStyle, configured: SpanStyle) TextStyle 
   resolved.reverse = configured.reverse.or(resolved.reverse)
   resolved.strike = configured.strike.or(resolved.strike)
   resolved.hidden = configured.hidden.or(resolved.hidden)
-  resolved.@
+  resolved.*
 }
 
-private fn styled_runs(content: StyledText, base: TextStyle, selection_patch: fn(mut TextStyle)) [StyleRun] {
-  let runs = mut List::new<StyleRun>()
+private fn styled_runs(content: StyledText, base: TextStyle, selection_patch: fn(&mut TextStyle)) [StyleRun] {
+  let runs = &mut List::new<StyleRun>()
   mut offset = 0
   for value in content.spans {
     let end = offset + value.text.size()
@@ -455,7 +457,7 @@ private fn styled_runs(content: StyledText, base: TextStyle, selection_patch: fn
     }
     offset = end
   }
-  runs.@
+  runs.*
 }
 
 private struct Line {
@@ -521,8 +523,8 @@ struct SelectedGlyph {
 }
 
 private fn word_glyphs(content: Str) [WordGlyph] {
-  let iterator = mut unicode::NewGraphemeIterator(content)
-  let output = mut List::new<WordGlyph>()
+  let iterator = &mut unicode::NewGraphemeIterator(content)
+  let output = &mut List::new<WordGlyph>()
   mut reading = true
   while reading {
     match iterator.Next() {
@@ -538,7 +540,7 @@ private fn word_glyphs(content: Str) [WordGlyph] {
       _ => { reading = false },
     }
   }
-  output.@
+  output.*
 }
 
 private fn first_rune(value: Str) Rune? {
@@ -659,8 +661,8 @@ private fn line_source_range(content: Str, source_index: Int) SourceRange? {
 }
 
 private fn source_glyphs(content: Str, runs: [StyleRun], measure: fn(Str) Int) [SourceGlyph] {
-  let iterator = mut unicode::NewGraphemeIterator(content)
-  let output = mut List::new<SourceGlyph>()
+  let iterator = &mut unicode::NewGraphemeIterator(content)
+  let output = &mut List::new<SourceGlyph>()
   mut offset = 0
   mut run_index = 0
   mut reading = true
@@ -718,15 +720,15 @@ private fn source_glyphs(content: Str, runs: [StyleRun], measure: fn(Str) Int) [
       _ => { reading = false },
     }
   }
-  output.@
+  output.*
 }
 
 private fn visual_glyphs(content: Str, layout: Layout, runs: [StyleRun], measure: fn(Str) Int) [VisualGlyph] {
   let source = source_glyphs(content, runs, measure)
-  let output = mut List::new<VisualGlyph>()
+  let output = &mut List::new<VisualGlyph>()
   mut source_index = 0
   for line, y in layout.lines {
-    let iterator = mut unicode::NewGraphemeIterator(line.text)
+    let iterator = &mut unicode::NewGraphemeIterator(line.text)
     mut x = 0
     mut reading = true
     while reading {
@@ -765,7 +767,7 @@ private fn visual_glyphs(content: Str, layout: Layout, runs: [StyleRun], measure
       }
     }
   }
-  output.@
+  output.*
 }
 
 private struct EllipsisGlyph {
@@ -804,7 +806,7 @@ private fn visual_view(
       truncated: false,
     }
   } else {
-    let kept = mut List::new<VisualGlyph>()
+    let kept = &mut List::new<VisualGlyph>()
     mut omitted = false
     mut omitted_y = height
     for glyph in visual {
@@ -822,7 +824,7 @@ private fn visual_view(
     let marker_width = measure("…")
     if width < marker_width or height < 1 or marker_width < 1 {
       VisualView{
-        glyphs: kept.@,
+        glyphs: kept.*,
         ellipsis: Maybe::new<EllipsisGlyph>(),
         truncated: true,
       }
@@ -831,7 +833,7 @@ private fn visual_view(
       if marker_y < 0 or marker_y >= height {
         marker_y = height - 1
       }
-      let fitting = mut List::new<VisualGlyph>()
+      let fitting = &mut List::new<VisualGlyph>()
       mut marker_x = 0
       mut row_open = true
       for glyph in kept {
@@ -851,7 +853,7 @@ private fn visual_view(
         _ => base_style,
       }
       VisualView{
-        glyphs: fitting.@,
+        glyphs: fitting.*,
         ellipsis: Maybe::new<EllipsisGlyph>(
           EllipsisGlyph{
             x: marker_x,
@@ -883,8 +885,8 @@ private fn newline(grapheme: Str) Bool {
 }
 
 private fn wrap_segments(content: Str, measure: fn(Str) Int) [WrapSegment] {
-  let output = mut List::new<WrapSegment>()
-  let iterator = mut unicode::NewLineIterator(content)
+  let output = &mut List::new<WrapSegment>()
+  let iterator = &mut unicode::NewLineIterator(content)
   mut reading = true
   while reading {
     match iterator.Next() {
@@ -893,7 +895,7 @@ private fn wrap_segments(content: Str, measure: fn(Str) Int) [WrapSegment] {
           start: segment.Start,
           end: segment.End,
         ).expect("Unicode line segment source")
-        let parts = mut List::new<Str>()
+        let parts = &mut List::new<Str>()
         mut width = 0
         mut hard_break = false
         for character in vaxis::Characters(source) {
@@ -915,14 +917,14 @@ private fn wrap_segments(content: Str, measure: fn(Str) Int) [WrapSegment] {
       _ => { reading = false },
     }
   }
-  output.@
+  output.*
 }
 
-private fn push_line(lines: mut [Line], text: Str, width: Int) {
+private fn push_line(lines: &mut [Line], text: Str, width: Int) {
   lines.push(Line{text: text, width: width})
 }
 
-private fn finish(lines: mut [Line]) Layout {
+private fn finish(lines: &mut [Line]) Layout {
   if lines.size() == 0 {
     push_line(lines, "", 0)
   }
@@ -933,17 +935,17 @@ private fn finish(lines: mut [Line]) Layout {
     }
   }
   Layout{
-    lines: lines.@,
+    lines: lines.*,
     width: width,
     height: lines.size(),
   }
 }
 
 private fn unwrapped(content: Str, measure: fn(Str) Int) Layout {
-  let lines = mut List::new<Line>()
-  mut parts = mut List::new<Str>()
+  let lines = &mut List::new<Line>()
+  mut parts = &mut List::new<Str>()
   mut width = 0
-  let iterator = mut vaxis::NewCharacterIterator(content)
+  let iterator = &mut vaxis::NewCharacterIterator(content)
   mut reading = true
   while reading {
     match iterator.Next() {
@@ -951,7 +953,7 @@ private fn unwrapped(content: Str, measure: fn(Str) Int) Layout {
         let grapheme = character.Grapheme
         if newline(grapheme) {
           push_line(lines, strings::Join(parts, ""), width)
-          parts = mut List::new<Str>()
+          parts = &mut List::new<Str>()
           width = 0
         } else {
           parts.push(grapheme)
@@ -970,7 +972,7 @@ private fn character_wrapped(content: Str, requested_limit: Int, measure: fn(Str
   if limit < 1 {
     limit = 1
   }
-  let lines = mut List::new<Line>()
+  let lines = &mut List::new<Line>()
   mut current = ""
   mut width = 0
   for character in vaxis::Characters(content) {
@@ -1010,7 +1012,7 @@ private fn word_wrapped(content: Str, requested_limit: Int, measure: fn(Str) Int
   if fits {
     intrinsic
   } else {
-    let lines = mut List::new<Line>()
+    let lines = &mut List::new<Line>()
     mut current = ""
     mut width = 0
     for segment in wrap_segments(content, measure) {
@@ -1093,7 +1095,7 @@ private fn constrained(value: Float32, available: Float32, mode: node::MeasureMo
 }
 
 private fn paint_visual_glyphs(
-  ctx: mut paint::Context,
+  ctx: &mut paint::Context,
   glyphs: [VisualGlyph],
   runs: [StyleRun],
   measure: fn(Str) Int,
@@ -1102,7 +1104,7 @@ private fn paint_visual_glyphs(
   while index < glyphs.size() {
     let first = glyphs.at(index).expect("visual paint run start")
     let first_run = runs.at(first.style_index).expect("visual paint style run")
-    let parts = mut List::new<Str>()
+    let parts = &mut List::new<Str>()
     parts.push(first.text)
     let x = first.x
     let y = first.y
@@ -1131,14 +1133,14 @@ private fn paint_visual_glyphs(
 }
 
 private fn paint_selected_glyphs(
-  ctx: mut paint::Context,
+  ctx: &mut paint::Context,
   glyphs: [SelectedGlyph],
   measure: fn(Str) Int,
 ) {
   mut index = 0
   while index < glyphs.size() {
     let first = glyphs.at(index).expect("selected paint run start")
-    let parts = mut List::new<Str>()
+    let parts = &mut List::new<Str>()
     parts.push(first.text)
     let x = first.x
     let y = first.y
@@ -1166,14 +1168,14 @@ private fn paint_selected_glyphs(
 }
 
 struct Text {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
   content: Str,
   styled_value: StyledText,
   style_cache: Any,
   wrap_mode: TextWrap,
   overflow_mode: TextOverflow,
   text_style: TextStyle,
-  selection_patch: fn(mut TextStyle),
+  selection_patch: fn(&mut TextStyle),
   selected_range: selection::Range?,
   selected_text_value: Str,
   selected_glyphs: [SelectedGlyph],
@@ -1183,20 +1185,20 @@ struct Text {
 }
 
 fn new(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   content: TextContent,
   wrap: TextWrap?,
   styles: layout_style::Style?,
   text_style: TextStyle?,
   selectable: Bool?,
-  selection_style: fn(mut TextStyle)?,
+  selection_style: fn(&mut TextStyle)?,
   overflow: TextOverflow?,
-) mut Text {
+) &mut Text {
   let snapshot = snapshot_content(content)
   let retained = ctx.create_node(styles.or(layout_style::new()))
   let base_style = text_style.or(default_style)
   let patch = selection_style.or(default_selection_style)
-  let text = mut Text{
+  let text = &mut Text{
     node_ref: retained,
     content: snapshot.content,
     styled_value: snapshot.styled,
@@ -1224,7 +1226,7 @@ fn new(
   retained.on_cleanup(fn() {
     reset_link_state(link_storage)
   })
-  let _ = retained.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = retained.on_mouse(fn(received: &mut event::MouseEvent) {
     text.observe_link_pointer(received)
   })
   retained.set_mouse_cursor_resolver(fn(local_x: Int, local_y: Int) event::MouseCursor {
@@ -1254,13 +1256,13 @@ fn new(
 }
 
 impl node::Renderable for Text {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     box::paint_border(ctx, self.node_ref.style())
     let content = self.node_ref.content_rect()
     let content_bounds = geometry::Rect{
@@ -1270,7 +1272,7 @@ impl node::Renderable for Text {
       height: content.height,
     }
     let visible = geometry::intersect(content_bounds, ctx.clip)
-    let content_ctx = mut paint::Context{
+    let content_ctx = &mut paint::Context{
       buffer: ctx.buffer,
       bounds: ctx.bounds,
       clip: visible,
@@ -1355,14 +1357,14 @@ impl node::Renderable for Text {
     }
   }
 
-  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     event_delivery::Disposition::ignored
   }
 }
 
 impl Text {
   private fn cache_link_hits(glyphs: [VisualGlyph], runs: [StyleRun], clip: geometry::Rect) {
-    let hits = mut List::new<LinkHit>()
+    let hits = &mut List::new<LinkHit>()
     for glyph in glyphs {
       let complete = glyph.y >= clip.y and glyph.y < clip.y + clip.height and glyph.x >= clip.x and glyph.x + glyph.width <= clip.x + clip.width
       if complete and glyph.width > 0 {
@@ -1384,7 +1386,7 @@ impl Text {
         }
       }
     }
-    link_state(self.link_state).link_hits = hits.@
+    link_state(self.link_state).link_hits = hits.*
   }
 
   private fn cached_link_at(local_x: Int, local_y: Int) Str? {
@@ -1453,7 +1455,7 @@ impl Text {
     }
   }
 
-  private fn observe_link_pointer(received: mut event::MouseEvent) {
+  private fn observe_link_pointer(received: &mut event::MouseEvent) {
     let state = link_state(self.link_state)
     let unmodified = (not received.modifiers.shift) and (not received.modifiers.ctrl) and (not received.modifiers.alt) and (not received.modifiers.super)
     if received.event_type == event::MouseEventType::down {
@@ -1555,12 +1557,13 @@ impl Text {
       self.text_style,
       self.width_measurer,
     )
-    let translated = mut List::new<VisualGlyph>()
+    let translated = &mut List::new<VisualGlyph>()
     for glyph in view.glyphs {
-      let moved = mut glyph
+      mut glyph = glyph
+      let moved = &mut glyph
       moved.x = glyph.x + content.x
       moved.y = glyph.y + content.y
-      translated.push(moved.@)
+      translated.push(moved.*)
     }
     let marker = match view.ellipsis {
       glyph => {
@@ -1576,7 +1579,7 @@ impl Text {
       _ => Maybe::new<EllipsisGlyph>(),
     }
     VisualView{
-      glyphs: translated.@,
+      glyphs: translated.*,
       ellipsis: marker,
       truncated: view.truncated,
     }
@@ -1877,8 +1880,8 @@ impl Text {
         end_y = local.anchor_y
       }
       let view = self.current_view()
-      let selected = mut List::new<SelectedGlyph>()
-      let fragments = mut List::new<node::SelectionFragment>()
+      let selected = &mut List::new<SelectedGlyph>()
+      let fragments = &mut List::new<node::SelectionFragment>()
       mut first_source = 0
       mut last_source = 0
       mut start_offset = 0
@@ -1945,7 +1948,7 @@ impl Text {
           }
         }
         self.selected_text_value = selected_source
-        self.selected_glyphs = selected.@
+        self.selected_glyphs = selected.*
         mut source_text = Maybe::new<Str>()
         if all_selected_visible and local.prefer_source_text {
           source_text = Maybe::new<Str>(self.selected_text_value)
@@ -1955,7 +1958,7 @@ impl Text {
           start: start_offset,
           end: end_offset,
           source_text: source_text,
-          fragments: fragments.@,
+          fragments: fragments.*,
         }
       }
     }
@@ -2071,7 +2074,7 @@ impl Text {
     self.selected_text_value
   }
 
-  fn mut set_selection_style(patch: fn(mut TextStyle)) {
+  fn mut set_selection_style(patch: fn(&mut TextStyle)) {
     self.node_ref.require_live()
     self.selection_patch = patch
     self.style_cache = new_style_cache(styled_runs(self.styled_value, self.text_style, patch))
@@ -2104,7 +2107,7 @@ impl Text {
     self.node_ref.layout()
   }
 
-  fn mut on_link(handler: fn(mut LinkEvent)) fn() {
+  fn mut on_link(handler: fn(&mut LinkEvent)) fn() {
     self.node_ref.require_live()
     let state = link_state(self.link_state)
     if state.next_listener_id == math::MaxInt {
@@ -2120,16 +2123,16 @@ impl Text {
 
   private fn remove_link_listener(id: Int) {
     let state = link_state(self.link_state)
-    let retained = mut List::new<LinkListener>()
+    let retained = &mut List::new<LinkListener>()
     for listener in state.listeners {
       if listener.id != id {
         retained.push(listener)
       }
     }
-    state.listeners = retained.@
+    state.listeners = retained.*
   }
 
-  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+  fn mut on_mouse(handler: fn(&mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
 
@@ -2151,7 +2154,7 @@ private fn wide_ellipsis_width(value: Str) Int {
 }
 
 test fn clipped_text_skips_measurement_but_clears_links_and_keeps_selection() Void!Str {
-  let calls = mut List::new<Str>()
+  let calls = &mut List::new<Str>()
   let ctx = runtime::new_detached(width_measurer: fn(value: Str) Int {
     calls.push(value)
     test_width(value)
@@ -2205,7 +2208,7 @@ test fn clipped_text_skips_measurement_but_clears_links_and_keeps_selection() Vo
       height: 1,
     },
   ] {
-    let visible = mut paint::Context{
+    let visible = &mut paint::Context{
       buffer: paint::new_buffer(6, 3),
       bounds: bounds,
       clip: bounds,
@@ -2213,7 +2216,7 @@ test fn clipped_text_skips_measurement_but_clears_links_and_keeps_selection() Vo
     label.paint(visible)
     try testing::assert(label.cached_link_at(1, 1).is_some(), "Visible linked text establishes hit data")
     let before = calls.size()
-    let clipped = mut paint::Context{
+    let clipped = &mut paint::Context{
       buffer: paint::new_buffer(6, 3),
       bounds: bounds,
       clip: clip,
@@ -2244,7 +2247,7 @@ test fn clipped_text_skips_measurement_but_clears_links_and_keeps_selection() Vo
 }
 
 test fn unwrapped_paint_streams_once_and_preserves_normalized_cells() Void!Str {
-  let calls = mut List::new<Str>()
+  let calls = &mut List::new<Str>()
   let measure = fn(value: Str) Int {
     calls.push(value)
     match value {
@@ -2269,12 +2272,12 @@ test fn unwrapped_paint_streams_once_and_preserves_normalized_cells() Void!Str {
       width: 4,
       height: 4,
     }
-    let actual = mut paint::Context{
+    let actual = &mut paint::Context{
       buffer: paint::new_buffer(12, 7),
       bounds: bounds,
       clip: clip,
     }
-    let expected = mut paint::Context{
+    let expected = &mut paint::Context{
       buffer: paint::new_buffer(12, 7),
       bounds: bounds,
       clip: clip,
@@ -2324,7 +2327,7 @@ test fn text_paint_reuses_layout_for_links_styles_and_ellipsis() Void!Str {
     styled_text([span("a", style: span_style(bold: true)), span("b")]),
     styled_text([span("abcdef")]),
   ] {
-    let calls = mut List::new<Str>()
+    let calls = &mut List::new<Str>()
     let ctx = runtime::new_detached(width_measurer: fn(value: Str) Int {
       if value == "a" {
         calls.push(value)
@@ -2346,7 +2349,7 @@ test fn text_paint_reuses_layout_for_links_styles_and_ellipsis() Void!Str {
       width: 4,
       height: 1,
     }
-    let surface = mut paint::Context{
+    let surface = &mut paint::Context{
       buffer: paint::new_buffer(4, 1),
       bounds: bounds,
       clip: bounds,
@@ -2369,7 +2372,7 @@ test fn text_paint_reuses_layout_for_links_styles_and_ellipsis() Void!Str {
 test fn text_destruction_releases_link_listeners() Void!Str {
   let ctx = runtime::new_detached()
   let label = new(ctx, content: styled_text([span("docs", link: "https://example.com")]))
-  let dispose = label.on_link(fn(received: mut LinkEvent) {
+  let dispose = label.on_link(fn(received: &mut LinkEvent) {
     received.prevent_default()
   })
   let state = link_state(label.link_state)
@@ -2562,7 +2565,7 @@ test fn unwrapped_preserves_unicode_and_hard_breaks() Void!Str {
 }
 
 test fn unwrapped_tab_expansion_preserves_original_grapheme_measurements() Void!Str {
-  let calls = mut List::new<Str>()
+  let calls = &mut List::new<Str>()
   let measured = unwrapped("你\t́\r\nx\t", fn(grapheme: Str) Int {
     calls.push(grapheme)
     // Deliberately non-additive: resegmenting the expanded source would join
@@ -2588,12 +2591,12 @@ test fn unwrapped_tab_expansion_preserves_original_grapheme_measurements() Void!
 }
 
 test fn styled_text_helpers_snapshot_and_resolve_tristate_styles() Void!Str {
-  let spans = mut List::new<Span>()
+  let spans = &mut List::new<Span>()
   spans.push(span(""))
   spans.push(
     span("value", style: span_style(bold: false, hidden: true), link: "https://example.com"),
   )
-  let snapshot = styled_text(spans.@)
+  let snapshot = styled_text(spans.*)
   spans.set(1, span("changed"))
 
   try testing::assert(

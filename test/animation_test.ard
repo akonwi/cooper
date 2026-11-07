@@ -116,7 +116,7 @@ test fn animation_internal_rounding_preserves_boundaries() Void!Str {
 test fn timeline_sequences_tracks_callbacks_pause_restart_and_completion() Void!Str {
   let application = cooper_testing::new(20, 2)
   defer application.destroy()
-  let values = mut Values{
+  let values = &mut Values{
     latest: -1,
     starts: 0,
     track_completions: 0,
@@ -247,9 +247,9 @@ test fn timeline_updates_retained_controls_and_freezes_while_suspended() Void!St
   application.root.add(label)
   let timeline = application.context.timeline(100)
   timeline.add(100, fn(frame: animation::Frame) {
-    let applied = mut label.style()
+    let applied = &mut label.style()
     applied.left = style::cells(animation::lerp_int(0, 10, frame.progress))
-    label.set_style(applied.@)
+    label.set_style(applied.*)
   })
   let _ = timeline.play()
   application.advance_time(0)

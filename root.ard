@@ -5,26 +5,26 @@ use cooper/runtime
 use cooper/ui/style
 
 struct Root {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
 }
 
 impl node::Renderable for Root {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {}
+  fn paint(ctx: &mut paint::Context) {}
 
-  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     event_delivery::Disposition::ignored
   }
 }
 
-fn new(app_runtime: mut runtime::Runtime) mut Root {
+fn new(app_runtime: &mut runtime::Runtime) &mut Root {
   let retained_node = app_runtime.create_node(style::new())
-  let created = mut Root{node_ref: retained_node}
+  let created = &mut Root{node_ref: retained_node}
   retained_node.bind(created)
   retained_node.mark_application_root()
   app_runtime.bind_root(retained_node)

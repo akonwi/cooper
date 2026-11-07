@@ -16,7 +16,7 @@ private fn modifiers(shift: Bool?, ctrl: Bool?) event::Modifiers {
 }
 
 private fn send(
-  field: mut input::Input,
+  field: &mut input::Input,
   name: Str,
   text: Str?,
   event_type: event::KeyEventType?,

@@ -77,8 +77,8 @@ private fn measured(value: Str, measure: fn(Str) Int) Int {
 }
 
 private fn source_segments(content: Str, measure: fn(Str) Int) [Segment] {
-  let output = mut List::new<Segment>()
-  let iterator = mut unicode::NewLineIterator(content)
+  let output = &mut List::new<Segment>()
+  let iterator = &mut unicode::NewLineIterator(content)
   mut logical_offset = 0
   mut reading = true
   while reading {
@@ -88,8 +88,8 @@ private fn source_segments(content: Str, measure: fn(Str) Int) [Segment] {
           start: segment.Start,
           end: segment.End,
         ).expect("TextArea line segment source")
-        let grapheme_iterator = mut unicode::NewGraphemeIterator(source)
-        let glyphs = mut List::new<SourceGlyph>()
+        let grapheme_iterator = &mut unicode::NewGraphemeIterator(source)
+        let glyphs = &mut List::new<SourceGlyph>()
         mut width = 0
         mut newline_start = Maybe::new<Int>()
         mut newline_end = Maybe::new<Int>()
@@ -131,7 +131,7 @@ private fn source_segments(content: Str, measure: fn(Str) Int) [Segment] {
         }
         output.push(
           Segment{
-            glyphs: glyphs.@,
+            glyphs: glyphs.*,
             width: width,
             newline_start: newline_start,
             newline_end: newline_end,
@@ -143,7 +143,7 @@ private fn source_segments(content: Str, measure: fn(Str) Int) [Segment] {
       _ => { reading = false },
     }
   }
-  output.@
+  output.*
 }
 
 impl Builder {
@@ -217,7 +217,7 @@ private fn build(content: Str, wrap: text::TextWrap, requested_limit: Int, measu
   if limit < 1 {
     limit = 1
   }
-  let builder = mut Builder{
+  let builder = &mut Builder{
     glyphs: [],
     lines: [],
     x: 0,
@@ -381,7 +381,7 @@ fn offset_at(value: Layout, boundary: Int) Int {
 
 fn hard_line_start(content: Str, cursor: Int) Int {
   mut start = 0
-  let iterator = mut unicode::NewGraphemeIterator(content)
+  let iterator = &mut unicode::NewGraphemeIterator(content)
   mut reading = true
   while reading {
     match iterator.Next() {
@@ -399,7 +399,7 @@ fn hard_line_start(content: Str, cursor: Int) Int {
 
 fn hard_line_end(content: Str, cursor: Int) Int {
   mut end = content.size()
-  let iterator = mut unicode::NewGraphemeIterator(content)
+  let iterator = &mut unicode::NewGraphemeIterator(content)
   mut reading = true
   while reading {
     match iterator.Next() {

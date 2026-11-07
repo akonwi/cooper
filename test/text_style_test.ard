@@ -38,7 +38,7 @@ test fn painted_cells_preserve_and_clear_style_across_wide_spans() Void!Str {
     width: 3,
     height: 1,
   }
-  let ctx = mut paint::Context{
+  let ctx = &mut paint::Context{
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
@@ -99,17 +99,17 @@ test fn paint_runs_snapshot_styles_and_overwrites_clear_only_affected_cursor() V
     width: 6,
     height: 1,
   }
-  let ctx = mut paint::Context{
+  let ctx = &mut paint::Context{
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
   }
-  let requested = mut styled_cell()
-  ctx.write(0, 0, "ab界", text_style: requested.@)
+  let requested = &mut styled_cell()
+  ctx.write(0, 0, "ab界", text_style: requested.*)
   requested.bold = false
   requested.hyperlink = Maybe::new<Str>()
-  ctx.write(4, 0, "z", text_style: requested.@)
-  let copied = mut buffer.cell_at(0, 0).expect("copied cell")
+  ctx.write(4, 0, "z", text_style: requested.*)
+  let copied = &mut buffer.cell_at(0, 0).expect("copied cell")
   copied.style.bold = false
   try testing::assert(
     buffer.cell_at(0, 0).expect("first run").style.bold and buffer.cell_at(1, 0).expect("shared run").style.bold,
@@ -156,7 +156,7 @@ test fn clipped_wide_text_preserves_existing_background() Void!Str {
     width: 2,
     height: 1,
   }
-  let full = mut paint::Context{
+  let full = &mut paint::Context{
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
@@ -165,7 +165,7 @@ test fn clipped_wide_text_preserves_existing_background() Void!Str {
   }
   full.fill(paint::style(background: color::rgb(7, 8, 9)))
 
-  let clipped = mut paint::Context{
+  let clipped = &mut paint::Context{
     buffer: buffer,
     bounds: bounds,
     clip: geometry::Rect{

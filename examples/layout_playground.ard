@@ -62,7 +62,7 @@ impl Preset {
 }
 
 private fn stage_style(preset: Preset) ui::Style {
-  let next = mut ui::style(
+  let next = &mut ui::style(
     background: ui::hex("#0B1220"),
     border: ui::Border::rounded,
     border_color: ui::hex("#475569"),
@@ -105,7 +105,7 @@ private fn stage_style(preset: Preset) ui::Style {
     Preset::overlay => (),
   }
 
-  next.@
+  next.*
 }
 
 private fn card_color(index: Int) ui::Color {
@@ -134,7 +134,7 @@ private fn card_z_index(index: Int) Int {
 }
 
 private fn card_style(preset: Preset, index: Int) ui::Style {
-  let next = mut ui::style(
+  let next = &mut ui::style(
     background: card_color(index),
     border: ui::Border::single,
     border_color: card_border(index),
@@ -180,10 +180,10 @@ private fn card_style(preset: Preset, index: Int) ui::Style {
     _ => (),
   }
 
-  next.@
+  next.*
 }
 
-private fn make_card(ctx: mut cooper::Runtime, index: Int, name: Str) mut ui::Box {
+private fn make_card(ctx: &mut cooper::Runtime, index: Int, name: Str) &mut ui::Box {
   let card = ui::box(ctx, title: "{index + 1}")
   card.add(
     ui::text(
@@ -198,9 +198,9 @@ private fn make_card(ctx: mut cooper::Runtime, index: Int, name: Str) mut ui::Bo
 
 private fn apply_preset(
   preset: Preset,
-  stage: mut ui::Box,
-  cards: [mut ui::Box],
-  subtitle: mut ui::Text,
+  stage: &mut ui::Box,
+  cards: [&mut ui::Box],
+  subtitle: &mut ui::Text,
 ) {
   stage.set_style(stage_style(preset))
   stage.set_title("{preset.label()}")
@@ -210,7 +210,7 @@ private fn apply_preset(
   subtitle.set_content("Preset {preset.number()}/7 · {preset.summary()}")
 }
 
-private fn preset_for_key(key: mut cooper::KeyEvent, current: Preset) Preset? {
+private fn preset_for_key(key: &mut cooper::KeyEvent, current: Preset) Preset? {
   if key.matches("1") {
     Maybe::new(Preset::horizontal)
   } else if key.matches("2") {
@@ -279,7 +279,7 @@ fn main() {
   header.add(subtitle)
 
   let stage = ui::box(ctx, title: "HORIZONTAL FLOW")
-  let cards: [mut ui::Box] = [
+  let cards: [&mut ui::Box] = [
     make_card(ctx, 0, "ALPHA"),
     make_card(ctx, 1, "BRAVO"),
     make_card(ctx, 2, "CHARLIE"),
@@ -331,7 +331,7 @@ fn main() {
   mut current = Preset::horizontal
   apply_preset(current, stage, cards, subtitle)
 
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type == cooper::KeyEventType::press {
       if received.matches("q") {
         received.prevent_default()

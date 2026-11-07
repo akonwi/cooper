@@ -28,7 +28,7 @@ private struct Trajectory {
 }
 
 private struct SpringRef {
-  value: (mut animation::Spring)?,
+  value: (&mut animation::Spring)?,
 }
 
 test fn spring_matches_independent_ode_trajectories_and_preserves_retarget_velocity() Void!Str {
@@ -154,9 +154,9 @@ test fn spring_requires_velocity_to_settle_then_snaps_and_returns_runtime_to_idl
     2.0,
     fn(frame: animation::SpringFrame) {
       updates =+ 1
-      let applied = mut marker.style()
+      let applied = &mut marker.style()
       applied.left = ui::cells(Int::fit(math::Round(frame.value)))
-      marker.set_style(applied.@)
+      marker.set_style(applied.*)
     },
     on_complete: fn() {
       completions =+ 1
@@ -286,7 +286,7 @@ test fn spring_callback_mutation_cancels_stale_completion_and_preserves_new_spri
   for action in ["retarget", "pause", "destroy", "suspend", "destroy_app"] {
     let app = headless::new(10, 1)
     defer app.destroy()
-    let reference = mut SpringRef{value: Maybe::new<mut animation::Spring>()}
+    let reference = &mut SpringRef{value: Maybe::new<&mut animation::Spring>()}
     mut changed = false
     mut completions = 0
     mut child_updates = 0
@@ -319,7 +319,7 @@ test fn spring_callback_mutation_cancels_stale_completion_and_preserves_new_spri
         completions =+ 1
       },
     )
-    reference.value = Maybe::new<mut animation::Spring>(spring)
+    reference.value = Maybe::new<&mut animation::Spring>(spring)
     let _ = spring.set_target(10.0)
     app.advance_time(0)
     app.advance_time(10000)

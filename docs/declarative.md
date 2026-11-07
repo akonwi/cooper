@@ -22,12 +22,12 @@ struct CounterProps {
 }
 
 struct Counter {
-  props: mut CounterProps,
+  props: &mut CounterProps,
   count: Int,
 }
 
-fn counter(props: mut CounterProps) mut Counter {
-  (mut Counter{props: props, count: 0})
+fn counter(props: &mut CounterProps) &mut Counter {
+  &mut Counter{props: props, count: 0}
 }
 
 impl cui::Component for Counter {
@@ -49,12 +49,12 @@ defer renderer.destroy()
 The central signatures are:
 
 ```ard
-fn child(create: fn(mut $P) mut $C, props: $P, key: Str?) View
+fn child(create: fn(&mut $P) &mut $C, props: $P, key: Str?) View
 fn mount(application: cooper::App, view: View) Renderer
 ```
 
 Both child types are inferred. Props are ordinary values, not framework wrappers.
-The component stores the supplied `mut Props` reference so reconciliation can
+The component stores the supplied `&mut Props` pointer so reconciliation can
 update it before each render. The constructor runs only when that component
 identity mounts. `mount` accepts either a primitive view or a child view as its
 root, renders synchronously, and attaches retained controls.
@@ -62,7 +62,7 @@ root, renders synchronously, and attaches retained controls.
 `mount` takes the Runtime and Root from the application. Headless framework
 tests can use the lower-level `cooper/cui/renderer::mount(runtime, root, view)`.
 
-Treat props as read-only input. Ard requires `mut Props` for the shared reference,
+Treat props as read-only input. Ard requires `&mut Props` for the shared pointer,
 but does not enforce a read-only view of it. Keep state in separate component
 fields; copying props during construction creates an initial snapshot rather
 than a field that receives subsequent props updates.
@@ -90,11 +90,11 @@ control identity, including focus, selection, editor cursor, and scrolling.
 For a collection, build an ordinary list of views:
 
 ```ard
-let children = mut List::new<cui::View>()
+let children = &mut List::new<cui::View>()
 for job in self.jobs {
   children.push(cui::child(job_row, JobProps{job: job}, key: job.id))
 }
-cui::box(children.@)
+cui::box(children.*)
 ```
 
 Keys must be unique among siblings. Prefer stable item IDs to indexes when items
@@ -413,7 +413,7 @@ keeps reverse-video selection. Both properties update during reconciliation.
 cui::text(
   body,
   selectable: true,
-  selection_style: fn(style: mut ui::TextStyle) {
+  selection_style: fn(style: &mut ui::TextStyle) {
     style.foreground = Maybe::new(theme.foreground)
     style.background = Maybe::new(theme.selection)
     style.reverse = false

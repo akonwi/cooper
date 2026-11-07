@@ -29,7 +29,7 @@ fn main() {
   root.add(status)
   application.root.add(root)
 
-  let rendered_frames = mut FrameCount{value: 0}
+  let rendered_frames = &mut FrameCount{value: 0}
   let timeline = application.context.timeline(800, on_complete: fn() {
     status.set_content("DONE frames={rendered_frames.value}")
   })
@@ -38,9 +38,9 @@ fn main() {
     800,
     fn(frame: animation::Frame) {
       rendered_frames.value =+ 1
-      let applied = mut marker.style()
+      let applied = &mut marker.style()
       applied.left = ui::cells(animation::lerp_int(0, 20, frame.progress))
-      marker.set_style(applied.@)
+      marker.set_style(applied.*)
     },
     ease: animation::in_out_quad,
   )

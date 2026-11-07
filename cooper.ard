@@ -23,8 +23,8 @@ type MouseCursor = event::MouseCursor
 type MouseEvent = event::MouseEvent
 
 struct App {
-  context: mut Runtime,
-  root: mut Root,
+  context: &mut Runtime,
+  root: &mut Root,
 }
 
 fn app(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?, screen: screen::Config?) App!Error {
@@ -42,11 +42,11 @@ fn app(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?, screen: scree
 }
 
 impl App {
-  fn on_key(handler: fn(mut KeyEvent)) fn() {
+  fn on_key(handler: fn(&mut KeyEvent)) fn() {
     self.context.on_key(handler)
   }
 
-  fn on_paste(handler: fn(mut PasteEvent)) fn() {
+  fn on_paste(handler: fn(&mut PasteEvent)) fn() {
     self.context.on_paste(handler)
   }
 

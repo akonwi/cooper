@@ -11,12 +11,12 @@ private fn sized(width: Int, height: Int) style::Style {
 }
 
 private fn clipped(width: Int, height: Int) style::Style {
-  let configured = mut sized(width, height)
+  let configured = &mut sized(width, height)
   configured.overflow = style::Overflow::hidden
-  configured.@
+  configured.*
 }
 
-private fn pointer_move() mut event::MouseEvent {
+private fn pointer_move() &mut event::MouseEvent {
   event::mouse(
     event::MouseEventType::move,
     event::MouseButton::none,
@@ -67,7 +67,7 @@ fn main() {
   let leaf = box::new(application.context, styles: clipped(80, 24))
   leaf.add(text::new(application.context, content: "x"))
   mut observed_hits = 0
-  let _ = leaf.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = leaf.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::move {
       observed_hits =+ 1
     }

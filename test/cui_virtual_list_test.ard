@@ -6,7 +6,7 @@ use cooper/event
 use cooper/testing as headless
 use cooper/ui
 
-private fn navigation_key(name: Str) mut event::KeyEvent {
+private fn navigation_key(name: Str) &mut event::KeyEvent {
   event::key(
     name,
     "",
@@ -21,37 +21,37 @@ private fn navigation_key(name: Str) mut event::KeyEvent {
 }
 
 private fn items(count: Int) [Int] {
-  let values = mut List::new<Int>()
+  let values = &mut List::new<Int>()
   mut index = 0
   while index < count {
     values.push(index)
     index =+ 1
   }
-  values.@
+  values.*
 }
 private fn row(id: Int) cui::View {
-  let children = mut List::new<cui::View>()
+  let children = &mut List::new<cui::View>()
   children.push(cui::text("row{id}", styles: ui::style(height: ui::cells(1)), selectable: true))
   mut line = 0
   while line < id % 3 {
     children.push(cui::text("body{id}:{line}", styles: ui::style(height: ui::cells(1))))
     line =+ 1
   }
-  cui::box(children.@, styles: ui::style(flex_shrink: 0.0))
+  cui::box(children.*, styles: ui::style(flex_shrink: 0.0))
 }
 struct Model {
   items: [Int],
   builds: Int,
-  ref: mut cui::VirtualListRef,
+  ref: &mut cui::VirtualListRef,
 }
 struct Props {
-  data: mut Model,
+  data: &mut Model,
 }
 struct Screen {
-  data: mut Model,
+  data: &mut Model,
 }
-private fn screen(props: mut Props) mut Screen {
-  (mut Screen{data: props.data})
+private fn screen(props: &mut Props) &mut Screen {
+  &mut Screen{data: props.data}
 }
 impl cui::Component for Screen {
   fn mut render() cui::View {
@@ -73,7 +73,7 @@ impl cui::Component for Screen {
 test fn variable_rows_are_lazy_and_reveal_settles_before_paint() Void!Str {
   let app = headless::new(30, 8)
   defer app.destroy()
-  let data = mut Model{
+  let data = &mut Model{
     items: items(1000),
     builds: 0,
     ref: cui::virtual_list_ref(),
@@ -113,7 +113,7 @@ test fn variable_rows_are_lazy_and_reveal_settles_before_paint() Void!Str {
 test fn insert_reorder_remove_and_empty_preserve_a_keyed_anchor() Void!Str {
   let app = headless::new(30, 8)
   defer app.destroy()
-  let data = mut Model{
+  let data = &mut Model{
     items: items(200),
     builds: 0,
     ref: cui::virtual_list_ref(),
@@ -130,13 +130,13 @@ test fn insert_reorder_remove_and_empty_preserve_a_keyed_anchor() Void!Str {
   let _ = list.scroll_to_key("97")
   app.flush()
   renderer.update(fn() {
-    let next = mut List::new<Int>()
+    let next = &mut List::new<Int>()
     next.push(1001)
     next.push(1002)
     for id in data.items {
       next.push(id)
     }
-    data.items = next.@
+    data.items = next.*
   })
   app.flush()
   try testing::assert(
@@ -144,13 +144,13 @@ test fn insert_reorder_remove_and_empty_preserve_a_keyed_anchor() Void!Str {
     "Prepend preserves visible key rather than index",
   )
   renderer.update(fn() {
-    let next = mut List::new<Int>()
+    let next = &mut List::new<Int>()
     for id in data.items {
       if id != 97 {
         next.push(id)
       }
     }
-    data.items = next.@
+    data.items = next.*
   })
   app.flush()
   try testing::assert(
@@ -364,7 +364,7 @@ test fn virtual_visible_cells_match_eager_layout_after_key_jumps() Void!Str {
   defer eager.destroy()
   let ref = cui::virtual_list_ref()
   let scroll = cui::scroll_box_ref()
-  let rows = mut List::new<cui::View>()
+  let rows = &mut List::new<cui::View>()
   for id in items(200) {
     rows.push(row(id))
   }
@@ -372,7 +372,7 @@ test fn virtual_visible_cells_match_eager_layout_after_key_jumps() Void!Str {
   let eager_renderer = renderer::mount(
     eager.context,
     eager.root,
-    cui::scroll_box(rows.@, ref: scroll, styles: size),
+    cui::scroll_box(rows.*, ref: scroll, styles: size),
   )
   defer eager_renderer.destroy()
   let lazy_renderer = renderer::mount(
@@ -469,16 +469,16 @@ test fn fixed_rows_center_end_and_nearest_align_exactly() Void!Str {
 
 struct StyledListState {
   options: ui::ScrollbarOptions,
-  ref: mut cui::VirtualListRef,
+  ref: &mut cui::VirtualListRef,
 }
 struct StyledListProps {
-  state: mut StyledListState,
+  state: &mut StyledListState,
 }
 struct StyledList {
-  props: mut StyledListProps,
+  props: &mut StyledListProps,
 }
-private fn styled_list(props: mut StyledListProps) mut StyledList {
-  (mut StyledList{props: props})
+private fn styled_list(props: &mut StyledListProps) &mut StyledList {
+  &mut StyledList{props: props}
 }
 impl cui::Component for StyledList {
   fn mut render() cui::View {
@@ -502,7 +502,7 @@ test fn scrollbar_options_apply_update_hide_and_restore() Void!Str {
   let app = headless::new(12, 6)
   defer app.destroy()
   let ref = cui::virtual_list_ref()
-  let data = mut StyledListState{
+  let data = &mut StyledListState{
     ref: ref,
     options: ui::scrollbar_options(
       appearance: ui::scrollbar_appearance(
@@ -560,16 +560,16 @@ test fn scrollbar_options_apply_update_hide_and_restore() Void!Str {
 struct FollowingModel {
   items: [Int],
   last_height: Int,
-  ref: mut cui::VirtualListRef,
+  ref: &mut cui::VirtualListRef,
 }
 struct FollowingProps {
-  data: mut FollowingModel,
+  data: &mut FollowingModel,
 }
 struct FollowingScreen {
-  data: mut FollowingModel,
+  data: &mut FollowingModel,
 }
-private fn following_screen(props: mut FollowingProps) mut FollowingScreen {
-  (mut FollowingScreen{data: props.data})
+private fn following_screen(props: &mut FollowingProps) &mut FollowingScreen {
+  &mut FollowingScreen{data: props.data}
 }
 impl cui::Component for FollowingScreen {
   fn mut render() cui::View {
@@ -598,7 +598,7 @@ impl cui::Component for FollowingScreen {
 test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled() Void!Str {
   let app = headless::new(20, 5)
   defer app.destroy()
-  let data = mut FollowingModel{
+  let data = &mut FollowingModel{
     items: items(11),
     last_height: 1,
     ref: cui::virtual_list_ref(),
@@ -636,12 +636,12 @@ test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled(
     "Scrolling away stops following and reports the latest item out of view",
   )
   renderer.update(fn() {
-    let next = mut List::new<Int>()
+    let next = &mut List::new<Int>()
     for item in data.items {
       next.push(item)
     }
     next.push(11)
-    data.items = next.@
+    data.items = next.*
   })
   app.flush()
   try testing::assert(list.scroll_top() == 3, "Appending while unpinned preserves the viewport")
@@ -653,24 +653,24 @@ test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled(
     "Scrolling to the end resumes following",
   )
   renderer.update(fn() {
-    let next = mut List::new<Int>()
+    let next = &mut List::new<Int>()
     for item in data.items {
       next.push(item)
     }
     next.push(12)
-    data.items = next.@
+    data.items = next.*
   })
   app.flush()
   try testing::assert(list.scroll_top() == 8, "A pinned list follows appended items")
 
   list.stop_following()
   renderer.update(fn() {
-    let next = mut List::new<Int>()
+    let next = &mut List::new<Int>()
     for item in data.items {
       next.push(item)
     }
     next.push(13)
-    data.items = next.@
+    data.items = next.*
   })
   app.flush()
   try testing::assert(
@@ -792,16 +792,16 @@ test fn following_edge_bottom_anchors_short_content_and_reanchors_on_resize() Vo
 struct StartFollowingModel {
   items: [Int],
   edge: cui::ScrollEdge,
-  ref: mut cui::VirtualListRef,
+  ref: &mut cui::VirtualListRef,
 }
 struct StartFollowingProps {
-  data: mut StartFollowingModel,
+  data: &mut StartFollowingModel,
 }
 struct StartFollowingScreen {
-  data: mut StartFollowingModel,
+  data: &mut StartFollowingModel,
 }
-private fn start_following_screen(props: mut StartFollowingProps) mut StartFollowingScreen {
-  (mut StartFollowingScreen{data: props.data})
+private fn start_following_screen(props: &mut StartFollowingProps) &mut StartFollowingScreen {
+  &mut StartFollowingScreen{data: props.data}
 }
 impl cui::Component for StartFollowingScreen {
   fn mut render() cui::View {
@@ -825,7 +825,7 @@ impl cui::Component for StartFollowingScreen {
 test fn following_start_tracks_prepends_until_scrolling_away() Void!Str {
   let app = headless::new(20, 5)
   defer app.destroy()
-  let data = mut StartFollowingModel{
+  let data = &mut StartFollowingModel{
     items: items(11),
     edge: cui::ScrollEdge::start,
     ref: cui::virtual_list_ref(),
@@ -850,13 +850,13 @@ test fn following_start_tracks_prepends_until_scrolling_away() Void!Str {
     "Scrolling down stops start following",
   )
   renderer.update(fn() {
-    let next = mut List::new<Int>()
+    let next = &mut List::new<Int>()
     next.push(-2)
     next.push(-1)
     for item in data.items {
       next.push(item)
     }
-    data.items = next.@
+    data.items = next.*
   })
   app.flush()
   try testing::assert(
@@ -871,13 +871,13 @@ test fn following_start_tracks_prepends_until_scrolling_away() Void!Str {
     "Returning to the top resumes start following",
   )
   renderer.update(fn() {
-    let next = mut List::new<Int>()
+    let next = &mut List::new<Int>()
     next.push(-4)
     next.push(-3)
     for item in data.items {
       next.push(item)
     }
-    data.items = next.@
+    data.items = next.*
   })
   app.flush()
   testing::assert(
@@ -889,7 +889,7 @@ test fn following_start_tracks_prepends_until_scrolling_away() Void!Str {
 test fn declarative_edge_change_replaces_a_pending_opposite_jump() Void!Str {
   let app = headless::new(20, 5)
   defer app.destroy()
-  let data = mut StartFollowingModel{
+  let data = &mut StartFollowingModel{
     items: items(20),
     edge: cui::ScrollEdge::end,
     ref: cui::virtual_list_ref(),
@@ -921,17 +921,17 @@ struct UpdateLog {
   latest: cui::VirtualListUpdate?,
 }
 struct UpdateModel {
-  log: mut UpdateLog,
-  ref: mut cui::VirtualListRef,
+  log: &mut UpdateLog,
+  ref: &mut cui::VirtualListRef,
 }
 struct UpdateProps {
-  data: mut UpdateModel,
+  data: &mut UpdateModel,
 }
 struct UpdateScreen {
-  data: mut UpdateModel,
+  data: &mut UpdateModel,
 }
-private fn update_screen(props: mut UpdateProps) mut UpdateScreen {
-  (mut UpdateScreen{data: props.data})
+private fn update_screen(props: &mut UpdateProps) &mut UpdateScreen {
+  &mut UpdateScreen{data: props.data}
 }
 impl cui::Component for UpdateScreen {
   fn mut render() cui::View {
@@ -964,8 +964,8 @@ private fn update_direction(update: cui::VirtualListUpdate, direction: cui::Virt
 test fn virtual_list_updates_publish_final_committed_state_and_user_intent() Void!Str {
   let app = headless::new(30, 8)
   defer app.destroy()
-  let data = mut UpdateModel{
-    log: mut UpdateLog{count: 0, latest: Maybe::new<cui::VirtualListUpdate>()},
+  let data = &mut UpdateModel{
+    log: &mut UpdateLog{count: 0, latest: Maybe::new<cui::VirtualListUpdate>()},
     ref: cui::virtual_list_ref(),
   }
   let renderer = renderer::mount(
@@ -1157,7 +1157,7 @@ test fn both_cross_row_selection_endpoints_are_pinned() Void!Str {
 test fn removing_a_pinned_selection_endpoint_clears_selection_and_releases_the_row() Void!Str {
   let app = headless::new(30, 8)
   defer app.destroy()
-  let data = mut Model{
+  let data = &mut Model{
     items: items(200),
     builds: 0,
     ref: cui::virtual_list_ref(),
@@ -1177,13 +1177,13 @@ test fn removing_a_pinned_selection_endpoint_clears_selection_and_releases_the_r
   try testing::assert(app.selection().is_some(), "offscreen endpoint remains retained")
 
   renderer.update(fn() {
-    let remaining = mut List::new<Int>()
+    let remaining = &mut List::new<Int>()
     mut index = 1
     while index < 200 {
       remaining.push(index)
       index =+ 1
     }
-    data.items = remaining.@
+    data.items = remaining.*
   })
   app.flush()
   try testing::assert(

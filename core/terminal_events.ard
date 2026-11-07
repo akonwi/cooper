@@ -35,7 +35,7 @@ private fn modifiers(value: vaxis::ModifierMask) event::Modifiers {
   }
 }
 
-fn key(received: vaxis::Key) mut event::KeyEvent {
+fn key(received: vaxis::Key) &mut event::KeyEvent {
   mut name = ""
   if received.Keycode == Int32::fit(vaxis::KeyEnter) {
     name = "return"
@@ -93,8 +93,8 @@ struct PasteResult {
 }
 
 private struct PasteState {
-  lock: mut sync::Mutex,
-  value: mut strings::Builder,
+  lock: &mut sync::Mutex,
+  value: &mut strings::Builder,
   active: Bool,
 }
 
@@ -102,17 +102,17 @@ struct PasteBuffer {
   internal: Any,
 }
 
-private fn paste_state(buffer: mut PasteBuffer) mut PasteState {
-  unsafe::cast<mut PasteState>(buffer.internal).expect("PasteBuffer must be created by Cooper")
+private fn paste_state(buffer: &mut PasteBuffer) &mut PasteState {
+  unsafe::cast<&mut PasteState>(buffer.internal).expect("PasteBuffer must be created by Cooper")
 }
 
-fn paste_buffer() mut PasteBuffer {
-  let state = mut PasteState{
-    lock: mut sync::Mutex{},
-    value: mut strings::Builder{},
+fn paste_buffer() &mut PasteBuffer {
+  let state = &mut PasteState{
+    lock: &mut sync::Mutex{},
+    value: &mut strings::Builder{},
     active: false,
   }
-  (mut PasteBuffer{internal: state})
+  &mut PasteBuffer{internal: state}
 }
 
 impl PasteBuffer {
@@ -154,7 +154,7 @@ impl PasteBuffer {
   }
 }
 
-fn mouse(received: vaxis::Mouse) mut event::MouseEvent {
+fn mouse(received: vaxis::Mouse) &mut event::MouseEvent {
   mut kind = event::MouseEventType::down
   mut button = event::MouseButton::none
   mut scroll_x = 0

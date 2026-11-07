@@ -6,30 +6,30 @@ use cooper/event
 use cooper/testing as headless
 
 struct Panels {
-  first: mut cui::BoxRef,
-  second: mut cui::BoxRef,
+  first: &mut cui::BoxRef,
+  second: &mut cui::BoxRef,
   reverse: Bool,
   enabled: Bool,
   calls: Int,
 }
 
 struct PanelScreen {
-  props: mut Panels,
+  props: &mut Panels,
 }
 
 struct PanelProps {
-  model: mut Panels,
+  model: &mut Panels,
 }
 
-private fn screen(props: mut PanelProps) mut PanelScreen {
-  (mut PanelScreen{props: props.model})
+private fn screen(props: &mut PanelProps) &mut PanelScreen {
+  &mut PanelScreen{props: props.model}
 }
 
 impl cui::Component for PanelScreen {
   fn mut render() cui::View {
-    mut handler = Maybe::new<fn(mut event::KeyEvent, cui::Context)>()
+    mut handler = Maybe::new<fn(&mut event::KeyEvent, cui::Context)>()
     if self.props.enabled {
-      handler = Maybe::new(fn(key: mut event::KeyEvent, ctx: cui::Context) {
+      handler = Maybe::new(fn(key: &mut event::KeyEvent, ctx: cui::Context) {
         self.props.calls =+ 1
       })
     }
@@ -48,7 +48,7 @@ test fn box_refs_retain_focus_and_clear_on_teardown() Void!Str {
   defer app.destroy()
   let first = cui::box_ref()
   let second = cui::box_ref()
-  let props = mut Panels{
+  let props = &mut Panels{
     first: first,
     second: second,
     reverse: false,

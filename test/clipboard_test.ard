@@ -16,7 +16,7 @@ private struct TerminalCalls {
 }
 
 test fn clipboard_terminal_context_rotates_and_cannot_resume_after_stop() Void!Str {
-  let calls = mut TerminalCalls{contexts: [], writes: []}
+  let calls = &mut TerminalCalls{contexts: [], writes: []}
   let service = clipboard::internal_terminal(
     fn(ctx: context::Context) Str!Error {
       calls.contexts.push(ctx)
@@ -122,7 +122,7 @@ test fn clipboard_rejects_a_concurrent_read() Void!Str {
   let entered = Chan::new<Bool>()
   let release = Chan::new<Bool>()
   let done = Chan::new<Bool>()
-  let outcome = mut ReadOutcome{succeeded: false}
+  let outcome = &mut ReadOutcome{succeeded: false}
   let service = clipboard::internal_new(
     fn() Str!Error {
       entered.close()
@@ -153,7 +153,7 @@ test fn clipboard_rejects_suspend_while_a_read_is_active() Void!Str {
   let entered = Chan::new<Bool>()
   let cancelled = Chan::new<Bool>()
   let done = Chan::new<Bool>()
-  let outcome = mut ReadOutcome{succeeded: true}
+  let outcome = &mut ReadOutcome{succeeded: true}
   let service = clipboard::internal_new(
     fn() Str!Error {
       entered.close()
@@ -187,7 +187,7 @@ test fn clipboard_stop_cancels_and_joins_an_active_read() Void!Str {
   let entered = Chan::new<Bool>()
   let cancelled = Chan::new<Bool>()
   let done = Chan::new<Bool>()
-  let outcome = mut ReadOutcome{succeeded: true}
+  let outcome = &mut ReadOutcome{succeeded: true}
   let service = clipboard::internal_new(
     fn() Str!Error {
       entered.close()

@@ -40,10 +40,10 @@ struct Update {
   moved: Bool,
 }
 struct Ref {
-  current: (mut VirtualList)?,
+  current: (&mut VirtualList)?,
 }
-fn ref() mut Ref {
-  (mut Ref{current: Maybe::new<mut VirtualList>()})
+fn ref() &mut Ref {
+  &mut Ref{current: Maybe::new<&mut VirtualList>()}
 }
 
 // One source object per application render, not per scroll/layout pass.
@@ -55,25 +55,25 @@ struct Source {
   row_height: Int?,
   scrollbar_options: ui::ScrollbarOptions,
   styles: ui::Style,
-  ref: (mut Ref)?,
-  on_key: fn(mut event::KeyEvent, context::Context)?,
-  on_mouse: fn(mut event::MouseEvent, context::Context)?,
+  ref: (&mut Ref)?,
+  on_key: fn(&mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(&mut event::MouseEvent, context::Context)?,
   sticky_scroll: Edge?,
   on_update: fn(Update, context::Context)?,
 }
 struct Props {
-  source: mut Source,
+  source: &mut Source,
 }
 struct Row {
   key: Str,
-  ref: mut view::BoxRef,
+  ref: &mut view::BoxRef,
 }
 
 struct VirtualList {
-  props: mut Props,
-  source: mut Source,
-  index: mut virtual_extent::Index,
-  scroll: mut view::ScrollBoxRef,
+  props: &mut Props,
+  source: &mut Source,
+  index: &mut virtual_extent::Index,
+  scroll: &mut view::ScrollBoxRef,
   rows: [Row],
   width: Int,
   height: Int,
@@ -89,16 +89,16 @@ struct VirtualList {
   settling_edge: Edge?,
   refresh: Bool,
   active: Bool,
-  bound_ref: (mut Ref)?,
+  bound_ref: (&mut Ref)?,
   pending_state: State?,
   delivered_state: State?,
   pending_user_scroll: Direction?,
   pending_user_start: Int?,
 }
 
-fn new(props: mut Props) mut VirtualList {
+fn new(props: &mut Props) &mut VirtualList {
   let source = props.source
-  (mut VirtualList{
+  &mut VirtualList{
     props: props,
     source: source,
     index: virtual_extent::new(source.keys, source.row_height.or(source.estimate)),
@@ -118,15 +118,15 @@ fn new(props: mut Props) mut VirtualList {
     settling_edge: Maybe::new<Edge>(),
     refresh: false,
     active: false,
-    bound_ref: Maybe::new<mut Ref>(),
+    bound_ref: Maybe::new<&mut Ref>(),
     pending_state: Maybe::new<State>(),
     delivered_state: Maybe::new<State>(),
     pending_user_scroll: Maybe::new<Direction>(),
     pending_user_start: Maybe::new<Int>(),
-  })
+  }
 }
 
-private fn focused(target: mut node::Node) Bool {
+private fn focused(target: &mut node::Node) Bool {
   mut found = target.is_focused()
   for child in target.children {
     if focused(child) {
@@ -136,7 +136,7 @@ private fn focused(target: mut node::Node) Bool {
   found
 }
 
-private fn selected_endpoint(target: mut node::Node) Bool {
+private fn selected_endpoint(target: &mut node::Node) Bool {
   mut found = target.retains_global_selection()
   for child in target.children {
     if selected_endpoint(child) {
@@ -398,7 +398,7 @@ impl VirtualList {
     }
   }
 
-  private fn mut handle_key(key: mut event::KeyEvent, ctx: context::Context) {
+  private fn mut handle_key(key: &mut event::KeyEvent, ctx: context::Context) {
     let vertical = key.event_type != event::KeyEventType::release and (not key.modifiers.shift) and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super)
     if vertical {
       if key.name == "up" or key.name == "page_up" or key.name == "home" {
@@ -413,7 +413,7 @@ impl VirtualList {
     }
   }
 
-  private fn mut handle_mouse(mouse: mut event::MouseEvent, ctx: context::Context) {
+  private fn mut handle_mouse(mouse: &mut event::MouseEvent, ctx: context::Context) {
     if mouse.event_type == event::MouseEventType::down or mouse.event_type == event::MouseEventType::drag {
       self.cancel_pending_position()
     } else if mouse.event_type == event::MouseEventType::scroll {
@@ -495,8 +495,8 @@ impl VirtualList {
   }
 
   private fn indices() [Int] {
-    let indices = mut List::new<Int>()
-    let selected = mut Map::new<Bool>()
+    let indices = &mut List::new<Int>()
+    let selected = &mut Map::new<Bool>()
     mut first = self.index.index_at(nonnegative(self.top - self.source.overscan))
     mut edge = self.top + self.height + self.source.overscan
     if (self.edge_following(Edge::end) or self.edge_settling(Edge::end)) and self.index.count() > 0 {
@@ -535,12 +535,12 @@ impl VirtualList {
         }
       }
     }
-    indices.@
+    indices.*
   }
 
   private fn mut bind_ref() {
     match self.bound_ref {
-      ref => { ref.current = Maybe::new<mut VirtualList>() },
+      ref => { ref.current = Maybe::new<&mut VirtualList>() },
       _ => (),
     }
     self.bound_ref = self.source.ref
@@ -788,8 +788,8 @@ impl view::Component for VirtualList {
       true => nonnegative(self.height - self.index.total()),
       false => 0,
     }
-    let rows = mut List::new<Row>()
-    let children = mut List::new<view::View>()
+    let rows = &mut List::new<Row>()
+    let children = &mut List::new<view::View>()
     for index in self.indices() {
       let key = self.index.key(index)
       mut ref = view::box_ref()
@@ -818,11 +818,11 @@ impl view::Component for VirtualList {
       )
       rows.push(Row{key: key, ref: ref})
     }
-    self.rows = rows.@
+    self.rows = rows.*
     view::scroll_box(
       [
         view::box(
-          children.@,
+          children.*,
           styles: ui::style(
             height: ui::cells(inset + self.index.total()),
             width: ui::percent(100.0),
@@ -833,10 +833,10 @@ impl view::Component for VirtualList {
       styles: self.source.styles,
       scrollbar_options: self.source.scrollbar_options,
       ref: self.scroll,
-      on_key: fn(key: mut event::KeyEvent, ctx: context::Context) {
+      on_key: fn(key: &mut event::KeyEvent, ctx: context::Context) {
         self.handle_key(key, ctx)
       },
-      on_mouse: fn(mouse: mut event::MouseEvent, ctx: context::Context) {
+      on_mouse: fn(mouse: &mut event::MouseEvent, ctx: context::Context) {
         self.handle_mouse(mouse, ctx)
       },
     )
@@ -881,8 +881,8 @@ impl view::Lifecycle for VirtualList {
   fn mut unmounting(ctx: context::Context) {
     self.active = false
     let _ = self.bound_ref.map(fn(ref) {
-      ref.current = Maybe::new<mut VirtualList>()
+      ref.current = Maybe::new<&mut VirtualList>()
     })
-    self.bound_ref = Maybe::new<mut Ref>()
+    self.bound_ref = Maybe::new<&mut Ref>()
   }
 }

@@ -34,7 +34,7 @@ fn row_style() ui::Style {
   ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_shrink: 0.0)
 }
 
-fn label(ctx: mut cooper::Runtime, content: Str, tint: ui::Color) mut ui::Text {
+fn label(ctx: &mut cooper::Runtime, content: Str, tint: ui::Color) &mut ui::Text {
   ui::text(
     ctx,
     content: content,
@@ -56,12 +56,12 @@ fn mode_name(demo: Demo) Str {
 }
 
 fn refresh(
-  field: mut ui::Input,
-  area: mut ui::TextArea,
+  field: &mut ui::Input,
+  area: &mut ui::TextArea,
   demo: Demo,
-  focus_status: mut ui::Text,
-  styles_status: mut ui::Text,
-  mode_status: mut ui::Text,
+  focus_status: &mut ui::Text,
+  styles_status: &mut ui::Text,
+  mode_status: &mut ui::Text,
 ) {
   mut focused = "none"
   if field.is_focused() {
@@ -76,7 +76,7 @@ fn refresh(
   mode_status.set_content("MODE {mode_name(demo)}")
 }
 
-fn set_both(field: mut ui::Input, area: mut ui::TextArea, value: ui::CursorStyle) {
+fn set_both(field: &mut ui::Input, area: &mut ui::TextArea, value: ui::CursorStyle) {
   field.set_cursor_style(value)
   area.set_cursor_style(value)
 }
@@ -179,14 +179,14 @@ fn main() {
   root.add(status)
   application.root.add(root)
 
-  let demo = mut Demo{vim: false, normal: false}
+  let demo = &mut Demo{vim: false, normal: false}
   let update = fn() {
-    refresh(field, area, demo.@, focus_status, styles_status, mode_status)
+    refresh(field, area, demo.*, focus_status, styles_status, mode_status)
   }
   let _ = field.on_focus(update)
   let _ = area.on_focus(update)
 
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release {
       if received.matches("tab") or received.matches("tab", shift: true) {
         if field.is_focused() {

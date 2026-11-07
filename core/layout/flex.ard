@@ -69,7 +69,7 @@ fn collect_line(
   gap: Float32,
   wrap: Bool,
 ) Line {
-  let selected = mut List::new<Item>()
+  let selected = &mut List::new<Item>()
   mut consumed = Float32::from(0.0)
   mut constrained_consumed = Float32::from(0.0)
   mut grow = Float32::from(0.0)
@@ -117,7 +117,7 @@ fn collect_line(
     shrink = Float32::from(1.0)
   }
   Line{
-    items: selected.@,
+    items: selected.*,
     start_index: start_index,
     next_index: index,
     size_consumed: consumed,
@@ -166,7 +166,7 @@ fn distribute_first_pass(line: Line, remaining_free_space: Float32) FirstPass {
 }
 
 fn distribute_second_pass(line: Line, first: FirstPass, original_free_space: Float32) Distribution {
-  let sizes = mut List::new<Float32>()
+  let sizes = &mut List::new<Float32>()
   mut delta = Float32::from(0.0)
   for item in line.items {
     let basis = bound_min_max(item, item.basis)
@@ -193,7 +193,7 @@ fn distribute_second_pass(line: Line, first: FirstPass, original_free_space: Flo
     sizes.push(updated)
   }
   Distribution{
-    sizes: sizes.@,
+    sizes: sizes.*,
     remaining_free_space: original_free_space - delta,
     distributed_free_space: delta,
     total_flex_grow_factors: first.total_flex_grow_factors,

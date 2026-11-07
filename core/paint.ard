@@ -56,18 +56,18 @@ struct Cell {
 struct StoredCell {
   grapheme: Str,
   width: Int,
-  style: mut CellStyle,
+  style: &mut CellStyle,
 }
 
 private fn blank_cell(foreground: color::Color?, background: color::Color?) StoredCell {
   StoredCell{
     grapheme: " ",
     width: 1,
-    style: mut style(foreground: foreground, background: background),
+    style: &mut style(foreground: foreground, background: background),
   }
 }
 
-private fn continuation(style: mut CellStyle) StoredCell {
+private fn continuation(style: &mut CellStyle) StoredCell {
   StoredCell{
     grapheme: "",
     width: 0,
@@ -107,21 +107,21 @@ struct Buffer {
   cell_orders: [Int],
 }
 
-fn new_buffer(width: Int, height: Int) mut Buffer {
+fn new_buffer(width: Int, height: Int) &mut Buffer {
   if width < 0 or height < 0 {
     panic("retained paint buffer dimensions must be non-negative")
   }
-  let cells = mut List::new<StoredCell>(width * height)
+  let cells = &mut List::new<StoredCell>(width * height)
   let blank = blank_cell()
   mut index = 0
   while index < width * height {
     cells.set(index, blank)
     index =+ 1
   }
-  (mut Buffer{
+  &mut Buffer{
     width: width,
     height: height,
-    cells: cells.@,
+    cells: cells.*,
     cursor: Maybe::new<Cursor>(),
     native_images: false,
     cell_pixel_width: 1,
@@ -129,7 +129,7 @@ fn new_buffer(width: Int, height: Int) mut Buffer {
     images: [],
     paint_order: 0,
     cell_orders: [],
-  })
+  }
 }
 
 impl Buffer {
@@ -140,20 +140,21 @@ impl Buffer {
     self.native_images = true
     self.cell_pixel_width = cell_width
     self.cell_pixel_height = cell_height
-    let orders = mut List::new<Int>(self.width * self.height)
+    let orders = &mut List::new<Int>(self.width * self.height)
     mut index = 0
     while index < self.width * self.height {
       orders.set(index, 0)
       index =+ 1
     }
-    self.cell_orders = orders.@
+    self.cell_orders = orders.*
   }
 
   fn mut add_image(image: ImagePlacement) {
+    mut image = image
     self.paint_order =+ 1
-    let placed = mut image
+    let placed = &mut image
     placed.order = self.paint_order
-    self.images.push(placed.@)
+    self.images.push(placed.*)
   }
 
   private fn index(x: Int, y: Int) Int? {
@@ -171,7 +172,7 @@ impl Buffer {
       Cell{
         grapheme: stored.grapheme,
         width: stored.width,
-        style: stored.style.@,
+        style: stored.style.*,
       },
     )
   }
@@ -250,7 +251,7 @@ impl Buffer {
     }
   }
 
-  private fn mut write_grapheme(x: Int, y: Int, grapheme: Str, width: Int, style: mut CellStyle) {
+  private fn mut write_grapheme(x: Int, y: Int, grapheme: Str, width: Int, style: &mut CellStyle) {
     match self.cursor {
       cursor => {
         if cursor.y == y and cursor.x >= x and cursor.x < x + width {
@@ -304,7 +305,7 @@ impl Buffer {
 }
 
 struct Context {
-  buffer: mut Buffer,
+  buffer: &mut Buffer,
   bounds: geometry::Rect,
   clip: geometry::Rect,
   foreground: color::Color?,
@@ -313,19 +314,20 @@ struct Context {
 
 impl Context {
   private fn inherited_colors(requested: CellStyle) CellStyle {
-    let painted = mut requested
+    mut requested = requested
+    let painted = &mut requested
     if not painted.foreground.is_some() {
       painted.foreground = self.foreground
     }
     if not painted.background.is_some() {
       painted.background = self.background
     }
-    painted.@
+    painted.*
   }
 
   fn mut fill(text_style: CellStyle?) {
     let applied_style = text_style.or(style())
-    let snapshot = mut self.inherited_colors(applied_style)
+    let snapshot = &mut self.inherited_colors(applied_style)
     let visible = geometry::intersect(self.bounds, self.clip)
     mut target_y = visible.y
     while target_y < visible.y + visible.height {
@@ -370,7 +372,7 @@ impl Context {
 
   fn mut write_overlay(x: Int, y: Int, text: Str, text_style: CellStyle?) {
     let applied_style = text_style.or(style())
-    let snapshot = mut self.inherited_colors(applied_style)
+    let snapshot = &mut self.inherited_colors(applied_style)
     let target_y = self.bounds.y + y
     mut target_x = self.bounds.x + x
     for character in vaxis::Characters(text) {
@@ -399,10 +401,10 @@ impl Context {
     line_break: (fn(Str) Bool)?,
   ) {
     let applied_style = text_style.or(style())
-    let snapshot = mut self.inherited_colors(applied_style)
+    let snapshot = &mut self.inherited_colors(applied_style)
     mut target_y = self.bounds.y + y
     mut target_x = self.bounds.x + x
-    let iterator = mut vaxis::NewCharacterIterator(text)
+    let iterator = &mut vaxis::NewCharacterIterator(text)
     mut reading = true
     while reading {
       match iterator.Next() {

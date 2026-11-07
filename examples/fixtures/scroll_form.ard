@@ -21,7 +21,7 @@ fn main() {
     ctx,
     styles: ui::style(width: ui::percent(100.0), height: ui::cells(1), flex_grow: 1.0),
   )
-  let fields = mut List::new<mut ui::Input>()
+  let fields = &mut List::new<&mut ui::Input>()
   mut index = 1
   while index <= 8 {
     let field = ui::input(ctx, placeholder: "value {index}", styles: line())
@@ -35,7 +35,7 @@ fn main() {
 
   application.root.add(root)
   fields.at(0).expect("first field").focus()
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release and received.matches("tab") {
       mut current = -1
       for field, field_index in fields {

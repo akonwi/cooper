@@ -26,7 +26,7 @@ struct Instance {
 struct Specification {
   props: Any,
   matches: fn(Any, Any) Bool,
-  create: fn() mut Instance,
+  create: fn() &mut Instance,
 }
 
 enum Kind {
@@ -44,7 +44,7 @@ enum Kind {
 
 // A ref does not own its control. It is cleared when the view is removed.
 struct InputRef {
-  current: (mut ui::Input)?,
+  current: (&mut ui::Input)?,
 }
 
 impl InputRef {
@@ -60,12 +60,12 @@ impl InputRef {
   }
 }
 
-fn input_ref() mut InputRef {
-  (mut InputRef{current: Maybe::new<mut ui::Input>()})
+fn input_ref() &mut InputRef {
+  &mut InputRef{current: Maybe::new<&mut ui::Input>()}
 }
 
 struct TextAreaRef {
-  current: (mut ui::TextArea)?,
+  current: (&mut ui::TextArea)?,
 }
 
 // A one-time caret placement and the cancellation of its commit hook.
@@ -100,7 +100,7 @@ impl TextAreaRef {
   // later commits leave it where editing moves it. The returned function
   // cancels a placement that has not run yet.
   fn mut set_cursor(ctx: context::Context, offset: Int) fn() {
-    let placement = mut Placement{done: false, cancel: fn() {}}
+    let placement = &mut Placement{done: false, cancel: fn() {}}
     let cancel = (ctx.internal_commit)(
       fn() {
         if not placement.done {
@@ -129,13 +129,13 @@ impl TextAreaRef {
     )
   }
 }
-fn text_area_ref() mut TextAreaRef {
-  (mut TextAreaRef{current: Maybe::new<mut ui::TextArea>()})
+fn text_area_ref() &mut TextAreaRef {
+  &mut TextAreaRef{current: Maybe::new<&mut ui::TextArea>()}
 }
 
 // TabSelect is the same retained control with a different presentation.
 struct SelectRef {
-  current: (mut ui::Select)?,
+  current: (&mut ui::Select)?,
 }
 impl SelectRef {
   fn mut focus(ctx: context::Context) fn() {
@@ -148,12 +148,12 @@ impl SelectRef {
     )
   }
 }
-fn select_ref() mut SelectRef {
-  (mut SelectRef{current: Maybe::new<mut ui::Select>()})
+fn select_ref() &mut SelectRef {
+  &mut SelectRef{current: Maybe::new<&mut ui::Select>()}
 }
 
 struct BoxRef {
-  current: (mut ui::Box)?,
+  current: (&mut ui::Box)?,
 }
 
 impl BoxRef {
@@ -168,12 +168,12 @@ impl BoxRef {
   }
 }
 
-fn box_ref() mut BoxRef {
-  (mut BoxRef{current: Maybe::new<mut ui::Box>()})
+fn box_ref() &mut BoxRef {
+  &mut BoxRef{current: Maybe::new<&mut ui::Box>()}
 }
 
 struct ScrollBoxRef {
-  current: (mut ui::ScrollBox)?,
+  current: (&mut ui::ScrollBox)?,
 }
 
 impl ScrollBoxRef {
@@ -188,8 +188,8 @@ impl ScrollBoxRef {
   }
 }
 
-fn scroll_box_ref() mut ScrollBoxRef {
-  (mut ScrollBoxRef{current: Maybe::new<mut ui::ScrollBox>()})
+fn scroll_box_ref() &mut ScrollBoxRef {
+  &mut ScrollBoxRef{current: Maybe::new<&mut ui::ScrollBox>()}
 }
 
 struct View {
@@ -208,7 +208,7 @@ struct Description {
   wrap: ui::TextWrap,
   overflow: ui::TextOverflow,
   selectable: Bool,
-  selection_style: fn(mut ui::TextStyle),
+  selection_style: fn(&mut ui::TextStyle),
   selection_copy: Str?,
   title: Str,
   value: Str,
@@ -230,8 +230,8 @@ struct Description {
   autofocus: Bool,
   on_input: fn(Str, context::Context)?,
   on_submit: fn(Str, context::Context)?,
-  on_key: fn(mut event::KeyEvent, context::Context)?,
-  on_mouse: fn(mut event::MouseEvent, context::Context)?,
+  on_key: fn(&mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(&mut event::MouseEvent, context::Context)?,
   commands: [keymap::Command],
   bindings: [keymap::Binding],
   binding_scope: keymap::ScopeMode,
@@ -240,11 +240,11 @@ struct Description {
   text_area_key_bindings: keymap::Bindings<ui::TextAreaAction>?,
   select_key_bindings: keymap::Bindings<ui::SelectAction>?,
   scroll_key_bindings: keymap::Bindings<ui::ScrollBoxAction>?,
-  input_ref: (mut InputRef)?,
-  text_area_ref: (mut TextAreaRef)?,
-  select_ref: (mut SelectRef)?,
-  box_ref: (mut BoxRef)?,
-  scroll_ref: (mut ScrollBoxRef)?,
+  input_ref: (&mut InputRef)?,
+  text_area_ref: (&mut TextAreaRef)?,
+  select_ref: (&mut SelectRef)?,
+  box_ref: (&mut BoxRef)?,
+  scroll_ref: (&mut ScrollBoxRef)?,
   // An image view's pixels; `value` identifies them.
   image: ui::ImageData?,
   component: Specification?,
@@ -254,7 +254,7 @@ fn describe(value: View) Description {
   unsafe::cast<Description>(value.internal).expect("View must be created by a constructor")
 }
 
-private fn default_selection_style(value: mut ui::TextStyle) {
+private fn default_selection_style(value: &mut ui::TextStyle) {
   value.reverse = not value.reverse
 }
 
@@ -291,8 +291,8 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     autofocus: false,
     on_input: Maybe::new<fn(Str, context::Context)>(),
     on_submit: Maybe::new<fn(Str, context::Context)>(),
-    on_key: Maybe::new<fn(mut event::KeyEvent, context::Context)>(),
-    on_mouse: Maybe::new<fn(mut event::MouseEvent, context::Context)>(),
+    on_key: Maybe::new<fn(&mut event::KeyEvent, context::Context)>(),
+    on_mouse: Maybe::new<fn(&mut event::MouseEvent, context::Context)>(),
     commands: [],
     bindings: [],
     binding_scope: keymap::ScopeMode::focus_within,
@@ -301,11 +301,11 @@ private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
     text_area_key_bindings: Maybe::new<keymap::Bindings<ui::TextAreaAction>>(),
     select_key_bindings: Maybe::new<keymap::Bindings<ui::SelectAction>>(),
     scroll_key_bindings: Maybe::new<keymap::Bindings<ui::ScrollBoxAction>>(),
-    input_ref: Maybe::new<mut InputRef>(),
-    text_area_ref: Maybe::new<mut TextAreaRef>(),
-    select_ref: Maybe::new<mut SelectRef>(),
-    box_ref: Maybe::new<mut BoxRef>(),
-    scroll_ref: Maybe::new<mut ScrollBoxRef>(),
+    input_ref: Maybe::new<&mut InputRef>(),
+    text_area_ref: Maybe::new<&mut TextAreaRef>(),
+    select_ref: Maybe::new<&mut SelectRef>(),
+    box_ref: Maybe::new<&mut BoxRef>(),
+    scroll_ref: Maybe::new<&mut ScrollBoxRef>(),
     image: Maybe::new<ui::ImageData>(),
     component: Maybe::new<Specification>(),
   }
@@ -319,16 +319,16 @@ fn text(
   wrap: ui::TextWrap?,
   overflow: ui::TextOverflow?,
   selectable: Bool?,
-  selection_style: fn(mut ui::TextStyle)?,
+  selection_style: fn(&mut ui::TextStyle)?,
 ) View {
-  let result = mut base(Kind::text, key, styles)
+  let result = &mut base(Kind::text, key, styles)
   result.content = content
   result.text_style = text_style.or(ui::text_style())
   result.wrap = wrap.or(ui::TextWrap::word)
   result.overflow = overflow.or(ui::TextOverflow::clip)
   result.selectable = selectable.or(false)
   result.selection_style = selection_style.or(default_selection_style)
-  View{internal: result.@}
+  View{internal: result.*}
 }
 
 fn box(
@@ -339,15 +339,15 @@ fn box(
   selection_copy: Str?,
   focused: Bool?,
   autofocus: Bool?,
-  on_key: fn(mut event::KeyEvent, context::Context)?,
-  on_mouse: fn(mut event::MouseEvent, context::Context)?,
-  ref: (mut BoxRef)?,
+  on_key: fn(&mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(&mut event::MouseEvent, context::Context)?,
+  ref: (&mut BoxRef)?,
   commands: [keymap::Command]?,
   bindings: [keymap::Binding]?,
   binding_scope: keymap::ScopeMode?,
   binding_priority: Int?,
 ) View {
-  let result = mut base(Kind::box, key, styles)
+  let result = &mut base(Kind::box, key, styles)
   result.children = children
   result.title = title.or("")
   result.selection_copy = selection_copy
@@ -360,24 +360,24 @@ fn box(
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
   result.binding_priority = binding_priority.or(0)
-  View{internal: result.@}
+  View{internal: result.*}
 }
 
 // image paints decoded pixels in the rectangle its styles allocate; images
 // have no intrinsic size. Copying pixels is costly, so the retained image
 // replaces its source only when `source_id` changes.
 fn image(source: ui::ImageData, source_id: Str, key: Str?, styles: ui::Style?) View {
-  let result = mut base(Kind::image, key, styles)
+  let result = &mut base(Kind::image, key, styles)
   result.image = Maybe::new(source)
   result.value = source_id
-  View{internal: result.@}
+  View{internal: result.*}
 }
 
 // divider is a one-row structural rule. A bordered parent Box paints the
 // connected junctions through its side borders.
 fn divider(key: Str?, styles: ui::Style?) View {
-  let result = mut base(Kind::divider, key, styles)
-  View{internal: result.@}
+  let result = &mut base(Kind::divider, key, styles)
+  View{internal: result.*}
 }
 
 fn scroll_box(
@@ -386,16 +386,16 @@ fn scroll_box(
   styles: ui::Style?,
   scrollbar_options: ui::ScrollbarOptions?,
   focusable: Bool?,
-  on_key: fn(mut event::KeyEvent, context::Context)?,
-  on_mouse: fn(mut event::MouseEvent, context::Context)?,
-  ref: (mut ScrollBoxRef)?,
+  on_key: fn(&mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(&mut event::MouseEvent, context::Context)?,
+  ref: (&mut ScrollBoxRef)?,
   key_bindings: keymap::Bindings<ui::ScrollBoxAction>?,
   commands: [keymap::Command]?,
   bindings: [keymap::Binding]?,
   binding_scope: keymap::ScopeMode?,
   binding_priority: Int?,
 ) View {
-  let result = mut base(Kind::scroll, key, styles)
+  let result = &mut base(Kind::scroll, key, styles)
   result.children = children
   result.scrollbar_options = scrollbar_options.or(ui::scrollbar_options())
   result.focusable = focusable.or(true)
@@ -407,7 +407,7 @@ fn scroll_box(
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
   result.binding_priority = binding_priority.or(0)
-  View{internal: result.@}
+  View{internal: result.*}
 }
 
 fn input(
@@ -419,9 +419,9 @@ fn input(
   autofocus: Bool?,
   on_input: fn(Str, context::Context)?,
   on_submit: fn(Str, context::Context)?,
-  on_key: fn(mut event::KeyEvent, context::Context)?,
-  on_mouse: fn(mut event::MouseEvent, context::Context)?,
-  ref: (mut InputRef)?,
+  on_key: fn(&mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(&mut event::MouseEvent, context::Context)?,
+  ref: (&mut InputRef)?,
   key_bindings: keymap::Bindings<ui::InputAction>?,
   cursor_style: ui::CursorStyle?,
   commands: [keymap::Command]?,
@@ -429,7 +429,7 @@ fn input(
   binding_scope: keymap::ScopeMode?,
   binding_priority: Int?,
 ) View {
-  let result = mut base(Kind::input, key, styles)
+  let result = &mut base(Kind::input, key, styles)
   result.value = value
   result.placeholder = placeholder.or("")
   result.focused = focused
@@ -445,7 +445,7 @@ fn input(
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
   result.binding_priority = binding_priority.or(0)
-  View{internal: result.@}
+  View{internal: result.*}
 }
 
 fn text_area(
@@ -457,15 +457,15 @@ fn text_area(
   text_style: ui::TextStyle?,
   placeholder_style: ui::TextStyle?,
   selectable: Bool?,
-  selection_style: fn(mut ui::TextStyle)?,
+  selection_style: fn(&mut ui::TextStyle)?,
   scrollbar_options: ui::ScrollbarOptions?,
   focused: Bool?,
   autofocus: Bool?,
   on_input: fn(Str, context::Context)?,
   on_submit: fn(Str, context::Context)?,
-  on_key: fn(mut event::KeyEvent, context::Context)?,
-  on_mouse: fn(mut event::MouseEvent, context::Context)?,
-  ref: (mut TextAreaRef)?,
+  on_key: fn(&mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(&mut event::MouseEvent, context::Context)?,
+  ref: (&mut TextAreaRef)?,
   key_bindings: keymap::Bindings<ui::TextAreaAction>?,
   cursor_style: ui::CursorStyle?,
   commands: [keymap::Command]?,
@@ -473,7 +473,7 @@ fn text_area(
   binding_scope: keymap::ScopeMode?,
   binding_priority: Int?,
 ) View {
-  let result = mut base(Kind::text_area, key, styles)
+  let result = &mut base(Kind::text_area, key, styles)
   result.value = value
   result.placeholder = placeholder.or("")
   result.wrap = wrap.or(ui::TextWrap::word)
@@ -495,7 +495,7 @@ fn text_area(
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
   result.binding_priority = binding_priority.or(0)
-  View{internal: result.@}
+  View{internal: result.*}
 }
 
 fn select_input(
@@ -511,16 +511,16 @@ fn select_input(
   on_highlight: fn(ui::SelectSelection, context::Context)?,
   on_change: fn(ui::SelectSelection, context::Context)?,
   on_submit: fn(ui::SelectSelection, context::Context)?,
-  on_key: fn(mut event::KeyEvent, context::Context)?,
-  on_mouse: fn(mut event::MouseEvent, context::Context)?,
-  ref: (mut SelectRef)?,
+  on_key: fn(&mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(&mut event::MouseEvent, context::Context)?,
+  ref: (&mut SelectRef)?,
   key_bindings: keymap::Bindings<ui::SelectAction>?,
   commands: [keymap::Command]?,
   bindings: [keymap::Binding]?,
   binding_scope: keymap::ScopeMode?,
   binding_priority: Int?,
 ) View {
-  let result = mut base(Kind::select_input, key, styles)
+  let result = &mut base(Kind::select_input, key, styles)
   result.options = options
   result.selected_index = selected_index
   result.highlighted_index = highlighted_index
@@ -539,7 +539,7 @@ fn select_input(
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
   result.binding_priority = binding_priority.or(0)
-  View{internal: result.@}
+  View{internal: result.*}
 }
 
 fn tab_select(
@@ -555,16 +555,16 @@ fn tab_select(
   on_highlight: fn(ui::SelectSelection, context::Context)?,
   on_change: fn(ui::SelectSelection, context::Context)?,
   on_submit: fn(ui::SelectSelection, context::Context)?,
-  on_key: fn(mut event::KeyEvent, context::Context)?,
-  on_mouse: fn(mut event::MouseEvent, context::Context)?,
-  ref: (mut SelectRef)?,
+  on_key: fn(&mut event::KeyEvent, context::Context)?,
+  on_mouse: fn(&mut event::MouseEvent, context::Context)?,
+  ref: (&mut SelectRef)?,
   key_bindings: keymap::Bindings<ui::SelectAction>?,
   commands: [keymap::Command]?,
   bindings: [keymap::Binding]?,
   binding_scope: keymap::ScopeMode?,
   binding_priority: Int?,
 ) View {
-  let result = mut describe(
+  let result = &mut describe(
     select_input(
       options,
       selected_index: selected_index,
@@ -589,7 +589,7 @@ fn tab_select(
   )
   result.kind = Kind::tab_select
   result.tab_config = config.or(ui::select_tab_config())
-  View{internal: result.@}
+  View{internal: result.*}
 }
 
 fn child(
@@ -600,11 +600,15 @@ fn child(
   binding_scope: keymap::ScopeMode?,
   binding_priority: Int?,
 ) View {
-  let result = mut base(Kind::component, key, Maybe::new(ui::style(display: ui::Display::contents)))
+  let result = &mut base(
+    Kind::component,
+    key,
+    Maybe::new(ui::style(display: ui::Display::contents)),
+  )
   result.component = Maybe::new(specification)
   result.commands = commands.or([])
   result.bindings = bindings.or([])
   result.binding_scope = binding_scope.or(keymap::ScopeMode::focus_within)
   result.binding_priority = binding_priority.or(0)
-  View{internal: result.@}
+  View{internal: result.*}
 }

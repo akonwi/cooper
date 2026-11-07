@@ -67,7 +67,7 @@ private fn describe(update: program_status::Update) Str {
 }
 
 private fn sent(application: cooper_testing::TestApp) Str {
-  let parts = mut List::new<Str>()
+  let parts = &mut List::new<Str>()
   for update in application.program_status_updates() {
     parts.push(describe(update))
   }

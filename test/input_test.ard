@@ -24,7 +24,7 @@ private fn modifiers() event::Modifiers {
   }
 }
 
-private fn key(name: Str, text: Str?) mut event::KeyEvent {
+private fn key(name: Str, text: Str?) &mut event::KeyEvent {
   event::key(name, text.or(""), event::KeyEventType::press, modifiers())
 }
 
@@ -36,7 +36,7 @@ private fn modified_key(
   alt: Bool?,
   super: Bool?,
   event_type: event::KeyEventType?,
-) mut event::KeyEvent {
+) &mut event::KeyEvent {
   event::key(
     name,
     text.or(""),
@@ -50,7 +50,7 @@ private fn modified_key(
   )
 }
 
-private fn send_key(field: mut input::Input, received: mut event::KeyEvent) event_delivery::Disposition {
+private fn send_key(field: &mut input::Input, received: &mut event::KeyEvent) event_delivery::Disposition {
   field.event(
     event_delivery::context(
       key_event: received,
@@ -60,7 +60,7 @@ private fn send_key(field: mut input::Input, received: mut event::KeyEvent) even
   )
 }
 
-private fn send_paste(field: mut input::Input, received: mut event::PasteEvent) event_delivery::Disposition {
+private fn send_paste(field: &mut input::Input, received: &mut event::PasteEvent) event_delivery::Disposition {
   field.event(
     event_delivery::context(
       paste_event: received,
@@ -70,7 +70,7 @@ private fn send_paste(field: mut input::Input, received: mut event::PasteEvent) 
   )
 }
 
-private fn send_mouse(field: mut input::Input, local_x: Int) event_delivery::Disposition {
+private fn send_mouse(field: &mut input::Input, local_x: Int) event_delivery::Disposition {
   let received = event::mouse(
     event::MouseEventType::down,
     event::MouseButton::left,
@@ -399,7 +399,7 @@ test fn input_mouse_default_does_not_recreate_reentrantly_cleared_anchor() Void!
   let application = cooper_testing::new(5, 1)
   let field = input::new(application.context, value: "abc", styles: fixed(5))
   application.root.add(field)
-  let _ = field.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = field.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       application.clear_selection()
     }
@@ -788,9 +788,9 @@ test fn resized_intermediate_input_reconciles_viewport_mapping() Void!Str {
 
 test fn fully_clipped_input_keeps_local_selection_without_global_fragment() Void!Str {
   let application = cooper_testing::new(8, 1)
-  let clipped_style = mut style::new(width: style::cells(3), height: style::cells(1))
+  let clipped_style = &mut style::new(width: style::cells(3), height: style::cells(1))
   clipped_style.overflow = style::Overflow::hidden
-  let clipped = box::new(application.context, styles: clipped_style.@)
+  let clipped = box::new(application.context, styles: clipped_style.*)
   let field = input::new(
     application.context,
     value: "abc",

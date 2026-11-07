@@ -7,8 +7,8 @@ use cooper/testing as headless
 use cooper/ui
 
 struct Model {
-  menu: mut cui::SelectRef,
-  area: mut cui::TextAreaRef,
+  menu: &mut cui::SelectRef,
+  area: &mut cui::TextAreaRef,
   options: [ui::SelectOption],
   selected: Int?,
   highlighted: Int?,
@@ -29,13 +29,13 @@ struct Model {
   menu_config: ui::SelectConfig,
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Form {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn form(props: mut Props) mut Form {
-  (mut Form{model: props.model})
+private fn form(props: &mut Props) &mut Form {
+  &mut Form{model: props.model}
 }
 
 impl cui::Component for Form {
@@ -101,7 +101,7 @@ impl cui::Component for Form {
           self.model.submitted_value = value
           self.model.contexts.push(ctx)
         },
-        on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+        on_key: fn(key: &mut event::KeyEvent, ctx: cui::Context) {
           self.model.keys =+ 1
           self.model.contexts.push(ctx)
           if key.matches("f2") {
@@ -122,8 +122,8 @@ impl cui::Component for Form {
   }
 }
 
-private fn model() mut Model {
-  (mut Model{
+private fn model() &mut Model {
+  &mut Model{
     menu: cui::select_ref(),
     area: cui::text_area_ref(),
     options: [
@@ -148,9 +148,9 @@ private fn model() mut Model {
     keys: 0,
     contexts: [],
     menu_config: ui::select_config(show_descriptions: false, max_visible: 2),
-  })
+  }
 }
-private fn key(name: Str, text: Str?, shift: Bool?) mut event::KeyEvent {
+private fn key(name: Str, text: Str?, shift: Bool?) &mut event::KeyEvent {
   event::key(
     name,
     text.or(""),

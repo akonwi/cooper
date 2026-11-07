@@ -18,7 +18,7 @@ struct Session {
 
 struct Mounted {
   index: Int,
-  view: mut box::Box,
+  view: &mut box::Box,
 }
 
 struct State {
@@ -44,7 +44,7 @@ private fn fixed_height(value: Int) style::Style {
   style::new(width: style::percent(100.0), height: style::cells(value), flex_shrink: 0.0)
 }
 
-private fn label(ctx: mut runtime::Runtime, value: Str, height: Int?) mut text::Text {
+private fn label(ctx: &mut runtime::Runtime, value: Str, height: Int?) &mut text::Text {
   text::new(
     ctx,
     content: value,
@@ -56,7 +56,7 @@ private fn label(ctx: mut runtime::Runtime, value: Str, height: Int?) mut text::
   )
 }
 
-private fn card(ctx: mut runtime::Runtime, index: Int) mut box::Box {
+private fn card(ctx: &mut runtime::Runtime, index: Int) &mut box::Box {
   let tall = index % 2 == 1
   let result = box::new(
     ctx,
@@ -177,8 +177,8 @@ fn prepare(eager: Bool) Session {
     true => entry_count(),
     false => lazy_entries(),
   }
-  let cards = mut List::new<mut box::Box>()
-  let state = mut State{
+  let cards = &mut List::new<&mut box::Box>()
+  let state = &mut State{
     offset: 0,
     start: 0,
     cards: [],
@@ -237,7 +237,7 @@ fn prepare(eager: Bool) Session {
           false => 0,
         }
         if start != state.start {
-          let next = mut List::new<Mounted>()
+          let next = &mut List::new<Mounted>()
           for old in state.cards {
             if old.index < start or old.index >= start + lazy_entries() {
               let _ = content.remove(old.view)
@@ -260,7 +260,7 @@ fn prepare(eager: Bool) Session {
             content.add(selected.view, index: entry - start + 1)
             entry =+ 1
           }
-          state.cards = next.@
+          state.cards = next.*
           state.start = start
           top.set_style(fixed_height(total_height(0, start)))
           bottom.set_style(fixed_height(total_height(start + lazy_entries(), entry_count())))

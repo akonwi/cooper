@@ -11,22 +11,22 @@ struct Model {
   renders: Int,
   mounts: Int,
   unmounts: Int,
-  children: [mut Model],
+  children: [&mut Model],
   context: cui::Context?,
-  ref: mut cui::BoxRef,
+  ref: &mut cui::BoxRef,
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
   prefix: Str,
 }
 struct Component {
-  props: mut Props,
+  props: &mut Props,
 }
-private fn component(props: mut Props) mut Component {
-  (mut Component{props: props})
+private fn component(props: &mut Props) &mut Component {
+  &mut Component{props: props}
 }
-private fn model(label: Str, children: [mut Model]) mut Model {
-  (mut Model{
+private fn model(label: Str, children: [&mut Model]) &mut Model {
+  &mut Model{
     label: label,
     value: 0,
     renders: 0,
@@ -35,13 +35,13 @@ private fn model(label: Str, children: [mut Model]) mut Model {
     children: children,
     context: Maybe::new<cui::Context>(),
     ref: cui::box_ref(),
-  })
+  }
 }
 impl cui::Component for Component {
   fn mut render() cui::View {
     let data = self.props.model
     data.renders =+ 1
-    let children = mut List::new<cui::View>()
+    let children = &mut List::new<cui::View>()
     children.push(cui::text("{self.props.prefix}{data.label}={data.value}"))
     for child in data.children {
       children.push(
@@ -52,7 +52,7 @@ impl cui::Component for Component {
         ),
       )
     }
-    cui::box(children.@, ref: data.ref)
+    cui::box(children.*, ref: data.ref)
   }
 }
 impl cui::Lifecycle for Component {

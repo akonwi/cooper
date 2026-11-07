@@ -6,8 +6,8 @@ use go:time
 
 struct Layer {
   name: Str,
-  group: mut ui::Box,
-  panel: mut ui::Box,
+  group: &mut ui::Box,
+  panel: &mut ui::Box,
   x: Int,
   y: Int,
   z: Int,
@@ -92,7 +92,7 @@ private fn badge_style(fill: ui::Color) ui::Style {
 }
 
 private fn make_layer(
-  ctx: mut cooper::Runtime,
+  ctx: &mut cooper::Runtime,
   name: Str,
   x: Int,
   y: Int,
@@ -100,7 +100,7 @@ private fn make_layer(
   fill: ui::Color,
   border: ui::Color,
   badge_fill: ui::Color,
-) mut Layer {
+) &mut Layer {
   let group = ui::box(ctx, styles: group_style(x, y, z))
   let shadow = ui::box(ctx, styles: shadow_style())
   let panel = ui::box(ctx, title: name, styles: panel_style(fill, border))
@@ -126,7 +126,7 @@ private fn make_layer(
   group.add(panel)
   group.set_focusable(true)
 
-  let layer = mut Layer{
+  let layer = &mut Layer{
     name: name,
     group: group,
     panel: panel,
@@ -141,7 +141,7 @@ private fn make_layer(
   layer
 }
 
-private fn apply_layer(layer: mut Layer, active: Bool) {
+private fn apply_layer(layer: &mut Layer, active: Bool) {
   mut applied_border = layer.border
   if active {
     applied_border = ui::hex("#F8FAFC")
@@ -151,13 +151,13 @@ private fn apply_layer(layer: mut Layer, active: Bool) {
   layer.panel.set_title("{layer.name} · parent z={layer.z}")
 }
 
-private fn refresh(layers: [mut Layer], active: Int) {
+private fn refresh(layers: [&mut Layer], active: Int) {
   for layer, index in layers {
     apply_layer(layer, index == active)
   }
 }
 
-private fn raise_layer(layers: [mut Layer], index: Int) {
+private fn raise_layer(layers: [&mut Layer], index: Int) {
   match layers.at(index) {
     selected => {
       let previous_z = selected.z
@@ -172,12 +172,12 @@ private fn raise_layer(layers: [mut Layer], index: Int) {
   }
 }
 
-private fn move_layer(layer: mut Layer, delta_x: Int, delta_y: Int) {
+private fn move_layer(layer: &mut Layer, delta_x: Int, delta_y: Int) {
   layer.x = clamp(layer.x + delta_x, 0, 30)
   layer.y = clamp(layer.y + delta_y, 0, 6)
 }
 
-private fn reset_layers(layers: [mut Layer]) {
+private fn reset_layers(layers: [&mut Layer]) {
   for layer, index in layers {
     layer.x = layer.home_x
     layer.y = layer.home_y
@@ -185,7 +185,7 @@ private fn reset_layers(layers: [mut Layer]) {
   }
 }
 
-private fn name_at_z(layers: [mut Layer], z: Int) Str {
+private fn name_at_z(layers: [&mut Layer], z: Int) Str {
   mut found = "?"
   for layer in layers {
     if layer.z == z {
@@ -195,7 +195,7 @@ private fn name_at_z(layers: [mut Layer], z: Int) Str {
   found
 }
 
-private fn inspector_content(layers: [mut Layer], active: Int, autoplay: Bool) ui::StyledText {
+private fn inspector_content(layers: [&mut Layer], active: Int, autoplay: Bool) ui::StyledText {
   let selected = layers.at(active).expect("active stacking layer")
   let label = ui::hex("#94A3B8")
   let accent = ui::hex("#67E8F9")
@@ -224,13 +224,13 @@ private fn inspector_content(layers: [mut Layer], active: Int, autoplay: Bool) u
 }
 
 private fn update_status(
-  layers: [mut Layer],
+  layers: [&mut Layer],
   active: Int,
   autoplay: Bool,
   last_hit: Str,
   hits: Int,
-  inspector: mut ui::Text,
-  status: mut ui::Text,
+  inspector: &mut ui::Text,
+  status: &mut ui::Text,
 ) {
   let selected = layers.at(active).expect("active stacking layer")
   inspector.set_content(inspector_content(layers, active, autoplay))
@@ -359,7 +359,7 @@ fn main() {
   inspector_clip.add(inspector)
   inspector_panel.add(inspector_clip)
 
-  let layers: [mut Layer] = [
+  let layers: [&mut Layer] = [
     make_layer(ctx, "ALPHA", 2, 1, 0, ui::hex("#1D4ED8"), ui::hex("#60A5FA"), ui::hex("#1E40AF")),
     make_layer(ctx, "BRAVO", 11, 3, 1, ui::hex("#6D28D9"), ui::hex("#C4B5FD"), ui::hex("#5B21B6")),
     make_layer(ctx, "CHARLIE", 20, 4, 2, ui::hex("#047857"), ui::hex("#6EE7B7"), ui::hex("#065F46")),
@@ -425,7 +425,7 @@ fn main() {
   root.add(footer)
   application.root.add(root)
 
-  let state = mut StackingState{
+  let state = &mut StackingState{
     active: 2,
     autoplay: false,
     last_hit: "none",
@@ -454,7 +454,7 @@ fn main() {
   for layer, index in layers {
     let target_index = index
     let hit_name = layer.name
-    let _ = layer.group.on_mouse(fn(received: mut cooper::MouseEvent) {
+    let _ = layer.group.on_mouse(fn(received: &mut cooper::MouseEvent) {
       if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
         state.last_hit = hit_name
         state.hits =+ 1
@@ -463,7 +463,7 @@ fn main() {
     })
   }
 
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type == cooper::KeyEventType::press {
       if received.matches("q") {
         received.prevent_default()

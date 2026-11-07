@@ -54,8 +54,8 @@ struct Spring {
   internal: Any,
 }
 
-private fn state(value: Any) mut State {
-  unsafe::cast<mut State>(value).expect("Spring must be created by Cooper")
+private fn state(value: Any) &mut State {
+  unsafe::cast<&mut State>(value).expect("Spring must be created by Cooper")
 }
 
 private fn finite(value: Float64, name: Str) Float64 {
@@ -71,13 +71,13 @@ private fn positive(value: Float64, name: Str) {
   }
 }
 
-private fn available(shared: mut State) {
+private fn available(shared: &mut State) {
   if shared.status == Status::destroyed {
     panic("Spring is unavailable after destruction")
   }
 }
 
-fn internal_new(value: Float64, update: fn(Frame), wake: fn(), options: Config?, on_complete: fn()?) mut Spring {
+fn internal_new(value: Float64, update: fn(Frame), wake: fn(), options: Config?, on_complete: fn()?) &mut Spring {
   let settings = options.or(config())
   positive(settings.angular_frequency, "spring angular frequency")
   positive(settings.position_tolerance, "spring position tolerance")
@@ -86,7 +86,7 @@ fn internal_new(value: Float64, update: fn(Frame), wake: fn(), options: Config?,
     panic("spring damping ratio must be non-negative")
   }
   let initial = finite(value, "spring value")
-  let shared = mut State{
+  let shared = &mut State{
     config: settings,
     value: initial,
     velocity: 0.0,
@@ -98,7 +98,7 @@ fn internal_new(value: Float64, update: fn(Frame), wake: fn(), options: Config?,
     on_complete: on_complete,
     wake: wake,
   }
-  (mut Spring{internal: shared})
+  &mut Spring{internal: shared}
 }
 
 // Altered Ard port of Harmonica's spring solver (Charmbracelet, Inc., 2021).
@@ -148,7 +148,7 @@ fn internal_new(value: Float64, update: fn(Frame), wake: fn(), options: Config?,
 //
 // 3. This notice may not be removed or altered from any source
 //    distribution.
-private fn advance(shared: mut State, seconds: Float64) {
+private fn advance(shared: &mut State, seconds: Float64) {
   let frequency = shared.config.angular_frequency
   let damping = shared.config.damping_ratio
   let decay = frequency * damping

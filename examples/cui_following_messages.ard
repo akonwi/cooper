@@ -39,13 +39,13 @@ private fn message(id: Int, tall: Bool?) Message {
 }
 
 private fn initial_messages() [Message] {
-  let messages = mut List::new<Message>()
+  let messages = &mut List::new<Message>()
   mut id = 0
   while id < 18 {
     messages.push(message(id))
     id =+ 1
   }
-  messages.@
+  messages.*
 }
 
 private fn edge_name(edge: cui::ScrollEdge) Str {
@@ -68,12 +68,12 @@ struct Model {
   paused: Bool,
   elapsed: Int,
   next_id: Int,
-  list: mut cui::VirtualListRef,
+  list: &mut cui::VirtualListRef,
 }
 
 impl Model {
   fn mut add(tall: Bool) {
-    let next = mut List::new<Message>()
+    let next = &mut List::new<Message>()
     let created = message(self.next_id, tall)
     self.next_id =+ 1
     match self.edge {
@@ -90,7 +90,7 @@ impl Model {
         next.push(created)
       },
     }
-    self.messages = next.@
+    self.messages = next.*
   }
 
   fn mut reset_short() {
@@ -110,15 +110,15 @@ impl Model {
 }
 
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 
 struct Screen {
-  model: mut Model,
+  model: &mut Model,
 }
 
-private fn screen(props: mut Props) mut Screen {
-  (mut Screen{model: props.model})
+private fn screen(props: &mut Props) &mut Screen {
+  &mut Screen{model: props.model}
 }
 
 impl Screen {
@@ -154,7 +154,7 @@ impl Screen {
     })
   }
 
-  fn mut handle_key(key: mut cooper::KeyEvent) {
+  fn mut handle_key(key: &mut cooper::KeyEvent) {
     if key.event_type != cooper::KeyEventType::release {
       if key.matches("1") {
         self.follow(cui::ScrollEdge::start)
@@ -239,7 +239,7 @@ impl cui::Component for Screen {
             item.id.to_str()
           },
           render_item: fn(item: Message) cui::View {
-            let padding = mut ui::edges()
+            let padding = &mut ui::edges()
             padding.right = ui::cells(1)
             padding.bottom = ui::cells(1)
             padding.left = ui::cells(1)
@@ -283,7 +283,7 @@ impl cui::Component for Screen {
         height: ui::percent(100.0),
         border: ui::Border::rounded,
       ),
-      on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+      on_key: fn(key: &mut cooper::KeyEvent, ctx: cui::Context) {
         self.handle_key(key)
       },
     )
@@ -293,7 +293,7 @@ impl cui::Component for Screen {
 fn main() {
   let application = cooper::app().expect("create following messages example")
   defer application.destroy()
-  let model = mut Model{
+  let model = &mut Model{
     messages: initial_messages(),
     edge: cui::ScrollEdge::end,
     paused: false,

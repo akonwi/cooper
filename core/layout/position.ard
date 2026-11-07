@@ -22,14 +22,14 @@ fn zero(value: style::Length, reference: Float32) Float32 {
   }
 }
 
-fn dimension(node: mut layout::Node, row: Bool) Float32 {
+fn dimension(node: &mut layout::Node, row: Bool) Float32 {
   match row {
     true => node.measured_width,
     false => node.measured_height,
   }
 }
 
-fn inset_start(parent: mut layout::Node, row: Bool, reverse: Bool) Float32 {
+fn inset_start(parent: &mut layout::Node, row: Bool, reverse: Bool) Float32 {
   let value = match row {
     true => {
       match reverse {
@@ -47,7 +47,7 @@ fn inset_start(parent: mut layout::Node, row: Bool, reverse: Bool) Float32 {
   Float32::fit(value)
 }
 
-fn margin_start(node: mut layout::Node, row: Bool, reverse: Bool, owner_width: Float32) Float32 {
+fn margin_start(node: &mut layout::Node, row: Bool, reverse: Bool, owner_width: Float32) Float32 {
   let value = match row {
     true => {
       match reverse {
@@ -65,11 +65,11 @@ fn margin_start(node: mut layout::Node, row: Bool, reverse: Bool, owner_width: F
   zero(value, owner_width)
 }
 
-fn margin_end(node: mut layout::Node, row: Bool, reverse: Bool, owner_width: Float32) Float32 {
+fn margin_end(node: &mut layout::Node, row: Bool, reverse: Bool, owner_width: Float32) Float32 {
   margin_start(node, row, not reverse, owner_width)
 }
 
-fn auto_start(node: mut layout::Node, row: Bool, reverse: Bool) Bool {
+fn auto_start(node: &mut layout::Node, row: Bool, reverse: Bool) Bool {
   let value = match row {
     true => {
       match reverse {
@@ -94,7 +94,7 @@ fn physical(logical: Float32, size: Float32, parent_size: Float32, reverse: Bool
   }
 }
 
-fn relative(node: mut layout::Node, horizontal: Bool, owner_width: Float32, owner_height: Float32) Float32 {
+fn relative(node: &mut layout::Node, horizontal: Bool, owner_width: Float32, owner_height: Float32) Float32 {
   if node.value.position == style::Position::static {
     Float32::from(0.0)
   } else {
@@ -135,8 +135,8 @@ fn relative(node: mut layout::Node, horizontal: Bool, owner_width: Float32, owne
 // are committed border-box values. No entry may be omitted from the parallel
 // arrays. This phase mutates x/y only and never sizes, measures, or recurses.
 fn apply(
-  parent: mut layout::Node,
-  lines: [[mut layout::Node]],
+  parent: &mut layout::Node,
+  lines: [[&mut layout::Node]],
   natural_cross_extents: [Float32],
   remaining_main_space: [Float32],
   owner_width: Float32,

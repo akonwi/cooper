@@ -10,7 +10,7 @@ fn main() {
   defer ctx.destroy_detached()
   for automatic in [false, true] {
     let root = box::new(ctx)
-    let children = mut List::new<mut box::Box>()
+    let children = &mut List::new<&mut box::Box>()
     let height = match automatic {
       true => style::auto(),
       false => style::cells(1),

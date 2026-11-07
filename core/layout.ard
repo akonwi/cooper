@@ -27,7 +27,7 @@ struct Allocation {
   content_width: Int,
   measured_width: Float32,
   intrinsic_width: Float32,
-  cache_state: mut cache::State,
+  cache_state: &mut cache::State,
   dirty: Bool,
 }
 
@@ -36,10 +36,10 @@ struct Allocation {
 struct Node {
   value: style::Style,
   border: Int,
-  children: [mut Node],
-  owner: (mut Node)?,
+  children: [&mut Node],
+  owner: (&mut Node)?,
   dirty: Bool,
-  cache_state: mut cache::State,
+  cache_state: &mut cache::State,
   measure: (fn(MeasureInput) MeasureSize)?,
   measured_width: Float32,
   measured_height: Float32,
@@ -68,12 +68,12 @@ struct Node {
   transaction_height: Int,
 }
 
-fn new() mut Node {
-  (mut Node{
+fn new() &mut Node {
+  &mut Node{
     value: style::new(),
     border: 0,
     children: [],
-    owner: Maybe::new<mut Node>(),
+    owner: Maybe::new<&mut Node>(),
     dirty: true,
     cache_state: cache::new_state(),
     measure: Maybe::new<fn(MeasureInput) MeasureSize>(),
@@ -115,7 +115,7 @@ fn new() mut Node {
       width: 0,
       height: 0,
     },
-  })
+  }
 }
 
 fn max(a: Float64, b: Float64) Float64 {
@@ -186,7 +186,7 @@ impl Node {
     if self.children.size() != 0 {
       panic("calculate_leaf requires a leaf node")
     }
-    let request = mut cache::Measurement{
+    let request = &mut cache::Measurement{
       available_width: width.available,
       available_height: height.available,
       width_mode: width.mode,
@@ -197,7 +197,7 @@ impl Node {
     // Cooper's existing backend configuration is fixed: LTR, scale one.
     let visit = self.cache_state.prepare(self.dirty, generation, 0, cache::Direction::ltr)
     let cached = self.cache_state.find(
-      request.@,
+      request.*,
       self.measure.is_some(),
       perform_layout,
       margin_row,
@@ -225,7 +225,7 @@ impl Node {
       if cached.is_some() == false {
         request.computed_width = result.width
         request.computed_height = result.height
-        self.cache_state.store(request.@, perform_layout)
+        self.cache_state.store(request.*, perform_layout)
       }
     }
     if perform_layout {
@@ -264,8 +264,8 @@ impl Node {
     self.border = border
   }
 
-  fn mut insert(child: mut Node, index: Int) {
-    let next = mut List::new<mut Node>()
+  fn mut insert(child: &mut Node, index: Int) {
+    let next = &mut List::new<&mut Node>()
     for existing, current in self.children {
       match current == index {
         true => next.push(child),
@@ -277,23 +277,23 @@ impl Node {
       true => next.push(child),
       false => (),
     }
-    self.children = next.@
-    child.owner = Maybe::new<mut Node>(self)
+    self.children = next.*
+    child.owner = Maybe::new<&mut Node>(self)
     self.mark_dirty()
   }
 
-  fn mut remove(child: mut Node) {
+  fn mut remove(child: &mut Node) {
     mut removed = false
-    let retained = mut List::new<mut Node>()
+    let retained = &mut List::new<&mut Node>()
     for existing in self.children {
       match existing != child {
         true => retained.push(existing),
         false => { removed = true },
       }
     }
-    self.children = retained.@
+    self.children = retained.*
     if removed {
-      child.owner = Maybe::new<mut Node>()
+      child.owner = Maybe::new<&mut Node>()
       child.cache_state = cache::new_state()
       self.mark_dirty()
     }
@@ -336,6 +336,7 @@ impl Node {
 
   fn mut freeze_horizontal(px: Float64) {
     let x = px + self.x
+    mut cache_state = self.cache_state.*
     self.allocation = Maybe::new<Allocation>(
       Allocation{
         x: self.x,
@@ -346,7 +347,7 @@ impl Node {
         content_width: rounded(x + max(self.insets.left, self.width - self.insets.right)) - rounded(x + self.insets.left),
         measured_width: self.measured_width,
         intrinsic_width: self.intrinsic_width,
-        cache_state: mut self.cache_state.@,
+        cache_state: &mut cache_state,
         dirty: self.dirty,
       },
     )

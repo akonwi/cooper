@@ -10,12 +10,12 @@ struct Comment {
 struct Model {
   comments: [Comment],
   visible: [Comment],
-  collapsed: mut [Str: Bool],
-  list: mut cui::VirtualListRef,
+  collapsed: &mut [Str: Bool],
+  list: &mut cui::VirtualListRef,
 }
 impl Model {
   fn mut project() {
-    let rows = mut List::new<Comment>()
+    let rows = &mut List::new<Comment>()
     mut hidden_below = 4
     for comment in self.comments {
       if comment.depth <= hidden_below {
@@ -26,17 +26,17 @@ impl Model {
         }
       }
     }
-    self.visible = rows.@
+    self.visible = rows.*
   }
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Screen {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn screen(props: mut Props) mut Screen {
-  (mut Screen{model: props.model})
+private fn screen(props: &mut Props) &mut Screen {
+  &mut Screen{model: props.model}
 }
 impl cui::Component for Screen {
   fn mut render() cui::View {
@@ -58,7 +58,7 @@ impl cui::Component for Screen {
             if closed {
               indicator = "+"
             }
-            let padding = mut ui::edges()
+            let padding = &mut ui::edges()
             padding.left = ui::cells(comment.depth * 3)
             cui::box(
               [
@@ -94,7 +94,7 @@ impl cui::Component for Screen {
 fn main() {
   let app = cooper::app().expect("create virtual comments example")
   defer app.destroy()
-  let comments = mut List::new<Comment>()
+  let comments = &mut List::new<Comment>()
   mut id = 0
   while id < 4000 {
     mut body = "A virtual list should preserve the comment you are reading while surrounding content changes."
@@ -117,10 +117,10 @@ fn main() {
     )
     id =+ 1
   }
-  let model = mut Model{
-    comments: comments.@,
+  let model = &mut Model{
+    comments: comments.*,
     visible: [],
-    collapsed: mut Map::new<Bool>(),
+    collapsed: &mut Map::new<Bool>(),
     list: cui::virtual_list_ref(),
   }
   model.project()
@@ -131,7 +131,7 @@ fn main() {
       let _ = list.focus()
     })
   })
-  let _ = app.on_key(fn(key: mut cooper::KeyEvent) {
+  let _ = app.on_key(fn(key: &mut cooper::KeyEvent) {
     if key.matches("g") {
       let _ = model.list.current.map(fn(list) {
         let _ = list.scroll_to_key("2000")

@@ -18,7 +18,7 @@ fn main() {
 
   let context = application.context
   let dispatch = application.context.dispatch
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type == cooper::KeyEventType::press and received.matches("t") {
       let accepted = context.set_title("Cooper\nTitle")
       status.set_content("TITLE ACCEPTED: {accepted}")

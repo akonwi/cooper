@@ -21,11 +21,11 @@ private fn build(keys: [Str], estimate: Int, measured: [Str: Int]) Index {
   if estimate < 1 {
     panic("virtual extent estimate must be positive")
   }
-  let positions = mut Map::new<Int>()
-  let retained = mut Map::new<Int>()
-  let heights = mut List::new<Int>()
-  let tree = mut [0]
-  let steps = mut [0]
+  let positions = &mut Map::new<Int>()
+  let retained = &mut Map::new<Int>()
+  let heights = &mut List::new<Int>()
+  let tree = &mut [0]
+  let steps = &mut [0]
   mut extent = 0
   for key, index in keys {
     if positions.has(key) {
@@ -67,17 +67,17 @@ private fn build(keys: [Str], estimate: Int, measured: [Str: Int]) Index {
   }
   Index{
     keys: keys,
-    positions: positions.@,
-    measured: retained.@,
-    heights: heights.@,
-    tree: tree.@,
-    steps: steps.@,
+    positions: positions.*,
+    measured: retained.*,
+    heights: heights.*,
+    tree: tree.*,
+    steps: steps.*,
     extent: extent,
   }
 }
 
-fn new(keys: [Str], estimate: Int) mut Index {
-  (mut build(keys, estimate, Map::new<Int>()))
+fn new(keys: [Str], estimate: Int) &mut Index {
+  &mut build(keys, estimate, Map::new<Int>())
 }
 
 impl Index {

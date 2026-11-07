@@ -7,7 +7,7 @@ use cooper/keymap
 use cooper/testing as headless
 use cooper/ui
 
-private fn pressed(name: Str, value: Str?) mut event::KeyEvent {
+private fn pressed(name: Str, value: Str?) &mut event::KeyEvent {
   event::key(
     name,
     value.or(name),
@@ -26,17 +26,17 @@ struct Model {
   version: Int,
   priority: Int,
   visible: Bool,
-  field: mut cui::InputRef,
+  field: &mut cui::InputRef,
   context: cui::Context?,
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Screen {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn screen(props: mut Props) mut Screen {
-  (mut Screen{model: props.model})
+private fn screen(props: &mut Props) &mut Screen {
+  &mut Screen{model: props.model}
 }
 
 impl cui::Component for Screen {
@@ -82,7 +82,7 @@ impl cui::Lifecycle for Screen {
 test fn declarative_layers_retain_identity_update_callbacks_and_clean_up() Void!Str {
   let application = headless::new(20, 2)
   defer application.destroy()
-  let model = mut Model{
+  let model = &mut Model{
     calls: "",
     version: 1,
     priority: 5,
@@ -132,7 +132,7 @@ test fn declarative_layers_retain_identity_update_callbacks_and_clean_up() Void!
 test fn component_context_owns_layers_and_rejects_registration_after_cancellation() Void!Str {
   let application = headless::new(20, 2)
   defer application.destroy()
-  let model = mut Model{
+  let model = &mut Model{
     calls: "",
     version: 0,
     priority: 0,
@@ -164,7 +164,7 @@ test fn component_context_owns_layers_and_rejects_registration_after_cancellatio
 test fn declarative_control_remaps_notify_discovery_without_render_loops() Void!Str {
   let application = headless::new(20, 2)
   defer application.destroy()
-  let model = mut Model{
+  let model = &mut Model{
     calls: "",
     version: 1,
     priority: 0,

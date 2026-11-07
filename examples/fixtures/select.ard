@@ -2,7 +2,7 @@ use cooper
 use cooper/ui
 
 private fn options(count: Int) [ui::SelectOption] {
-  let values = mut List::new<ui::SelectOption>()
+  let values = &mut List::new<ui::SelectOption>()
   let labels = [
     "Home",
     "Profile",
@@ -25,7 +25,7 @@ private fn options(count: Int) [ui::SelectOption] {
     )
     index =+ 1
   }
-  values.@
+  values.*
 }
 
 fn main() {
@@ -118,7 +118,7 @@ fn main() {
     status.set_content("Select submitted: {value.option.label} · index {value.index}")
   })
 
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release and received.matches("tab") {
       if tabs.is_focused() {
         list.focus()

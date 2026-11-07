@@ -5,8 +5,8 @@ use go:cooper/ffi/contextbridge
 use go:sync
 
 private struct State {
-  lifecycle: mut sync::Mutex,
-  read_guard: mut sync::Mutex,
+  lifecycle: &mut sync::Mutex,
+  read_guard: &mut sync::Mutex,
   read_action: fn() Str!Error,
   write_action: fn(Str),
   suspend_action: fn(),
@@ -20,8 +20,8 @@ struct Clipboard {
   internal: Any,
 }
 
-private fn internal_state(value: mut Clipboard) mut State {
-  unsafe::cast<mut State>(value.internal).expect("Clipboard must be created by Cooper")
+private fn internal_state(value: &mut Clipboard) &mut State {
+  unsafe::cast<&mut State>(value.internal).expect("Clipboard must be created by Cooper")
 }
 
 fn internal_new(
@@ -30,10 +30,10 @@ fn internal_new(
   suspend_action: fn(),
   resume_action: fn(),
   stop_action: fn(),
-) mut Clipboard {
-  let lifecycle = mut sync::Mutex{}
-  let read_guard = mut sync::Mutex{}
-  let state = mut State{
+) &mut Clipboard {
+  let lifecycle = &mut sync::Mutex{}
+  let read_guard = &mut sync::Mutex{}
+  let state = &mut State{
     lifecycle: lifecycle,
     read_guard: read_guard,
     read_action: read_action,
@@ -44,17 +44,17 @@ fn internal_new(
     suspended: false,
     stopped: false,
   }
-  (mut Clipboard{internal: state})
+  &mut Clipboard{internal: state}
 }
 
 private struct ReadLifetime {
-  mutex: mut sync::Mutex,
+  mutex: &mut sync::Mutex,
   current: contextbridge::Cancellation,
 }
 
 // Runtime supplies terminal I/O; Ard owns the cancellable read lifetime.
-fn internal_terminal(read: fn(context::Context) Str!Error, write: fn(Str)) mut Clipboard {
-  let lifetime = mut ReadLifetime{mutex: mut sync::Mutex{}, current: contextbridge::WithCancel(context::Background())}
+fn internal_terminal(read: fn(context::Context) Str!Error, write: fn(Str)) &mut Clipboard {
+  let lifetime = &mut ReadLifetime{mutex: &mut sync::Mutex{}, current: contextbridge::WithCancel(context::Background())}
   let cancel = fn() {
     lifetime.mutex.Lock()
     defer lifetime.mutex.Unlock()
@@ -80,13 +80,13 @@ fn internal_terminal(read: fn(context::Context) Str!Error, write: fn(Str)) mut C
 }
 
 private struct Memory {
-  mutex: mut sync::Mutex,
+  mutex: &mut sync::Mutex,
   value: Str,
 }
 
-fn internal_memory() mut Clipboard {
-  let mutex = mut sync::Mutex{}
-  let memory = mut Memory{mutex: mutex, value: ""}
+fn internal_memory() &mut Clipboard {
+  let mutex = &mut sync::Mutex{}
+  let memory = &mut Memory{mutex: mutex, value: ""}
   internal_new(
     fn() Str!Error {
       memory.mutex.Lock()

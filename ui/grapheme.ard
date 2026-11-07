@@ -13,11 +13,11 @@ struct Grapheme {
 // graphemes splits value into its graphemes in order, with each one's cell
 // width, for code that measures or trims text outside a laid-out control.
 fn graphemes(value: Str) [Grapheme] {
-  let result = mut List::new<Grapheme>()
+  let result = &mut List::new<Grapheme>()
   for character in vaxis::Characters(value) {
     result.push(Grapheme{text: character.Grapheme, width: character.Width})
   }
-  result.@
+  result.*
 }
 
 // text_width is the number of terminal cells value occupies: the sum of its

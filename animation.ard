@@ -53,8 +53,8 @@ private struct State {
   status: Status,
   current_time: Int,
   iteration: Int,
-  tracks: [mut Track],
-  calls: [mut ScheduledCall],
+  tracks: [&mut Track],
+  calls: [&mut ScheduledCall],
   wake: fn(),
   configuration_closed: Bool,
   dirty: Bool,
@@ -65,8 +65,8 @@ struct Timeline {
   internal: Any,
 }
 
-private fn state(value: Any) mut State {
-  unsafe::cast<mut State>(value).expect("Timeline must be created by Cooper")
+private fn state(value: Any) &mut State {
+  unsafe::cast<&mut State>(value).expect("Timeline must be created by Cooper")
 }
 
 private fn clamp_unit(value: Float64) Float64 {
@@ -248,7 +248,7 @@ fn lerp_int(from: Int, to: Int, progress: Float64) Int {
   }
 }
 
-private fn reset_items(shared: mut State) {
+private fn reset_items(shared: &mut State) {
   for track in shared.tracks {
     track.started = false
     track.completion_pending = false
@@ -259,17 +259,17 @@ private fn reset_items(shared: mut State) {
   }
 }
 
-private fn require_available(shared: mut State) {
+private fn require_available(shared: &mut State) {
   if shared.status == Status::destroyed {
     panic("Timeline is unavailable after destruction")
   }
 }
 
-fn internal_new(duration: Int, wake: fn(), loop: Bool?, alternate: Bool?, on_complete: fn()?) mut Timeline {
+fn internal_new(duration: Int, wake: fn(), loop: Bool?, alternate: Bool?, on_complete: fn()?) &mut Timeline {
   if duration <= 0 {
     panic("Timeline duration must be positive")
   }
-  let shared = mut State{
+  let shared = &mut State{
     duration: duration,
     loop: loop.or(false),
     alternate: alternate.or(false),
@@ -284,19 +284,19 @@ fn internal_new(duration: Int, wake: fn(), loop: Bool?, alternate: Bool?, on_com
     dirty: false,
     revision: 0,
   }
-  (mut Timeline{internal: shared})
+  &mut Timeline{internal: shared}
 }
 
-private fn valid_revision(shared: mut State, revision: Int) Bool {
+private fn valid_revision(shared: &mut State, revision: Int) Bool {
   shared.revision == revision and shared.status == Status::playing
 }
 
-private fn evaluation_valid(shared: mut State, revision: Int, allow: fn() Bool) Bool {
+private fn evaluation_valid(shared: &mut State, revision: Int, allow: fn() Bool) Bool {
   allow() and valid_revision(shared, revision)
 }
 
 private fn evaluate_at(
-  shared: mut State,
+  shared: &mut State,
   timeline_time: Int,
   delta: Int,
   revision: Int,
@@ -435,7 +435,7 @@ impl Timeline {
       panic("animation track must fit within its Timeline duration")
     }
     shared.tracks.push(
-      mut Track{
+      &mut Track{
         start: start,
         duration: duration,
         ease: ease.or(linear),
@@ -465,7 +465,7 @@ impl Timeline {
       panic("scheduled callback time must fit within its Timeline duration")
     }
     shared.calls.push(
-      mut ScheduledCall{
+      &mut ScheduledCall{
         start: start,
         action: action,
         executed: false,

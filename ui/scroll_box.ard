@@ -11,31 +11,31 @@ use cooper/ui/scrollbar
 use cooper/ui/style as layout_style
 
 private struct Part {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
 }
 
 impl node::Renderable for Part {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {}
+  fn paint(ctx: &mut paint::Context) {}
 
-  fn event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     event_delivery::Disposition::ignored
   }
 }
 
 private struct Parts {
-  runtime: mut runtime::Runtime,
+  runtime: &mut runtime::Runtime,
   destroying: Bool,
-  wrapper: mut Part,
-  viewport_column: mut Part,
-  viewport: mut Part,
-  vertical_bar: mut scrollbar::Scrollbar,
-  horizontal_bar: mut scrollbar::Scrollbar,
+  wrapper: &mut Part,
+  viewport_column: &mut Part,
+  viewport: &mut Part,
+  vertical_bar: &mut scrollbar::Scrollbar,
+  horizontal_bar: &mut scrollbar::Scrollbar,
   key_bindings: keymap::Bindings<Action>,
 }
 
@@ -91,12 +91,12 @@ fn default_bindings() keymap::Bindings<Action> {
 }
 
 struct ScrollBox {
-  node_ref: mut node::Node,
+  node_ref: &mut node::Node,
   internal: Any,
 }
 
-private fn parts(value: Any) mut Parts {
-  unsafe::cast<mut Parts>(value).expect("ScrollBox must be created by Cooper")
+private fn parts(value: Any) &mut Parts {
+  unsafe::cast<&mut Parts>(value).expect("ScrollBox must be created by Cooper")
 }
 
 private fn wheel_step(value: Int) Int {
@@ -107,7 +107,7 @@ private fn wheel_step(value: Int) Int {
   }
 }
 
-private fn shifted(key: mut event::KeyEvent, name: Str) Bool {
+private fn shifted(key: &mut event::KeyEvent, name: Str) Bool {
   key.name == name and key.modifiers.shift and (not key.modifiers.ctrl) and (not key.modifiers.alt) and (not key.modifiers.super)
 }
 
@@ -120,11 +120,12 @@ private fn positive(value: Int) Int {
 }
 
 private fn configured(value: layout_style::Style) layout_style::Style {
-  let applied = mut value
+  mut value = value
+  let applied = &mut value
   applied.overflow = layout_style::Overflow::hidden
   applied.flex_direction = layout_style::FlexDirection::column
   applied.flex_wrap = layout_style::FlexWrap::no_wrap
-  applied.@
+  applied.*
 }
 
 private fn configured_viewport(value: layout_style::Style) layout_style::Style {
@@ -146,19 +147,19 @@ private fn hidden_scrollbar_options() scrollbar::Options {
   scrollbar::options(visibility: scrollbar::Visibility::hidden)
 }
 
-private fn part(ctx: mut runtime::Runtime, styles: layout_style::Style) mut Part {
+private fn part(ctx: &mut runtime::Runtime, styles: layout_style::Style) &mut Part {
   let retained = ctx.create_node(styles)
-  let created = mut Part{node_ref: retained}
+  let created = &mut Part{node_ref: retained}
   retained.bind(created)
   created
 }
 
 fn new(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   styles: layout_style::Style?,
   scrollbar_options: scrollbar::Options?,
   horizontal_scrollbar_options: scrollbar::Options?,
-) mut ScrollBox {
+) &mut ScrollBox {
   let public_style = styles.or(layout_style::new())
   let retained = ctx.create_node(configured(public_style))
   let wrapper = part(
@@ -198,7 +199,7 @@ fn new(
     layout_style::new(),
     false,
   )
-  let internal_parts = mut Parts{
+  let internal_parts = &mut Parts{
     runtime: ctx,
     destroying: false,
     wrapper: wrapper,
@@ -208,7 +209,7 @@ fn new(
     horizontal_bar: horizontal_bar,
     key_bindings: default_bindings(),
   }
-  let scroll_box = mut ScrollBox{node_ref: retained, internal: internal_parts}
+  let scroll_box = &mut ScrollBox{node_ref: retained, internal: internal_parts}
   retained.bind(scroll_box)
   retained.set_focusable(true)
 
@@ -227,13 +228,13 @@ fn new(
 }
 
 impl node::Renderable for ScrollBox {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     let internal_parts = parts(self.internal)
     let viewport = internal_parts.viewport.node_ref
     internal_parts.vertical_bar.internal_sync_state(
@@ -252,7 +253,7 @@ impl node::Renderable for ScrollBox {
     )
   }
 
-  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     match ctx.mouse_event {
       mouse => self.handle_mouse(ctx, mouse),
       _ => {
@@ -279,7 +280,7 @@ impl ScrollBox {
     self.node_ref.require_live()
   }
 
-  private fn viewport() mut node::Node {
+  private fn viewport() &mut node::Node {
     parts(self.internal).viewport.node_ref
   }
 
@@ -459,17 +460,17 @@ impl ScrollBox {
     self.node_ref.is_focused()
   }
 
-  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+  fn mut on_key(handler: fn(&mut event::KeyEvent)) fn() {
     self.require_live()
     self.node_ref.on_key(handler)
   }
 
-  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+  fn mut on_paste(handler: fn(&mut event::PasteEvent)) fn() {
     self.require_live()
     self.node_ref.on_paste(handler)
   }
 
-  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+  fn mut on_mouse(handler: fn(&mut event::MouseEvent)) fn() {
     self.require_live()
     self.node_ref.on_mouse(handler)
   }
@@ -494,7 +495,7 @@ impl ScrollBox {
     self.node_ref.layout()
   }
 
-  private fn mut moved(ctx: mut event_delivery::Context, changed: Bool) event_delivery::Disposition {
+  private fn mut moved(ctx: &mut event_delivery::Context, changed: Bool) event_delivery::Disposition {
     if changed {
       ctx.preserve_focus_scroll()
       ctx.request_redraw()
@@ -504,7 +505,7 @@ impl ScrollBox {
     }
   }
 
-  private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
+  private fn mut handle_mouse(ctx: &mut event_delivery::Context, mouse: &mut event::MouseEvent) event_delivery::Disposition {
     if mouse.event_type != event::MouseEventType::scroll or mouse.scroll_x == 0 and mouse.scroll_y == 0 {
       event_delivery::Disposition::ignored
     } else {
@@ -545,8 +546,8 @@ impl ScrollBox {
     }
   }
 
-  private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
-    match parts(self.internal).key_bindings.resolve(key.@) {
+  private fn mut handle_key(ctx: &mut event_delivery::Context, key: &mut event::KeyEvent) event_delivery::Disposition {
+    match parts(self.internal).key_bindings.resolve(key.*) {
       mapping => {
         match mapping.action {
           action => self.moved(ctx, self.perform(action)),

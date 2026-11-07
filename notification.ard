@@ -20,7 +20,7 @@ struct Backend {
 }
 
 private struct Policy {
-  mutex: mut sync::Mutex,
+  mutex: &mut sync::Mutex,
   protocol: Protocol,
   progress_supported: Bool,
   emit: fn(Str, Str),
@@ -144,7 +144,7 @@ fn internal_program_status_enabled(terminal_id: Str, getenv: fn(Str) Str) Bool {
 private fn sanitize(value: Str) Str {
   let bytes = value.bytes()
   mut byte_index = 0
-  let output = mut strings::Builder{}
+  let output = &mut strings::Builder{}
   for character in value {
     let code = Int::from(character)
     mut malformed = false
@@ -175,23 +175,23 @@ private fn sanitize(value: Str) Str {
   output.String()
 }
 
-fn internal_backend(terminal_id: fn() Str, getenv: fn(Str) Str, emit: fn(Str, Str)) mut Backend {
+fn internal_backend(terminal_id: fn() Str, getenv: fn(Str) Str, emit: fn(Str, Str)) &mut Backend {
   let id = terminal_id()
-  let mutex = mut sync::Mutex{}
-  let policy = mut Policy{
+  let mutex = &mut sync::Mutex{}
+  let policy = &mut Policy{
     mutex: mutex,
     protocol: select_protocol(id, getenv),
     progress_supported: supports_progress(id, getenv),
     emit: emit,
   }
-  (mut Backend{
+  &mut Backend{
     notify: fn(message: Str, title: Str) Bool {
       policy.notify(message, title)
     },
     set_progress: fn(state: Int, percent: Int?) Bool {
       policy.set_progress(state, percent)
     },
-  })
+  }
 }
 
 impl Policy {

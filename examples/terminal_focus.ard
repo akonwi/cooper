@@ -18,7 +18,7 @@ struct FocusState {
   last_focus_time: Str,
   last_blur_time: Str,
   last_mouse_time: Str,
-  rows: [mut ui::Text],
+  rows: [&mut ui::Text],
 }
 
 private fn timestamp() Str {
@@ -26,9 +26,9 @@ private fn timestamp() Str {
 }
 
 private fn top_margin() ui::Edges {
-  let margin = mut ui::edges()
+  let margin = &mut ui::edges()
   margin.top = ui::cells(1)
-  margin.@
+  margin.*
 }
 
 private fn row_style() ui::Style {
@@ -36,9 +36,9 @@ private fn row_style() ui::Style {
 }
 
 private fn append_log(
-  ctx: mut cooper::Runtime,
-  viewport: mut ui::ScrollBox,
-  state: mut FocusState,
+  ctx: &mut cooper::Runtime,
+  viewport: &mut ui::ScrollBox,
+  state: &mut FocusState,
   message: Str,
   tint: ui::Color,
 ) {
@@ -74,16 +74,16 @@ private fn display_time(value: Str) Str {
   }
 }
 
-private fn physical_pointer_event(received: mut cooper::MouseEvent) Bool {
+private fn physical_pointer_event(received: &mut cooper::MouseEvent) Bool {
   received.event_type == cooper::MouseEventType::move or received.event_type == cooper::MouseEventType::drag
 }
 
 private fn update_display(
-  state: mut FocusState,
-  focus_status: mut ui::Text,
-  mouse_status: mut ui::Text,
-  counters_status: mut ui::Text,
-  timestamp_status: mut ui::Text,
+  state: &mut FocusState,
+  focus_status: &mut ui::Text,
+  mouse_status: &mut ui::Text,
+  counters_status: &mut ui::Text,
+  timestamp_status: &mut ui::Text,
 ) {
   if not state.focus_known {
     if state.mouse_events >= 3 {
@@ -222,7 +222,7 @@ fn main() {
   root.add(log_box)
   application.root.add(root)
 
-  let state = mut FocusState{
+  let state = &mut FocusState{
     focus_known: false,
     focused: false,
     mouse_x: 0,
@@ -238,7 +238,7 @@ fn main() {
     rows: [],
   }
 
-  let _ = root.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = root.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if physical_pointer_event(received) {
       state.mouse_x = received.x
       state.mouse_y = received.y

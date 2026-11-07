@@ -14,21 +14,21 @@ struct Metrics {
 }
 struct Model {
   items: [Int],
-  metrics: mut Metrics,
-  virtual_ref: mut cui::VirtualListRef,
-  eager_ref: mut cui::ScrollBoxRef,
+  metrics: &mut Metrics,
+  virtual_ref: &mut cui::VirtualListRef,
+  eager_ref: &mut cui::ScrollBoxRef,
   eager: Bool,
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Screen {
-  model: mut Model,
+  model: &mut Model,
 }
 
-private fn row(id: Int, metrics: mut Metrics) cui::View {
+private fn row(id: Int, metrics: &mut Metrics) cui::View {
   metrics.builds =+ 1
-  let lines = mut List::new<cui::View>()
+  let lines = &mut List::new<cui::View>()
   lines.push(cui::text("row={id} author={id % 17}", styles: ui::style(height: ui::cells(1))))
   mut line = 0
   while line < id % 3 {
@@ -40,21 +40,21 @@ private fn row(id: Int, metrics: mut Metrics) cui::View {
     )
     line =+ 1
   }
-  cui::box(lines.@, styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0))
+  cui::box(lines.*, styles: ui::style(width: ui::percent(100.0), flex_shrink: 0.0))
 }
 
-private fn screen(props: mut Props) mut Screen {
-  (mut Screen{model: props.model})
+private fn screen(props: &mut Props) &mut Screen {
+  &mut Screen{model: props.model}
 }
 impl cui::Component for Screen {
   fn mut render() cui::View {
     let size = ui::style(width: ui::percent(100.0), height: ui::percent(100.0))
     if self.model.eager {
-      let rows = mut List::new<cui::View>()
+      let rows = &mut List::new<cui::View>()
       for id in self.model.items {
         rows.push(row(id, self.model.metrics))
       }
-      cui::scroll_box(rows.@, ref: self.model.eager_ref, styles: size)
+      cui::scroll_box(rows.*, ref: self.model.eager_ref, styles: size)
     } else {
       cui::virtual_list(
         self.model.items,
@@ -93,16 +93,16 @@ fn main() {
     true => 4000,
     false => 1000,
   }
-  let items = mut List::new<Int>()
+  let items = &mut List::new<Int>()
   mut index = 0
   while index < count {
     items.push(index)
     index =+ 1
   }
   let app = testing::new(80, 24)
-  let model = mut Model{
-    items: items.@,
-    metrics: mut Metrics{builds: 0},
+  let model = &mut Model{
+    items: items.*,
+    metrics: &mut Metrics{builds: 0},
     virtual_ref: cui::virtual_list_ref(),
     eager_ref: cui::scroll_box_ref(),
     eager: eager,

@@ -13,11 +13,11 @@ use cooper/ui
 private struct Mounted {
   description: view::Description,
   control: mut node::Renderable,
-  children: [mut Mounted],
-  parent: (mut Mounted)?,
-  instance: (mut view::Instance)?,
+  children: [&mut Mounted],
+  parent: (&mut Mounted)?,
+  instance: (&mut view::Instance)?,
   context: context::Context,
-  scope: (mut scopes::MountScope)?,
+  scope: (&mut scopes::MountScope)?,
   active: Bool,
   applying: Bool,
   autofocus_pending: Bool,
@@ -25,28 +25,28 @@ private struct Mounted {
   effective_value: Str,
   remove_key: fn(),
   remove_mouse: fn(),
-  key_layer: (mut keymap::Layer)?,
+  key_layer: (&mut keymap::Layer)?,
   remove_key_layer: fn(),
   key_availability: Str,
 }
 
 private struct Prepared {
   description: view::Description,
-  previous: (mut Mounted)?,
-  instance: (mut view::Instance)?,
+  previous: (&mut Mounted)?,
+  instance: (&mut view::Instance)?,
   children: [Prepared],
 }
 
 private struct State {
-  runtime: mut runtime::Runtime,
-  scope: mut scopes::MountScope,
+  runtime: &mut runtime::Runtime,
+  scope: &mut scopes::MountScope,
   view: view::View,
-  container: mut ui::Box,
-  children: [mut Mounted],
+  container: &mut ui::Box,
+  children: [&mut Mounted],
   active: Bool,
   pending: Bool,
   full_refresh: Bool,
-  dirty: [mut Mounted],
+  dirty: [&mut Mounted],
   committing: Bool,
 }
 
@@ -54,32 +54,32 @@ struct Renderer {
   internal: Any,
 }
 
-private fn state(renderer: Renderer) mut State {
-  unsafe::cast<mut State>(renderer.internal).expect("Renderer must be created by mount")
+private fn state(renderer: Renderer) &mut State {
+  unsafe::cast<&mut State>(renderer.internal).expect("Renderer must be created by mount")
 }
 
-private fn box(control: mut node::Renderable) mut ui::Box {
-  unsafe::cast<mut ui::Box>(control).expect("box control")
+private fn box(control: mut node::Renderable) &mut ui::Box {
+  unsafe::cast<&mut ui::Box>(control).expect("box control")
 }
 
-private fn image(control: mut node::Renderable) mut ui::Image {
-  unsafe::cast<mut ui::Image>(control).expect("image control")
+private fn image(control: mut node::Renderable) &mut ui::Image {
+  unsafe::cast<&mut ui::Image>(control).expect("image control")
 }
 
-private fn divider(control: mut node::Renderable) mut ui::Divider {
-  unsafe::cast<mut ui::Divider>(control).expect("divider control")
+private fn divider(control: mut node::Renderable) &mut ui::Divider {
+  unsafe::cast<&mut ui::Divider>(control).expect("divider control")
 }
 
-private fn input(control: mut node::Renderable) mut ui::Input {
-  unsafe::cast<mut ui::Input>(control).expect("input control")
+private fn input(control: mut node::Renderable) &mut ui::Input {
+  unsafe::cast<&mut ui::Input>(control).expect("input control")
 }
 
-private fn text_area(control: mut node::Renderable) mut ui::TextArea {
-  unsafe::cast<mut ui::TextArea>(control).expect("text area control")
+private fn text_area(control: mut node::Renderable) &mut ui::TextArea {
+  unsafe::cast<&mut ui::TextArea>(control).expect("text area control")
 }
 
-private fn select_control(control: mut node::Renderable) mut ui::Select {
-  unsafe::cast<mut ui::Select>(control).expect("select control")
+private fn select_control(control: mut node::Renderable) &mut ui::Select {
+  unsafe::cast<&mut ui::Select>(control).expect("select control")
 }
 
 private fn same_options(left: [ui::SelectOption], right: [ui::SelectOption]) Bool {
@@ -127,7 +127,7 @@ private fn same_key_declaration(left: view::Description, right: view::Descriptio
 }
 
 private fn apply_select(
-  mounted: mut Mounted,
+  mounted: &mut Mounted,
   description: view::Description,
   previous: view::Description,
 ) {
@@ -156,15 +156,15 @@ private fn apply_select(
   }
 }
 
-private fn scroll(control: mut node::Renderable) mut ui::ScrollBox {
-  unsafe::cast<mut ui::ScrollBox>(control).expect("scroll control")
+private fn scroll(control: mut node::Renderable) &mut ui::ScrollBox {
+  unsafe::cast<&mut ui::ScrollBox>(control).expect("scroll control")
 }
 
-private fn live(mounted: mut Mounted) Bool {
+private fn live(mounted: &mut Mounted) Bool {
   mounted.active
 }
 
-private fn same_identity(previous: mut Mounted, next: view::Description) Bool {
+private fn same_identity(previous: &mut Mounted, next: view::Description) Bool {
   mut same = previous.description.kind == next.kind and previous.description.key == next.key
   match next.component {
     specification => {
@@ -180,8 +180,8 @@ private fn same_identity(previous: mut Mounted, next: view::Description) Bool {
   same
 }
 
-private fn validate(children: [view::View], refs: mut [mut view::InputRef]) {
-  let keys = mut Map::new<Bool>()
+private fn validate(children: [view::View], refs: &mut [&mut view::InputRef]) {
+  let keys = &mut Map::new<Bool>()
   for child_view in children {
     let child = view::describe(child_view)
     if child.autofocus and child.focused.is_some() {
@@ -215,20 +215,20 @@ private fn validate(children: [view::View], refs: mut [mut view::InputRef]) {
 }
 
 private fn prepare(
-  previous: [mut Mounted],
+  previous: [&mut Mounted],
   descriptions: [view::View],
-  refs: mut [mut view::InputRef],
+  refs: &mut [&mut view::InputRef],
 ) [Prepared] {
   // Validate literal descendants before running any child constructor.
-  let literal_refs = mut List::new<mut view::InputRef>()
+  let literal_refs = &mut List::new<&mut view::InputRef>()
   validate(descriptions, literal_refs)
-  let keyed = mut Map::new<mut Mounted>()
+  let keyed = &mut Map::new<&mut Mounted>()
   for old in previous {
     let _ = old.description.key.map(fn(key: Str) {
       keyed.set(key, old)
     })
   }
-  let result = mut List::new<Prepared>()
+  let result = &mut List::new<Prepared>()
   for value, index in descriptions {
     let description = view::describe(value)
     match description.input_ref {
@@ -242,7 +242,7 @@ private fn prepare(
       },
       _ => (),
     }
-    mut found = Maybe::new<mut Mounted>()
+    mut found = Maybe::new<&mut Mounted>()
     let candidate = match description.key {
       key => keyed.get(key),
       _ => previous.at(index),
@@ -255,8 +255,8 @@ private fn prepare(
       },
       _ => (),
     }
-    mut children = List::new<mut Mounted>()
-    mut instance = Maybe::new<mut view::Instance>()
+    mut children = List::new<&mut Mounted>()
+    mut instance = Maybe::new<&mut view::Instance>()
     match found {
       old => {
         children = old.children
@@ -288,11 +288,11 @@ private fn prepare(
       },
     )
   }
-  result.@
+  result.*
 }
 
-private fn retired(previous: [mut Mounted], prepared: [Prepared], removed: mut [mut Mounted]) {
-  let retained = mut Map::new<Prepared>()
+private fn retired(previous: [&mut Mounted], prepared: [Prepared], removed: &mut [&mut Mounted]) {
+  let retained = &mut Map::new<Prepared>()
   for next in prepared {
     match next.previous {
       current => retained.set(current.control.node().id.to_str(), next),
@@ -307,7 +307,7 @@ private fn retired(previous: [mut Mounted], prepared: [Prepared], removed: mut [
   }
 }
 
-private fn cancel(mounted: mut Mounted) {
+private fn cancel(mounted: &mut Mounted) {
   mounted.active = false
   mounted.remove_key_layer()
   mounted.remove_key_layer = fn() {}
@@ -320,13 +320,13 @@ private fn cancel(mounted: mut Mounted) {
   }
 }
 
-private fn clear_ref(mounted: mut Mounted) {
+private fn clear_ref(mounted: &mut Mounted) {
   match mounted.description.text_area_ref {
     ref => {
       match ref.current {
         current => {
           if current.node_ref.id == mounted.control.node().id {
-            ref.current = Maybe::new<mut ui::TextArea>()
+            ref.current = Maybe::new<&mut ui::TextArea>()
           }
         },
         _ => (),
@@ -339,7 +339,7 @@ private fn clear_ref(mounted: mut Mounted) {
       match ref.current {
         current => {
           if current.node_ref.id == mounted.control.node().id {
-            ref.current = Maybe::new<mut ui::Select>()
+            ref.current = Maybe::new<&mut ui::Select>()
           }
         },
         _ => (),
@@ -352,7 +352,7 @@ private fn clear_ref(mounted: mut Mounted) {
       match ref.current {
         current => {
           if current.node_ref.id == mounted.control.node().id {
-            ref.current = Maybe::new<mut ui::ScrollBox>()
+            ref.current = Maybe::new<&mut ui::ScrollBox>()
           }
         },
         _ => (),
@@ -365,7 +365,7 @@ private fn clear_ref(mounted: mut Mounted) {
       match ref.current {
         current => {
           if current.node_ref.id == mounted.control.node().id {
-            ref.current = Maybe::new<mut ui::Box>()
+            ref.current = Maybe::new<&mut ui::Box>()
           }
         },
         _ => (),
@@ -378,7 +378,7 @@ private fn clear_ref(mounted: mut Mounted) {
       match ref.current {
         current => {
           if current.node_ref.id == mounted.control.node().id {
-            ref.current = Maybe::new<mut ui::Input>()
+            ref.current = Maybe::new<&mut ui::Input>()
           }
         },
         _ => (),
@@ -388,14 +388,14 @@ private fn clear_ref(mounted: mut Mounted) {
   }
 }
 
-private fn dispose(mounted: mut Mounted) {
+private fn dispose(mounted: &mut Mounted) {
   mounted.active = false
   clear_ref(mounted)
   for child in mounted.children {
     dispose(child)
   }
   mounted.children = []
-  mounted.parent = Maybe::new<mut Mounted>()
+  mounted.parent = Maybe::new<&mut Mounted>()
   if not mounted.control.node().is_destroyed() {
     match mounted.description.kind {
       view::Kind::scroll => scroll(mounted.control).destroy(),
@@ -419,14 +419,14 @@ private fn dispose(mounted: mut Mounted) {
   }
 }
 
-private fn clear_refs(children: [mut Mounted]) {
+private fn clear_refs(children: [&mut Mounted]) {
   for child in children {
     clear_ref(child)
     clear_refs(child.children)
   }
 }
 
-private fn owns(children: [mut Mounted], target: mut node::Node) Bool {
+private fn owns(children: [&mut Mounted], target: &mut node::Node) Bool {
   mut found = false
   for child in children {
     if child.control.node() == target or owns(child.children, target) {
@@ -438,8 +438,8 @@ private fn owns(children: [mut Mounted], target: mut node::Node) Bool {
 
 private fn validate_box_refs(
   prepared: [Prepared],
-  refs: mut [mut view::BoxRef],
-  previous: [mut Mounted],
+  refs: &mut [&mut view::BoxRef],
+  previous: [&mut Mounted],
 ) {
   for plan in prepared {
     match plan.description.box_ref {
@@ -467,8 +467,8 @@ private fn validate_box_refs(
 
 private fn validate_scroll_refs(
   prepared: [Prepared],
-  refs: mut [mut view::ScrollBoxRef],
-  previous: [mut Mounted],
+  refs: &mut [&mut view::ScrollBoxRef],
+  previous: [&mut Mounted],
 ) {
   for plan in prepared {
     match plan.description.scroll_ref {
@@ -496,9 +496,9 @@ private fn validate_scroll_refs(
 
 private fn validate_control_refs(
   prepared: [Prepared],
-  areas: mut [mut view::TextAreaRef],
-  selects: mut [mut view::SelectRef],
-  previous: [mut Mounted],
+  areas: &mut [&mut view::TextAreaRef],
+  selects: &mut [&mut view::SelectRef],
+  previous: [&mut Mounted],
 ) {
   for plan in prepared {
     match plan.description.text_area_ref {
@@ -543,9 +543,9 @@ private fn validate_control_refs(
   }
 }
 
-fn mount(runtime: mut runtime::Runtime, root: mut root::Root, view: view::View) Renderer {
+fn mount(runtime: &mut runtime::Runtime, root: &mut root::Root, view: view::View) Renderer {
   let container = ui::box(runtime, styles: ui::style(display: ui::Display::contents))
-  let renderer = mut State{
+  let renderer = &mut State{
     runtime: runtime,
     scope: scopes::new_mount_scope(),
     view: view,
@@ -583,7 +583,7 @@ impl State {
     self.schedule()
   }
 
-  private fn mut invalidate_component(component: mut Mounted) {
+  private fn mut invalidate_component(component: &mut Mounted) {
     if self.active and component.active {
       mut queued = false
       for existing in self.dirty {
@@ -655,7 +655,7 @@ impl State {
     })
   }
 
-  private fn mut context(scope: mut scopes::MountScope, owner: (mut Mounted)?) context::Context {
+  private fn mut context(scope: &mut scopes::MountScope, owner: (&mut Mounted)?) context::Context {
     context::internal_new(
       self.runtime,
       fn(work: fn()) Void!event::DispatchError {
@@ -689,10 +689,10 @@ impl State {
 
   private fn mut create(
     description: view::Description,
-    instance: (mut view::Instance)?,
+    instance: (&mut view::Instance)?,
     inherited: context::Context,
-  ) mut Mounted {
-    mut scope = Maybe::new<mut scopes::MountScope>()
+  ) &mut Mounted {
+    mut scope = Maybe::new<&mut scopes::MountScope>()
     if instance.is_some() {
       let owned = scopes::new_mount_scope()
       scope = Maybe::new(owned)
@@ -748,11 +748,11 @@ impl State {
     } else if description.kind == view::Kind::text_area {
       effective_value = text_area(control).value()
     }
-    let mounted = mut Mounted{
+    let mounted = &mut Mounted{
       description: description,
       control: control,
       children: [],
-      parent: Maybe::new<mut Mounted>(),
+      parent: Maybe::new<&mut Mounted>(),
       instance: instance,
       context: inherited,
       scope: scope,
@@ -763,7 +763,7 @@ impl State {
       effective_value: effective_value,
       remove_key: fn() {},
       remove_mouse: fn() {},
-      key_layer: Maybe::new<mut keymap::Layer>(),
+      key_layer: Maybe::new<&mut keymap::Layer>(),
       remove_key_layer: fn() {},
       key_availability: "",
     }
@@ -858,13 +858,13 @@ impl State {
     mounted
   }
 
-  private fn mut apply(mounted: mut Mounted, description: view::Description) {
+  private fn mut apply(mounted: &mut Mounted, description: view::Description) {
     let previous = mounted.description
     clear_ref(mounted)
     mounted.description = description
     match description.kind {
       view::Kind::text => {
-        let text = unsafe::cast<mut ui::Text>(mounted.control).expect("text control")
+        let text = unsafe::cast<&mut ui::Text>(mounted.control).expect("text control")
         text.set_style(description.styles)
         text.set_content(description.content)
         text.set_text_style(description.text_style)
@@ -1005,7 +1005,7 @@ impl State {
     mounted.remove_mouse()
     mounted.remove_key = fn() {}
     mounted.remove_mouse = fn() {}
-    mounted.remove_key = mounted.control.node().on_key(fn(key: mut event::KeyEvent) {
+    mounted.remove_key = mounted.control.node().on_key(fn(key: &mut event::KeyEvent) {
       self.deliver_key(mounted, key)
     })
     if description.kind == view::Kind::box {
@@ -1021,7 +1021,7 @@ impl State {
     }
     match description.on_mouse {
       handler => {
-        let receive = fn(mouse: mut event::MouseEvent) {
+        let receive = fn(mouse: &mut event::MouseEvent) {
           if self.active and live(mounted) {
             handler(mouse, mounted.context)
             self.invalidate()
@@ -1040,7 +1040,7 @@ impl State {
     }
   }
 
-  private fn mut deliver_key(target: mut Mounted, key: mut event::KeyEvent) {
+  private fn mut deliver_key(target: &mut Mounted, key: &mut event::KeyEvent) {
     mut current = Maybe::new(target)
     while current.is_some() and self.active and live(target) and (not key.is_propagation_stopped()) {
       let owner = current.expect("current key route owner")
@@ -1058,10 +1058,10 @@ impl State {
     }
   }
 
-  private fn mut invalidate_owner(target: mut Mounted) {
+  private fn mut invalidate_owner(target: &mut Mounted) {
     if self.active and live(target) {
       mut current = Maybe::new(target)
-      mut owner = Maybe::new<mut Mounted>()
+      mut owner = Maybe::new<&mut Mounted>()
       while current.is_some() and owner.is_none() {
         let candidate = current.expect("key layer owner")
         if candidate.instance.is_some() {
@@ -1081,9 +1081,9 @@ impl State {
     parent_kind: view::Kind,
     prepared: [Prepared],
     inherited: context::Context,
-    owner: (mut Mounted)?,
-  ) [mut Mounted] {
-    let next = mut List::new<mut Mounted>()
+    owner: (&mut Mounted)?,
+  ) [&mut Mounted] {
+    let next = &mut List::new<&mut Mounted>()
     for plan, index in prepared {
       let description = plan.description
       let current = match plan.previous {
@@ -1105,10 +1105,10 @@ impl State {
       )
       next.push(current)
     }
-    next.@
+    next.*
   }
 
-  private fn mut mounted(children: [mut Mounted]) {
+  private fn mut mounted(children: [&mut Mounted]) {
     for child in children {
       self.mounted(child.children)
       match child.instance {
@@ -1129,7 +1129,7 @@ impl State {
     }
   }
 
-  private fn mut apply_focus(children: [mut Mounted]) {
+  private fn mut apply_focus(children: [&mut Mounted]) {
     for child in children {
       if child.autofocus_pending {
         child.autofocus_pending = false
@@ -1157,7 +1157,7 @@ impl State {
     }
   }
 
-  private fn mut refresh(owner: (mut Mounted)?) {
+  private fn mut refresh(owner: (&mut Mounted)?) {
     if self.committing {
       panic("reentrant declarative render")
     }
@@ -1178,14 +1178,14 @@ impl State {
       },
       _ => (),
     }
-    let refs = mut List::new<mut view::InputRef>()
+    let refs = &mut List::new<&mut view::InputRef>()
     let prepared = prepare(previous, descriptions, refs)
-    let box_refs = mut List::new<mut view::BoxRef>()
+    let box_refs = &mut List::new<&mut view::BoxRef>()
     validate_box_refs(prepared, box_refs, previous)
-    let scroll_refs = mut List::new<mut view::ScrollBoxRef>()
+    let scroll_refs = &mut List::new<&mut view::ScrollBoxRef>()
     validate_scroll_refs(prepared, scroll_refs, previous)
-    let areas = mut List::new<mut view::TextAreaRef>()
-    let selects = mut List::new<mut view::SelectRef>()
+    let areas = &mut List::new<&mut view::TextAreaRef>()
+    let selects = &mut List::new<&mut view::SelectRef>()
     validate_control_refs(prepared, areas, selects, previous)
     for ref in refs {
       match ref.current {
@@ -1197,7 +1197,7 @@ impl State {
         _ => (),
       }
     }
-    let removed = mut List::new<mut Mounted>()
+    let removed = &mut List::new<&mut Mounted>()
     retired(previous, prepared, removed)
     for child in removed {
       cancel(child)

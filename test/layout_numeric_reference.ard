@@ -114,7 +114,7 @@ fn flex_reference() {
     for maximum in [false, true] {
       for fractional in [false, true] {
         for space in [Float32::from(-20.0), Float32::from(0.0), Float32::from(6.0), Float32::from(40.0)] {
-          let items = mut List::new<flex::Item>()
+          let items = &mut List::new<flex::Item>()
           for base, index in [Float32::from(8.0), Float32::from(13.0), Float32::from(5.0)] {
             mut low = numeric::undefined()
             mut high = numeric::undefined()
@@ -161,7 +161,7 @@ fn flex_reference() {
               },
             )
           }
-          let line = flex::collect_line(items.@, 0, Float32::from(100.0), Float32::from(0.0), false)
+          let line = flex::collect_line(items.*, 0, Float32::from(100.0), Float32::from(0.0), false)
           let first = flex::distribute_first_pass(line, space)
           let result = flex::distribute_second_pass(line, first, space)
           fmt::Print("flex")
@@ -195,7 +195,7 @@ fn fallback_reference() {
       for stretch in [false, true] {
         for bounded in [false, true] {
           let child = layout::new()
-          let seen = mut measure::Input{
+          let seen = &mut measure::Input{
             width: numeric::undefined(),
             height: numeric::undefined(),
             width_mode: measure::Mode::undefined,
@@ -410,11 +410,11 @@ fn axis_reference() {
 
 fn leaf_reference() {
   let leaf = layout::new()
-  let content = mut measure::Size{width: Float32::from(7.0), height: Float32::from(2.0)}
+  let content = &mut measure::Size{width: Float32::from(7.0), height: Float32::from(2.0)}
   mut calls = 0
   leaf.set_measure(fn(input: measure::Input) measure::Size {
     calls =+ 1
-    content.@
+    content.*
   })
   let width = measure::Axis{
     available: Float32::from(20.0),

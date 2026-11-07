@@ -15,7 +15,7 @@ struct LabState {
   name_rejected: Bool,
 }
 
-private fn field_frame(ctx: mut cooper::Runtime, title: Str, border: ui::Color) mut ui::Box {
+private fn field_frame(ctx: &mut cooper::Runtime, title: Str, border: ui::Color) &mut ui::Box {
   ui::box(
     ctx,
     title: title,
@@ -48,7 +48,7 @@ private fn placeholder_style() ui::TextStyle {
   )
 }
 
-private fn selected_style(selected: mut ui::TextStyle) {
+private fn selected_style(selected: &mut ui::TextStyle) {
   selected.foreground = Maybe::new(ui::hex("#FFFFFF"))
   selected.background = Maybe::new(ui::hex("#1D4ED8"))
   selected.bold = true
@@ -58,7 +58,7 @@ private fn email_shape(value: Str) Bool {
   (not value.is_empty()) and value.contains("@") and value.contains(".")
 }
 
-private fn refresh_fields(fields: [mut ui::Input], frames: [mut ui::Box], state: mut LabState) {
+private fn refresh_fields(fields: [&mut ui::Input], frames: [&mut ui::Box], state: &mut LabState) {
   let muted = ui::hex("#475569")
   mut name_border = ui::hex("#38BDF8")
   mut email_border = muted
@@ -106,7 +106,7 @@ private fn refresh_fields(fields: [mut ui::Input], frames: [mut ui::Box], state:
   fields.at(1).expect("email input").set_text_style(value_style(email_text))
 }
 
-private fn diagnostics_content(state: mut LabState, names: [Str]) ui::StyledText {
+private fn diagnostics_content(state: &mut LabState, names: [Str]) ui::StyledText {
   let label = ui::hex("#94A3B8")
   let value = ui::hex("#F8FAFC")
   let accent = ui::hex("#67E8F9")
@@ -152,17 +152,17 @@ private fn diagnostics_content(state: mut LabState, names: [Str]) ui::StyledText
 }
 
 private fn refresh(
-  fields: [mut ui::Input],
-  frames: [mut ui::Box],
+  fields: [&mut ui::Input],
+  frames: [&mut ui::Box],
   names: [Str],
-  state: mut LabState,
-  diagnostics: mut ui::Text,
+  state: &mut LabState,
+  diagnostics: &mut ui::Text,
 ) {
   refresh_fields(fields, frames, state)
   diagnostics.set_content(diagnostics_content(state, names))
 }
 
-private fn focused_index(fields: [mut ui::Input]) Int {
+private fn focused_index(fields: [&mut ui::Input]) Int {
   mut focused = -1
   for field, index in fields {
     if field.is_focused() {
@@ -172,7 +172,7 @@ private fn focused_index(fields: [mut ui::Input]) Int {
   focused
 }
 
-private fn focus_next(fields: [mut ui::Input], reverse: Bool) {
+private fn focus_next(fields: [&mut ui::Input], reverse: Bool) {
   let current = focused_index(fields)
   mut next = current + 1
   if reverse {
@@ -315,8 +315,8 @@ fn main() {
   )
   local_frame.add(local)
 
-  let fields: [mut ui::Input] = [name, email, unicode, local]
-  let frames: [mut ui::Box] = [name_frame, email_frame, unicode_frame, local_frame]
+  let fields: [&mut ui::Input] = [name, email, unicode, local]
+  let frames: [&mut ui::Box] = [name_frame, email_frame, unicode_frame, local_frame]
   let names: [Str] = ["NAME", "EMAIL", "UNICODE", "LOCAL EDIT"]
   for frame in frames {
     form.add(frame)
@@ -414,7 +414,7 @@ fn main() {
   root.add(footer)
   application.root.add(root)
 
-  let state = mut LabState{
+  let state = &mut LabState{
     focus: -1,
     last_event: "ready",
     input_count: 0,
@@ -475,13 +475,13 @@ fn main() {
     refresh(fields, frames, names, state, diagnostics)
   })
 
-  let _ = application.on_paste(fn(received: mut cooper::PasteEvent) {
+  let _ = application.on_paste(fn(received: &mut cooper::PasteEvent) {
     state.paste_count =+ received.text.size()
     state.last_event = "paste · {received.text.size()} bytes"
     refresh(fields, frames, names, state, diagnostics)
   })
 
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release {
       if received.matches("tab", shift: true) {
         focus_next(fields, true)

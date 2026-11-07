@@ -126,7 +126,7 @@ private fn tab(label: Str, active: Bool, activate: fn(), close: fn()?) cui::View
   if active {
     ink = blue(false)
   }
-  let children = mut List::new<cui::View>()
+  let children = &mut List::new<cui::View>()
   children.push(
     cui::text(label, styles: ui::style(flex_grow: 1.0, height: ui::cells(1)), text_style: ink),
   )
@@ -135,7 +135,7 @@ private fn tab(label: Str, active: Bool, activate: fn(), close: fn()?) cui::View
       cui::box(
         [cui::text(" × ", styles: line(), text_style: ui::text_style(dim: true))],
         styles: ui::style(width: ui::cells(3), height: ui::cells(1), flex_shrink: 0.0),
-        on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+        on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
           if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
             close()
             mouse.prevent_default()
@@ -146,7 +146,7 @@ private fn tab(label: Str, active: Bool, activate: fn(), close: fn()?) cui::View
     )
   })
   cui::box(
-    children.@,
+    children.*,
     key: label,
     styles: ui::style(
       width: ui::cells(13),
@@ -154,7 +154,7 @@ private fn tab(label: Str, active: Bool, activate: fn(), close: fn()?) cui::View
       min_width: ui::cells(minimum),
       flex_direction: ui::FlexDirection::row,
     ),
-    on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+    on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
       if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
         activate()
         mouse.prevent_default()
@@ -170,21 +170,21 @@ struct CardProps {
   focused: Bool,
   hovered: Bool,
   dragging: Bool,
-  mouse: fn(mut cooper::MouseEvent, cui::Context),
+  mouse: fn(&mut cooper::MouseEvent, cui::Context),
   hover: fn(Bool),
 }
 struct IssueCard {
-  props: mut CardProps,
+  props: &mut CardProps,
 }
-private fn issue_card(props: mut CardProps) mut IssueCard {
-  (mut IssueCard{props: props})
+private fn issue_card(props: &mut CardProps) &mut IssueCard {
+  &mut IssueCard{props: props}
 }
 impl cui::Component for IssueCard {
   fn mut render() cui::View {
     let item = self.props.issue
     mut ink = ui::text_style()
     mut metadata = ui::text_style(dim: true)
-    let card_style = mut ui::style(width: ui::cells(38), height: ui::cells(5), flex_shrink: 0.0)
+    let card_style = &mut ui::style(width: ui::cells(38), height: ui::cells(5), flex_shrink: 0.0)
     if self.props.selected {
       ink = ui::text_style(foreground: ui::indexed(15), bold: true)
       metadata = ui::text_style(foreground: ui::indexed(15))
@@ -212,9 +212,9 @@ impl cui::Component for IssueCard {
         ),
         cui::text(detail, styles: line(), text_style: metadata, selectable: false),
       ],
-      styles: card_style.@,
+      styles: card_style.*,
       focused: self.props.focused,
-      on_mouse: fn(received: mut cooper::MouseEvent, ctx: cui::Context) {
+      on_mouse: fn(received: &mut cooper::MouseEvent, ctx: cui::Context) {
         self.props.mouse(received, ctx)
         if received.event_type == cooper::MouseEventType::over {
           self.props.hover(true)
@@ -232,18 +232,18 @@ struct DetailProps {
   close: fn(),
 }
 struct IssueDetail {
-  props: mut DetailProps,
+  props: &mut DetailProps,
   section: Str,
   request: Int,
   status: Str,
 }
-private fn issue_detail(props: mut DetailProps) mut IssueDetail {
-  (mut IssueDetail{
+private fn issue_detail(props: &mut DetailProps) &mut IssueDetail {
+  &mut IssueDetail{
     props: props,
     section: "description",
     request: 0,
     status: "loading",
-  })
+  }
 }
 impl cui::Lifecycle for IssueDetail {
   fn mut mounted(ctx: cui::Context) {
@@ -335,7 +335,7 @@ impl cui::Component for IssueDetail {
         padding: ui::edges(ui::cells(1)),
       ),
       focused: self.props.active,
-      on_key: fn(received: mut cooper::KeyEvent, ctx: cui::Context) {
+      on_key: fn(received: &mut cooper::KeyEvent, ctx: cui::Context) {
         if received.event_type == cooper::KeyEventType::press and (received.matches("r") or received.matches("f")) {
           self.load(ctx, received.matches("f"))
           received.prevent_default()
@@ -364,7 +364,7 @@ struct Notice {
 }
 
 private fn notices() [Notice] {
-  let result = mut List::new<Notice>()
+  let result = &mut List::new<Notice>()
   for issue in issues() {
     if issue.id == "TIN-142" {
       result.push(Notice{issue: issue, activity: "Maya mentioned you"})
@@ -374,7 +374,7 @@ private fn notices() [Notice] {
       result.push(Notice{issue: issue, activity: "Iris completed this issue"})
     }
   }
-  result.@
+  result.*
 }
 
 struct InboxProps {
@@ -382,17 +382,17 @@ struct InboxProps {
   open: fn(Issue),
 }
 struct Inbox {
-  props: mut InboxProps,
+  props: &mut InboxProps,
   items: [Notice],
   selected: Int,
   preview: Issue?,
   loaded: [Str],
   request: Int,
   refreshing: Bool,
-  scroll: mut cui::ScrollBoxRef,
+  scroll: &mut cui::ScrollBoxRef,
 }
-private fn inbox(props: mut InboxProps) mut Inbox {
-  (mut Inbox{
+private fn inbox(props: &mut InboxProps) &mut Inbox {
+  &mut Inbox{
     props: props,
     items: notices(),
     selected: 0,
@@ -401,7 +401,7 @@ private fn inbox(props: mut InboxProps) mut Inbox {
     request: 0,
     refreshing: false,
     scroll: cui::scroll_box_ref(),
-  })
+  }
 }
 impl cui::Lifecycle for Inbox {
   fn mut mounted(ctx: cui::Context) {
@@ -462,13 +462,13 @@ impl Inbox {
   }
 
   fn mut archive(ctx: cui::Context) {
-    let kept = mut List::new<Notice>()
+    let kept = &mut List::new<Notice>()
     for item, index in self.items {
       if index != self.selected {
         kept.push(item)
       }
     }
-    self.items = kept.@
+    self.items = kept.*
     self.choose(self.selected, ctx)
   }
 
@@ -490,7 +490,7 @@ impl Inbox {
 }
 impl cui::Component for Inbox {
   fn mut render() cui::View {
-    let rows = mut List::new<cui::View>()
+    let rows = &mut List::new<cui::View>()
     mut heading = "Inbox · {self.items.size()} notifications"
     if self.refreshing {
       heading = "Refreshing inbox…"
@@ -498,7 +498,7 @@ impl cui::Component for Inbox {
     rows.push(cui::text(heading, styles: line(), text_style: blue(false)))
     for notice, index in self.items {
       mut ink = ui::text_style()
-      let row_style = mut ui::style(
+      let row_style = &mut ui::style(
         width: ui::percent(100.0),
         height: ui::cells(3),
         flex_shrink: 0.0,
@@ -514,9 +514,9 @@ impl cui::Component for Inbox {
             cui::text("{notice.activity} · {notice.issue.id}", styles: line(), text_style: ink),
           ],
           key: notice.issue.id,
-          styles: row_style.@,
+          styles: row_style.*,
           focused: self.props.active and index == self.selected,
-          on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+          on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
             if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
               self.choose(index, ctx)
               mouse.prevent_default()
@@ -526,7 +526,7 @@ impl cui::Component for Inbox {
         ),
       )
     }
-    let detail = mut List::new<cui::View>()
+    let detail = &mut List::new<cui::View>()
     if self.items.size() == 0 {
       rows.push(cui::text("You're all caught up.", styles: line()))
       detail.push(cui::text("No notifications to preview.", styles: line()))
@@ -582,7 +582,7 @@ impl cui::Component for Inbox {
     cui::box(
       [
         cui::scroll_box(
-          rows.@,
+          rows.*,
           styles: ui::style(width: ui::percent(35.0), height: ui::percent(100.0), flex_shrink: 0.0),
         ),
         cui::box(
@@ -595,7 +595,7 @@ impl cui::Component for Inbox {
           ),
         ),
         cui::scroll_box(
-          detail.@,
+          detail.*,
           ref: self.scroll,
           styles: ui::style(
             flex_grow: 1.0,
@@ -611,7 +611,7 @@ impl cui::Component for Inbox {
         flex_direction: ui::FlexDirection::row,
       ),
       focused: self.props.active and self.items.size() == 0,
-      on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+      on_key: fn(key: &mut cooper::KeyEvent, ctx: cui::Context) {
         if key.event_type == cooper::KeyEventType::press {
           mut handled = true
           if key.matches("j") or key.matches("down") {
@@ -663,16 +663,16 @@ struct SearchProps {
   close: fn(),
 }
 struct Search {
-  props: mut SearchProps,
+  props: &mut SearchProps,
   query: Str,
   results: [Issue],
   selected: Int,
   request: Int,
   waiting: Bool,
-  scroll: mut cui::ScrollBoxRef,
+  scroll: &mut cui::ScrollBoxRef,
 }
-private fn search(props: mut SearchProps) mut Search {
-  (mut Search{
+private fn search(props: &mut SearchProps) &mut Search {
+  &mut Search{
     props: props,
     query: "",
     results: [],
@@ -680,7 +680,7 @@ private fn search(props: mut SearchProps) mut Search {
     request: 0,
     waiting: false,
     scroll: cui::scroll_box_ref(),
-  })
+  }
 }
 impl Search {
   fn mut find(value: Str, ctx: cui::Context) {
@@ -701,13 +701,13 @@ impl Search {
           time::After(300 * time::Millisecond).recv() => {
             let _ = ctx.dispatch(fn() {
               if request == self.request {
-                let matches = mut List::new<Issue>()
+                let matches = &mut List::new<Issue>()
                 for item in self.props.items {
                   if item.id.contains(query) or item.title.contains(query) {
                     matches.push(item)
                   }
                 }
-                self.results = matches.@
+                self.results = matches.*
                 self.waiting = false
               }
             })
@@ -743,9 +743,9 @@ impl Search {
 }
 impl cui::Component for Search {
   fn mut render() cui::View {
-    let rows = mut List::new<cui::View>()
+    let rows = &mut List::new<cui::View>()
     for item, index in self.results {
-      let styles = mut ui::style(
+      let styles = &mut ui::style(
         width: ui::percent(100.0),
         height: ui::cells(1),
         flex_shrink: 0.0,
@@ -777,8 +777,8 @@ impl cui::Component for Search {
             ),
           ],
           key: item.id,
-          styles: styles.@,
-          on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+          styles: styles.*,
+          on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
             if mouse.event_type == cooper::MouseEventType::over {
               self.selected = index
             } else if mouse.event_type == cooper::MouseEventType::up and mouse.button == cooper::MouseButton::left {
@@ -815,7 +815,7 @@ impl cui::Component for Search {
             ),
             cui::text(status, styles: line(), text_style: ui::text_style(dim: true)),
             cui::scroll_box(
-              rows.@,
+              rows.*,
               ref: self.scroll,
               styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
             ),
@@ -833,7 +833,7 @@ impl cui::Component for Search {
             background: ui::indexed(0),
             padding: ui::edges(ui::cells(1)),
           ),
-          on_key: fn(key: mut cooper::KeyEvent, ctx: cui::Context) {
+          on_key: fn(key: &mut cooper::KeyEvent, ctx: cui::Context) {
             if key.event_type == cooper::KeyEventType::press {
               if key.matches("escape") {
                 self.props.close()
@@ -853,7 +853,7 @@ impl cui::Component for Search {
             }
             key.stop_propagation()
           },
-          on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+          on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
             mouse.stop_propagation()
           },
         ),
@@ -868,7 +868,7 @@ impl cui::Component for Search {
         align_items: ui::Align::center,
         justify_content: ui::Justify::center,
       ),
-      on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+      on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
         mouse.prevent_default()
         mouse.stop_propagation()
       },
@@ -881,11 +881,11 @@ struct ToastProps {
   close: fn(),
 }
 struct Toast {
-  props: mut ToastProps,
+  props: &mut ToastProps,
   offset: Int,
 }
-private fn toast(props: mut ToastProps) mut Toast {
-  (mut Toast{props: props, offset: 40})
+private fn toast(props: &mut ToastProps) &mut Toast {
+  &mut Toast{props: props, offset: 40}
 }
 impl cui::Lifecycle for Toast {
   fn mut mounted(ctx: cui::Context) {
@@ -948,8 +948,8 @@ struct ScreenProps {
 }
 struct TinearScreen {
   items: [Issue],
-  board: mut cui::ScrollBoxRef,
-  columns: mut [Str: mut cui::ScrollBoxRef],
+  board: &mut cui::ScrollBoxRef,
+  columns: &mut [Str: &mut cui::ScrollBoxRef],
   pressed: Str,
   dragging: Bool,
   start_x: Int,
@@ -971,12 +971,12 @@ struct TinearScreen {
   refreshing: Bool,
   revision: Int,
 }
-private fn tinear_screen(props: mut ScreenProps) mut TinearScreen {
-  let columns = mut Map::new<mut cui::ScrollBoxRef>()
+private fn tinear_screen(props: &mut ScreenProps) &mut TinearScreen {
+  let columns = &mut Map::new<&mut cui::ScrollBoxRef>()
   for state in ["Todo", "In Progress", "Done"] {
     columns.set(state, cui::scroll_box_ref())
   }
-  (mut TinearScreen{
+  &mut TinearScreen{
     items: issues(),
     board: cui::scroll_box_ref(),
     columns: columns,
@@ -1000,17 +1000,17 @@ private fn tinear_screen(props: mut ScreenProps) mut TinearScreen {
     query: "",
     refreshing: false,
     revision: 0,
-  })
+  }
 }
 
 private fn visible(items: [Issue], state: Str, query: Str) [Issue] {
-  let result = mut List::new<Issue>()
+  let result = &mut List::new<Issue>()
   for item in items {
     if item.state == state and (query.is_empty() or item.title.contains(query) or item.id.contains(query)) {
       result.push(item)
     }
   }
-  result.@
+  result.*
 }
 
 impl TinearScreen {
@@ -1037,7 +1037,8 @@ impl TinearScreen {
     target
   }
 
-  fn mut card_mouse(item: Issue, mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+  fn mut card_mouse(item: Issue, mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
+    mut item = item
     if mouse.button == cooper::MouseButton::left {
       if mouse.event_type == cooper::MouseEventType::down {
         self.pressed = item.id
@@ -1081,19 +1082,19 @@ impl TinearScreen {
         if self.dragging {
           let target = self.destination(mouse.x, mouse.y)
           if (not target.is_empty()) and target != item.state {
-            let kept = mut List::new<Issue>()
-            let moved = mut item
+            let kept = &mut List::new<Issue>()
+            let moved = &mut item
             moved.state = target
             for existing in self.items {
               if existing.id != item.id {
                 kept.push(existing)
               }
             }
-            kept.push(moved.@)
-            self.items = kept.@
+            kept.push(moved.*)
+            self.items = kept.*
             for tab, index in self.tabs {
               if tab.id == item.id {
-                self.tabs.set(index, moved.@)
+                self.tabs.set(index, moved.*)
               }
             }
             self.notice = "Moved {item.id} to {target}"
@@ -1135,20 +1136,20 @@ impl TinearScreen {
   }
 
   fn mut close_issue(id: Str) {
-    let kept = mut List::new<Issue>()
+    let kept = &mut List::new<Issue>()
     for tab in self.tabs {
       if tab.id != id {
         kept.push(tab)
       }
     }
-    self.tabs = kept.@
+    self.tabs = kept.*
     if self.active_tab == id {
       self.activate("")
     }
   }
 
   fn mut cycle_tab(backward: Bool) {
-    let ids = mut List::new<Str>()
+    let ids = &mut List::new<Str>()
     ids.push("inbox")
     ids.push("")
     for item in self.tabs {
@@ -1288,9 +1289,9 @@ impl cui::Component for TinearScreen {
         }
       }
     }
-    let columns = mut List::new<cui::View>()
+    let columns = &mut List::new<cui::View>()
     for state in ["Todo", "In Progress", "Done"] {
-      let cards = mut List::new<cui::View>()
+      let cards = &mut List::new<cui::View>()
       let items = visible(self.items, state, self.query)
       mut heading = ui::text_style(dim: true)
       let _ = chosen.map(fn(item) Void {
@@ -1315,7 +1316,7 @@ impl cui::Component for TinearScreen {
               focused: item.id == self.selected and (not self.searching) and self.active_tab.is_empty() and (not self.global_search),
               hovered: item.id == self.hovered,
               dragging: self.dragging and self.pressed == item.id,
-              mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+              mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
                 self.card_mouse(item, mouse, ctx)
               },
               hover: fn(over: Bool) {
@@ -1332,7 +1333,7 @@ impl cui::Component for TinearScreen {
       }
       columns.push(
         cui::scroll_box(
-          cards.@,
+          cards.*,
           key: state,
           ref: self.columns.get(state),
           styles: ui::style(width: ui::cells(38), height: ui::percent(100.0), flex_shrink: 0.0),
@@ -1342,7 +1343,7 @@ impl cui::Component for TinearScreen {
     let content = cui::scroll_box(
       [
         cui::box(
-          columns.@,
+          columns.*,
           styles: ui::style(
             width: ui::cells(118),
             height: ui::percent(100.0),
@@ -1367,7 +1368,7 @@ impl cui::Component for TinearScreen {
     if has_selection {
       footer_id = self.selected
     }
-    let pages = mut List::new<cui::View>()
+    let pages = &mut List::new<cui::View>()
     pages.push(
       cui::box(
         [
@@ -1401,7 +1402,7 @@ impl cui::Component for TinearScreen {
                 self.select_first_visible()
               }
             },
-            on_key: fn(received: mut cooper::KeyEvent, ctx: cui::Context) {
+            on_key: fn(received: &mut cooper::KeyEvent, ctx: cui::Context) {
               if received.event_type == cooper::KeyEventType::press and (received.matches("enter") or received.matches("return")) {
                 self.searching = false
                 received.prevent_default()
@@ -1421,7 +1422,7 @@ impl cui::Component for TinearScreen {
         styles: page_style(self.active_tab.is_empty()),
       ),
     )
-    let tabs = mut List::new<cui::View>()
+    let tabs = &mut List::new<cui::View>()
     tabs.push(
       cui::text(
         " TINEAR  ",
@@ -1484,7 +1485,7 @@ impl cui::Component for TinearScreen {
     let shell = cui::box(
       [
         cui::box(
-          tabs.@,
+          tabs.*,
           styles: ui::style(
             width: ui::percent(100.0),
             height: ui::cells(1),
@@ -1495,14 +1496,14 @@ impl cui::Component for TinearScreen {
         ),
         cui::text(status, styles: line(), text_style: ui::text_style(dim: true)),
         cui::box(
-          pages.@,
+          pages.*,
           styles: ui::style(width: ui::percent(100.0), flex_grow: 1.0, min_height: ui::cells(0)),
         ),
         cui::text(hints, styles: line(), text_style: ui::text_style(dim: true)),
       ],
       styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
       focused: (not has_selection) and (not self.searching) and self.active_tab.is_empty() and (not self.global_search),
-      on_key: fn(received: mut cooper::KeyEvent, ctx: cui::Context) {
+      on_key: fn(received: &mut cooper::KeyEvent, ctx: cui::Context) {
         if received.event_type == cooper::KeyEventType::press {
           self.hovered = ""
         }
@@ -1581,7 +1582,7 @@ impl cui::Component for TinearScreen {
         }
       },
     )
-    let children = mut List::new<cui::View>()
+    let children = &mut List::new<cui::View>()
     children.push(shell)
     if self.dragging {
       for item in self.items {
@@ -1603,7 +1604,7 @@ impl cui::Component for TinearScreen {
                 background: ui::indexed(4),
                 z_index: 50,
               ),
-              on_mouse: fn(mouse: mut cooper::MouseEvent, ctx: cui::Context) {
+              on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {
                 if mouse.event_type == cooper::MouseEventType::scroll {
                   if mouse.modifiers.shift or mouse.scroll_x != 0 {
                     let _ = self.board.current.map(fn(board) {
@@ -1655,7 +1656,7 @@ impl cui::Component for TinearScreen {
         ),
       )
     }
-    cui::box(children.@, styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)))
+    cui::box(children.*, styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)))
   }
 }
 

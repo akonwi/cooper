@@ -248,7 +248,7 @@ test fn finalized_rich_text_drag_preserves_selection_style_through_reflow() Void
       ],
     ),
     styles: style::new(width: style::percent(100.0)),
-    selection_style: fn(value: mut text::TextStyle) {
+    selection_style: fn(value: &mut text::TextStyle) {
       value.background = Maybe::new(selected_background)
       value.bold = true
     },
@@ -374,7 +374,7 @@ test fn reentrant_second_press_clear_does_not_resurrect_word_selection() Void!St
   let message = text::new(application.context, content: "Hello", styles: fixed(5))
   application.root.add(message)
   mut downs = 0
-  let _ = message.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = message.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       downs =+ 1
       if downs == 2 {
@@ -417,7 +417,7 @@ test fn reentrant_second_press_reparent_invalidates_word_selection() Void!Str {
   application.root.add(message)
   application.root.add(destination)
   mut downs = 0
-  let _ = message.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = message.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       downs =+ 1
       if downs == 2 {
@@ -442,9 +442,9 @@ test fn reentrant_second_press_reparent_invalidates_word_selection() Void!Str {
 
 test fn double_click_global_text_respects_ancestor_clipping() Void!Str {
   let application = cooper_testing::new(5, 1)
-  let clipped_style = mut fixed(2)
+  let clipped_style = &mut fixed(2)
   clipped_style.overflow = style::Overflow::hidden
-  let clipped = box::new(application.context, styles: clipped_style.@)
+  let clipped = box::new(application.context, styles: clipped_style.*)
   let message = text::new(application.context, content: "hello", styles: fixed(5))
   clipped.add(message)
   application.root.add(clipped)
@@ -510,7 +510,7 @@ test fn text_selection_patch_mutates_copy_of_base_style() Void!Str {
     content: "styled",
     styles: fixed(6),
     text_style: text::style(italic: true),
-    selection_style: fn(value: mut text::TextStyle) {
+    selection_style: fn(value: &mut text::TextStyle) {
       value.bold = true
       value.reverse = false
       value.background = Maybe::new(color::rgb(20, 40, 80))
@@ -597,7 +597,7 @@ test fn ctrl_click_extends_existing_selection_and_normal_click_clears() Void!Str
     "Expected Ctrl extension",
   )
 
-  let remove = clear_target.on_mouse(fn(received: mut event::MouseEvent) {
+  let remove = clear_target.on_mouse(fn(received: &mut event::MouseEvent) {
     received.prevent_default()
   })
   application.click(12, 0)
@@ -782,9 +782,9 @@ test fn ellipsis_retains_zero_width_source_locally_but_not_in_global_copy() Void
 
 test fn clipping_limits_fragments_but_not_logical_text_range() Void!Str {
   let application = cooper_testing::new(2, 1)
-  let clipped_style = mut fixed(1)
+  let clipped_style = &mut fixed(1)
   clipped_style.overflow = style::Overflow::hidden
-  let clipped = box::new(application.context, styles: clipped_style.@)
+  let clipped = box::new(application.context, styles: clipped_style.*)
   let message = text::new(application.context, content: "你", styles: fixed(2))
   clipped.add(message)
   application.root.add(clipped)
@@ -815,7 +815,7 @@ test fn selection_style_patch_is_cached_until_explicit_invalidation() Void!Str {
     application.context,
     content: "test",
     styles: fixed(4),
-    selection_style: fn(value: mut text::TextStyle) {
+    selection_style: fn(value: &mut text::TextStyle) {
       applications =+ 1
       value.bold = true
     },
@@ -1045,7 +1045,7 @@ test fn post_hover_anchor_invalidation_skips_stale_selection_notification() Void
   )
   application.root.add(message)
   application.root.add(overlay)
-  let _ = message.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = message.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::up {
       overlay.set_style(
         style::new(

@@ -23,7 +23,7 @@ private fn received(
   ctrl: Bool?,
   alt: Bool?,
   super: Bool?,
-) mut event::KeyEvent {
+) &mut event::KeyEvent {
   event::key(name, name, kind, modifiers(shift, ctrl, alt, super))
 }
 
@@ -42,7 +42,7 @@ struct Availability {
 }
 
 test fn generic_and_simple_commands_have_lazy_enablement_and_trait_metadata() Void!Str {
-  let model = mut Availability{
+  let model = &mut Availability{
     value: 2,
     layer_enabled: false,
     command_enabled: true,
@@ -210,7 +210,7 @@ test fn runtime_orders_priority_specificity_and_newest_then_falls_back_on_declin
 
 test fn mutable_layer_enablement_bindings_and_discovery_use_current_configuration() Void!Str {
   let application = cooper_testing::new(8, 1)
-  let model = mut Availability{
+  let model = &mut Availability{
     value: 0,
     layer_enabled: false,
     command_enabled: true,
@@ -334,7 +334,7 @@ test fn raw_prevention_and_stop_suppress_keymaps_without_changing_raw_listener_o
       ],
     ),
   )
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut event::KeyEvent) {
     raw = "{raw}1"
     if received.name == "p" {
       received.prevent_default()
@@ -342,7 +342,7 @@ test fn raw_prevention_and_stop_suppress_keymaps_without_changing_raw_listener_o
       received.stop_propagation()
     }
   })
-  let _ = application.on_key(fn(received: mut event::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut event::KeyEvent) {
     raw = "{raw}2"
   })
 
@@ -503,7 +503,7 @@ test fn hidden_scope_and_stopped_focused_listener_preserve_default_behavior() Vo
       scope: keymap::focus_within(panel),
     ),
   )
-  let stop = field.on_key(fn(key: mut event::KeyEvent) {
+  let stop = field.on_key(fn(key: &mut event::KeyEvent) {
     key.stop_propagation()
   })
   app.key(received("a", event::KeyEventType::press))

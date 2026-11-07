@@ -17,7 +17,7 @@ test fn terminal_hyperlinks_reject_controls_and_malformed_utf8() Void!Str {
   for value in ["line\nbreak", "escape\x1b\\", "bell\a", "delete\x7f", "c1\u009c"] {
     try testing::assert(not terminal_events::valid_hyperlink(value), "Expected control rejection")
   }
-  let malformed = mut strings::Builder{}
+  let malformed = &mut strings::Builder{}
   malformed.WriteByte(Byte::from(156))
   testing::assert(
     not terminal_events::valid_hyperlink(malformed.String()),

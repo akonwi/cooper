@@ -13,20 +13,20 @@ struct Model {
   releases: Int,
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Card {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn card(props: mut Props) mut Card {
-  (mut Card{model: props.model})
+private fn card(props: &mut Props) &mut Card {
+  &mut Card{model: props.model}
 }
 impl cui::Component for Card {
   fn mut render() cui::View {
     cui::box(
       [cui::text("drag this label", selectable: self.model.selectable)],
       styles: ui::style(width: ui::cells(16), height: ui::cells(2)),
-      on_mouse: fn(mouse: mut event::MouseEvent, ctx: cui::Context) {
+      on_mouse: fn(mouse: &mut event::MouseEvent, ctx: cui::Context) {
         if mouse.event_type == event::MouseEventType::drag {
           self.model.drags =+ 1
         } else if mouse.event_type == event::MouseEventType::drag_end {
@@ -43,13 +43,13 @@ struct SelectionModel {
   blue: Bool,
 }
 struct SelectionProps {
-  model: mut SelectionModel,
+  model: &mut SelectionModel,
 }
 struct SelectionLabel {
-  model: mut SelectionModel,
+  model: &mut SelectionModel,
 }
-private fn selection_label(props: mut SelectionProps) mut SelectionLabel {
-  (mut SelectionLabel{model: props.model})
+private fn selection_label(props: &mut SelectionProps) &mut SelectionLabel {
+  &mut SelectionLabel{model: props.model}
 }
 impl cui::Component for SelectionLabel {
   fn mut render() cui::View {
@@ -61,7 +61,7 @@ impl cui::Component for SelectionLabel {
       "styled",
       styles: ui::style(width: ui::cells(6), height: ui::cells(1)),
       selectable: true,
-      selection_style: fn(value: mut ui::TextStyle) {
+      selection_style: fn(value: &mut ui::TextStyle) {
         value.background = Maybe::new(background)
         value.bold = true
         value.reverse = false
@@ -73,7 +73,7 @@ impl cui::Component for SelectionLabel {
 test fn declarative_text_selection_style_applies_and_updates_in_place() Void!Str {
   let app = headless::new(10, 2)
   defer app.destroy()
-  let model = mut SelectionModel{blue: false}
+  let model = &mut SelectionModel{blue: false}
   let renderer = renderer::mount(
     app.context,
     app.root,
@@ -100,10 +100,10 @@ test fn declarative_text_selection_style_applies_and_updates_in_place() Void!Str
 }
 
 struct SelectionArea {
-  model: mut SelectionModel,
+  model: &mut SelectionModel,
 }
-private fn selection_area(props: mut SelectionProps) mut SelectionArea {
-  (mut SelectionArea{model: props.model})
+private fn selection_area(props: &mut SelectionProps) &mut SelectionArea {
+  &mut SelectionArea{model: props.model}
 }
 impl cui::Component for SelectionArea {
   fn mut render() cui::View {
@@ -111,7 +111,7 @@ impl cui::Component for SelectionArea {
       cui::text_area(
         "styled",
         styles: ui::style(width: ui::cells(6), height: ui::cells(1)),
-        selection_style: fn(value: mut ui::TextStyle) {
+        selection_style: fn(value: &mut ui::TextStyle) {
           value.background = Maybe::new(ui::rgb(20, 40, 80))
           value.reverse = false
         },
@@ -125,7 +125,7 @@ impl cui::Component for SelectionArea {
 test fn declarative_text_area_selection_style_defaults_and_updates_in_place() Void!Str {
   let app = headless::new(10, 2)
   defer app.destroy()
-  let model = mut SelectionModel{blue: false}
+  let model = &mut SelectionModel{blue: false}
   let renderer = renderer::mount(
     app.context,
     app.root,
@@ -180,7 +180,7 @@ test fn editable_text_and_placeholders_remain_selection_enabled() Void!Str {
 test fn text_selection_is_opt_in_and_drag_capture_survives_reconciliation() Void!Str {
   let app = headless::new(40, 4)
   defer app.destroy()
-  let model = mut Model{
+  let model = &mut Model{
     selectable: Maybe::new<Bool>(),
     drags: 0,
     ends: 0,
@@ -273,15 +273,15 @@ struct CopyModel {
 }
 
 struct CopyProps {
-  model: mut CopyModel,
+  model: &mut CopyModel,
 }
 
 struct CopyProvider {
-  props: mut CopyProps,
+  props: &mut CopyProps,
 }
 
-private fn copy_provider(props: mut CopyProps) mut CopyProvider {
-  (mut CopyProvider{props: props})
+private fn copy_provider(props: &mut CopyProps) &mut CopyProvider {
+  &mut CopyProvider{props: props}
 }
 
 impl cui::Component for CopyProvider {
@@ -297,7 +297,7 @@ impl cui::Component for CopyProvider {
 test fn declarative_box_refreshes_semantic_copy_text_for_an_active_selection() Void!Str {
   let app = headless::new(8, 2)
   defer app.destroy()
-  let model = mut CopyModel{value: Maybe::new("first")}
+  let model = &mut CopyModel{value: Maybe::new("first")}
   let renderer = renderer::mount(
     app.context,
     app.root,

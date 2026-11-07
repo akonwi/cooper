@@ -17,7 +17,7 @@ fn prepare(phase: Str) Workload {
   if phase == "layout_update" or phase == "layout_unchanged" {
     let ctx = runtime::new_detached()
     let root = box::new(ctx)
-    let rows = mut List::new<mut text::Text>()
+    let rows = &mut List::new<&mut text::Text>()
     for index in 0..64 {
       let row = text::new(
         ctx,
@@ -56,7 +56,7 @@ fn prepare(phase: Str) Workload {
     content.add(
       box::new(app.context, styles: style::new(height: style::cells(5000), flex_shrink: 0.0)),
     )
-    let rows = mut List::new<mut text::Text>()
+    let rows = &mut List::new<&mut text::Text>()
     for index in 0..64 {
       let row = text::new(
         app.context,

@@ -7,7 +7,7 @@ use cooper/core/layout/measure
 use cooper/ui/style
 
 fn commit(
-  node: mut layout::Node,
+  node: &mut layout::Node,
   width: measure::Axis,
   height: measure::Axis,
   mr: Float32,

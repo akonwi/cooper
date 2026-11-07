@@ -13,13 +13,13 @@ struct Model {
   cancel: fn(),
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Animated {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn animated(props: mut Props) mut Animated {
-  (mut Animated{model: props.model})
+private fn animated(props: &mut Props) &mut Animated {
+  &mut Animated{model: props.model}
 }
 impl cui::Component for Animated {
   fn mut render() cui::View {
@@ -49,10 +49,10 @@ impl cui::Lifecycle for Animated {
   }
 }
 struct Parent {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn parent(props: mut Props) mut Parent {
-  (mut Parent{model: props.model})
+private fn parent(props: &mut Props) &mut Parent {
+  &mut Parent{model: props.model}
 }
 impl cui::Component for Parent {
   fn mut render() cui::View {
@@ -63,14 +63,14 @@ impl cui::Component for Parent {
     }
   }
 }
-private fn model() mut Model {
-  (mut Model{
+private fn model() &mut Model {
+  &mut Model{
     visible: true,
     frames: [],
     renders: 0,
     context: Maybe::new<cui::Context>(),
     cancel: fn() {},
-  })
+  }
 }
 
 test fn scoped_animation_starts_eases_invalidates_and_completes() Void!Str {

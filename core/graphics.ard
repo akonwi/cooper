@@ -4,7 +4,7 @@ use go:vaxis
 
 // Merge equal horizontal runs across rows. This keeps a typical popup at four
 // placements rather than one placement per cell, while honoring every writer.
-fn regions(buffer: mut paint::Buffer, image: paint::ImagePlacement) [geometry::Rect] {
+fn regions(buffer: &mut paint::Buffer, image: paint::ImagePlacement) [geometry::Rect] {
   let visible = geometry::intersect(
     image.clip,
     geometry::Rect{
@@ -14,7 +14,7 @@ fn regions(buffer: mut paint::Buffer, image: paint::ImagePlacement) [geometry::R
       height: buffer.height,
     },
   )
-  let result = mut List::new<geometry::Rect>()
+  let result = &mut List::new<geometry::Rect>()
   mut y = visible.y
   while y < visible.y + visible.height {
     mut x = visible.x
@@ -34,10 +34,11 @@ fn regions(buffer: mut paint::Buffer, image: paint::ImagePlacement) [geometry::R
         let width = x - start
         mut merged = false
         for previous, index in result {
+          mut previous = previous
           if previous.x == start and previous.width == width and previous.y + previous.height == y {
-            let extended = mut previous
+            let extended = &mut previous
             extended.height =+ 1
-            result.set(index, extended.@)
+            result.set(index, extended.*)
             merged = true
           }
         }
@@ -55,7 +56,7 @@ fn regions(buffer: mut paint::Buffer, image: paint::ImagePlacement) [geometry::R
     }
     y =+ 1
   }
-  result.@
+  result.*
 }
 
 // Map both edges from the original destination, not from the clipped viewport.
@@ -76,16 +77,16 @@ fn source_rect(image: paint::ImagePlacement, region: geometry::Rect) geometry::R
 struct Resource {
   id: Int,
   revision: Int,
-  image: mut vaxis::PixelImage,
+  image: &mut vaxis::PixelImage,
   seen: Bool,
 }
 
 struct Renderer {
-  resources: [mut Resource],
+  resources: [&mut Resource],
 }
 
-fn new() mut Renderer {
-  (mut Renderer{resources: []})
+fn new() &mut Renderer {
+  &mut Renderer{resources: []}
 }
 
 impl Renderer {
@@ -96,11 +97,11 @@ impl Renderer {
     self.resources = []
   }
 
-  private fn mut resource(terminal: mut vaxis::Vaxis, image: paint::ImagePlacement) mut Resource {
-    mut found = Maybe::new<mut Resource>()
+  private fn mut resource(terminal: &mut vaxis::Vaxis, image: paint::ImagePlacement) &mut Resource {
+    mut found = Maybe::new<&mut Resource>()
     for resource in self.resources {
       if resource.id == image.id and resource.revision == image.revision {
-        found = Maybe::new<mut Resource>(resource)
+        found = Maybe::new<&mut Resource>(resource)
       }
     }
     match found {
@@ -109,9 +110,9 @@ impl Renderer {
         let handle = terminal.NewPixelImage(
           image.width,
           image.height,
-          mut image.rgba,
+          image.rgba,
         ).expect("encode validated native image")
-        let resource = mut Resource{
+        let resource = &mut Resource{
           id: image.id,
           revision: image.revision,
           image: handle,
@@ -123,7 +124,7 @@ impl Renderer {
     }
   }
 
-  fn mut present(terminal: mut vaxis::Vaxis, buffer: mut paint::Buffer) {
+  fn mut present(terminal: &mut vaxis::Vaxis, buffer: &mut paint::Buffer) {
     for resource in self.resources {
       resource.seen = false
     }
@@ -151,7 +152,7 @@ impl Renderer {
         }
       }
     }
-    let retained = mut List::new<mut Resource>()
+    let retained = &mut List::new<&mut Resource>()
     for resource in self.resources {
       if resource.seen {
         retained.push(resource)
@@ -159,6 +160,6 @@ impl Renderer {
         resource.image.Destroy()
       }
     }
-    self.resources = retained.@
+    self.resources = retained.*
   }
 }

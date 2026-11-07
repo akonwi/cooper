@@ -8,8 +8,8 @@ use cooper/ui/geometry
 use go:math
 
 struct AttachmentHandle {
-  target: mut node::Node,
-  root: mut node::Node,
+  target: &mut node::Node,
+  root: &mut node::Node,
   generation: Int,
 }
 
@@ -22,7 +22,7 @@ impl AttachmentHandle {
     if (not self.target.is_mounted()) or self.target.attachment_generation() != self.generation {
       false
     } else {
-      mut current = Maybe::new<mut node::Node>(self.target)
+      mut current = Maybe::new<&mut node::Node>(self.target)
       mut found_root = false
       mut scanning = true
       while scanning {
@@ -71,8 +71,8 @@ struct State {
   click_epoch: Int,
 }
 
-fn new() mut State {
-  (mut State{
+fn new() &mut State {
+  &mut State{
     hovered: Maybe::new<AttachmentHandle>(),
     observed: Maybe::new<AttachmentHandle>(),
     pressed: Maybe::new<AttachmentHandle>(),
@@ -92,10 +92,10 @@ fn new() mut State {
     next_press_serial: 1,
     active_press_serial: 0,
     click_epoch: 1,
-  })
+  }
 }
 
-private fn handle(root: mut node::Renderable, target: mut node::Node) AttachmentHandle {
+private fn handle(root: mut node::Renderable, target: &mut node::Node) AttachmentHandle {
   AttachmentHandle{
     target: target,
     root: root.node(),
@@ -127,10 +127,10 @@ private fn same_current(left: AttachmentHandle?, right: AttachmentHandle?) Bool 
 }
 
 private fn derived(
-  received: mut event::MouseEvent,
+  received: &mut event::MouseEvent,
   event_type: event::MouseEventType,
   is_dragging: Bool?,
-) mut event::MouseEvent {
+) &mut event::MouseEvent {
   let result = event::mouse(
     event_type,
     received.button,
@@ -147,16 +147,16 @@ private fn derived(
   result
 }
 
-private fn selection_target(value: AttachmentHandle?) (mut node::Node)? {
+private fn selection_target(value: AttachmentHandle?) (&mut node::Node)? {
   match value {
     retained => {
       if retained.current() {
-        Maybe::new<mut node::Node>(retained.target)
+        Maybe::new<&mut node::Node>(retained.target)
       } else {
-        Maybe::new<mut node::Node>()
+        Maybe::new<&mut node::Node>()
       }
     },
-    _ => Maybe::new<mut node::Node>(),
+    _ => Maybe::new<&mut node::Node>(),
   }
 }
 
@@ -229,8 +229,8 @@ impl State {
   private fn route(
     root: mut node::Renderable,
     destination: AttachmentHandle,
-    received: mut event::MouseEvent,
-    focused: mut focus::State,
+    received: &mut event::MouseEvent,
+    focused: &mut focus::State,
   ) router::Outcome {
     if destination.current() {
       router::dispatch_mouse(root, destination.target, received, focused)
@@ -242,8 +242,8 @@ impl State {
   private fn mut transition_hover(
     root: mut node::Renderable,
     next: AttachmentHandle?,
-    basis: mut event::MouseEvent,
-    focused: mut focus::State,
+    basis: &mut event::MouseEvent,
+    focused: &mut focus::State,
   ) router::Outcome {
     self.refresh_handles()
     if same_current(self.hovered, next) {
@@ -284,8 +284,8 @@ impl State {
   private fn mut release_capture(
     root: mut node::Renderable,
     physical: AttachmentHandle?,
-    received: mut event::MouseEvent,
-    focused: mut focus::State,
+    received: &mut event::MouseEvent,
+    focused: &mut focus::State,
   ) router::Outcome {
     let source = try self.captured -> _ { router::empty_outcome() }
     let release = event::mouse(
@@ -358,9 +358,9 @@ impl State {
 
   fn mut process(
     root: mut node::Renderable,
-    received: mut event::MouseEvent,
-    focused: mut focus::State,
-    selected: mut selection_state::State,
+    received: &mut event::MouseEvent,
+    focused: &mut focus::State,
+    selected: &mut selection_state::State,
     auto_focus: Bool,
     now_ms: Int64,
   ) router::Outcome {
@@ -673,7 +673,7 @@ impl State {
     } else {
       match hit::test(root, self.x, self.y) {
         hit => {
-          mut current = Maybe::new<mut node::Node>(hit.target)
+          mut current = Maybe::new<&mut node::Node>(hit.target)
           mut cursor = event::MouseCursor::default_cursor
           mut scanning = true
           while scanning {
@@ -697,7 +697,7 @@ impl State {
     }
   }
 
-  fn mut reconcile(root: mut node::Renderable, focused: mut focus::State) router::Outcome {
+  fn mut reconcile(root: mut node::Renderable, focused: &mut focus::State) router::Outcome {
     if not self.has_pointer {
       router::empty_outcome()
     } else {

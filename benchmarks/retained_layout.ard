@@ -24,7 +24,7 @@ fn main() {
     ),
   )
   application.root.add(root)
-  let children = mut List::new<mut box::Box>()
+  let children = &mut List::new<&mut box::Box>()
 
   let construction_started = time::Now()
   mut index = 0

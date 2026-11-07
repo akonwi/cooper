@@ -8,21 +8,21 @@ use cooper/ui
 
 struct Model {
   visible: Bool,
-  field: mut cui::InputRef,
-  panel: mut cui::BoxRef,
+  field: &mut cui::InputRef,
+  panel: &mut cui::BoxRef,
   child_contexts: [cui::Context],
   parent_contexts: [cui::Context],
   value: Str,
   calls: Int,
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Child {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn child(props: mut Props) mut Child {
-  (mut Child{model: props.model})
+private fn child(props: &mut Props) &mut Child {
+  &mut Child{model: props.model}
 }
 // Deliberately no Lifecycle: event context ownership cannot depend on hooks.
 impl cui::Component for Child {
@@ -40,26 +40,26 @@ impl cui::Component for Child {
           on_submit: fn(value: Str, ctx: cui::Context) {
             self.model.child_contexts.push(ctx)
           },
-          on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+          on_key: fn(key: &mut event::KeyEvent, ctx: cui::Context) {
             self.model.child_contexts.push(ctx)
           },
-          on_mouse: fn(mouse: mut event::MouseEvent, ctx: cui::Context) {
+          on_mouse: fn(mouse: &mut event::MouseEvent, ctx: cui::Context) {
             self.model.child_contexts.push(ctx)
           },
         ),
       ],
       styles: ui::style(width: ui::cells(20), height: ui::cells(2)),
-      on_mouse: fn(mouse: mut event::MouseEvent, ctx: cui::Context) {
+      on_mouse: fn(mouse: &mut event::MouseEvent, ctx: cui::Context) {
         self.model.child_contexts.push(ctx)
       },
     )
   }
 }
 struct Parent {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn parent(props: mut Props) mut Parent {
-  (mut Parent{model: props.model})
+private fn parent(props: &mut Props) &mut Parent {
+  &mut Parent{model: props.model}
 }
 impl cui::Component for Parent {
   fn mut render() cui::View {
@@ -70,13 +70,13 @@ impl cui::Component for Parent {
     cui::box(
       [content],
       ref: self.model.panel,
-      on_key: fn(key: mut event::KeyEvent, ctx: cui::Context) {
+      on_key: fn(key: &mut event::KeyEvent, ctx: cui::Context) {
         self.model.parent_contexts.push(ctx)
       },
     )
   }
 }
-private fn key(name: Str, text: Str) mut event::KeyEvent {
+private fn key(name: Str, text: Str) &mut event::KeyEvent {
   event::key(
     name,
     text,
@@ -93,7 +93,7 @@ private fn key(name: Str, text: Str) mut event::KeyEvent {
 test fn all_event_contexts_belong_to_nearest_component_without_lifecycle_hooks() Void!Str {
   let app = headless::new(30, 4)
   defer app.destroy()
-  let model = mut Model{
+  let model = &mut Model{
     visible: true,
     field: cui::input_ref(),
     panel: cui::box_ref(),
@@ -157,7 +157,7 @@ test fn all_event_contexts_belong_to_nearest_component_without_lifecycle_hooks()
 test fn primitive_root_event_context_has_renderer_lifetime() Void!Str {
   let app = headless::new(20, 2)
   defer app.destroy()
-  let contexts = mut List::new<cui::Context>()
+  let contexts = &mut List::new<cui::Context>()
   let field = cui::input_ref()
   let renderer = renderer::mount(
     app.context,

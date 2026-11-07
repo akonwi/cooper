@@ -60,8 +60,8 @@ private enum WordClass {
 }
 
 private fn graphemes(value: Str) [Grapheme] {
-  let iterator = mut unicode::NewGraphemeIterator(value)
-  let output = mut List::new<Grapheme>()
+  let iterator = &mut unicode::NewGraphemeIterator(value)
+  let output = &mut List::new<Grapheme>()
   mut reading = true
   while reading {
     match iterator.Next() {
@@ -77,7 +77,7 @@ private fn graphemes(value: Str) [Grapheme] {
       _ => { reading = false },
     }
   }
-  output.@
+  output.*
 }
 
 private fn grapheme_count(value: Str) Int {
@@ -351,23 +351,23 @@ private struct SuffixDelta {
   delta: Int,
 }
 
-private fn segmentation() mut Segmentation {
-  (mut Segmentation{
+private fn segmentation() &mut Segmentation {
+  &mut Segmentation{
     started: false,
     previous: unicode::GraphemeOther,
     state: unicode::BreakStateDefault,
     count: 0,
-  })
+  }
 }
 
-private fn push_scalar(segmented: mut Segmentation, scalar: Rune) {
+private fn push_scalar(segmented: &mut Segmentation, scalar: Rune) {
   let property = unicode::GraphemeBreakProperty(Int32::from(scalar))
   if segmented.started {
-    let state = mut segmented.state
+    let state = &mut segmented.state
     if unicode::ComputeGraphemeBreak(segmented.previous, property, state) {
       segmented.count =+ 1
     }
-    segmented.state = state.@
+    segmented.state = state.*
   } else {
     segmented.started = true
     segmented.count = 1
@@ -375,7 +375,7 @@ private fn push_scalar(segmented: mut Segmentation, scalar: Rune) {
   segmented.previous = property
 }
 
-private fn suffix_delta(cache: mut [SuffixDelta], prefix: Segmentation, suffix: Str) Int {
+private fn suffix_delta(cache: &mut [SuffixDelta], prefix: Segmentation, suffix: Str) Int {
   mut cached = Maybe::new<Int>()
   for entry in cache {
     if entry.started == prefix.started and entry.previous == prefix.previous and entry.state == prefix.state {
@@ -414,13 +414,13 @@ private fn longest_insertion(base: Str, cursor: Int, inserted: Str, maximum: Int
   for scalar in before {
     push_scalar(segmented, scalar)
   }
-  let cache = mut List::new<SuffixDelta>()
+  let cache = &mut List::new<SuffixDelta>()
   mut accepted = ""
   mut end = 0
   for scalar in inserted {
     push_scalar(segmented, scalar)
     end = end + scalar.to_str().size()
-    if segmented.count + suffix_delta(cache, segmented.@, after) <= maximum {
+    if segmented.count + suffix_delta(cache, segmented.*, after) <= maximum {
       accepted = inserted.slice(end: end).expect("Editor scalar insertion boundary")
     }
   }
@@ -525,7 +525,7 @@ impl State {
     self.value_text = value
     self.cursor_byte = value.size()
     self.anchor_byte = Maybe::new<Int>()
-    outcome(self.@, previous_value, previous_cursor, previous_anchor)
+    outcome(self.*, previous_value, previous_cursor, previous_anchor)
   }
 
   fn mut insert_text(value: Str, maximum_length: Int?) Outcome {
@@ -559,7 +559,7 @@ impl State {
       self.cursor_byte = normalize_boundary(self.value_text, insertion_at + inserted.size())
       self.anchor_byte = Maybe::new<Int>()
     }
-    outcome(self.@, previous_value, previous_cursor, previous_anchor)
+    outcome(self.*, previous_value, previous_cursor, previous_anchor)
   }
 
   fn mut apply(action: Action) Outcome {
@@ -731,7 +731,7 @@ impl State {
       Action::submit => (),
     }
     outcome(
-      self.@,
+      self.*,
       previous_value,
       previous_cursor,
       previous_anchor,
@@ -741,7 +741,7 @@ impl State {
 }
 
 test fn editor_moves_and_selects_at_grapheme_boundaries() Void!Str {
-  let state = mut new("Aé界")
+  let state = &mut new("Aé界")
 
   let _ = state.apply(Action::move_left)
   try testing::assert(state.cursor() == "Aé".size(), "Expected wide grapheme movement")
@@ -754,7 +754,7 @@ test fn editor_moves_and_selects_at_grapheme_boundaries() Void!Str {
 }
 
 test fn editor_word_boundaries_cover_spaces_punctuation_and_apostrophes() Void!Str {
-  let spaced = mut new("hello world")
+  let spaced = &mut new("hello world")
   let _ = spaced.apply(Action::move_start)
   let _ = spaced.apply(Action::move_word_forward)
   try testing::assert(spaced.cursor() == "hello ".size(), "Expected forward word and space")
@@ -762,21 +762,21 @@ test fn editor_word_boundaries_cover_spaces_punctuation_and_apostrophes() Void!S
   let _ = spaced.apply(Action::move_word_backward)
   try testing::assert(spaced.cursor() == "hello ".size(), "Expected previous word start")
 
-  let punctuated = mut new("hello-world")
+  let punctuated = &mut new("hello-world")
   let _ = punctuated.apply(Action::move_start)
   let _ = punctuated.apply(Action::move_word_forward)
   try testing::assert(punctuated.cursor() == "hello".size(), "Expected punctuation boundary")
   let _ = punctuated.apply(Action::move_word_forward)
   try testing::assert(punctuated.cursor() == "hello-".size(), "Expected punctuation run")
 
-  let apostrophe = mut new("can't stop")
+  let apostrophe = &mut new("can't stop")
   apostrophe.set_cursor("can't".size())
   let _ = apostrophe.apply(Action::move_word_backward)
   try testing::assert(apostrophe.cursor() == 0, "Expected internal apostrophe in word")
   let _ = apostrophe.apply(Action::move_word_forward)
   try testing::assert(apostrophe.cursor() == "can't ".size(), "Expected apostrophe word and space")
 
-  let underscored = mut new("snake_case‿join next")
+  let underscored = &mut new("snake_case‿join next")
   let _ = underscored.apply(Action::move_start)
   let _ = underscored.apply(Action::move_word_forward)
   try testing::assert(
@@ -784,14 +784,14 @@ test fn editor_word_boundaries_cover_spaces_punctuation_and_apostrophes() Void!S
     "Expected Unicode connector punctuation in word",
   )
 
-  let tabbed = mut new("one\t two")
+  let tabbed = &mut new("one\t two")
   let _ = tabbed.apply(Action::move_start)
   let _ = tabbed.apply(Action::move_word_forward)
   testing::assert(tabbed.cursor() == "one\t ".size(), "Expected tab in whitespace run")
 }
 
 test fn editor_word_boundaries_preserve_unicode_graphemes() Void!Str {
-  let cjk = mut new("你 好")
+  let cjk = &mut new("你 好")
   let _ = cjk.apply(Action::move_start)
   let _ = cjk.apply(Action::move_word_forward)
   try testing::assert(cjk.cursor() == "你 ".size(), "Expected CJK word and space boundary")
@@ -799,7 +799,7 @@ test fn editor_word_boundaries_preserve_unicode_graphemes() Void!Str {
   let _ = cjk.apply(Action::move_word_backward)
   try testing::assert(cjk.cursor() == "你 ".size(), "Expected CJK previous boundary")
 
-  let emoji = mut new("🌟 ok")
+  let emoji = &mut new("🌟 ok")
   let _ = emoji.apply(Action::move_start)
   let _ = emoji.apply(Action::move_word_forward)
   try testing::assert(emoji.cursor() == "🌟 ".size(), "Expected emoji and space boundary")
@@ -809,7 +809,7 @@ test fn editor_word_boundaries_preserve_unicode_graphemes() Void!Str {
 }
 
 test fn editor_word_deletion_and_kill_actions_are_atomic() Void!Str {
-  let state = mut new("hello brave world")
+  let state = &mut new("hello brave world")
   let deleted = state.apply(Action::delete_word_backward)
   try testing::assert(
     deleted.text_changed and state.value() == "hello brave ",
@@ -823,7 +823,7 @@ test fn editor_word_deletion_and_kill_actions_are_atomic() Void!Str {
 }
 
 test fn editor_replaces_selection_under_grapheme_limit() Void!Str {
-  let state = mut new("abcd")
+  let state = &mut new("abcd")
   state.set_selection(1, 3)
   let changed = state.insert_text("界🌟x", maximum_length: 4)
 
@@ -833,7 +833,7 @@ test fn editor_replaces_selection_under_grapheme_limit() Void!Str {
 }
 
 test fn empty_editor_insertion_preserves_selection() Void!Str {
-  let state = mut new("abcd")
+  let state = &mut new("abcd")
   state.set_selection(1, 3)
   let unchanged = state.insert_text("")
 
@@ -843,7 +843,7 @@ test fn empty_editor_insertion_preserves_selection() Void!Str {
 }
 
 test fn editor_outcome_reports_extended_selection_changes() Void!Str {
-  let state = mut new("abcd")
+  let state = &mut new("abcd")
   state.set_selection(1, 2)
 
   let changed = state.apply(Action::select_right)
@@ -854,7 +854,7 @@ test fn editor_outcome_reports_extended_selection_changes() Void!Str {
 }
 
 test fn editor_submit_and_deferred_history_actions_are_handled() Void!Str {
-  let state = mut new("value")
+  let state = &mut new("value")
   let submitted = state.apply(Action::submit)
   let undone = state.apply(Action::undo)
 

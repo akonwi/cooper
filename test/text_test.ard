@@ -302,7 +302,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
 
   mut events = 0
   mut activated = ""
-  let dispose = label.on_link(fn(received: mut text::LinkEvent) {
+  let dispose = label.on_link(fn(received: &mut text::LinkEvent) {
     events =+ 1
     activated = received.url
     if events == 2 {
@@ -310,7 +310,7 @@ test fn linked_spans_open_on_plain_click_and_allow_preventing_default() Void!Str
     }
   })
   mut later_observed_prevention = false
-  let dispose_later = label.on_link(fn(received: mut text::LinkEvent) {
+  let dispose_later = label.on_link(fn(received: &mut text::LinkEvent) {
     later_observed_prevention = received.is_default_prevented()
   })
 
@@ -377,7 +377,7 @@ test fn ancestor_prevention_and_route_invalidation_cancel_link_activation() Void
   application.root.add(parent)
   application.render()
 
-  let stop_parent_default = parent.on_mouse(fn(received: mut event::MouseEvent) {
+  let stop_parent_default = parent.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::up {
       received.prevent_default()
     }
@@ -389,7 +389,7 @@ test fn ancestor_prevention_and_route_invalidation_cancel_link_activation() Void
   )
   stop_parent_default()
 
-  let invalidate_down = label.on_mouse(fn(received: mut event::MouseEvent) {
+  let invalidate_down = label.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       parent.set_style(style::new(display: style::Display::none))
     }
@@ -752,7 +752,7 @@ test fn ellipsis_without_visible_source_is_synthetic_and_not_selectable() Void!S
 
 test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
   let application = cooper_testing::new(9, 1)
-  let spans = mut List::new<text::Span>()
+  let spans = &mut List::new<text::Span>()
   spans.push(
     text::span(
       "RED",
@@ -766,7 +766,7 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
       link: "https://example.com",
     ),
   )
-  let content = text::styled_text(spans.@)
+  let content = text::styled_text(spans.*)
   spans.set(0, text::span("changed"))
   let label = text::new(
     application.context,
@@ -802,7 +802,7 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
     "Expected linked span cell metadata",
   )
 
-  let snapshot = label.styled_content()
+  mut snapshot = label.styled_content()
   try testing::assert(
     snapshot.spans.size() == 2 and snapshot.spans.at(0).expect("first snapshot span").text == "RED",
     "Expected helper and Text ingress snapshots",
@@ -811,13 +811,13 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
     snapshot.spans.at(1).expect("linked snapshot span").link.or("") == "https://example.com",
     "Expected exact link snapshot",
   )
-  let returned_spans = mut snapshot.spans
+  let returned_spans = &mut snapshot.spans
   returned_spans.set(0, text::span("getter mutation"))
   try testing::assert(label.content() == "RED plain", "Expected getter snapshot isolated from Text")
 
-  let direct_spans = mut List::new<text::Span>()
+  let direct_spans = &mut List::new<text::Span>()
   direct_spans.push(text::span("direct"))
-  label.set_content(text::StyledText{spans: direct_spans.@})
+  label.set_content(text::StyledText{spans: direct_spans.*})
   direct_spans.set(0, text::span("caller mutation"))
   try testing::assert(label.content() == "direct", "Expected direct StyledText ingress snapshot")
 

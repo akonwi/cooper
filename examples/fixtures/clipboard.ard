@@ -16,7 +16,7 @@ fn main() {
 
   let clipboard = application.context.clipboard
   let dispatch = application.context.dispatch
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type == cooper::KeyEventType::press and received.matches("w") {
       clipboard.write("Cooper clipboard ✓")
       status.set_content("WRITE EMITTED")

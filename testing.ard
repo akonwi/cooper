@@ -89,7 +89,7 @@ impl Frame {
   }
 
   fn text() Str {
-    let parts = mut List::new<Str>()
+    let parts = &mut List::new<Str>()
     mut y = 0
     while y < self.buffer.height {
       if y > 0 {
@@ -118,33 +118,33 @@ private struct OpenedURLs {
 }
 
 private struct SentNotifications {
-  mutex: mut sync::Mutex,
+  mutex: &mut sync::Mutex,
   values: [notification::Notification],
 }
 
 private struct TerminalProgressReports {
-  mutex: mut sync::Mutex,
+  mutex: &mut sync::Mutex,
   values: [terminal_progress::Report],
 }
 
 private struct TerminalTitles {
-  mutex: mut sync::Mutex,
+  mutex: &mut sync::Mutex,
   values: [Str],
 }
 
 private struct Bells {
-  mutex: mut sync::Mutex,
+  mutex: &mut sync::Mutex,
   count: Int,
 }
 
 private struct ProgramStatusUpdates {
-  mutex: mut sync::Mutex,
+  mutex: &mut sync::Mutex,
   values: [program_status::Update],
 }
 
 struct TestApp {
-  context: mut runtime::Runtime,
-  root: mut root::Root,
+  context: &mut runtime::Runtime,
+  root: &mut root::Root,
   opened: Any,
   notification_log: Any,
   terminal_progress_log: Any,
@@ -153,7 +153,7 @@ struct TestApp {
   program_status_log: Any,
 }
 
-private fn test_runtime(application: TestApp) mut runtime::Runtime {
+private fn test_runtime(application: TestApp) &mut runtime::Runtime {
   application.context
 }
 
@@ -181,12 +181,12 @@ fn new(
   let supported = notifications_supported.or(true)
   let progress_supported = terminal_progress_supported.or(true)
   let program_status_sendable = not program_status_unsupported.or(false)
-  let notification_log = mut SentNotifications{mutex: mut sync::Mutex{}, values: []}
-  let terminal_progress_log = mut TerminalProgressReports{mutex: mut sync::Mutex{}, values: []}
-  let terminal_title_log = mut TerminalTitles{mutex: mut sync::Mutex{}, values: []}
-  let bell_log = mut Bells{mutex: mut sync::Mutex{}, count: 0}
-  let program_status_log = mut ProgramStatusUpdates{mutex: mut sync::Mutex{}, values: []}
-  let opened = mut OpenedURLs{values: []}
+  let notification_log = &mut SentNotifications{mutex: &mut sync::Mutex{}, values: []}
+  let terminal_progress_log = &mut TerminalProgressReports{mutex: &mut sync::Mutex{}, values: []}
+  let terminal_title_log = &mut TerminalTitles{mutex: &mut sync::Mutex{}, values: []}
+  let bell_log = &mut Bells{mutex: &mut sync::Mutex{}, count: 0}
+  let program_status_log = &mut ProgramStatusUpdates{mutex: &mut sync::Mutex{}, values: []}
+  let opened = &mut OpenedURLs{values: []}
   let runtime = runtime::new_headless(
     width,
     height,
@@ -260,32 +260,32 @@ impl TestApp {
   }
 
   fn opened_urls() [Str] {
-    let opened = unsafe::cast<mut OpenedURLs>(
+    let opened = unsafe::cast<&mut OpenedURLs>(
       self.opened,
     ).expect("TestApp opened URLs must be created by Cooper")
-    let output = mut List::new<Str>()
+    let output = &mut List::new<Str>()
     for url in opened.values {
       output.push(url)
     }
-    output.@
+    output.*
   }
 
   fn sent_notifications() [notification::Notification] {
-    let log = unsafe::cast<mut SentNotifications>(
+    let log = unsafe::cast<&mut SentNotifications>(
       self.notification_log,
     ).expect("TestApp notifications must be created by Cooper")
     log.mutex.Lock()
-    let output = mut List::new<notification::Notification>()
+    let output = &mut List::new<notification::Notification>()
     for sent in log.values {
       output.push(sent)
     }
     log.mutex.Unlock()
-    output.@
+    output.*
   }
 
   // The number of times the terminal bell has rung.
   fn bells() Int {
-    let log = unsafe::cast<mut Bells>(
+    let log = unsafe::cast<&mut Bells>(
       self.bell_log,
     ).expect("TestApp bells must be created by Cooper")
     log.mutex.Lock()
@@ -298,53 +298,53 @@ impl TestApp {
   // those Cooper sends on suspend, resume, and destruction. Readable after
   // destruction.
   fn program_status_updates() [program_status::Update] {
-    let log = unsafe::cast<mut ProgramStatusUpdates>(
+    let log = unsafe::cast<&mut ProgramStatusUpdates>(
       self.program_status_log,
     ).expect("TestApp program status must be created by Cooper")
     log.mutex.Lock()
-    let output = mut List::new<program_status::Update>()
+    let output = &mut List::new<program_status::Update>()
     for update in log.values {
       output.push(update)
     }
     log.mutex.Unlock()
-    output.@
+    output.*
   }
 
   fn terminal_titles() [Str] {
-    let log = unsafe::cast<mut TerminalTitles>(
+    let log = unsafe::cast<&mut TerminalTitles>(
       self.terminal_title_log,
     ).expect("TestApp terminal titles must be created by Cooper")
     log.mutex.Lock()
-    let output = mut List::new<Str>()
+    let output = &mut List::new<Str>()
     for value in log.values {
       output.push(value)
     }
     log.mutex.Unlock()
-    output.@
+    output.*
   }
 
   fn terminal_progress_reports() [terminal_progress::Report] {
-    let log = unsafe::cast<mut TerminalProgressReports>(
+    let log = unsafe::cast<&mut TerminalProgressReports>(
       self.terminal_progress_log,
     ).expect("TestApp terminal progress must be created by Cooper")
     log.mutex.Lock()
-    let output = mut List::new<terminal_progress::Report>()
+    let output = &mut List::new<terminal_progress::Report>()
     for report in log.values {
       output.push(report)
     }
     log.mutex.Unlock()
-    output.@
+    output.*
   }
 
   fn mouse_cursor() event::MouseCursor {
     test_runtime(self).mouse_cursor()
   }
 
-  fn on_key(handler: fn(mut event::KeyEvent)) fn() {
+  fn on_key(handler: fn(&mut event::KeyEvent)) fn() {
     test_runtime(self).on_key(handler)
   }
 
-  fn on_paste(handler: fn(mut event::PasteEvent)) fn() {
+  fn on_paste(handler: fn(&mut event::PasteEvent)) fn() {
     test_runtime(self).on_paste(handler)
   }
 
@@ -393,15 +393,15 @@ impl TestApp {
     self.render()
   }
 
-  fn key(received: mut event::KeyEvent) {
+  fn key(received: &mut event::KeyEvent) {
     test_runtime(self).key_test(self.root, received)
   }
 
-  fn paste(received: mut event::PasteEvent) {
+  fn paste(received: &mut event::PasteEvent) {
     test_runtime(self).paste_test(self.root, received)
   }
 
-  fn mouse(received: mut event::MouseEvent) {
+  fn mouse(received: &mut event::MouseEvent) {
     test_runtime(self).mouse_test(self.root, received)
   }
 
@@ -522,14 +522,14 @@ test fn frame_text_preserves_unicode_blank_rows_and_empty_dimensions() Void!Str 
     width: 5,
     height: 3,
   }
-  let ctx = mut paint::Context{
+  let ctx = &mut paint::Context{
     buffer: buffer,
     bounds: bounds,
     clip: bounds,
   }
   ctx.write(0, 0, "你é")
   ctx.write(0, 2, "q")
-  let frame = Frame{buffer: buffer.@}
+  let frame = Frame{buffer: buffer.*}
   try assertions::assert(
     frame.text() == "你é  \n     \nq    ",
     "Serialization skips continuation cells, preserves combining graphemes and blank cells, and adds only row separators",
@@ -538,9 +538,9 @@ test fn frame_text_preserves_unicode_blank_rows_and_empty_dimensions() Void!Str 
     frame.text() == "你é  \n     \nq    ",
     "Serializing a frame does not consume it",
   )
-  let zero_width = Frame{buffer: paint::new_buffer(0, 3).@}
-  let zero_height = Frame{buffer: paint::new_buffer(3, 0).@}
-  let empty = Frame{buffer: paint::new_buffer(0, 0).@}
+  let zero_width = Frame{buffer: paint::new_buffer(0, 3).*}
+  let zero_height = Frame{buffer: paint::new_buffer(3, 0).*}
+  let empty = Frame{buffer: paint::new_buffer(0, 0).*}
   try assertions::assert(zero_width.text() == "\n\n", "Zero-width frames retain empty row separators")
   try assertions::assert(zero_height.text() == "", "Zero-height frames have no rows")
   assertions::assert(empty.text() == "", "Empty frames serialize to an empty string")

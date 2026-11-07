@@ -8,8 +8,8 @@ struct DemoState {
 }
 
 struct DraggableCard {
-  panel: mut ui::Box,
-  content: mut ui::Text,
+  panel: &mut ui::Box,
+  content: &mut ui::Text,
   x: Int,
   y: Int,
   width: Int,
@@ -38,13 +38,13 @@ private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
 // Cooper's border consumes layout rows, so horizontal-only padding preserves
 // OpenTUI's five-line project card within the same 40x8 outer dimensions.
 private fn horizontal_padding() ui::Edges {
-  let padding = mut ui::edges()
+  let padding = &mut ui::edges()
   padding.left = ui::cells(1)
   padding.right = ui::cells(1)
-  padding.@
+  padding.*
 }
 
-private fn card_style(card: mut DraggableCard) ui::Style {
+private fn card_style(card: &mut DraggableCard) ui::Style {
   ui::style(
     background: card.background,
     border: ui::Border::rounded,
@@ -62,7 +62,7 @@ private fn card_style(card: mut DraggableCard) ui::Style {
 }
 
 private fn make_card(
-  ctx: mut cooper::Runtime,
+  ctx: &mut cooper::Runtime,
   content: ui::StyledText,
   x: Int,
   y: Int,
@@ -70,7 +70,7 @@ private fn make_card(
   height: Int,
   z: Int,
   background: ui::Color,
-) mut DraggableCard {
+) &mut DraggableCard {
   let content_view = ui::text(
     ctx,
     content: content,
@@ -83,7 +83,7 @@ private fn make_card(
     selectable: false,
     overflow: ui::TextOverflow::clip,
   )
-  let card = mut DraggableCard{
+  let card = &mut DraggableCard{
     panel: ui::box(ctx),
     content: content_view,
     x: x,
@@ -215,7 +215,7 @@ fn main() {
   )
   application.root.add(container)
 
-  let state = mut DemoState{
+  let state = &mut DemoState{
     drag_enabled: false,
     next_z: 103,
     link_activity: "OSC 8 metadata emitted; link activation is handled by Cooper",
@@ -236,14 +236,14 @@ fn main() {
   )
   container.add(header)
 
-  let cards: [mut DraggableCard] = [
+  let cards: [&mut DraggableCard] = [
     make_card(ctx, project_content(), 5, 6, 40, 8, 100, ui::hex("#1E293B")),
     make_card(ctx, documentation_content(), 50, 8, 35, 9, 101, ui::hex("#334155")),
     make_card(ctx, connect_content(), 20, 16, 30, 7, 102, ui::hex("#0F766E")),
   ]
   for card in cards {
     container.add(card.panel)
-    let _ = card.content.on_link(fn(received: mut ui::LinkEvent) {
+    let _ = card.content.on_link(fn(received: &mut ui::LinkEvent) {
       if state.drag_enabled {
         state.link_activity = "Drag mode blocked: {received.url}"
         received.prevent_default()
@@ -256,7 +256,7 @@ fn main() {
 
   for card in cards {
     let target = card
-    let _ = card.panel.on_mouse(fn(received: mut cooper::MouseEvent) {
+    let _ = card.panel.on_mouse(fn(received: &mut cooper::MouseEvent) {
       if state.drag_enabled and received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
         for candidate in cards {
           candidate.dragging = false
@@ -291,7 +291,7 @@ fn main() {
     })
   }
 
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type == cooper::KeyEventType::press and received.matches("d") {
       state.drag_enabled = not state.drag_enabled
       if not state.drag_enabled {

@@ -220,8 +220,8 @@ test fn screen_outside_scroll_does_not_fall_back_to_focus_but_drag_releases() Vo
     ),
   )
   app.root.add(source)
-  let releases = mut List::new<event::MouseEventType>()
-  let _ = source.on_mouse(fn(received: mut event::MouseEvent) {
+  let releases = &mut List::new<event::MouseEventType>()
+  let _ = source.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::up or received.event_type == event::MouseEventType::drag_end {
       releases.push(received.event_type)
     }

@@ -263,7 +263,7 @@ struct Scope {
 }
 
 fn application() Scope {
-  Scope{mode: ScopeMode::application, internal: Maybe::new<mut node::Node>()}
+  Scope{mode: ScopeMode::application, internal: Maybe::new<&mut node::Node>()}
 }
 
 fn focus(target: mut node::Renderable) Scope {
@@ -274,8 +274,8 @@ fn focus_within(target: mut node::Renderable) Scope {
   Scope{mode: ScopeMode::focus_within, internal: Maybe::new(target.node())}
 }
 
-fn internal_target(scope: Scope) (mut node::Node)? {
-  unsafe::cast<(mut node::Node)?>(scope.internal).expect("Scope must be created by keymap")
+fn internal_target(scope: Scope) (&mut node::Node)? {
+  unsafe::cast<(&mut node::Node)?>(scope.internal).expect("Scope must be created by keymap")
 }
 
 // Update a registered Layer in place to preserve its precedence. Call changed
@@ -295,8 +295,8 @@ fn layer(
   commands: [Command]?,
   priority: Int?,
   enabled: (fn() Bool)?,
-) mut Layer {
-  (mut Layer{
+) &mut Layer {
+  &mut Layer{
     scope: scope.or(application()),
     priority: priority.or(0),
     enabled: enabled.or(fn() Bool {
@@ -305,19 +305,19 @@ fn layer(
     commands: commands.or([]),
     bindings: bindings,
     internal_after_run: fn() {},
-  })
+  }
 }
 
 impl Layer {
   fn mut unbind(key: Key, trigger: Trigger?) {
     let kind = trigger.or(Trigger::press)
-    let kept = mut List::new<Binding>()
+    let kept = &mut List::new<Binding>()
     for binding in self.bindings {
       if (not same_key(binding.key, key)) or binding.trigger != kind {
         kept.push(binding)
       }
     }
-    self.bindings = kept.@
+    self.bindings = kept.*
   }
 
   fn mut bind(value: Binding) {
@@ -326,13 +326,13 @@ impl Layer {
   }
 
   fn mut rebind(invocation: Invocation, keys: [Key], trigger: Trigger?) {
-    let kept = mut List::new<Binding>()
+    let kept = &mut List::new<Binding>()
     for binding in self.bindings {
       if binding.invocation.command.id() != invocation.command.id() {
         kept.push(binding)
       }
     }
-    self.bindings = kept.@
+    self.bindings = kept.*
     for key in keys {
       self.bind(binding(key, invocation, trigger))
     }
@@ -352,7 +352,7 @@ struct Shortcut {
 }
 
 trait Host {
-  fn mut internal_register_keys(layer: mut Layer) fn()
+  fn mut internal_register_keys(layer: &mut Layer) fn()
 
   fn mut internal_shortcuts() [Shortcut]
 
@@ -375,7 +375,7 @@ fn describe_bindings(
   perform: fn($Action) Bool,
   enabled: (fn($Action) Bool)?,
 ) [Binding] {
-  let result = mut List::new<Binding>()
+  let result = &mut List::new<Binding>()
   for entry in configured.entries {
     let command = match entry.action {
       action => {
@@ -408,10 +408,10 @@ fn describe_bindings(
     }
     result.push(binding(entry.key, command.with(), entry.trigger))
   }
-  result.@
+  result.*
 }
 
-fn register(host: mut Host, layer: mut Layer) fn() {
+fn register(host: mut Host, layer: &mut Layer) fn() {
   host.internal_register_keys(layer)
 }
 fn shortcuts(host: mut Host) [Shortcut] {
@@ -453,7 +453,7 @@ fn mapping(key: Key, action: $Action, trigger: Trigger?) Mapping<$Action> {
 // Standalone generic functions can infer the comparable requirement from an
 // action enum; generic receiver methods cannot express that constraint in Ard.
 fn rebind(configured: Bindings<$Action>, action: $Action, keys: [Key], trigger: Trigger?) Bindings<$Action> {
-  let kept = mut List::new<Mapping<$Action>>()
+  let kept = &mut List::new<Mapping<$Action>>()
   for entry in configured.entries {
     let remove = match entry.action {
       candidate => candidate == action,
@@ -463,7 +463,7 @@ fn rebind(configured: Bindings<$Action>, action: $Action, keys: [Key], trigger: 
       kept.push(entry)
     }
   }
-  mut result = bindings(kept.@)
+  mut result = bindings(kept.*)
   for key in keys {
     result = result.bind(key, action, trigger)
   }
@@ -488,23 +488,23 @@ impl Bindings {
 
   fn unbind(key: Key, trigger: Trigger?) Bindings<$Action> {
     let kind = trigger.or(Trigger::press_or_repeat)
-    let kept = mut List::new<Mapping<$Action>>()
+    let kept = &mut List::new<Mapping<$Action>>()
     for entry in self.entries {
       if (not same_key(entry.key, key)) or entry.trigger != kind {
         kept.push(entry)
       }
     }
-    Bindings{entries: kept.@}
+    Bindings{entries: kept.*}
   }
 
   fn bind(key: Key, action: $Action, trigger: Trigger?) Bindings<$Action> {
-    let next = mut self.unbind(key, trigger)
+    let next = &mut self.unbind(key, trigger)
     next.entries.push(mapping(key, action, trigger))
-    next.@
+    next.*
   }
 
   fn consume(key: Key, trigger: Trigger?) Bindings<$Action> {
-    let next = mut self.unbind(key, trigger)
+    let next = &mut self.unbind(key, trigger)
     next.entries.push(
       Mapping{
         key: key,
@@ -512,6 +512,6 @@ impl Bindings {
         action: Maybe::new<$Action>(),
       },
     )
-    next.@
+    next.*
   }
 }

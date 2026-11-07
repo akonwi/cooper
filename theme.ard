@@ -74,14 +74,14 @@ struct Theme {
 }
 
 private struct QueryLifetime {
-  mutex: mut sync::Mutex,
+  mutex: &mut sync::Mutex,
   current: contextbridge::Cancellation,
 }
 
 private struct ServiceState {
-  lifecycle: mut sync::Mutex,
-  query_guard: mut sync::Mutex,
-  lifetime: mut QueryLifetime,
+  lifecycle: &mut sync::Mutex,
+  query_guard: &mut sync::Mutex,
+  lifetime: &mut QueryLifetime,
   action: fn(context::Context) TerminalColors,
   current: Theme,
   suspended: Bool,
@@ -92,8 +92,10 @@ struct Service {
   internal: Any,
 }
 
-private fn service_state(service: mut Service) mut ServiceState {
-  unsafe::cast<mut ServiceState>(service.internal).expect("Theme service must be created by Cooper")
+private fn service_state(service: &mut Service) &mut ServiceState {
+  unsafe::cast<&mut ServiceState>(
+    service.internal,
+  ).expect("Theme service must be created by Cooper")
 }
 
 private fn empty_colors() TerminalColors {
@@ -104,21 +106,21 @@ private fn empty_colors() TerminalColors {
   }
 }
 
-fn internal_service(action: fn(context::Context) TerminalColors) mut Service {
-  let lifetime = mut QueryLifetime{mutex: mut sync::Mutex{}, current: contextbridge::WithCancel(context::Background())}
-  let state = mut ServiceState{
-    lifecycle: mut sync::Mutex{},
-    query_guard: mut sync::Mutex{},
+fn internal_service(action: fn(context::Context) TerminalColors) &mut Service {
+  let lifetime = &mut QueryLifetime{mutex: &mut sync::Mutex{}, current: contextbridge::WithCancel(context::Background())}
+  let state = &mut ServiceState{
+    lifecycle: &mut sync::Mutex{},
+    query_guard: &mut sync::Mutex{},
     lifetime: lifetime,
     action: action,
     current: from_terminal(empty_colors()),
     suspended: false,
     stopped: false,
   }
-  (mut Service{internal: state})
+  &mut Service{internal: state}
 }
 
-fn internal_memory() mut Service {
+fn internal_memory() &mut Service {
   internal_service(fn(ctx: context::Context) TerminalColors {
     empty_colors()
   })
@@ -239,7 +241,7 @@ private fn queried_color(value: vaxisbridge::RGB) color::Color? {
 }
 
 fn internal_report(value: vaxisbridge::TerminalColors) TerminalColors {
-  let palette = mut List::new<color::Color?>()
+  let palette = &mut List::new<color::Color?>()
   for entry in value.Palette {
     palette.push(queried_color(entry))
   }
@@ -249,13 +251,13 @@ fn internal_report(value: vaxisbridge::TerminalColors) TerminalColors {
   TerminalColors{
     foreground: queried_color(value.Foreground),
     background: queried_color(value.Background),
-    palette: palette.@,
+    palette: palette.*,
   }
 }
 
 fn from_terminal(colors: TerminalColors) Theme {
-  let entries = mut List::new<Rgb?>()
-  let normalized_palette = mut List::new<color::Color?>()
+  let entries = &mut List::new<Rgb?>()
+  let normalized_palette = &mut List::new<color::Color?>()
   mut index = 0
   while index < 8 {
     let entry = colors.palette.at(index).or(Maybe::new<color::Color>())
@@ -266,12 +268,12 @@ fn from_terminal(colors: TerminalColors) Theme {
   let normalized = TerminalColors{
     foreground: colors.foreground,
     background: colors.background,
-    palette: normalized_palette.@,
+    palette: normalized_palette.*,
   }
   let resolved = resolve_terminal(
     reported(normalized.foreground),
     reported(normalized.background),
-    entries.@,
+    entries.*,
   )
   Theme{
     mode: resolved.mode,
@@ -450,7 +452,7 @@ impl Service {
 // 0 through 7; unreported colors keep the vaxis defaults. Without both default
 // colors the theme is dark and uses the palette's own black and white.
 private fn resolve_terminal(foreground: Rgb?, background: Rgb?, palette: [Rgb?]) Tones {
-  let base = mut default_base()
+  let base = &mut default_base()
   match palette.at(1).or(Maybe::new<Rgb>()) {
     color => { base.red = color },
     _ => (),
@@ -513,7 +515,7 @@ private fn resolve_terminal(foreground: Rgb?, background: Rgb?, palette: [Rgb?])
     },
     _ => (),
   }
-  let scales = palette_from(base.@)
+  let scales = palette_from(base.*)
   derive(scales, mode, background, foreground)
 }
 

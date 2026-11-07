@@ -54,7 +54,7 @@ fn main() {
   let _ = area.on_submit(fn(value: Str) {
     status.set_content("submit: {strings::ReplaceAll(value, "\n", "↵")}")
   })
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.matches("tab") {
       received.prevent_default()
       let _ = area.focus()

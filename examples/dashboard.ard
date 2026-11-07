@@ -9,16 +9,16 @@ use go:strings
 use go:time
 
 struct MetricTile {
-  panel: mut ui::Box,
-  value: mut ui::Text,
-  gauge: mut ui::Text,
-  detail: mut ui::Text,
+  panel: &mut ui::Box,
+  value: &mut ui::Text,
+  gauge: &mut ui::Text,
+  detail: &mut ui::Text,
 }
 
 struct LogRow {
   sequence: Int,
   manual: Bool,
-  control: mut ui::Text,
+  control: &mut ui::Text,
 }
 
 enum ThemeChoice {
@@ -40,21 +40,21 @@ struct DashboardState {
 }
 
 struct DashboardView {
-  root: mut ui::Box,
-  header: mut ui::Box,
-  title: mut ui::Text,
-  picker: mut ui::TabSelect,
-  subtitle: mut ui::Text,
+  root: &mut ui::Box,
+  header: &mut ui::Box,
+  title: &mut ui::Text,
+  picker: &mut ui::TabSelect,
+  subtitle: &mut ui::Text,
   cpu: MetricTile,
   memory: MetricTile,
   network: MetricTile,
   latency: MetricTile,
-  chart_panel: mut ui::Box,
-  chart: mut ui::Text,
-  log_panel: mut ui::Box,
-  footer: mut ui::Box,
-  status: mut ui::Text,
-  help: mut ui::Text,
+  chart_panel: &mut ui::Box,
+  chart: &mut ui::Text,
+  log_panel: &mut ui::Box,
+  footer: &mut ui::Box,
+  status: &mut ui::Text,
+  help: &mut ui::Text,
 }
 
 private fn clamp(value: Int, minimum: Int, maximum: Int) Int {
@@ -87,13 +87,13 @@ private fn sparkline(samples: [Int]) Str {
 }
 
 private fn seed_samples() [Int] {
-  let samples = mut List::new<Int>()
+  let samples = &mut List::new<Int>()
   mut index = 0
   while index < 24 {
     samples.push((index * 17 + 31) % 101)
     index =+ 1
   }
-  samples.@
+  samples.*
 }
 
 private fn present_color(value: Str) ui::Color? {
@@ -142,7 +142,7 @@ private fn preset_theme(choice: ThemeChoice) cooper::Theme {
   }
 }
 
-private fn selected_theme(state: mut DashboardState, choice: ThemeChoice) cooper::Theme {
+private fn selected_theme(state: &mut DashboardState, choice: ThemeChoice) cooper::Theme {
   match choice {
     ThemeChoice::terminal => state.terminal_theme,
     _ => preset_theme(choice),
@@ -175,7 +175,7 @@ private fn status_color(theme: cooper::Theme, value: Int, warning: Int, critical
   }
 }
 
-private fn content_clip(ctx: mut cooper::Runtime) mut ui::Box {
+private fn content_clip(ctx: &mut cooper::Runtime) &mut ui::Box {
   ui::box(
     ctx,
     styles: ui::style(
@@ -188,7 +188,7 @@ private fn content_clip(ctx: mut cooper::Runtime) mut ui::Box {
 }
 
 private fn metric_tile(
-  ctx: mut cooper::Runtime,
+  ctx: &mut cooper::Runtime,
   theme: cooper::Theme,
   title: Str,
   border_color: ui::Color,
@@ -261,7 +261,7 @@ private fn update_metric(
   tile.detail.set_content(detail)
 }
 
-private fn runtime_mode(state: mut DashboardState) Str {
+private fn runtime_mode(state: &mut DashboardState) Str {
   if state.paused {
     "PAUSED"
   } else {
@@ -269,7 +269,7 @@ private fn runtime_mode(state: mut DashboardState) Str {
   }
 }
 
-private fn follow_mode(state: mut DashboardState) Str {
+private fn follow_mode(state: &mut DashboardState) Str {
   if state.follow {
     "ON"
   } else {
@@ -285,9 +285,9 @@ private fn theme_mode(theme: cooper::Theme) Str {
 }
 
 private fn update_runtime_status(
-  state: mut DashboardState,
-  subtitle: mut ui::Text,
-  status: mut ui::Text,
+  state: &mut DashboardState,
+  subtitle: &mut ui::Text,
+  status: &mut ui::Text,
 ) {
   subtitle.set_content("Synthetic telemetry · tick {state.tick} · {runtime_mode(state)}")
   status.set_content(
@@ -295,7 +295,7 @@ private fn update_runtime_status(
   )
 }
 
-private fn chart_content(state: mut DashboardState, requests: Int, rate: Int) ui::StyledText {
+private fn chart_content(state: &mut DashboardState, requests: Int, rate: Int) ui::StyledText {
   let theme = state.theme
   let label = theme.accent_text
   let value = theme.foreground
@@ -321,14 +321,14 @@ private fn chart_content(state: mut DashboardState, requests: Int, rate: Int) ui
 }
 
 private fn update_dashboard(
-  state: mut DashboardState,
+  state: &mut DashboardState,
   cpu_tile: MetricTile,
   memory_tile: MetricTile,
   network_tile: MetricTile,
   latency_tile: MetricTile,
-  subtitle: mut ui::Text,
-  chart: mut ui::Text,
-  status: mut ui::Text,
+  subtitle: &mut ui::Text,
+  chart: &mut ui::Text,
+  status: &mut ui::Text,
   record_sample: Bool,
 ) {
   let cpu = (state.tick * 13 + 17) % 101
@@ -429,9 +429,9 @@ private fn log_row_style() ui::Style {
 }
 
 private fn append_log(
-  ctx: mut cooper::Runtime,
-  viewport: mut ui::ScrollBox,
-  state: mut DashboardState,
+  ctx: &mut cooper::Runtime,
+  viewport: &mut ui::ScrollBox,
+  state: &mut DashboardState,
   manual: Bool,
 ) {
   state.sequence =+ 1
@@ -475,7 +475,7 @@ private fn append_log(
   }
 }
 
-private fn clear_logs(viewport: mut ui::ScrollBox, state: mut DashboardState) {
+private fn clear_logs(viewport: &mut ui::ScrollBox, state: &mut DashboardState) {
   for row in state.rows {
     let _ = viewport.remove(row.control)
     row.control.destroy()
@@ -536,7 +536,7 @@ private fn apply_metric_theme(tile: MetricTile, theme: cooper::Theme, border_col
   tile.detail.set_text_style(ui::text_style(foreground: theme.muted_foreground))
 }
 
-private fn apply_theme(state: mut DashboardState, view: DashboardView, next: cooper::Theme) {
+private fn apply_theme(state: &mut DashboardState, view: DashboardView, next: cooper::Theme) {
   state.theme = next
   view.root.set_style(
     ui::style(
@@ -625,7 +625,7 @@ fn main() {
   defer application.destroy()
   let ctx = application.context
   let terminal_theme = application.theme()
-  let state = mut DashboardState{
+  let state = &mut DashboardState{
     tick: 0,
     paused: false,
     follow: true,
@@ -897,14 +897,14 @@ fn main() {
     }
   }
 
-  let _ = log.on_mouse(fn(received: mut cooper::MouseEvent) {
+  let _ = log.on_mouse(fn(received: &mut cooper::MouseEvent) {
     if received.event_type == cooper::MouseEventType::scroll and received.scroll_y != 0 and state.follow {
       state.follow = false
       let _ = log.scroll_to(log.scroll_top())
       update_runtime_status(state, subtitle, status)
     }
   })
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release and received.matches("end") {
       state.follow = true
       let _ = log.focus()

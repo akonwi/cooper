@@ -38,13 +38,13 @@ struct Model {
   cleanup_cancelled: Bool,
 }
 struct Props {
-  model: mut Model,
+  model: &mut Model,
 }
 struct Worker {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn worker(props: mut Props) mut Worker {
-  (mut Worker{model: props.model})
+private fn worker(props: &mut Props) &mut Worker {
+  &mut Worker{model: props.model}
 }
 impl cui::Component for Worker {
   fn mut render() cui::View {
@@ -69,10 +69,10 @@ impl cui::Lifecycle for Worker {
   }
 }
 struct Screen {
-  model: mut Model,
+  model: &mut Model,
 }
-private fn screen(props: mut Props) mut Screen {
-  (mut Screen{model: props.model})
+private fn screen(props: &mut Props) &mut Screen {
+  &mut Screen{model: props.model}
 }
 impl cui::Component for Screen {
   fn mut render() cui::View {
@@ -90,8 +90,8 @@ impl cui::Component for Screen {
     }
   }
 }
-private fn model() mut Model {
-  (mut Model{
+private fn model() &mut Model {
+  &mut Model{
     visible: true,
     hidden: false,
     mounts: 0,
@@ -99,7 +99,7 @@ private fn model() mut Model {
     renders: 0,
     context: Maybe::new<cui::Context>(),
     cleanup_cancelled: false,
-  })
+  }
 }
 
 test fn background_dispatch_queues_state_changes_and_coalesces_rendering() Void!Str {

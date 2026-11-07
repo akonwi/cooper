@@ -3,13 +3,13 @@ use cooper/event
 use cooper/keymap
 
 struct Entry {
-  layer: mut keymap::Layer,
+  layer: &mut keymap::Layer,
   active: Bool,
   serial: Int,
 }
 
 private struct Candidate {
-  entry: mut Entry,
+  entry: &mut Entry,
   snapshot: keymap::Layer,
   distance: Int,
 }
@@ -20,26 +20,26 @@ struct Listener {
 }
 
 struct Registry {
-  token: mut node::ContextToken,
-  entries: [mut Entry],
-  listeners: [mut Listener],
+  token: &mut node::ContextToken,
+  entries: [&mut Entry],
+  listeners: [&mut Listener],
   serial: Int,
   stopped: Bool,
   notifying: Bool,
 }
 
-fn new(token: mut node::ContextToken) mut Registry {
-  (mut Registry{
+fn new(token: &mut node::ContextToken) &mut Registry {
+  &mut Registry{
     token: token,
     entries: [],
     listeners: [],
     serial: 0,
     stopped: false,
     notifying: false,
-  })
+  }
 }
 
-fn same_target(left: (mut node::Node)?, right: (mut node::Node)?) Bool {
+fn same_target(left: (&mut node::Node)?, right: (&mut node::Node)?) Bool {
   match left {
     target => {
       match right {
@@ -51,7 +51,7 @@ fn same_target(left: (mut node::Node)?, right: (mut node::Node)?) Bool {
   }
 }
 
-private fn distance(scope: keymap::Scope, focused: (mut node::Node)?, root: (mut node::Node)?) Int {
+private fn distance(scope: keymap::Scope, focused: (&mut node::Node)?, root: (&mut node::Node)?) Int {
   if scope.mode == keymap::ScopeMode::application {
     2147483647
   } else {
@@ -110,24 +110,24 @@ impl Registry {
   }
 
   fn mut on_change(handler: fn()) fn() {
-    let listener = mut Listener{active: not self.stopped, run: handler}
+    let listener = &mut Listener{active: not self.stopped, run: handler}
     if listener.active {
       self.listeners.push(listener)
     }
     fn() {
       listener.active = false
       listener.run = fn() {}
-      let kept = mut List::new<mut Listener>()
+      let kept = &mut List::new<&mut Listener>()
       for item in self.listeners {
         if item.active {
           kept.push(item)
         }
       }
-      self.listeners = kept.@
+      self.listeners = kept.*
     }
   }
 
-  fn mut register(layer: mut keymap::Layer) fn() {
+  fn mut register(layer: &mut keymap::Layer) fn() {
     if self.stopped {
       fn() {}
     } else {
@@ -146,9 +146,9 @@ impl Registry {
           }
         },
       }
-      let ids = mut List::new<Str>()
+      let ids = &mut List::new<Str>()
       for command in layer.commands {
-        for id in ids.@ {
+        for id in ids.* {
           if id == command.id() {
             panic("duplicate command id in layer")
           }
@@ -156,7 +156,7 @@ impl Registry {
         ids.push(command.id())
       }
       self.serial =+ 1
-      let entry = mut Entry{
+      let entry = &mut Entry{
         layer: layer,
         active: true,
         serial: self.serial,
@@ -165,13 +165,13 @@ impl Registry {
       let remove = fn() {
         if entry.active {
           entry.active = false
-          let kept = mut List::new<mut Entry>()
+          let kept = &mut List::new<&mut Entry>()
           for item in self.entries {
             if item.active {
               kept.push(item)
             }
           }
-          self.entries = kept.@
+          self.entries = kept.*
           self.changed()
         }
       }
@@ -184,11 +184,11 @@ impl Registry {
     }
   }
 
-  private fn ordered(root: (mut node::Node)?, focused: (mut node::Node)?, include_inactive: Bool) [Candidate] {
-    let result = mut List::new<Candidate>()
+  private fn ordered(root: (&mut node::Node)?, focused: (&mut node::Node)?, include_inactive: Bool) [Candidate] {
+    let result = &mut List::new<Candidate>()
     for entry in self.entries {
       if entry.active {
-        let snapshot = entry.layer.@
+        let snapshot = entry.layer.*
         let rank = distance(snapshot.scope, focused, root)
         if include_inactive or rank >= 0 and (snapshot.enabled)() {
           let candidate = Candidate{
@@ -201,14 +201,14 @@ impl Registry {
       }
     }
     result.sort(before)
-    result.@
+    result.*
   }
 
   fn dispatch(
-    root: (mut node::Node)?,
-    focused: (mut node::Node)?,
-    received: mut event::KeyEvent,
-    current: fn() (mut node::Node)?,
+    root: (&mut node::Node)?,
+    focused: (&mut node::Node)?,
+    received: &mut event::KeyEvent,
+    current: fn() (&mut node::Node)?,
   ) Bool {
     mut handled = false
     let candidates = self.ordered(root, focused, false)
@@ -222,7 +222,7 @@ impl Registry {
           if (not candidate.entry.active) or self.stopped or (not same_target(current(), focused)) or self.token.attachment_version != version {
             break
           }
-          if binding.key.matches(received.@) and keymap::matches_trigger(binding.trigger, received.event_type) {
+          if binding.key.matches(received.*) and keymap::matches_trigger(binding.trigger, received.event_type) {
             handled = binding.invocation.invoke()
             (candidate.snapshot.internal_after_run)()
             if handled {
@@ -239,15 +239,15 @@ impl Registry {
     handled
   }
 
-  fn shortcuts(root: (mut node::Node)?, focused: (mut node::Node)?, reserved_ctrl_c: Bool) [keymap::Shortcut] {
-    let result = mut List::new<keymap::Shortcut>()
+  fn shortcuts(root: (&mut node::Node)?, focused: (&mut node::Node)?, reserved_ctrl_c: Bool) [keymap::Shortcut] {
+    let result = &mut List::new<keymap::Shortcut>()
     for candidate in self.ordered(root, focused, true) {
       let active = candidate.distance >= 0 and (candidate.snapshot.enabled)()
       for binding in candidate.snapshot.bindings {
         let reserved = reserved_ctrl_c and binding.key.name == "c" and binding.key.modifiers.ctrl and (not binding.key.modifiers.shift) and (not binding.key.modifiers.alt) and (not binding.key.modifiers.super) and binding.trigger != keymap::Trigger::release
         let eligible = active and binding.invocation.command.enabled() and (not reserved)
         mut shadowed = false
-        for prior in result.@ {
+        for prior in result.* {
           if prior.eligible and keymap::same_key(prior.key, binding.key) and (prior.trigger == binding.trigger or prior.trigger == keymap::Trigger::press_or_repeat and binding.trigger == keymap::Trigger::press) {
             shadowed = true
           }
@@ -265,14 +265,14 @@ impl Registry {
         )
       }
     }
-    result.@
+    result.*
   }
 
   fn commands() [keymap::Command] {
-    let result = mut List::new<keymap::Command>()
+    let result = &mut List::new<keymap::Command>()
     for entry in self.entries {
       if entry.active {
-        let ids = mut List::new<Str>()
+        let ids = &mut List::new<Str>()
         for command in entry.layer.commands {
           result.push(command)
           ids.push(command.id())
@@ -280,7 +280,7 @@ impl Registry {
         for binding in entry.layer.bindings {
           let command = binding.invocation.command
           mut found = false
-          for id in ids.@ {
+          for id in ids.* {
             if id == command.id() {
               found = true
             }
@@ -292,7 +292,7 @@ impl Registry {
         }
       }
     }
-    result.@
+    result.*
   }
 
   fn mut destroy() {

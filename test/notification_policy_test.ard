@@ -26,7 +26,7 @@ private fn empty_environment(_: Str) Str {
 }
 
 test fn notification_protocols_format_and_sanitize_payloads() Void!Str {
-  let log = mut Log{calls: []}
+  let log = &mut Log{calls: []}
   let backend = notification::internal_backend(
     fn() Str {
       "ghostty 1.2.3"
@@ -51,7 +51,7 @@ test fn notification_protocols_format_and_sanitize_payloads() Void!Str {
 }
 
 test fn notification_sanitization_distinguishes_malformed_bytes_from_replacement_runes() Void!Str {
-  let log = mut Log{calls: []}
+  let log = &mut Log{calls: []}
   let backend = notification::internal_backend(
     fn() Str {
       "iTerm2"
@@ -61,7 +61,7 @@ test fn notification_sanitization_distinguishes_malformed_bytes_from_replacement
       log.calls.push(Call{title: title, body: body})
     },
   )
-  let malformed = mut strings::Builder{}
+  let malformed = &mut strings::Builder{}
   malformed.WriteString("bad")
   malformed.WriteByte(Byte::from(255))
   malformed.WriteString("�")
@@ -73,7 +73,7 @@ test fn notification_sanitization_distinguishes_malformed_bytes_from_replacement
 }
 
 test fn empty_notification_fields_preserve_original_protocol_forms() Void!Str {
-  let log = mut Log{calls: []}
+  let log = &mut Log{calls: []}
   let osc777 = notification::internal_backend(
     fn() Str {
       "WezTerm"
@@ -130,7 +130,7 @@ test fn term_features_codes_and_protocol_precedence_are_preserved() Void!Str {
   )
   try testing::assert(not false_positive.notify("message", ""), "Noo is not the No capability")
 
-  let identity_wins = mut Log{calls: []}
+  let identity_wins = &mut Log{calls: []}
   let identified = notification::internal_backend(
     fn() Str {
       "ghostty"
@@ -154,7 +154,7 @@ test fn term_features_codes_and_protocol_precedence_are_preserved() Void!Str {
     "identity precedes features",
   )
 
-  let features_win = mut Log{calls: []}
+  let features_win = &mut Log{calls: []}
   let featured = notification::internal_backend(
     fn() Str {
       ""
@@ -180,7 +180,7 @@ test fn term_features_codes_and_protocol_precedence_are_preserved() Void!Str {
 }
 
 test fn osc9_combines_title_and_unsupported_protocols_do_not_emit() Void!Str {
-  let log = mut Log{calls: []}
+  let log = &mut Log{calls: []}
   let osc9 = notification::internal_backend(
     fn() Str {
       "iTerm2 3.5"
@@ -210,7 +210,7 @@ test fn osc9_combines_title_and_unsupported_protocols_do_not_emit() Void!Str {
 }
 
 test fn environment_precedence_and_multiplexer_guards_are_preserved() Void!Str {
-  let log = mut Log{calls: []}
+  let log = &mut Log{calls: []}
   let forced = notification::internal_backend(
     fn() Str {
       "ghostty"
@@ -426,7 +426,7 @@ test fn original_progress_support_table_is_preserved() Void!Str {
 }
 
 test fn ghostty_progress_payloads_and_validation_are_preserved() Void!Str {
-  let log = mut Log{calls: []}
+  let log = &mut Log{calls: []}
   let backend = notification::internal_backend(
     fn() Str {
       "ghostty"

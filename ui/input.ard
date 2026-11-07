@@ -128,14 +128,14 @@ fn default_bindings() keymap::Bindings<Action> {
 }
 
 struct Input {
-  node_ref: mut node::Node,
-  editor_state: mut editor::State,
+  node_ref: &mut node::Node,
+  editor_state: &mut editor::State,
   placeholder_text: Str,
   minimum_length: Int,
   maximum_length: Int?,
   value_style: text::TextStyle,
   placeholder_text_style: text::TextStyle,
-  selection_patch: fn(mut text::TextStyle),
+  selection_patch: fn(&mut text::TextStyle),
   selected_style: text::TextStyle,
   selection_generation: Int,
   selection_version: Int,
@@ -155,8 +155,8 @@ struct Input {
 }
 
 private fn glyphs(text: Str) [Glyph] {
-  let iterator = mut unicode::NewGraphemeIterator(text)
-  let output: mut [Glyph] = mut []
+  let iterator = &mut unicode::NewGraphemeIterator(text)
+  let output: &mut [Glyph] = &mut []
   mut reading = true
   while reading {
     match iterator.Next() {
@@ -172,7 +172,7 @@ private fn glyphs(text: Str) [Glyph] {
       _ => { reading = false },
     }
   }
-  output.@
+  output.*
 }
 
 private fn previous_boundary(text: Str, cursor: Int) Int {
@@ -255,14 +255,15 @@ private fn same_text_style(left: text::TextStyle, right: text::TextStyle) Bool {
   same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike and left.hidden == right.hidden
 }
 
-private fn default_selection_style(value: mut text::TextStyle) {
+private fn default_selection_style(value: &mut text::TextStyle) {
   value.reverse = not value.reverse
 }
 
-private fn apply_style_patch(base: text::TextStyle, patch: fn(mut text::TextStyle)) text::TextStyle {
-  let selected = mut base
+private fn apply_style_patch(base: text::TextStyle, patch: fn(&mut text::TextStyle)) text::TextStyle {
+  mut base = base
+  let selected = &mut base
   patch(selected)
-  selected.@
+  selected.*
 }
 
 private fn display_offset(value: Str, boundary: Int, measure: fn(Str) Int) Int {
@@ -483,7 +484,7 @@ private fn default_input_style() layout_style::Style {
 }
 
 fn new(
-  ctx: mut runtime::Runtime,
+  ctx: &mut runtime::Runtime,
   value: Str?,
   placeholder: Str?,
   min_length: Int?,
@@ -492,10 +493,10 @@ fn new(
   text_style: text::TextStyle?,
   placeholder_style: text::TextStyle?,
   selectable: Bool?,
-  selection_style: fn(mut text::TextStyle)?,
+  selection_style: fn(&mut text::TextStyle)?,
   key_bindings: keymap::Bindings<Action>?,
   cursor_style: text_cursor::CursorStyle?,
-) mut Input {
+) &mut Input {
   let minimum = min_length.or(0)
   if minimum < 0 {
     panic("Input min_length must be non-negative")
@@ -512,9 +513,9 @@ fn new(
   let configured_style = styles.or(default_input_style())
   let base_style = text_style.or(text::style())
   let patch = selection_style.or(default_selection_style)
-  let input = mut Input{
+  let input = &mut Input{
     node_ref: ctx.create_node(configured_style),
-    editor_state: mut editor::new(initial_value),
+    editor_state: &mut editor::new(initial_value),
     placeholder_text: single_line(placeholder.or("")),
     minimum_length: minimum,
     maximum_length: max_length,
@@ -568,13 +569,13 @@ fn new(
 }
 
 impl node::Renderable for Input {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.node_ref
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     let width = self.node_ref.layout().screen.width
     let view = match self.editor_state.anchor() {
       anchor => {
@@ -633,7 +634,7 @@ impl node::Renderable for Input {
     }
   }
 
-  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     match ctx.mouse_event {
       mouse => self.handle_mouse(ctx, mouse),
       _ => {
@@ -909,7 +910,7 @@ impl Input {
       match self.byte_selection() {
         selected => {
           let selected_range = self.selected_range.expect("Input selected range")
-          let fragments = mut List::new<node::SelectionFragment>()
+          let fragments = &mut List::new<node::SelectionFragment>()
           let clip_right = local.clip.x + local.clip.width
           let clip_bottom = local.clip.y + local.clip.height
           let intersects = local.clip.x < width and clip_right > 0 and local.clip.y < 1 and clip_bottom > 0
@@ -929,7 +930,7 @@ impl Input {
             start: selected_range.start,
             end: selected_range.end,
             source_text: Maybe::new<Str>(),
-            fragments: fragments.@,
+            fragments: fragments.*,
           }
         },
         _ => node::empty_selection_result(),
@@ -976,15 +977,15 @@ impl Input {
     self.node_ref.is_focused()
   }
 
-  fn mut on_key(handler: fn(mut event::KeyEvent)) fn() {
+  fn mut on_key(handler: fn(&mut event::KeyEvent)) fn() {
     self.node_ref.on_key(handler)
   }
 
-  fn mut on_paste(handler: fn(mut event::PasteEvent)) fn() {
+  fn mut on_paste(handler: fn(&mut event::PasteEvent)) fn() {
     self.node_ref.on_paste(handler)
   }
 
-  fn mut on_mouse(handler: fn(mut event::MouseEvent)) fn() {
+  fn mut on_mouse(handler: fn(&mut event::MouseEvent)) fn() {
     self.node_ref.on_mouse(handler)
   }
 
@@ -1096,7 +1097,7 @@ impl Input {
     self.selected_text_value
   }
 
-  fn mut set_selection_style(patch: fn(mut text::TextStyle)) {
+  fn mut set_selection_style(patch: fn(&mut text::TextStyle)) {
     self.node_ref.require_live()
     self.selection_patch = patch
     self.selected_style = apply_style_patch(self.value_style, patch)
@@ -1199,7 +1200,7 @@ impl Input {
     self.node_ref.layout()
   }
 
-  private fn mut changed(ctx: mut event_delivery::Context, text_changed: Bool) event_delivery::Disposition {
+  private fn mut changed(ctx: &mut event_delivery::Context, text_changed: Bool) event_delivery::Disposition {
     if text_changed {
       self.node_ref.mark_measure_dirty()
       self.node_ref.emit_value(1, self.editor_state.value())
@@ -1211,7 +1212,7 @@ impl Input {
   }
 
   private fn mut finish_editor_outcome(
-    ctx: mut event_delivery::Context,
+    ctx: &mut event_delivery::Context,
     changed: editor::Outcome,
     had_selection: Bool,
   ) event_delivery::Disposition {
@@ -1290,7 +1291,7 @@ impl Input {
     }
   }
 
-  private fn mut insert_text(ctx: mut event_delivery::Context, value: Str) event_delivery::Disposition {
+  private fn mut insert_text(ctx: &mut event_delivery::Context, value: Str) event_delivery::Disposition {
     let inserted = single_line(value)
     if inserted.is_empty() {
       event_delivery::Disposition::handled
@@ -1301,7 +1302,7 @@ impl Input {
     }
   }
 
-  private fn mut handle_mouse(ctx: mut event_delivery::Context, mouse: mut event::MouseEvent) event_delivery::Disposition {
+  private fn mut handle_mouse(ctx: &mut event_delivery::Context, mouse: &mut event::MouseEvent) event_delivery::Disposition {
     if mouse.button != event::MouseButton::left or mouse.event_type != event::MouseEventType::down {
       event_delivery::Disposition::ignored
     } else {
@@ -1335,7 +1336,7 @@ impl Input {
     }
   }
 
-  private fn mut select_all(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  private fn mut select_all(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     if self.editor_state.has_anchor() {
       self.node_ref.clear_global_selection()
       let _ = self.clear_local_selection()
@@ -1351,7 +1352,7 @@ impl Input {
     self.changed(ctx, false)
   }
 
-  private fn mut perform_selection_action(ctx: mut event_delivery::Context, action: editor::Action) event_delivery::Disposition {
+  private fn mut perform_selection_action(ctx: &mut event_delivery::Context, action: editor::Action) event_delivery::Disposition {
     let selecting = self.begin_keyboard_selection()
     if selecting {
       let _ = self.editor_state.apply(action)
@@ -1371,8 +1372,8 @@ impl Input {
     self.changed(ctx, false)
   }
 
-  private fn mut handle_key(ctx: mut event_delivery::Context, key: mut event::KeyEvent) event_delivery::Disposition {
-    match self.configured_key_bindings.resolve(key.@) {
+  private fn mut handle_key(ctx: &mut event_delivery::Context, key: &mut event::KeyEvent) event_delivery::Disposition {
+    match self.configured_key_bindings.resolve(key.*) {
       configured => {
         match configured.action {
           action => {

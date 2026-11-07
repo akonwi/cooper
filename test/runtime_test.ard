@@ -4,7 +4,7 @@ use cooper/core/runtime
 use cooper/event
 
 test fn dispatch_queue_accepts_reentrant_actions_without_blocking() Void!Str {
-  let queue = mut runtime::new_dispatch_queue()
+  let queue = &mut runtime::new_dispatch_queue()
   mut first_called = false
   mut second_called = false
 
@@ -23,7 +23,7 @@ test fn dispatch_queue_accepts_reentrant_actions_without_blocking() Void!Str {
 }
 
 test fn stopped_dispatch_queue_rejects_and_discards_work() Void!Str {
-  let queue = mut runtime::new_dispatch_queue()
+  let queue = &mut runtime::new_dispatch_queue()
   let _ = queue.post(fn() {})
 
   queue.stop()
@@ -33,7 +33,7 @@ test fn stopped_dispatch_queue_rejects_and_discards_work() Void!Str {
 }
 
 test fn mount_scope_rejects_and_suppresses_stale_dispatch() Void!Str {
-  let queue = mut runtime::new_dispatch_queue()
+  let queue = &mut runtime::new_dispatch_queue()
   let base = fn(action: fn()) Void!event::DispatchError {
     if queue.post(action) {
       Result::ok(())

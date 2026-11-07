@@ -32,16 +32,16 @@ private fn absolute(z: Int) style::Style {
 }
 
 private struct Probe {
-  retained: mut node::Node,
-  paints: mut [Int],
+  retained: &mut node::Node,
+  paints: &mut [Int],
   events: Int,
 }
 
-private fn probe(ctx: mut runtime::Runtime) mut Probe {
+private fn probe(ctx: &mut runtime::Runtime) &mut Probe {
   let retained = ctx.create_node(style::new())
-  let owner = mut Probe{
+  let owner = &mut Probe{
     retained: retained,
-    paints: mut [],
+    paints: &mut [],
     events: 0,
   }
   retained.bind(owner)
@@ -49,18 +49,18 @@ private fn probe(ctx: mut runtime::Runtime) mut Probe {
 }
 
 impl node::Renderable for Probe {
-  fn node() mut node::Node {
+  fn node() &mut node::Node {
     self.retained
   }
 
   fn mount(ctx: node::MountContext) {}
 
-  fn paint(ctx: mut paint::Context) {
+  fn paint(ctx: &mut paint::Context) {
     self.paints.push(1)
     ctx.show_cursor(0, 0)
   }
 
-  fn mut event(ctx: mut event_delivery::Context) event_delivery::Disposition {
+  fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
     self.events =+ 1
     event_delivery::Disposition::ignored
   }
@@ -200,7 +200,7 @@ test fn contents_suppresses_owner_callbacks_but_retains_bubbling() Void!Str {
   group.node().add(label.node())
   app.root.add(group)
   mut bubbles = 0
-  let _ = group.node().on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = group.node().on_mouse(fn(received: &mut event::MouseEvent) {
     bubbles =+ 1
   })
   app.render()

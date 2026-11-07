@@ -22,7 +22,7 @@ private fn modifiers(shift: Bool?, ctrl: Bool?, alt: Bool?, super: Bool?) event:
   }
 }
 
-private fn key(name: Str, value: Str?, shift: Bool?, ctrl: Bool?, alt: Bool?, super: Bool?) mut event::KeyEvent {
+private fn key(name: Str, value: Str?, shift: Bool?, ctrl: Bool?, alt: Bool?, super: Bool?) &mut event::KeyEvent {
   event::key(name, value.or(""), event::KeyEventType::press, modifiers(shift, ctrl, alt, super))
 }
 
@@ -54,7 +54,7 @@ test fn text_area_listener_can_reserve_ctrl_enter_without_inserting() Void!Str {
   application.render()
   area.focus()
   mut submitted = false
-  let _ = area.on_key(fn(received: mut event::KeyEvent) {
+  let _ = area.on_key(fn(received: &mut event::KeyEvent) {
     if received.matches("return", ctrl: true) {
       submitted = true
       received.prevent_default()

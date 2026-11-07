@@ -59,7 +59,7 @@ impl Axis {
   // CalculateLayout.cpp: constrainMaxSizeForMode. Available size includes
   // margins here; maximum is an already-resolved border-box constraint.
   fn constrain_max(margin: Float32) Axis {
-    let result = mut self
+    mut result = self
     let maximum = self.maximum + margin
     match self.mode {
       cache::SizingMode::max_content => {
@@ -75,7 +75,7 @@ impl Axis {
         }
       },
     }
-    result.@
+    result
   }
 
   // CalculateLayout.cpp: calculateAvailableInnerDimension. Unlike callback

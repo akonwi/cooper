@@ -112,9 +112,9 @@ test fn retained_measure_changes_dirty_layout_and_preserve_geometry() Void!Str {
   defer ctx.destroy_detached()
   let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
   let leaf = box::new(ctx)
-  let measured = mut node::MeasureSize{width: Float32::from(3.0), height: Float32::from(1.0)}
+  let measured = &mut node::MeasureSize{width: Float32::from(3.0), height: Float32::from(1.0)}
   leaf.node().set_measure(fn(input: node::MeasureInput) node::MeasureSize {
-    measured.@
+    measured.*
   })
   root.add(leaf)
   ctx.compute_layout(root, 20, 10)
@@ -151,7 +151,7 @@ test fn layout_dirty_invalidates_basis_and_detach_discards_cache_state() Void!St
   )
   visitor::calculate(root, 20, 10)
   leaf.cache_state.complete(12, 3, cache::Direction::ltr)
-  let entry = mut cache::Measurement{
+  let entry = &mut cache::Measurement{
     available_width: Float32::from(20.0),
     available_height: Float32::from(10.0),
     width_mode: cache::SizingMode::fit_content,
@@ -159,8 +159,8 @@ test fn layout_dirty_invalidates_basis_and_detach_discards_cache_state() Void!St
     computed_width: Float32::from(7.0),
     computed_height: Float32::from(1.0),
   }
-  leaf.cache_state.store(entry.@, false)
-  leaf.cache_state.store(entry.@, true)
+  leaf.cache_state.store(entry.*, false)
+  leaf.cache_state.store(entry.*, true)
   root.remove(leaf)
   testing::assert(
     leaf.cache_state.generation == 0 and leaf.cache_state.measurements.size() == 0 and leaf.cache_state.cached_layout.computed_width == -1.0,
@@ -188,10 +188,10 @@ test fn integral_layout_reuses_measurement_until_content_changes() Void!Str {
   let child = layout::new()
   child.apply(style::new(width: style::cells(8), flex_shrink: 0.0), 0)
   mut calls = 0
-  let natural = mut layout::MeasureSize{width: Float32::from(8.0), height: Float32::from(2.0)}
+  let natural = &mut layout::MeasureSize{width: Float32::from(8.0), height: Float32::from(2.0)}
   child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
     calls =+ 1
-    natural.@
+    natural.*
   })
   root.insert(child, 0)
   visitor::calculate(root, 20, 10)

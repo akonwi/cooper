@@ -9,25 +9,25 @@ struct EditorState {
   saves: Int,
   submits: Int,
   blocked: Int,
-  runtime: mut cooper::Runtime,
+  runtime: &mut cooper::Runtime,
 }
 
 struct Props {
-  state: mut EditorState,
+  state: &mut EditorState,
   quit: fn() Bool,
 }
 
 struct Editor {
-  state: mut EditorState,
+  state: &mut EditorState,
   quit: fn() Bool,
 }
 
-private fn editor(props: mut Props) mut Editor {
-  (mut Editor{state: props.state, quit: props.quit})
+private fn editor(props: &mut Props) &mut Editor {
+  &mut Editor{state: props.state, quit: props.quit}
 }
 
-private fn shortcut_rows(runtime: mut cooper::Runtime) [cui::View] {
-  let rows = mut List::new<cui::View>()
+private fn shortcut_rows(runtime: &mut cooper::Runtime) [cui::View] {
+  let rows = &mut List::new<cui::View>()
   for shortcut in keymap::shortcuts(runtime) {
     if shortcut.command.group() != "input" {
       mut flags = "eligible"
@@ -49,7 +49,7 @@ private fn shortcut_rows(runtime: mut cooper::Runtime) [cui::View] {
       )
     }
   }
-  rows.@
+  rows.*
 }
 
 impl cui::Component for Editor {
@@ -136,7 +136,7 @@ impl cui::Component for Editor {
       bindings: bindings,
       binding_scope: keymap::ScopeMode::focus_within,
       binding_priority: 10,
-      on_key: fn(received: mut cooper::KeyEvent, ctx: cui::Context) {
+      on_key: fn(received: &mut cooper::KeyEvent, ctx: cui::Context) {
         if received.event_type == cooper::KeyEventType::press and received.matches("p", ctrl: true) {
           self.state.blocked =+ 1
           received.prevent_default()
@@ -157,7 +157,7 @@ impl cui::Lifecycle for Editor {
 fn main() {
   let application = cooper::app().expect("create keymap example")
   defer application.destroy()
-  let state = mut EditorState{
+  let state = &mut EditorState{
     text: "",
     saved: "",
     saves: 0,

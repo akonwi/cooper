@@ -22,7 +22,7 @@ use cooper/ui/style
 // generation is used for every transaction; retained measurement caches remain
 // eligible through cache::State's compatibility checks.
 // Returns whether projected geometry was recalculated.
-fn calculate(node: mut layout::Node, width: Int, height: Int) Bool {
+fn calculate(node: &mut layout::Node, width: Int, height: Int) Bool {
   if width < 0 or height < 0 {
     panic("layout bounds must be non-negative")
   }
@@ -34,7 +34,7 @@ fn calculate(node: mut layout::Node, width: Int, height: Int) Bool {
   }
 }
 
-fn calculate_transaction(node: mut layout::Node, width: Int, height: Int) {
+fn calculate_transaction(node: &mut layout::Node, width: Int, height: Int) {
   let available_width = Float32::fit(width)
   let available_height = Float32::fit(height)
   node.intrinsic_policy = true
@@ -104,7 +104,7 @@ fn calculate_transaction(node: mut layout::Node, width: Int, height: Int) {
 // Stretch children are measured during distribution and laid out after the
 // complete line cross extent is known (CalculateLayout.cpp steps5 and7).
 struct StretchVisit {
-  child: mut layout::Node,
+  child: &mut layout::Node,
   main: measure::Axis,
   cross: measure::Axis,
   margin_row: Float32,
@@ -191,7 +191,7 @@ fn container_measured_size(axis: measure::Axis, content: Float32, scroll: Bool) 
 }
 
 fn basis_visit(
-  child: mut layout::Node,
+  child: &mut layout::Node,
   width: measure::Axis,
   height: measure::Axis,
   margin_row: Float32,
@@ -201,7 +201,7 @@ fn basis_visit(
   visit(child, width, height, margin_row, margin_column, generation, false)
 }
 
-fn axis_item(child: mut layout::Node, row: Bool, owner_width: Float32, owner_height: Float32) flex::Item {
+fn axis_item(child: &mut layout::Node, row: Bool, owner_width: Float32, owner_height: Float32) flex::Item {
   let value = child.value
   let owner_main = choose_float(row, owner_width, owner_height)
   let minimum = length::resolve(choose_length(row, value.min_width, value.min_height), owner_main)
@@ -232,7 +232,7 @@ fn axis_item(child: mut layout::Node, row: Bool, owner_width: Float32, owner_hei
 }
 
 fn translated_visit(
-  node: mut layout::Node,
+  node: &mut layout::Node,
   width: measure::Axis,
   height: measure::Axis,
   margin_row: Float32,
@@ -243,7 +243,7 @@ fn translated_visit(
   if node.children.size() == 0 {
     node.calculate_leaf(width, height, margin_row, margin_column, generation, perform_layout)
   } else {
-    let request = mut cache::Measurement{
+    let request = &mut cache::Measurement{
       available_width: width.available,
       available_height: height.available,
       width_mode: width.mode,
@@ -253,7 +253,7 @@ fn translated_visit(
     }
     let required = node.cache_state.prepare(node.dirty, generation, 0, cache::Direction::ltr)
     let cached = node.cache_state.find(
-      request.@,
+      request.*,
       false,
       perform_layout,
       margin_row,
@@ -273,7 +273,7 @@ fn translated_visit(
       if cached.is_some() == false {
         request.computed_width = node.measured_width
         request.computed_height = node.measured_height
-        node.cache_state.store(request.@, false)
+        node.cache_state.store(request.*, false)
       }
     } else {
       let inner_width = own_width.available_inner_dimension()
@@ -315,7 +315,7 @@ fn translated_visit(
       if wrap and main_overflows and main_mode == cache::SizingMode::fit_content {
         main_mode = cache::SizingMode::stretch_fit
       }
-      let items = mut List::new<flex::Item>()
+      let items = &mut List::new<flex::Item>()
       for child in prepared.children {
         items.push(axis_item(child, row, owner_width, inner_height))
       }
@@ -323,24 +323,24 @@ fn translated_visit(
       mut natural_main = Float32::from(0.0)
       mut natural_cross = Float32::from(0.0)
       mut line_count = 0
-      let lines = mut List::new<[mut layout::Node]>()
-      let cross_extents = mut List::new<Float32>()
-      let main_free_spaces = mut List::new<Float32>()
+      let lines = &mut List::new<[&mut layout::Node]>()
+      let cross_extents = &mut List::new<Float32>()
+      let main_free_spaces = &mut List::new<Float32>()
       while index < prepared.children.size() {
         let line = match node.allocation.is_some() {
           true => {
             // ADR0020: replay remeasures heights within the original lines.
             // In particular, taller column children must not form new columns.
-            let prefix = mut List::new<flex::Item>()
+            let prefix = &mut List::new<flex::Item>()
             for child, child_index in prepared.children {
               let frozen = child.allocation.expect("replay child allocation")
               if frozen.line <= line_count {
                 prefix.push(items.at(child_index).expect("replay item"))
               }
             }
-            flex::collect_line(prefix.@, index, available_main, gap, false)
+            flex::collect_line(prefix.*, index, available_main, gap, false)
           },
-          false => flex::collect_line(items.@, index, available_main, gap, wrap),
+          false => flex::collect_line(items.*, index, available_main, gap, wrap),
         }
         // Yoga canSkipFlex: an exact cross measurement does not need child
         // dimensions, flexible-length resolution, or descendant visits.
@@ -407,8 +407,8 @@ fn translated_visit(
         mut baseline_descent = Float32::from(0.0)
         mut has_baseline = false
         mut local = 0
-        let stretching = mut List::new<StretchVisit>()
-        let line_children = mut List::new<mut layout::Node>()
+        let stretching = &mut List::new<StretchVisit>()
+        let line_children = &mut List::new<&mut layout::Node>()
         if can_skip_flex {
           for skipped in line.items {
             line_main = line_main + skipped.basis + skipped.margin
@@ -540,19 +540,20 @@ fn translated_visit(
           }
         }
         for deferred in stretching {
-          let main = mut deferred.main
+          mut deferred = deferred
+          let main = &mut deferred.main
           main.available = choose_float(
             row,
             deferred.child.measured_width + deferred.margin_row,
             deferred.child.measured_height + deferred.margin_column,
           )
-          let cross = mut deferred.cross
+          let cross = &mut deferred.cross
           cross.available = line_cross
           cross.mode = cache::SizingMode::stretch_fit
-          let bounded_main = mut main.constrain_max(
+          let bounded_main = &mut main.constrain_max(
             choose_float(row, deferred.margin_row, deferred.margin_column),
           )
-          let bounded_cross = mut cross.constrain_max(
+          let bounded_cross = &mut cross.constrain_max(
             choose_float(row, deferred.margin_column, deferred.margin_row),
           )
           bounded_main.mode = match numeric::is_undefined(bounded_main.available) {
@@ -567,8 +568,8 @@ fn translated_visit(
             true => {
               visit(
                 deferred.child,
-                bounded_main.@,
-                bounded_cross.@,
+                bounded_main.*,
+                bounded_cross.*,
                 deferred.margin_row,
                 deferred.margin_column,
                 generation,
@@ -578,8 +579,8 @@ fn translated_visit(
             false => {
               visit(
                 deferred.child,
-                bounded_cross.@,
-                bounded_main.@,
+                bounded_cross.*,
+                bounded_main.*,
                 deferred.margin_row,
                 deferred.margin_column,
                 generation,
@@ -604,7 +605,7 @@ fn translated_visit(
           }
         }
         main_free_spaces.push(positioning_free)
-        lines.push(line_children.@)
+        lines.push(line_children.*)
         line_count =+ 1
         index = line.next_index
       }
@@ -707,7 +708,7 @@ fn translated_visit(
       if perform_layout {
         if lines.size() > 0 {
           let saved_parent = node.value
-          let saved_children = mut List::new<style::Style>()
+          let saved_children = &mut List::new<style::Style>()
           let cyclic_width = node.intrinsic_policy and node.intrinsic_width_definite == false
           if cyclic_width {
             node.value.gap = unresolved_percent(node.value.gap)
@@ -721,9 +722,9 @@ fn translated_visit(
           }
           position::apply(
             node,
-            lines.@,
-            cross_extents.@,
-            main_free_spaces.@,
+            lines.*,
+            cross_extents.*,
+            main_free_spaces.*,
             owner_width,
             inner_height,
             cross_mode,
@@ -752,7 +753,7 @@ fn translated_visit(
       if cached.is_some() == false {
         request.computed_width = node.measured_width
         request.computed_height = node.measured_height
-        node.cache_state.store(request.@, perform_layout)
+        node.cache_state.store(request.*, perform_layout)
       }
     }
     if perform_layout {
@@ -766,7 +767,7 @@ fn translated_visit(
 }
 
 fn intrinsic_visit(
-  node: mut layout::Node,
+  node: &mut layout::Node,
   width: measure::Axis,
   height: measure::Axis,
   margin_row: Float32,
@@ -908,14 +909,14 @@ fn intrinsic_visit(
     maximum_height,
     height.padding_border,
   )
-  let adapted_width = mut measure::Axis{
+  let adapted_width = &mut measure::Axis{
     available: selected_width + margin_row,
     mode: width.mode,
     padding_border: width.padding_border,
     minimum: minimum_width,
     maximum: maximum_width,
   }
-  let adapted_height = mut measure::Axis{
+  let adapted_height = &mut measure::Axis{
     available: selected_height + margin_column,
     mode: height.mode,
     padding_border: height.padding_border,
@@ -932,8 +933,8 @@ fn intrinsic_visit(
   node.intrinsic_height_definite = value.height.kind != style::LengthKind::max_content
   translated_visit(
     node,
-    adapted_width.@,
-    adapted_height.@,
+    adapted_width.*,
+    adapted_height.*,
     margin_row,
     margin_column,
     generation,
@@ -942,7 +943,7 @@ fn intrinsic_visit(
 }
 
 fn visit(
-  node: mut layout::Node,
+  node: &mut layout::Node,
   width: measure::Axis,
   height: measure::Axis,
   margin_row: Float32,

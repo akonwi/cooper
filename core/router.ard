@@ -29,13 +29,13 @@ fn merge(left: Outcome, right: Outcome) Outcome {
 }
 
 private struct RouteEntry {
-  owner: mut node::Node,
+  owner: &mut node::Node,
   generation: Int,
 }
 
-private fn path(root: mut node::Node, target: mut node::Node) [RouteEntry]? {
-  let routed = mut List::new<RouteEntry>()
-  mut current = Maybe::new<mut node::Node>(target)
+private fn path(root: &mut node::Node, target: &mut node::Node) [RouteEntry]? {
+  let routed = &mut List::new<RouteEntry>()
+  mut current = Maybe::new<&mut node::Node>(target)
   mut found = false
   mut scanning = true
   while scanning {
@@ -53,7 +53,7 @@ private fn path(root: mut node::Node, target: mut node::Node) [RouteEntry]? {
     }
   }
   if found {
-    Maybe::new<[RouteEntry]>(routed.@)
+    Maybe::new<[RouteEntry]>(routed.*)
   } else {
     Maybe::new<[RouteEntry]>()
   }
@@ -89,7 +89,7 @@ private fn route_is_current(routed: [RouteEntry], tree_version: Int) Bool {
   current
 }
 
-private fn outcome(state: mut event_delivery::Outcome) Outcome {
+private fn outcome(state: &mut event_delivery::Outcome) Outcome {
   Outcome{
     handled: state.handled,
     redraw: state.redraw,
@@ -98,7 +98,7 @@ private fn outcome(state: mut event_delivery::Outcome) Outcome {
   }
 }
 
-private fn deliver_default(current: mut node::Node, delivery: mut event_delivery::Context) {
+private fn deliver_default(current: &mut node::Node, delivery: &mut event_delivery::Context) {
   if (not delivery.is_default_prevented()) and current.can_receive_events() {
     let result = current.owner_as_renderable().event(delivery)
     if result == event_delivery::Disposition::handled {
@@ -107,7 +107,7 @@ private fn deliver_default(current: mut node::Node, delivery: mut event_delivery
   }
 }
 
-private fn deliver_mouse_default(current: mut node::Node, delivery: mut event_delivery::Context) {
+private fn deliver_mouse_default(current: &mut node::Node, delivery: &mut event_delivery::Context) {
   if current.can_receive_pointer_events() {
     let result = current.owner_as_renderable().event(delivery)
     if result == event_delivery::Disposition::handled {
@@ -118,9 +118,9 @@ private fn deliver_mouse_default(current: mut node::Node, delivery: mut event_de
 
 fn dispatch_mouse(
   root: mut node::Renderable,
-  target: mut node::Node,
-  mouse: mut event::MouseEvent,
-  focused: mut focus::State,
+  target: &mut node::Node,
+  mouse: &mut event::MouseEvent,
+  focused: &mut focus::State,
 ) Outcome {
   let routed = try path(root.node(), target) -> _ { empty_outcome() }
   let state = event_delivery::new_outcome()
@@ -169,9 +169,9 @@ fn dispatch_mouse(
 }
 
 fn dispatch_key(
-  target: mut node::Node,
-  key: mut event::KeyEvent,
-  focused: mut focus::State,
+  target: &mut node::Node,
+  key: &mut event::KeyEvent,
+  focused: &mut focus::State,
   bindings: (fn() Bool)?,
 ) Outcome {
   let state = event_delivery::new_outcome()
@@ -197,7 +197,11 @@ fn dispatch_key(
   outcome(state)
 }
 
-fn dispatch_paste(target: mut node::Node, paste: mut event::PasteEvent, focused: mut focus::State) Outcome {
+fn dispatch_paste(
+  target: &mut node::Node,
+  paste: &mut event::PasteEvent,
+  focused: &mut focus::State,
+) Outcome {
   let state = event_delivery::new_outcome()
   target.emit_paste(paste)
   deliver_default(

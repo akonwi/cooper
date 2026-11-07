@@ -19,9 +19,9 @@ struct Context {
   on_terminal_focus: fn(fn(event::TerminalFocus)) fn(),
   on_theme_changed: fn(fn(theme::Theme)) fn(),
   on_selection_change: fn(fn(selection::Selection?)) fn(),
-  on_key: fn(fn(mut event::KeyEvent)) fn(),
-  on_paste: fn(fn(mut event::PasteEvent)) fn(),
-  bind_keys: fn(mut keymap::Layer) fn(),
+  on_key: fn(fn(&mut event::KeyEvent)) fn(),
+  on_paste: fn(fn(&mut event::PasteEvent)) fn(),
+  bind_keys: fn(&mut keymap::Layer) fn(),
   on_keys_change: fn(fn()) fn(),
   shortcuts: fn() [keymap::Shortcut],
   commands: fn() [keymap::Command],
@@ -52,9 +52,9 @@ impl Context {
 }
 
 fn internal_new(
-  runtime: mut runtime::Runtime,
+  runtime: &mut runtime::Runtime,
   base: fn(fn()) Void!event::DispatchError,
-  scope: mut scopes::MountScope,
+  scope: &mut scopes::MountScope,
   invalidate: fn(),
   invalidate_root: fn(),
   layout: fn(fn() Bool) fn(),
@@ -158,10 +158,10 @@ fn internal_new(
         subscription.cancel()
       }
     },
-    on_key: fn(handler: fn(mut event::KeyEvent)) fn() {
+    on_key: fn(handler: fn(&mut event::KeyEvent)) fn() {
       let subscription = scope.subscription()
       if subscription.active {
-        subscription.remove_listener = runtime.on_key(fn(value: mut event::KeyEvent) {
+        subscription.remove_listener = runtime.on_key(fn(value: &mut event::KeyEvent) {
           if subscription.active {
             handler(value)
             invalidate()
@@ -172,10 +172,10 @@ fn internal_new(
         subscription.cancel()
       }
     },
-    on_paste: fn(handler: fn(mut event::PasteEvent)) fn() {
+    on_paste: fn(handler: fn(&mut event::PasteEvent)) fn() {
       let subscription = scope.subscription()
       if subscription.active {
-        subscription.remove_listener = runtime.on_paste(fn(value: mut event::PasteEvent) {
+        subscription.remove_listener = runtime.on_paste(fn(value: &mut event::PasteEvent) {
           if subscription.active {
             handler(value)
             invalidate()
@@ -186,7 +186,7 @@ fn internal_new(
         subscription.cancel()
       }
     },
-    bind_keys: fn(layer: mut keymap::Layer) fn() {
+    bind_keys: fn(layer: &mut keymap::Layer) fn() {
       let subscription = scope.subscription()
       if subscription.active {
         let after = layer.internal_after_run

@@ -16,18 +16,18 @@ struct ShellState {
 }
 
 struct TabDemo {
-  root: mut ui::Box,
-  control: mut ui::Select,
-  status: mut ui::Text,
+  root: &mut ui::Box,
+  control: &mut ui::Select,
+  status: &mut ui::Text,
   show_description: Bool,
   show_arrows: Bool,
   wrap: Bool,
 }
 
 struct SelectDemo {
-  root: mut ui::Box,
-  control: mut ui::Select,
-  status: mut ui::Text,
+  root: &mut ui::Box,
+  control: &mut ui::Select,
+  status: &mut ui::Text,
   show_description: Bool,
   show_indicator: Bool,
   wrap: Bool,
@@ -39,15 +39,15 @@ enum SliderOrientation {
 }
 
 struct SliderDemo {
-  root: mut ui::Box,
-  sliders: [mut LocalSlider],
+  root: &mut ui::Box,
+  sliders: [&mut LocalSlider],
 }
 
 struct LocalSlider {
   name: Str,
-  panel: mut ui::Box,
-  track: mut ui::Text,
-  value_label: mut ui::Text,
+  panel: &mut ui::Box,
+  track: &mut ui::Text,
+  value_label: &mut ui::Text,
   orientation: SliderOrientation,
   minimum: Int,
   maximum: Int,
@@ -248,10 +248,10 @@ private fn select_options() [Choice] {
 }
 
 private fn horizontal_padding() ui::Edges {
-  let padding = mut ui::edges()
+  let padding = &mut ui::edges()
   padding.left = ui::cells(1)
   padding.right = ui::cells(1)
-  padding.@
+  padding.*
 }
 
 private fn padded(value: Str, width: Int) Str {
@@ -276,11 +276,11 @@ private fn tab_page_style(show: Bool) ui::Style {
 }
 
 private fn control_options(values: [Choice]) [ui::SelectOption] {
-  let options = mut List::new<ui::SelectOption>()
+  let options = &mut List::new<ui::SelectOption>()
   for value in values {
     options.push(ui::select_option(value.name, description: value.description, value: value.value))
   }
-  options.@
+  options.*
 }
 
 private fn widget_appearance() ui::SelectAppearance {
@@ -303,7 +303,7 @@ private fn widget_appearance() ui::SelectAppearance {
   )
 }
 
-private fn render_tabs(demo: mut TabDemo) {
+private fn render_tabs(demo: &mut TabDemo) {
   let highlighted = try demo.control.highlighted() -> _ { () }
   mut selected = "No item selected yet (press Enter to select)"
   match demo.control.selected() {
@@ -349,7 +349,7 @@ private fn render_tabs(demo: mut TabDemo) {
   )
 }
 
-private fn apply_tab_config(demo: mut TabDemo) {
+private fn apply_tab_config(demo: &mut TabDemo) {
   demo.control.set_tab_config(
     ui::select_tab_config(
       tab_width: 12,
@@ -361,7 +361,7 @@ private fn apply_tab_config(demo: mut TabDemo) {
   render_tabs(demo)
 }
 
-private fn make_tab_demo(ctx: mut cooper::Runtime) mut TabDemo {
+private fn make_tab_demo(ctx: &mut cooper::Runtime) &mut TabDemo {
   let root = ui::box(ctx, styles: tab_page_style(true))
   let panel = ui::box(
     ctx,
@@ -445,14 +445,14 @@ private fn make_tab_demo(ctx: mut cooper::Runtime) mut TabDemo {
   details.add(status_panel)
   root.add(details)
 
-  (mut TabDemo{
+  &mut TabDemo{
     root: root,
     control: control,
     status: status,
     show_description: true,
     show_arrows: true,
     wrap: false,
-  })
+  }
 }
 
 private fn select_page_style(show: Bool) ui::Style {
@@ -467,7 +467,7 @@ private fn select_page_style(show: Bool) ui::Style {
   )
 }
 
-private fn render_select(demo: mut SelectDemo) {
+private fn render_select(demo: &mut SelectDemo) {
   let highlighted = try demo.control.highlighted() -> _ { () }
   mut selected = "No item activated yet"
   match demo.control.selected() {
@@ -510,7 +510,7 @@ private fn render_select(demo: mut SelectDemo) {
   )
 }
 
-private fn apply_select_config(demo: mut SelectDemo) {
+private fn apply_select_config(demo: &mut SelectDemo) {
   demo.control.set_config(
     ui::select_config(
       show_descriptions: demo.show_description,
@@ -522,7 +522,7 @@ private fn apply_select_config(demo: mut SelectDemo) {
   render_select(demo)
 }
 
-private fn make_select_demo(ctx: mut cooper::Runtime) mut SelectDemo {
+private fn make_select_demo(ctx: &mut cooper::Runtime) &mut SelectDemo {
   let root = ui::box(ctx, styles: select_page_style(false))
   let list_panel = ui::box(
     ctx,
@@ -603,14 +603,14 @@ private fn make_select_demo(ctx: mut cooper::Runtime) mut SelectDemo {
   side.add(status_panel)
   root.add(side)
 
-  (mut SelectDemo{
+  &mut SelectDemo{
     root: root,
     control: control,
     status: status,
     show_description: true,
     show_indicator: true,
     wrap: false,
-  })
+  }
 }
 
 private fn slider_page_style(show: Bool) ui::Style {
@@ -625,7 +625,7 @@ private fn slider_page_style(show: Bool) ui::Style {
   )
 }
 
-private fn horizontal_bar(slider: mut LocalSlider) Str {
+private fn horizontal_bar(slider: &mut LocalSlider) Str {
   let width = 48
   let filled = (slider.value - slider.minimum) * (width - 1) / (slider.maximum - slider.minimum)
   let line = "{strings::Repeat("█", filled)}●{strings::Repeat("░", width - filled - 1)}"
@@ -638,7 +638,7 @@ private fn horizontal_bar(slider: mut LocalSlider) Str {
   rendered
 }
 
-private fn vertical_bar(slider: mut LocalSlider) Str {
+private fn vertical_bar(slider: &mut LocalSlider) Str {
   let rows = 12
   let filled = (slider.value - slider.minimum) * rows / (slider.maximum - slider.minimum)
   mut rendered = ""
@@ -657,7 +657,7 @@ private fn vertical_bar(slider: mut LocalSlider) Str {
   rendered
 }
 
-private fn render_slider(slider: mut LocalSlider) {
+private fn render_slider(slider: &mut LocalSlider) {
   slider.value = clamp(slider.value, slider.minimum, slider.maximum)
   slider.value_label.set_content("{slider.value}")
   if slider.orientation == SliderOrientation::horizontal {
@@ -673,7 +673,7 @@ private fn render_slider(slider: mut LocalSlider) {
 }
 
 private fn make_horizontal_slider(
-  ctx: mut cooper::Runtime,
+  ctx: &mut cooper::Runtime,
   name: Str,
   detail: Str,
   value: Int,
@@ -682,7 +682,7 @@ private fn make_horizontal_slider(
   step: Int,
   thickness: Int,
   tint: ui::Color,
-) mut LocalSlider {
+) &mut LocalSlider {
   let panel = ui::box(
     ctx,
     styles: ui::style(
@@ -731,7 +731,7 @@ private fn make_horizontal_slider(
   panel.add(label)
   panel.add(value_label)
   panel.add(track)
-  let slider = mut LocalSlider{
+  let slider = &mut LocalSlider{
     name: name,
     panel: panel,
     track: track,
@@ -751,7 +751,7 @@ private fn make_horizontal_slider(
 }
 
 private fn make_vertical_slider(
-  ctx: mut cooper::Runtime,
+  ctx: &mut cooper::Runtime,
   name: Str,
   width: Int,
   value: Int,
@@ -760,7 +760,7 @@ private fn make_vertical_slider(
   step: Int,
   track_width: Int,
   tint: ui::Color,
-) mut LocalSlider {
+) &mut LocalSlider {
   let panel = ui::box(
     ctx,
     styles: ui::style(
@@ -805,7 +805,7 @@ private fn make_vertical_slider(
   panel.add(label)
   panel.add(track)
   panel.add(value_label)
-  let slider = mut LocalSlider{
+  let slider = &mut LocalSlider{
     name: name,
     panel: panel,
     track: track,
@@ -824,14 +824,14 @@ private fn make_vertical_slider(
   slider
 }
 
-private fn slider_action(action: mut ui::Text, slider: mut LocalSlider) {
+private fn slider_action(action: &mut ui::Text, slider: &mut LocalSlider) {
   action.set_content(
     "Focused {slider.name} · Value {slider.value} · arrows adjust · R reset · 1-7 focus",
   )
   action.set_text_style(ui::text_style(foreground: slider.tint, bold: true))
 }
 
-private fn update_slider_from_mouse(slider: mut LocalSlider, received: mut cooper::MouseEvent) {
+private fn update_slider_from_mouse(slider: &mut LocalSlider, received: &mut cooper::MouseEvent) {
   let screen = slider.track.layout().screen
   if slider.orientation == SliderOrientation::horizontal {
     let position = clamp(received.x - screen.x, 0, screen.width - 1)
@@ -843,7 +843,7 @@ private fn update_slider_from_mouse(slider: mut LocalSlider, received: mut coope
   render_slider(slider)
 }
 
-private fn reset_sliders(sliders: [mut LocalSlider], action: mut ui::Text) {
+private fn reset_sliders(sliders: [&mut LocalSlider], action: &mut ui::Text) {
   let defaults = [25, 100, 25, 0, 0, 50, 50]
   for slider, index in sliders {
     slider.value = defaults.at(index).expect("slider default")
@@ -854,7 +854,7 @@ private fn reset_sliders(sliders: [mut LocalSlider], action: mut ui::Text) {
   action.set_text_style(ui::text_style(foreground: ui::hex("#FF00FF"), bold: true))
 }
 
-private fn make_slider_page(ctx: mut cooper::Runtime) SliderDemo {
+private fn make_slider_page(ctx: &mut cooper::Runtime) SliderDemo {
   let root = ui::box(ctx, styles: slider_page_style(false))
   let horizontal = ui::box(
     ctx,
@@ -934,13 +934,13 @@ private fn nav_style(active: Bool) ui::Style {
 
 private fn show_page(
   index: Int,
-  state: mut ShellState,
-  tab_demo: mut TabDemo,
-  select_demo: mut SelectDemo,
-  slider_page: mut ui::Box,
-  sliders: [mut LocalSlider],
-  nav: [mut ui::Box],
-  action: mut ui::Text,
+  state: &mut ShellState,
+  tab_demo: &mut TabDemo,
+  select_demo: &mut SelectDemo,
+  slider_page: &mut ui::Box,
+  sliders: [&mut LocalSlider],
+  nav: [&mut ui::Box],
+  action: &mut ui::Text,
 ) {
   state.page = index
   tab_demo.root.set_style(tab_page_style(index == 0))
@@ -1015,7 +1015,7 @@ fn main() {
       gap: ui::cells(1),
     ),
   )
-  let nav: [mut ui::Box] = [
+  let nav: [&mut ui::Box] = [
     ui::box(ctx, styles: nav_style(true)),
     ui::box(ctx, styles: nav_style(false)),
     ui::box(ctx, styles: nav_style(false)),
@@ -1065,7 +1065,7 @@ fn main() {
   root.add(body)
   application.root.add(root)
 
-  let state = mut ShellState{page: 0}
+  let state = &mut ShellState{page: 0}
 
   let _ = tab_demo.control.on_focus(fn() {
     render_tabs(tab_demo)
@@ -1112,7 +1112,7 @@ fn main() {
       }
       slider_action(action, target)
     })
-    let _ = slider.track.on_mouse(fn(received: mut cooper::MouseEvent) {
+    let _ = slider.track.on_mouse(fn(received: &mut cooper::MouseEvent) {
       if (received.event_type == cooper::MouseEventType::down or received.event_type == cooper::MouseEventType::drag) and received.button == cooper::MouseButton::left {
         target.panel.focus()
         update_slider_from_mouse(target, received)
@@ -1124,14 +1124,14 @@ fn main() {
 
   for button, index in nav {
     let page_index = index
-    let _ = button.on_mouse(fn(received: mut cooper::MouseEvent) {
+    let _ = button.on_mouse(fn(received: &mut cooper::MouseEvent) {
       if received.event_type == cooper::MouseEventType::down and received.button == cooper::MouseButton::left {
         show_page(page_index, state, tab_demo, select_demo, slider_page, sliders, nav, action)
       }
     })
   }
 
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type == cooper::KeyEventType::press {
       mut handled = true
       if received.matches("f1") {

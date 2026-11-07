@@ -163,7 +163,7 @@ test fn partial_default_reports_match_vaxis_mode_and_palette_normalization() Voi
 }
 
 test fn theme_service_queries_and_caches_complete_semantic_themes() Void!Str {
-  let calls = mut Counter{value: 0}
+  let calls = &mut Counter{value: 0}
   let service = theme::internal_service(fn(ctx) theme::TerminalColors {
     calls.value =+ 1
     terminal(some(216, 222, 233), some(40, 44, 52), [])
@@ -212,7 +212,7 @@ test fn theme_service_suspension_cancels_an_active_query() Void!Str {
 test fn app_theme_listeners_are_deduplicated_and_removable() Void!Str {
   let app = headless::new(8, 2)
   defer app.destroy()
-  let calls = mut Counter{value: 0}
+  let calls = &mut Counter{value: 0}
   let changed = theme::from_terminal(terminal(some(30, 30, 30), some(240, 240, 240), []))
   let remove = app.context.on_theme_changed(fn(value: theme::Theme) {
     calls.value =+ 1

@@ -8,7 +8,7 @@ use cooper/ui/scrollbar
 use cooper/ui/style
 use cooper/ui/text
 
-private fn key(name: Str) mut event::KeyEvent {
+private fn key(name: Str) &mut event::KeyEvent {
   event::key(
     name,
     "",
@@ -22,7 +22,7 @@ private fn key(name: Str) mut event::KeyEvent {
   )
 }
 
-private fn shifted_key(name: Str) mut event::KeyEvent {
+private fn shifted_key(name: Str) &mut event::KeyEvent {
   event::key(
     name,
     "",
@@ -46,7 +46,7 @@ test fn scroll_box_owns_multiple_vertical_children_and_reveals_them() Void!Str {
     application.context,
     styles: style::new(width: style::cells(4), height: style::cells(2)),
   )
-  let rows = mut List::new<mut text::Text>()
+  let rows = &mut List::new<&mut text::Text>()
   for content in ["0", "1", "2", "3", "4"] {
     let row = text::new(application.context, content: content, styles: row_style())
     rows.push(row)
@@ -138,7 +138,7 @@ test fn scroll_box_builtin_scrollbar_tracks_drag_resize_and_visibility() Void!St
     application.context,
     styles: style::new(width: style::cells(4), height: style::cells(4)),
   )
-  let rows = mut List::new<mut text::Text>()
+  let rows = &mut List::new<&mut text::Text>()
   mut index = 0
   while index < 10 {
     let row = text::new(
@@ -429,7 +429,7 @@ test fn scroll_metrics_clipping_and_requested_offset_follow_gap_reset_and_hidden
   )
   try testing::assert(third.layout().screen.y == 2, "Hidden row reflows translated geometry")
   mut third_clicked = false
-  let _ = third.on_mouse(fn(received: mut event::MouseEvent) {
+  let _ = third.on_mouse(fn(received: &mut event::MouseEvent) {
     if received.event_type == event::MouseEventType::down {
       third_clicked = true
     }

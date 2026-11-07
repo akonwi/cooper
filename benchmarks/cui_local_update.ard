@@ -14,13 +14,13 @@ struct RowState {
   context: cui::Context?,
 }
 struct RowProps {
-  state: mut RowState,
+  state: &mut RowState,
 }
 struct Row {
-  props: mut RowProps,
+  props: &mut RowProps,
 }
-private fn row(props: mut RowProps) mut Row {
-  (mut Row{props: props})
+private fn row(props: &mut RowProps) &mut Row {
+  &mut Row{props: props}
 }
 impl cui::Component for Row {
   fn mut render() cui::View {
@@ -39,22 +39,22 @@ impl cui::Lifecycle for Row {
   fn mut unmounting(ctx: cui::Context) {}
 }
 struct Props {
-  rows: [mut RowState],
+  rows: [&mut RowState],
 }
 struct Screen {
-  props: mut Props,
+  props: &mut Props,
 }
-private fn screen(props: mut Props) mut Screen {
-  (mut Screen{props: props})
+private fn screen(props: &mut Props) &mut Screen {
+  &mut Screen{props: props}
 }
 impl cui::Component for Screen {
   fn mut render() cui::View {
-    let children = mut List::new<cui::View>()
+    let children = &mut List::new<cui::View>()
     for item, index in self.props.rows {
       children.push(cui::child(row, RowProps{state: item}, key: index.to_str()))
     }
     cui::scroll_box(
-      children.@,
+      children.*,
       styles: ui::style(width: ui::percent(100.0), height: ui::percent(100.0)),
     )
   }
@@ -62,11 +62,11 @@ impl cui::Component for Screen {
 
 fn main() {
   for count in [250, 500, 1000] {
-    let rows = mut List::new<mut RowState>()
+    let rows = &mut List::new<&mut RowState>()
     mut index = 0
     while index < count {
       rows.push(
-        mut RowState{
+        &mut RowState{
           value: 0,
           renders: 0,
           context: Maybe::new<cui::Context>(),
@@ -75,7 +75,7 @@ fn main() {
       index =+ 1
     }
     let app = testing::new(100, 30)
-    let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{rows: rows.@}))
+    let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{rows: rows.*}))
     app.flush()
     let target = rows.at(7).expect("visible row")
     for local in [false, true] {

@@ -47,14 +47,14 @@ fn axis(
 }
 
 fn layout_child(
-  containing: mut layout::Node,
-  parent: mut layout::Node,
-  child: mut layout::Node,
+  containing: &mut layout::Node,
+  parent: &mut layout::Node,
+  child: &mut layout::Node,
   containing_width: Float32,
   containing_height: Float32,
   containing_width_mode: cache::SizingMode,
   generation: Int,
-  visit: fn(mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int, Bool) Bool,
+  visit: fn(&mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int, Bool) Bool,
 ) Bool {
   let value = child.value
   children::resolve_insets(child, containing_width)
@@ -199,16 +199,16 @@ fn layout_child(
 // Positions every absolute descendant owned by `containing`. `offset_x/y` are
 // the current node's already-laid-out offset from that containing block.
 fn walk(
-  containing: mut layout::Node,
-  current: mut layout::Node,
-  parent: mut layout::Node,
+  containing: &mut layout::Node,
+  current: &mut layout::Node,
+  parent: &mut layout::Node,
   containing_width: Float32,
   containing_height: Float32,
   width_mode: cache::SizingMode,
   offset_x: Float32,
   offset_y: Float32,
   generation: Int,
-  visit: fn(mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int, Bool) Bool,
+  visit: fn(&mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int, Bool) Bool,
 ) Bool {
   mut changed = false
   for child in current.children {
@@ -256,15 +256,15 @@ fn walk(
 // Positions absolute descendants. The containing dimensions are padding-box
 // dimensions; `width_mode` is the containing block's width sizing mode.
 fn descendants(
-  containing: mut layout::Node,
-  current: mut layout::Node,
+  containing: &mut layout::Node,
+  current: &mut layout::Node,
   containing_width: Float32,
   containing_height: Float32,
   width_mode: cache::SizingMode,
   offset_x: Float32,
   offset_y: Float32,
   generation: Int,
-  visit: fn(mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int, Bool) Bool,
+  visit: fn(&mut layout::Node, measure::Axis, measure::Axis, Float32, Float32, Int, Bool) Bool,
 ) Bool {
   walk(
     containing,

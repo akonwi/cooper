@@ -3,12 +3,12 @@ use cooper/ui/geometry
 use cooper/ui/style
 
 struct Hit {
-  target: mut node::Node,
+  target: &mut node::Node,
   local_x: Int,
   local_y: Int,
 }
 
-private fn test_node(current: mut node::Node, x: Int, y: Int, inherited_clip: geometry::Rect) Hit? {
+private fn test_node(current: &mut node::Node, x: Int, y: Int, inherited_clip: geometry::Rect) Hit? {
   if current.is_destroyed() or current.style().display == style::Display::none {
     Maybe::new<Hit>()
   } else {

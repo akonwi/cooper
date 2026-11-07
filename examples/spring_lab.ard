@@ -17,9 +17,9 @@ private struct Metrics {
 }
 
 private struct Lane {
-  motion: mut animation::Spring,
-  guide: mut ui::Text,
-  metrics: mut Metrics,
+  motion: &mut animation::Spring,
+  guide: &mut ui::Text,
+  metrics: &mut Metrics,
 }
 
 private struct State {
@@ -54,11 +54,11 @@ private fn bar(value: Float64) Str {
   content
 }
 
-private fn description(preset: Preset, metrics: mut Metrics, phase: Str) Str {
+private fn description(preset: Preset, metrics: &mut Metrics, phase: Str) Str {
   "{preset.name}  w={preset.frequency} z={preset.damping}  x={metrics.value} v={metrics.velocity}  {metrics.elapsed}ms {phase}"
 }
 
-private fn lane(context: mut cooper::Runtime, parent: mut ui::Box, preset: Preset, row: Int) Lane {
+private fn lane(context: &mut cooper::Runtime, parent: &mut ui::Box, preset: Preset, row: Int) Lane {
   let label = ui::text(context, content: preset.name, selectable: false, styles: placed(2, row))
   let track = ui::text(
     context,
@@ -80,7 +80,7 @@ private fn lane(context: mut cooper::Runtime, parent: mut ui::Box, preset: Prese
   parent.add(guide)
   parent.add(marker)
   parent.add(fill)
-  let metrics = mut Metrics{
+  let metrics = &mut Metrics{
     value: 18.0,
     velocity: 0.0,
     elapsed: 0,
@@ -91,9 +91,9 @@ private fn lane(context: mut cooper::Runtime, parent: mut ui::Box, preset: Prese
       metrics.value = frame.value
       metrics.velocity = frame.velocity
       metrics.elapsed = metrics.elapsed + frame.delta
-      let applied = mut marker.style()
+      let applied = &mut marker.style()
       applied.left = ui::cells(2 + Int::fit(math::Round(frame.value)))
-      marker.set_style(applied.@)
+      marker.set_style(applied.*)
       fill.set_content(bar(frame.value))
       label.set_content(description(preset, metrics, "MOVING"))
     },
@@ -197,14 +197,14 @@ fn main() {
       color: ui::hex("#FDBA74"),
     },
   ]
-  let lanes = mut List::new<Lane>()
+  let lanes = &mut List::new<Lane>()
   mut row = 4
   for preset in presets {
     lanes.push(lane(application.context, panel, preset, row))
     row = row + 3
   }
-  let state = mut State{target: 46, paused: false}
-  let _ = application.on_key(fn(received: mut cooper::KeyEvent) {
+  let state = &mut State{target: 46, paused: false}
+  let _ = application.on_key(fn(received: &mut cooper::KeyEvent) {
     if received.event_type != cooper::KeyEventType::release {
       if received.matches("left") or received.matches("right") or received.matches("c") {
         let target = match received.matches("left") {
@@ -222,9 +222,9 @@ fn main() {
           for item in lanes {
             item.metrics.elapsed = 0
             let _ = item.motion.set_target(Float64::fit(target))
-            let applied = mut item.guide.style()
+            let applied = &mut item.guide.style()
             applied.left = ui::cells(2 + target)
-            item.guide.set_style(applied.@)
+            item.guide.set_style(applied.*)
           }
           header.set_content("COMPARE target={state.target}")
         }

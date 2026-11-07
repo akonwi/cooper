@@ -121,7 +121,7 @@ private fn sanitize(value: Str?) Str? {
       if text == "" {
         Maybe::new<Str>()
       } else {
-        let output = mut strings::Builder{}
+        let output = &mut strings::Builder{}
         for character in text {
           if unicode::IsControl(Int32::from(character)) {
             output.WriteByte(Byte::from(32))
@@ -214,13 +214,13 @@ struct Records {
   values: [Report],
 }
 
-fn internal_records() mut Records {
-  (mut Records{values: []})
+fn internal_records() &mut Records {
+  &mut Records{values: []}
 }
 
 impl Records {
   fn mut internal_store(report: Report) {
-    let updated = mut List::new<Report>()
+    let updated = &mut List::new<Report>()
     mut remaining = self.values.size()
     for current in self.values {
       if key(current) == key(report) {
@@ -239,44 +239,44 @@ impl Records {
       }
     }
     updated.push(report)
-    self.values = updated.@
+    self.values = updated.*
   }
 
   // Forgets the record at id and every record beneath it; an absent id forgets
   // every record.
   fn mut internal_remove(id: Str?) {
     let scope = id.or("")
-    let kept = mut List::new<Report>()
+    let kept = &mut List::new<Report>()
     for current in self.values {
       if not within(key(current), scope) {
         kept.push(current)
       }
     }
-    self.values = kept.@
+    self.values = kept.*
   }
 
   // Reports idle for each working or blocked record while the terminal is
   // released. The records themselves are kept for resume.
   fn internal_suspend_updates() [Update] {
-    let updates = mut List::new<Update>()
+    let updates = &mut List::new<Update>()
     for current in self.values {
       if live(current) and not idle(current) {
         updates.push(idle_copy(current))
       }
     }
-    updates.@
+    updates.*
   }
 
   // Sends the live records again once the terminal is reacquired. Done and
   // failed records are never repeated: the user may already have dismissed them.
   fn internal_restore_updates() [Update] {
-    let updates = mut List::new<Update>()
+    let updates = &mut List::new<Update>()
     for current in self.values {
       if live(current) {
         updates.push(current)
       }
     }
-    updates.@
+    updates.*
   }
 
   private fn holds_finished_within(scope: Str) Bool {
@@ -302,7 +302,7 @@ impl Records {
   // program that owns the root record and holds no done or failed record, since
   // it would also remove records Cooper never sent.
   fn internal_release_updates() [Update] {
-    let updates = mut List::new<Update>()
+    let updates = &mut List::new<Update>()
     mut owns_root = false
     for current in self.values {
       if key(current) == "" {
@@ -332,6 +332,6 @@ impl Records {
         }
       }
     }
-    updates.@
+    updates.*
   }
 }

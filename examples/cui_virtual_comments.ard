@@ -70,7 +70,7 @@ impl cui::Component for Screen {
                 cui::text("reply · {comment.id % 97} points", text_style: ui::text_style(dim: true)),
                 cui::text(""),
               ],
-              styles: ui::style(padding: padding.@),
+              styles: ui::style(padding: padding.*),
             )
           },
           ref: self.model.list,

@@ -251,7 +251,7 @@ impl cui::Component for Screen {
                 ),
                 cui::text(item.body, selectable: true),
               ],
-              styles: ui::style(width: ui::percent(100.0), padding: padding.@, flex_shrink: 0.0),
+              styles: ui::style(width: ui::percent(100.0), padding: padding.*, flex_shrink: 0.0),
             )
           },
           estimated_height: 3,

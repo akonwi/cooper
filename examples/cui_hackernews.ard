@@ -349,7 +349,7 @@ impl Page {
           styles: ui::style(
             width: ui::percent(100.0),
             flex_shrink: 0.0,
-            padding: padding.@,
+            padding: padding.*,
             background: background,
           ),
           on_mouse: fn(mouse: &mut cooper::MouseEvent, ctx: cui::Context) {

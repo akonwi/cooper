@@ -13,10 +13,9 @@ sub-agent and verify the smallest shape with the current compiler.
 Implement Nodes, styles, colors, cells, layout semantics, geometry, focus,
 events, listeners, scrolling, controls, and application helpers in Ard. Direct
 Go interop is limited to Vaxis, the internal layout backend, and isolated
-platform services that Ard does not expose, such as opening a URL with the
-system handler. Tess/Yoga types
-and fallible setters must remain hidden behind Cooper's validated API and remain
-replaceable by an Ard-native implementation.
+platform services that Ard cannot express, such as per-platform OS signal
+handling. Tess/Yoga types and fallible setters must remain hidden behind
+Cooper's validated API and remain replaceable by an Ard-native implementation.
 
 `cooper.ard` is the canonical application entry point and owns App plus the
 `app(...)` constructor. `ui.ard` is the canonical view-construction facade over
@@ -126,7 +125,6 @@ core/            unsupported runtime mechanisms
   runtime.ard
   selection_state.ard
   terminal_events.ard
-  url_opener.ard platform URL handlers
   virtual_extent.ard
 ffi/             isolated Go bridges, one directory per package
   contextbridge/ adapts Go context/cancel return pairs

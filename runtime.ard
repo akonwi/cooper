@@ -14,7 +14,6 @@ use cooper/core/router
 use cooper/core/runtime as dispatch_runtime
 use cooper/core/selection_state
 use cooper/core/terminal_events
-use cooper/core/url_opener
 use cooper/event
 use go:cooper/ffi/signalwatch
 use go:cooper/ffi/vaxisbridge
@@ -30,6 +29,8 @@ use cooper/ui/selection as public_selection
 use cooper/ui/style
 use go:math
 use go:os
+use go:os/exec
+use go:runtime as goruntime
 use go:sync
 use go:time
 use go:unicode
@@ -138,6 +139,35 @@ private fn default_width(text: Str) Int {
     }
   }
   width
+}
+
+// The program and arguments that open `target` with the platform's default
+// handler. No shell is involved, so the target is passed through verbatim.
+struct UrlCommand {
+  program: Str,
+  args: [Str],
+}
+
+fn internal_url_command(goos: Str, target: Str) UrlCommand!Error {
+  if target.is_empty() {
+    Result::err(Error::new("cannot open an empty link"))
+  } else if target.starts_with("-") {
+    // Prevent a relative target from being interpreted as an opener option.
+    Result::err(Error::new("cannot open a link beginning with '-'"))
+  } else {
+    match goos {
+      "darwin" => Result::ok(UrlCommand{program: "/usr/bin/open", args: [target]}),
+      "linux" => Result::ok(UrlCommand{program: "xdg-open", args: [target]}),
+      "freebsd" => Result::ok(UrlCommand{program: "xdg-open", args: [target]}),
+      "openbsd" => Result::ok(UrlCommand{program: "xdg-open", args: [target]}),
+      "netbsd" => Result::ok(UrlCommand{program: "xdg-open", args: [target]}),
+      "dragonfly" => Result::ok(UrlCommand{program: "xdg-open", args: [target]}),
+      "windows" => {
+        Result::ok(UrlCommand{program: "rundll32", args: ["url.dll,FileProtocolHandler", target]})
+      },
+      _ => Result::err(Error::new("opening links is unsupported on {goos}")),
+    }
+  }
 }
 
 private fn reject_url(url: Str) Void!Error {
@@ -629,7 +659,14 @@ private fn new_live_state(
         Maybe::new<fn()>(),
         Maybe::new<fn(Str) Int>(),
         fn(target: Str) Void!Error {
-          url_opener::open(target)
+          let resolved = try internal_url_command(goruntime::GOOS, target)
+          let process = exec::Command(resolved.program, resolved.args...)
+          try process.Start()
+          // Reap the handler without blocking the caller.
+          async::start(fn() {
+            process.Wait()
+          })
+          Result::ok(())
         },
         Maybe::new<&mut signalwatch::Watcher>(watcher),
         exit_on_ctrl_c,

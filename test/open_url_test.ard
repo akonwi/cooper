@@ -1,6 +1,6 @@
 use ard/testing
 
-use cooper/core/url_opener
+use cooper/runtime
 
 private fn same_args(got: [Str], want: [Str]) Bool {
   mut same = got.size() == want.size()
@@ -20,7 +20,7 @@ test fn platform_commands_pass_the_target_without_a_shell() Void!Str {
     "freebsd": ["xdg-open", target],
     "windows": ["rundll32", "url.dll,FileProtocolHandler", target],
   ] {
-    match url_opener::command(goos, target) {
+    match runtime::internal_url_command(goos, target) {
       ok(command) => {
         let got = &mut List::new<Str>()
         got.push(command.program)
@@ -36,10 +36,13 @@ test fn platform_commands_pass_the_target_without_a_shell() Void!Str {
 }
 
 test fn platform_commands_reject_unsafe_or_unsupported_targets() Void!Str {
-  try testing::assert(url_opener::command("linux", "").is_err(), "Expected empty rejection")
-  try testing::assert(url_opener::command("linux", "--help").is_err(), "Expected option rejection")
+  try testing::assert(runtime::internal_url_command("linux", "").is_err(), "Expected empty rejection")
+  try testing::assert(
+    runtime::internal_url_command("linux", "--help").is_err(),
+    "Expected option rejection",
+  )
   testing::assert(
-    url_opener::command("plan9", "https://example.com").is_err(),
+    runtime::internal_url_command("plan9", "https://example.com").is_err(),
     "Expected unsupported platform rejection",
   )
 }

@@ -1,0 +1,45 @@
+use ard/testing
+
+use cooper/core/url_opener
+
+private fn same_args(got: [Str], want: [Str]) Bool {
+  mut same = got.size() == want.size()
+  mut index = 0
+  while same and index < want.size() {
+    same = got.at(index) == want.at(index)
+    index =+ 1
+  }
+  same
+}
+
+test fn platform_commands_pass_the_target_without_a_shell() Void!Str {
+  let target = "https://example.com/a path?x=$(touch nope)&y='quoted'"
+  for goos, want in [
+    "darwin": ["/usr/bin/open", target],
+    "linux": ["xdg-open", target],
+    "freebsd": ["xdg-open", target],
+    "windows": ["rundll32", "url.dll,FileProtocolHandler", target],
+  ] {
+    match url_opener::command(goos, target) {
+      ok(command) => {
+        let got = &mut List::new<Str>()
+        got.push(command.program)
+        for arg in command.args {
+          got.push(arg)
+        }
+        try testing::assert(same_args(got.*, want), "{goos}: unexpected argv")
+      },
+      err(failure) => try testing::fail("{goos}: {failure}"),
+    }
+  }
+  Result::ok(())
+}
+
+test fn platform_commands_reject_unsafe_or_unsupported_targets() Void!Str {
+  try testing::assert(url_opener::command("linux", "").is_err(), "Expected empty rejection")
+  try testing::assert(url_opener::command("linux", "--help").is_err(), "Expected option rejection")
+  testing::assert(
+    url_opener::command("plan9", "https://example.com").is_err(),
+    "Expected unsupported platform rejection",
+  )
+}

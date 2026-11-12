@@ -126,12 +126,12 @@ core/            unsupported runtime mechanisms
   runtime.ard
   selection_state.ard
   terminal_events.ard
+  url_opener.ard platform URL handlers
   virtual_extent.ard
 ffi/             isolated Go bridges, one directory per package
   contextbridge/ adapts Go context/cancel return pairs
-  vaxisbridge/   Vaxis modifier-bit testing
+  vaxisbridge/   Vaxis modifier bits and multi-result screen origin
   signalwatch/   OS signal subscriptions and terminal-size queries
-  urlopen/       platform URL handlers
 test/            deterministic integration tests
 examples/        curated runnable applications and PTY tests
   fixtures/      focused non-gallery regression programs

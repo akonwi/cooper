@@ -2,10 +2,10 @@ use ard/unsafe
 
 use go:context
 use go:cooper/ffi/contextbridge
-use go:cooper/ffi/vaxisbridge
 use cooper/ui/color
 use go:math
 use go:sync
+use go:vaxis
 
 // Contrast-aware palette derivation, ported from the vaxis/ui theme
 // (go.rockorager.dev/vaxis/ui theme.go) so the Cooper client resolves the same
@@ -226,13 +226,17 @@ private fn public_color(value: Rgb) color::Color {
   color::rgb(value.r, value.g, value.b)
 }
 
-private fn queried_color(value: vaxisbridge::RGB) color::Color? {
-  if value.Valid {
+// Vaxis reports an unanswered query as the default color, which has no RGB
+// parameters, so a reported black stays distinct from no reply.
+fn internal_reported_color(value: vaxis::Color) color::Color? {
+  let params = value.Params()
+  if params.size() == 3 {
+    let zero = Byte::from(0)
     Maybe::new(
       color::rgb(
-        Int::from(Byte::from(value.Red)),
-        Int::from(Byte::from(value.Green)),
-        Int::from(Byte::from(value.Blue)),
+        Int::from(params.at(0).or(zero)),
+        Int::from(params.at(1).or(zero)),
+        Int::from(params.at(2).or(zero)),
       ),
     )
   } else {
@@ -240,17 +244,22 @@ private fn queried_color(value: vaxisbridge::RGB) color::Color? {
   }
 }
 
-fn internal_report(value: vaxisbridge::TerminalColors) TerminalColors {
+// Queries OSC 10, OSC 11, and ANSI palette 0-7 through Vaxis's active parser.
+// The caller owns cancellation and must not block Vaxis's event-loop goroutine.
+fn internal_query(ctx: context::Context, terminal: &mut vaxis::Vaxis) TerminalColors {
+  let foreground = internal_reported_color(terminal.QueryForegroundContext(ctx))
+  let background = internal_reported_color(terminal.QueryBackgroundContext(ctx))
   let palette = &mut List::new<color::Color?>()
-  for entry in value.Palette {
-    palette.push(queried_color(entry))
-  }
-  while palette.size() < 8 {
-    palette.push(Maybe::new<color::Color>())
+  mut index = 0
+  while index < 8 {
+    palette.push(
+      internal_reported_color(terminal.QueryColorContext(ctx, vaxis::IndexColor(Byte::fit(index)))),
+    )
+    index =+ 1
   }
   TerminalColors{
-    foreground: queried_color(value.Foreground),
-    background: queried_color(value.Background),
+    foreground: foreground,
+    background: background,
     palette: palette.*,
   }
 }

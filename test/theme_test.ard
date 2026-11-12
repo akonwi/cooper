@@ -4,6 +4,7 @@ use ard/testing
 use cooper/testing as headless
 use cooper/theme
 use cooper/ui
+use go:vaxis
 
 // Expected values are produced by vaxis/ui (ThemeFromPalette over the same
 // terminal replies), so the Cooper client resolves the vaxis client's colors.
@@ -69,6 +70,38 @@ fn expect(got: theme::Theme, want: theme::Theme) Void!Str {
   try check("selection", got.selection, want.selection)
   try check("border", got.border, want.border)
   testing::pass()
+}
+
+private fn reported_as(value: vaxis::Color, want: ui::Color) Bool {
+  match theme::internal_reported_color(value) {
+    got => same(got, want),
+    _ => false,
+  }
+}
+
+test fn terminal_color_replies_distinguish_black_from_no_reply() Void!Str {
+  let zero = Byte::from(0)
+  try testing::assert(
+    reported_as(vaxis::RGBColor(zero, zero, zero), c(0, 0, 0)),
+    "Expected a black reply to resolve to black",
+  )
+  try testing::assert(
+    reported_as(vaxis::RGBColor(Byte::from(1), Byte::from(128), Byte::from(255)), c(1, 128, 255)),
+    "Expected an RGB reply to keep its channels",
+  )
+  try testing::assert(
+    theme::internal_reported_color(vaxis::ColorDefault).is_none(),
+    "Expected the default color to mean no reply",
+  )
+  try testing::assert(
+    theme::internal_reported_color(vaxis::IndexColor(Byte::from(1))).is_none(),
+    "Expected an unresolved indexed color to mean no reply",
+  )
+  let black = theme::from_terminal(terminal(none(), some(0, 0, 0), []))
+  testing::assert(
+    black.terminal_colors.background.is_some() and theme::from_terminal(empty_terminal()).terminal_colors.background.is_none(),
+    "Expected a black background report to stay distinct from no reply",
+  )
 }
 
 test fn a_terminal_without_color_replies_uses_the_vaxis_default_theme() Void!Str {

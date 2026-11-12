@@ -14,9 +14,9 @@ use cooper/core/router
 use cooper/core/runtime as dispatch_runtime
 use cooper/core/selection_state
 use cooper/core/terminal_events
+use cooper/core/url_opener
 use cooper/event
 use go:cooper/ffi/signalwatch
-use go:cooper/ffi/urlopen
 use go:cooper/ffi/vaxisbridge
 use cooper/keymap
 use cooper/notification
@@ -595,7 +595,7 @@ private fn new_live_state(
       let theme_service = theme::internal_service(fn(ctx: context::Context) theme::TerminalColors {
         terminal_io.Lock()
         defer terminal_io.Unlock()
-        theme::internal_report(vaxisbridge::QueryTerminalColors(ctx, terminal))
+        theme::internal_query(ctx, terminal)
       })
       let notification_backend = notification::internal_backend(
         fn() Str {
@@ -629,7 +629,7 @@ private fn new_live_state(
         Maybe::new<fn()>(),
         Maybe::new<fn(Str) Int>(),
         fn(target: Str) Void!Error {
-          urlopen::Open(target)
+          url_opener::open(target)
         },
         Maybe::new<&mut signalwatch::Watcher>(watcher),
         exit_on_ctrl_c,

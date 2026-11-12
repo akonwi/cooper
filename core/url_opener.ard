@@ -1,0 +1,43 @@
+use ard/async
+
+use go:os/exec
+use go:runtime as goruntime
+
+// The program and arguments that open `target` with the platform's default
+// handler. No shell is involved, so the target is passed through verbatim.
+struct Command {
+  program: Str,
+  args: [Str],
+}
+
+fn command(goos: Str, target: Str) Command!Error {
+  if target.is_empty() {
+    Result::err(Error::new("cannot open an empty link"))
+  } else if target.starts_with("-") {
+    // Prevent a relative target from being interpreted as an opener option.
+    Result::err(Error::new("cannot open a link beginning with '-'"))
+  } else {
+    match goos {
+      "darwin" => Result::ok(Command{program: "/usr/bin/open", args: [target]}),
+      "linux" => Result::ok(Command{program: "xdg-open", args: [target]}),
+      "freebsd" => Result::ok(Command{program: "xdg-open", args: [target]}),
+      "openbsd" => Result::ok(Command{program: "xdg-open", args: [target]}),
+      "netbsd" => Result::ok(Command{program: "xdg-open", args: [target]}),
+      "dragonfly" => Result::ok(Command{program: "xdg-open", args: [target]}),
+      "windows" => Result::ok(Command{program: "rundll32", args: ["url.dll,FileProtocolHandler", target]}),
+      _ => Result::err(Error::new("opening links is unsupported on {goos}")),
+    }
+  }
+}
+
+// Starts the platform's default URL/file handler and reaps it in the
+// background.
+fn open(target: Str) Void!Error {
+  let resolved = try command(goruntime::GOOS, target)
+  let process = exec::Command(resolved.program, resolved.args...)
+  try process.Start()
+  async::start(fn() {
+    process.Wait()
+  })
+  Result::ok(())
+}

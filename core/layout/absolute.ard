@@ -177,7 +177,7 @@ fn layout_child(
   } else if main_row and (parent.value.flex_direction == style::FlexDirection::row and parent.value.justify_content == style::Justify::end or parent.value.flex_direction == style::FlexDirection::row_reverse and (parent.value.justify_content == style::Justify::start or parent.value.justify_content == style::Justify::space_between)) or (not main_row) and alignment == style::Align::end {
     x = parent.measured_width - Float32::fit(parent.border) - parent_padding_right - margin_right - child_width
   } else if main_row and (parent.value.justify_content == style::Justify::center or parent.value.justify_content == style::Justify::space_around or parent.value.justify_content == style::Justify::space_evenly) or (not main_row) and alignment == style::Align::center {
-    x = (parent.measured_width - child_width - margin_row - parent_padding_left - parent_padding_right) / Float32::from(2.0) + margin_left + parent_padding_left
+    x = (parent.measured_width - child_width - margin_row - parent_padding_left - parent_padding_right) / 2.0 + margin_left + parent_padding_left
   }
   if top_set {
     y = containing_border + resolved(value.top, containing_height) + margin_top
@@ -186,7 +186,7 @@ fn layout_child(
   } else if (not main_row) and (parent.value.flex_direction == style::FlexDirection::column and parent.value.justify_content == style::Justify::end or parent.value.flex_direction == style::FlexDirection::column_reverse and (parent.value.justify_content == style::Justify::start or parent.value.justify_content == style::Justify::space_between)) or main_row and alignment == style::Align::end {
     y = parent.measured_height - Float32::fit(parent.border) - parent_padding_bottom - margin_bottom - child_height
   } else if (not main_row) and (parent.value.justify_content == style::Justify::center or parent.value.justify_content == style::Justify::space_around or parent.value.justify_content == style::Justify::space_evenly) or main_row and alignment == style::Align::center {
-    y = (parent.measured_height - child_height - margin_column - parent_padding_top - parent_padding_bottom) / Float32::from(2.0) + margin_top + parent_padding_top
+    y = (parent.measured_height - child_height - margin_column - parent_padding_top - parent_padding_bottom) / 2.0 + margin_top + parent_padding_top
   }
   child.x = Float64::from(x)
   child.y = Float64::from(y)

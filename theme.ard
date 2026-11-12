@@ -231,7 +231,7 @@ private fn public_color(value: Rgb) color::Color {
 fn internal_reported_color(value: vaxis::Color) color::Color? {
   let params = value.Params()
   if params.size() == 3 {
-    let zero = Byte::from(0)
+    let zero: Byte = 0
     Maybe::new(
       color::rgb(
         Int::from(params.at(0).or(zero)),

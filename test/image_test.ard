@@ -265,7 +265,7 @@ test fn native_image_uses_physical_cell_geometry_and_preserves_alpha() Void!Str 
     "Expected square terminal cells, not hard-coded 1:2",
   )
   try testing::assert(
-    request.rgba.at(0).expect("red") == Byte::from(200) and request.rgba.at(3).expect("alpha") == Byte::from(128) and request.rgba.at(11).expect("transparent") == Byte::from(0),
+    request.rgba.at(0).expect("red") == 200 and request.rgba.at(3).expect("alpha") == 128 and request.rgba.at(11).expect("transparent") == 0,
     "Expected original straight alpha, not matte flattening",
   )
   image.set_source(ui::image_data(1, 1, [ui::rgb(12, 13, 14)]))
@@ -372,7 +372,7 @@ test fn image_decodes_webp_lossless_alpha_lossy_and_rejects_invalid_sizes() Void
   let pixel = lossy.pixels.at(5).expect("last WebP pixel")
   // Allow lossy encoding and YCbCr-to-RGB conversion differences between decoders.
   try testing::assert(
-    pixel.red >= Uint8::from(50) and pixel.red <= Uint8::from(70) and pixel.green >= Uint8::from(100) and pixel.green <= Uint8::from(120) and pixel.blue >= Uint8::from(160) and pixel.blue <= Uint8::from(180),
+    pixel.red >= 50 and pixel.red <= 70 and pixel.green >= 100 and pixel.green <= 120 and pixel.blue >= 160 and pixel.blue <= 180,
     "Expected lossy WebP colors, got {pixel.red}, {pixel.green}, {pixel.blue}",
   )
   try testing::assert(
@@ -410,7 +410,7 @@ test fn image_decodes_png_alpha_jpeg_and_rejects_bad_or_oversized_input() Void!S
   // JPEG is lossy, even at quality 100; independently specified channel ranges.
   let pixel = photo.pixels.at(5).expect("last JPEG pixel")
   try testing::assert(
-    pixel.red >= Uint8::from(58) and pixel.red <= Uint8::from(62) and pixel.green >= Uint8::from(108) and pixel.green <= Uint8::from(112) and pixel.blue >= Uint8::from(168) and pixel.blue <= Uint8::from(172),
+    pixel.red >= 58 and pixel.red <= 62 and pixel.green >= 108 and pixel.green <= 112 and pixel.blue >= 168 and pixel.blue <= 172,
     "Expected decoded JPEG colors",
   )
   try testing::assert(

@@ -55,8 +55,8 @@ fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distributio
   while passes > 0 {
     passes = passes - 1
     mut free = remaining_free_space
-    mut factors = Float32::from(0.0)
-    mut weights = Float32::from(0.0)
+    mut factors: Float32 = 0.0
+    mut weights: Float32 = 0.0
     for item, index in line.items {
       if frozen.at(index).expect("freeze state") {
         free = free - (sizes.at(index).expect("distributed size") - item.basis)
@@ -80,7 +80,7 @@ fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distributio
       free = remaining_free_space * factors
     }
 
-    mut violation = Float32::from(0.0)
+    mut violation: Float32 = 0.0
     for item, index in line.items {
       if not frozen.at(index).expect("freeze state") {
         let target = item.basis + free * weight(item, growing) / weights
@@ -101,7 +101,7 @@ fn distribute(line: flex::Line, remaining_free_space: Float32) flex::Distributio
     }
   }
 
-  mut distributed = Float32::from(0.0)
+  mut distributed: Float32 = 0.0
   for item, index in line.items {
     distributed = distributed + sizes.at(index).expect("distributed size") - item.basis
   }

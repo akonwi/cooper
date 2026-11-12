@@ -112,13 +112,13 @@ test fn retained_measure_changes_dirty_layout_and_preserve_geometry() Void!Str {
   defer ctx.destroy_detached()
   let root = box::new(ctx, styles: style::new(align_items: style::Align::start))
   let leaf = box::new(ctx)
-  let measured = &mut node::MeasureSize{width: Float32::from(3.0), height: Float32::from(1.0)}
+  let measured = &mut node::MeasureSize{width: 3.0, height: 1.0}
   leaf.node().set_measure(fn(input: node::MeasureInput) node::MeasureSize {
     measured.*
   })
   root.add(leaf)
   ctx.compute_layout(root, 20, 10)
-  measured.width = Float32::from(7.0)
+  measured.width = 7.0
   leaf.node().mark_measure_dirty()
   try testing::assert(
     leaf.node().layout_node.dirty and root.node().layout_node.dirty,
@@ -127,7 +127,7 @@ test fn retained_measure_changes_dirty_layout_and_preserve_geometry() Void!Str {
   ctx.compute_layout(root, 20, 10)
   try testing::assert(leaf.layout().local.width == 7, "Changed content is measured")
   leaf.node().set_measure(fn(input: node::MeasureInput) node::MeasureSize {
-    node::MeasureSize{width: Float32::from(9.0), height: Float32::from(2.0)}
+    node::MeasureSize{width: 9.0, height: 2.0}
   })
   try testing::assert(root.node().layout_node.dirty, "Replacing callback invalidates owner")
   ctx.compute_layout(root, 20, 10)
@@ -142,8 +142,8 @@ test fn layout_dirty_invalidates_basis_and_detach_discards_cache_state() Void!St
   let leaf = layout::new()
   root.insert(leaf, 0)
   visitor::calculate(root, 20, 10)
-  leaf.cache_state.computed_flex_basis = Float32::from(7.0)
-  root.cache_state.computed_flex_basis = Float32::from(9.0)
+  leaf.cache_state.computed_flex_basis = 7.0
+  root.cache_state.computed_flex_basis = 9.0
   leaf.mark_dirty()
   try testing::assert(
     numeric::is_undefined(leaf.cache_state.computed_flex_basis) and numeric::is_undefined(root.cache_state.computed_flex_basis),
@@ -152,12 +152,12 @@ test fn layout_dirty_invalidates_basis_and_detach_discards_cache_state() Void!St
   visitor::calculate(root, 20, 10)
   leaf.cache_state.complete(12, 3, cache::Direction::ltr)
   let entry = &mut cache::Measurement{
-    available_width: Float32::from(20.0),
-    available_height: Float32::from(10.0),
+    available_width: 20.0,
+    available_height: 10.0,
     width_mode: cache::SizingMode::fit_content,
     height_mode: cache::SizingMode::fit_content,
-    computed_width: Float32::from(7.0),
-    computed_height: Float32::from(1.0),
+    computed_width: 7.0,
+    computed_height: 1.0,
   }
   leaf.cache_state.store(entry.*, false)
   leaf.cache_state.store(entry.*, true)
@@ -188,7 +188,7 @@ test fn integral_layout_reuses_measurement_until_content_changes() Void!Str {
   let child = layout::new()
   child.apply(style::new(width: style::cells(8), flex_shrink: 0.0), 0)
   mut calls = 0
-  let natural = &mut layout::MeasureSize{width: Float32::from(8.0), height: Float32::from(2.0)}
+  let natural = &mut layout::MeasureSize{width: 8.0, height: 2.0}
   child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
     calls =+ 1
     natural.*
@@ -202,7 +202,7 @@ test fn integral_layout_reuses_measurement_until_content_changes() Void!Str {
     calls == 1 and child.local.height == 2,
     "Unchanged child measurement survives root resize",
   )
-  natural.height = Float32::from(3.0)
+  natural.height = 3.0
   child.mark_dirty()
   visitor::calculate(root, 21, 10)
   testing::assert(

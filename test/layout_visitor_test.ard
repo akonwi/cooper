@@ -11,7 +11,7 @@ fn axis(size: Float64, mode: cache::SizingMode) measure::Axis {
   measure::Axis{
     available: Float32::fit(size),
     mode,
-    padding_border: Float32::from(0.0),
+    padding_border: 0.0,
     minimum: numeric::undefined(),
     maximum: numeric::undefined(),
   }
@@ -148,7 +148,7 @@ test fn asymmetric_grow_and_shrink_bounds_reach_nested_children() Void!Str {
 
 test fn nested_cache_reuses_and_dirty_invalidation_remeasures() Void!Str {
   mut calls = 0
-  let content = &mut layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
+  let content = &mut layout::MeasureSize{width: 3.0, height: 2.0}
   let leaf = layout::new()
   leaf.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
     calls =+ 1
@@ -183,7 +183,7 @@ test fn nested_cache_reuses_and_dirty_invalidation_remeasures() Void!Str {
     calls == first,
     "same generation and exact container spec reuse nested measurement cache",
   )
-  content.width = Float32::from(7.0)
+  content.width = 7.0
   leaf.mark_dirty()
   try testing::assert(
     nested.dirty and leaf.dirty,
@@ -306,7 +306,7 @@ test fn cross_stretch_respects_wrapped_overflow_and_auto_margins() Void!Str {
       }
       child.apply(style::new(width: style::cells(6), margin: margin.*), 0)
       child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
-        layout::MeasureSize{width: Float32::from(6.0), height: Float32::from(2.0)}
+        layout::MeasureSize{width: 6.0, height: 2.0}
       })
       root.insert(child, index)
       index =+ 1
@@ -348,7 +348,7 @@ test fn line_stretch_revisits_children_after_cross_extent_is_known() Void!Str {
     let child = layout::new()
     child.apply(style::new(width: style::cells(3)), 0)
     child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
-      layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
+      layout::MeasureSize{width: 3.0, height: 2.0}
     })
     root.insert(child, 0)
     root.insert(fixed(4, 5), 1)
@@ -399,7 +399,7 @@ test fn multiline_stretch_distributes_only_positive_cross_space() Void!Str {
       let child = layout::new()
       child.apply(style::new(width: style::cells(6)), 0)
       child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
-        layout::MeasureSize{width: Float32::from(6.0), height: Float32::from(2.0)}
+        layout::MeasureSize{width: 6.0, height: 2.0}
       })
       root.insert(child, 0)
       let peer = fixed(6, 4)
@@ -448,7 +448,7 @@ test fn fixed_measurement_skips_boxes_but_cleans_contents_paths() Void!Str {
   mut calls = 0
   leaf.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
     calls =+ 1
-    layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
+    layout::MeasureSize{width: 3.0, height: 2.0}
   })
   nested.insert(leaf, 0)
   root.insert(group, 0)
@@ -523,7 +523,7 @@ test fn exact_cross_measurement_skips_flex_child_revisit() Void!Str {
   let child = layout::new()
   child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
     calls =+ 1
-    layout::MeasureSize{width: Float32::from(3.0), height: Float32::from(2.0)}
+    layout::MeasureSize{width: 3.0, height: 2.0}
   })
   let root = layout::new()
   root.insert(child, 0)
@@ -556,7 +556,7 @@ test fn intrinsic_policy_excludes_inter_line_lead_from_stretch_size() Void!Str {
   let child = layout::new()
   child.apply(style::new(width: style::cells(6)), 0)
   child.set_measure(fn(input: layout::MeasureInput) layout::MeasureSize {
-    layout::MeasureSize{width: Float32::from(6.0), height: Float32::from(2.0)}
+    layout::MeasureSize{width: 6.0, height: 2.0}
   })
   root.insert(child, 0)
   root.insert(fixed(6, 4), 1)

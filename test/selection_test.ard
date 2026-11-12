@@ -192,11 +192,11 @@ test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str 
   let second = application.frame().cell(4, 0).expect("selected second rich span").style
   try testing::assert(message.selected_text() == "Hello", "Expected word selection across style boundary")
   try testing::assert(
-    first.reverse and first.bold and first.foreground.expect("first selected color").red == Uint8::from(200),
+    first.reverse and first.bold and first.foreground.expect("first selected color").red == 200,
     "Expected selected first span style",
   )
   try testing::assert(
-    second.reverse and second.italic and second.foreground.expect("second selected color").blue == Uint8::from(200),
+    second.reverse and second.italic and second.foreground.expect("second selected color").blue == 200,
     "Expected selected second span style",
   )
   try testing::assert(
@@ -223,7 +223,7 @@ test fn rich_text_double_click_preserves_span_styles_and_source_lock() Void!Str 
     "Expected presentation-only mutation to preserve source lock",
   )
   try testing::assert(
-    restyled.reverse and restyled.foreground.expect("restyled color").green == Uint8::from(200),
+    restyled.reverse and restyled.foreground.expect("restyled color").green == 200,
     "Expected locked selection to adopt new span style",
   )
   try testing::assert(
@@ -270,7 +270,7 @@ test fn finalized_rich_text_drag_preserves_selection_style_through_reflow() Void
   for y in [0, 1, 2, 3] {
     let selected = application.frame().cell(0, y).expect("reflowed selected row").style
     try testing::assert(
-      selected.background.expect("reflowed selection background").blue == Uint8::from(125) and selected.bold,
+      selected.background.expect("reflowed selection background").blue == 125 and selected.bold,
       "Expected selection styling on every wrapped row",
     )
   }
@@ -282,7 +282,7 @@ test fn finalized_rich_text_drag_preserves_selection_style_through_reflow() Void
       0,
     ).expect(
       "restored single-line selection",
-    ).style.background.expect("restored selection background").blue == Uint8::from(125),
+    ).style.background.expect("restored selection background").blue == 125,
     "Expected selection styling after reverse reflow",
   )
   application.drag(18, 0, 0, 0)
@@ -527,7 +527,7 @@ test fn text_selection_patch_mutates_copy_of_base_style() Void!Str {
     "Expected patch over copied base attributes",
   )
   try testing::assert(
-    selected.background.expect("selection background").blue == Uint8::from(80),
+    selected.background.expect("selection background").blue == 80,
     "Expected patched selection color",
   )
   try testing::assert(

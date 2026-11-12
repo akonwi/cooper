@@ -12,8 +12,8 @@ fn item(basis: Float32, minimum: Float32, maximum: Float32, grow: Float32, shrin
     basis,
     minimum,
     maximum,
-    padding_border: Float32::from(0.0),
-    margin: Float32::from(0.0),
+    padding_border: 0.0,
+    margin: 0.0,
     flex_grow: grow,
     flex_shrink: shrink,
     flexible: true,
@@ -25,7 +25,7 @@ fn item(basis: Float32, minimum: Float32, maximum: Float32, grow: Float32, shrin
 test fn collection_reports_boundaries_gaps_factors_and_auto_margins() Void!Str {
   let undef = numeric::undefined()
   let first = &mut item(f(4.0), undef, undef, f(0.25), f(1.0))
-  first.margin = Float32::from(1.0)
+  first.margin = 1.0
   first.auto_margin_start = true
   let second = &mut item(f(8.0), undef, f(5.0), f(0.25), f(2.0))
   second.auto_margin_end = true
@@ -112,7 +112,7 @@ test fn shrinking_uses_scaled_basis_and_freezes_minimum_asymmetrically() Void!St
 
 test fn bound_axis_preserves_yoga_maximum_first_and_padding_floor_rules() Void!Str {
   let odd = &mut item(f(10.0), f(8.0), f(5.0), f(1.0), f(1.0))
-  odd.padding_border = Float32::from(7.0)
+  odd.padding_border = 7.0
   let line = flex::collect_line([odd.*], 0, f(20.0), f(0.0), false)
   try testing::assert(
     line.size_consumed == 5.0,

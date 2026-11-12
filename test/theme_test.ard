@@ -80,7 +80,7 @@ private fn reported_as(value: vaxis::Color, want: ui::Color) Bool {
 }
 
 test fn terminal_color_replies_distinguish_black_from_no_reply() Void!Str {
-  let zero = Byte::from(0)
+  let zero: Byte = 0
   try testing::assert(
     reported_as(vaxis::RGBColor(zero, zero, zero), c(0, 0, 0)),
     "Expected a black reply to resolve to black",

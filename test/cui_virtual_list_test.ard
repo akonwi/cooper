@@ -527,7 +527,7 @@ test fn scrollbar_options_apply_update_hide_and_restore() Void!Str {
     "Custom thumb overrides default glyph and bold",
   )
   try testing::assert(
-    thumb.style.foreground.expect("color").index.expect("palette") == Uint8::from(2),
+    thumb.style.foreground.expect("color").index.expect("palette") == 2,
     "Custom thumb color",
   )
   let track = app.frame().cell(11, 5).expect("track")

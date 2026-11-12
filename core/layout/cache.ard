@@ -22,12 +22,12 @@ struct Measurement {
 
 fn empty() Measurement {
   Measurement{
-    available_width: Float32::from(-1.0),
-    available_height: Float32::from(-1.0),
+    available_width: -1.0,
+    available_height: -1.0,
     width_mode: SizingMode::max_content,
     height_mode: SizingMode::max_content,
-    computed_width: Float32::from(-1.0),
-    computed_height: Float32::from(-1.0),
+    computed_width: -1.0,
+    computed_height: -1.0,
   }
 }
 

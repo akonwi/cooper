@@ -70,10 +70,10 @@ fn collect_line(
   wrap: Bool,
 ) Line {
   let selected = &mut List::new<Item>()
-  mut consumed = Float32::from(0.0)
-  mut constrained_consumed = Float32::from(0.0)
-  mut grow = Float32::from(0.0)
-  mut shrink = Float32::from(0.0)
+  mut consumed: Float32 = 0.0
+  mut constrained_consumed: Float32 = 0.0
+  mut grow: Float32 = 0.0
+  mut shrink: Float32 = 0.0
   mut auto_margins = 0
   mut index = start_index
   mut scanning = true
@@ -111,10 +111,10 @@ fn collect_line(
   // Preserve Yoga's factor floor, including its perhaps surprising effect on
   // fractional factors. Negative shrink totals are not floored.
   if grow > 0.0 and grow < 1.0 {
-    grow = Float32::from(1.0)
+    grow = 1.0
   }
   if shrink > 0.0 and shrink < 1.0 {
-    shrink = Float32::from(1.0)
+    shrink = 1.0
   }
   Line{
     items: selected.*,
@@ -131,7 +131,7 @@ fn distribute_first_pass(line: Line, remaining_free_space: Float32) FirstPass {
   mut remaining = remaining_free_space
   mut total_grow = line.total_flex_grow_factors
   mut total_shrink = line.total_flex_shrink_scaled_factors
-  mut delta = Float32::from(0.0)
+  mut delta: Float32 = 0.0
   for item in line.items {
     let basis = bound_min_max(item, item.basis)
     if remaining < 0.0 {
@@ -167,7 +167,7 @@ fn distribute_first_pass(line: Line, remaining_free_space: Float32) FirstPass {
 
 fn distribute_second_pass(line: Line, first: FirstPass, original_free_space: Float32) Distribution {
   let sizes = &mut List::new<Float32>()
-  mut delta = Float32::from(0.0)
+  mut delta: Float32 = 0.0
   for item in line.items {
     let basis = bound_min_max(item, item.basis)
     mut updated = basis

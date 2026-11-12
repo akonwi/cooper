@@ -4,8 +4,8 @@ use cooper/core/layout/cache
 use cooper/core/layout/numeric
 
 test fn cache_requires_both_axes_and_rejects_uninitialized_results() Void!Str {
-  let five = Float32::from(5.0)
-  let zero = Float32::from(0.0)
+  let five: Float32 = 5.0
+  let zero: Float32 = 0.0
   try testing::assert(
     cache::can_use_cached_measurement(
       cache::SizingMode::max_content,
@@ -68,10 +68,10 @@ test fn cache_requires_both_axes_and_rejects_uninitialized_results() Void!Str {
 
 test fn cache_measurement_compatibility_accounts_for_modes_margins_and_bounds() Void!Str {
   let missing = numeric::undefined()
-  let five = Float32::from(5.0)
-  let seven = Float32::from(7.0)
-  let zero = Float32::from(0.0)
-  let two = Float32::from(2.0)
+  let five: Float32 = 5.0
+  let seven: Float32 = 7.0
+  let zero: Float32 = 0.0
+  let two: Float32 = 2.0
   try testing::assert(
     cache::compatible_axis(
       cache::SizingMode::fit_content,
@@ -161,11 +161,11 @@ test fn cache_measurement_compatibility_accounts_for_modes_margins_and_bounds() 
 fn record(available: Int, computed: Int) cache::Measurement {
   cache::Measurement{
     available_width: Float32::fit(available),
-    available_height: Float32::from(1.0),
+    available_height: 1.0,
     width_mode: cache::SizingMode::fit_content,
     height_mode: cache::SizingMode::stretch_fit,
     computed_width: Float32::fit(computed),
-    computed_height: Float32::from(1.0),
+    computed_height: 1.0,
   }
 }
 
@@ -207,7 +207,7 @@ test fn cache_state_invalidates_only_when_a_new_visit_is_required() Void!Str {
     state.prepare(false, 2, 1, cache::Direction::rtl),
     "Owner direction changes force a visit",
   )
-  state.computed_flex_basis = Float32::from(12.0)
+  state.computed_flex_basis = 12.0
   state.computed_flex_basis_generation = 9
   state.invalidate_basis()
   testing::assert(
@@ -218,7 +218,7 @@ test fn cache_state_invalidates_only_when_a_new_visit_is_required() Void!Str {
 
 test fn cache_state_lookup_preserves_layout_and_measurement_roles() Void!Str {
   let state = cache::new_state()
-  let zero = Float32::from(0.0)
+  let zero: Float32 = 0.0
   state.store(record(20, 7), false)
   state.store(record(20, 8), false)
   try testing::assert(
@@ -254,7 +254,7 @@ test fn cache_state_lookup_preserves_layout_and_measurement_roles() Void!Str {
 
 test fn cache_state_eighth_entry_resets_prefix_on_next_miss_not_lru() Void!Str {
   let state = cache::new_state()
-  let zero = Float32::from(0.0)
+  let zero: Float32 = 0.0
   for width in [1, 2, 3, 4, 5, 6, 7, 8] {
     state.store(record(width, width), false)
   }

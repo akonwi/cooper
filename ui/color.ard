@@ -34,9 +34,9 @@ fn rgb(red: Int, green: Int, blue: Int) Color {
 // host theme's ANSI colors; unlike RGB colors, they adapt to that theme.
 fn indexed(index: Int) Color {
   Color{
-    red: Uint8::from(0),
-    green: Uint8::from(0),
-    blue: Uint8::from(0),
+    red: 0,
+    green: 0,
+    blue: 0,
     index: channel(index),
     terminal_default: false,
   }
@@ -46,9 +46,9 @@ fn indexed(index: Int) Color {
 // omitting a color, which preserves the color already present in the buffer.
 fn terminal_default() Color {
   Color{
-    red: Uint8::from(0),
-    green: Uint8::from(0),
-    blue: Uint8::from(0),
+    red: 0,
+    green: 0,
+    blue: 0,
     terminal_default: true,
   }
 }
@@ -92,14 +92,14 @@ fn hex(value: Str) Color {
 
 test fn color_hex_accepts_prefixed_plain_and_mixed_case_values() Void!Str {
   let prefixed = hex("#1aB2fF")
-  try testing::assert(prefixed.red == Uint8::from(26), "Expected parsed red channel")
-  try testing::assert(prefixed.green == Uint8::from(178), "Expected parsed green channel")
-  try testing::assert(prefixed.blue == Uint8::from(255), "Expected parsed blue channel")
+  try testing::assert(prefixed.red == 26, "Expected parsed red channel")
+  try testing::assert(prefixed.green == 178, "Expected parsed green channel")
+  try testing::assert(prefixed.blue == 255, "Expected parsed blue channel")
 
   let plain = hex("2947F0")
-  try testing::assert(plain.red == Uint8::from(41), "Expected plain red channel")
-  try testing::assert(plain.green == Uint8::from(71), "Expected plain green channel")
-  try testing::assert(plain.blue == Uint8::from(240), "Expected plain blue channel")
+  try testing::assert(plain.red == 41, "Expected plain red channel")
+  try testing::assert(plain.green == 71, "Expected plain green channel")
+  try testing::assert(plain.blue == 240, "Expected plain blue channel")
   testing::assert(
     not plain.index.is_some(),
     "Expected RGB color not to use an indexed palette slot",
@@ -108,13 +108,10 @@ test fn color_hex_accepts_prefixed_plain_and_mixed_case_values() Void!Str {
 
 test fn color_indexed_preserves_host_palette_slot() Void!Str {
   let value = indexed(4)
-  try testing::assert(
-    value.index.expect("indexed palette slot") == Uint8::from(4),
-    "Expected indexed slot",
-  )
-  try testing::assert(value.red == Uint8::from(0), "Expected indexed color not to encode RGB red")
-  try testing::assert(value.green == Uint8::from(0), "Expected indexed color not to encode RGB green")
-  testing::assert(value.blue == Uint8::from(0), "Expected indexed color not to encode RGB blue")
+  try testing::assert(value.index.expect("indexed palette slot") == 4, "Expected indexed slot")
+  try testing::assert(value.red == 0, "Expected indexed color not to encode RGB red")
+  try testing::assert(value.green == 0, "Expected indexed color not to encode RGB green")
+  testing::assert(value.blue == 0, "Expected indexed color not to encode RGB blue")
 }
 
 test fn color_terminal_default_is_an_explicit_paint_value() Void!Str {

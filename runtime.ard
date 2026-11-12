@@ -74,7 +74,7 @@ private fn vaxis_mouse_shape(cursor: event::MouseCursor) vaxis::MouseShape {
 }
 
 private fn vaxis_attributes(style: paint::CellStyle) vaxis::AttributeMask {
-  mut attributes = vaxis::AttributeMask::from(0)
+  mut attributes: vaxis::AttributeMask = 0
   if style.bold {
     attributes = attributes + vaxis::AttrBold
   }
@@ -997,7 +997,7 @@ impl State {
     if (not self.animation_frame_pending) and self.animations_active() {
       self.animation_frame_pending = true
       let now = self.now_ms()
-      mut delay = Int64::from(0)
+      mut delay: Int64 = 0
       if self.animation_clock_initialized {
         let elapsed = now - self.animation_last_ms
         if elapsed < 16 {

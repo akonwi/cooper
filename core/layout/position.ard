@@ -162,7 +162,7 @@ fn apply(
   let inner_main = parent_main - inset_start(parent, row, false) - inset_start(parent, row, true)
   let inner_cross = parent_cross - inset_start(parent, not row, false) - inset_start(parent, not row, true)
   let gap = zero(parent.value.gap, inner_cross)
-  mut total_cross = Float32::from(0.0)
+  mut total_cross: Float32 = 0.0
   for extent, index in natural_cross_extents {
     total_cross = total_cross + extent
     if index > 0 {
@@ -175,7 +175,7 @@ fn apply(
   }
   let wrapping = parent.value.flex_wrap != style::FlexWrap::no_wrap
   if not wrapping {
-    cross_free = Float32::from(0.0)
+    cross_free = 0.0
   }
   let content_align = match cross_free < 0.0 and (parent.value.align_content == style::Align::space_around or parent.value.align_content == style::Align::space_evenly) {
     true => style::Align::center,
@@ -186,13 +186,13 @@ fn apply(
       }
     },
   }
-  mut cross_lead = Float32::from(0.0)
+  mut cross_lead: Float32 = 0.0
   mut between_lines = gap
-  mut extra_line = Float32::from(0.0)
+  mut extra_line: Float32 = 0.0
   if wrapping {
     match content_align {
       style::Align::end => { cross_lead = cross_free },
-      style::Align::center => { cross_lead = cross_free / Float32::from(2.0) },
+      style::Align::center => { cross_lead = cross_free / 2.0 },
       style::Align::stretch => { extra_line = cross_free / Float32::fit(lines.size()) },
       style::Align::space_between => {
         if lines.size() > 1 {
@@ -235,12 +235,12 @@ fn apply(
         }
       },
     }
-    mut main_lead = Float32::from(0.0)
+    mut main_lead: Float32 = 0.0
     mut between = zero(parent.value.gap, inner_main)
     if auto_count == 0 {
       match justify {
         style::Justify::end => { main_lead = free },
-        style::Justify::center => { main_lead = free / Float32::from(2.0) },
+        style::Justify::center => { main_lead = free / 2.0 },
         style::Justify::space_between => {
           if line.size() > 1 {
             between = between + free / Float32::fit(line.size() - 1)
@@ -262,7 +262,7 @@ fn apply(
       false => Float32::from(0.0),
     }
     mut main_cursor = inset_start(parent, row, main_reverse) + main_lead
-    mut max_baseline = Float32::from(0.0)
+    mut max_baseline: Float32 = 0.0
     for child in line {
       let alignment = match child.value.align_self == style::Align::auto {
         true => parent.value.align_items,
@@ -304,7 +304,7 @@ fn apply(
       if auto_cross_start or auto_cross_end {
         let positive_free = numeric::max_or_defined(Float32::from(0.0), margin_free)
         if auto_cross_start and auto_cross_end {
-          cross_offset = positive_free / Float32::from(2.0)
+          cross_offset = positive_free / 2.0
         } else if auto_cross_start {
           cross_offset = positive_free
         }
@@ -312,7 +312,7 @@ fn apply(
         match alignment {
           style::Align::end => { cross_offset = line_extent - cross_size - cross_end_margin },
           style::Align::center => {
-            cross_offset = (line_extent - cross_size - cross_start_margin - cross_end_margin) / Float32::from(2.0) + cross_start_margin
+            cross_offset = (line_extent - cross_size - cross_start_margin - cross_end_margin) / 2.0 + cross_start_margin
           },
           style::Align::baseline => {
             if row {

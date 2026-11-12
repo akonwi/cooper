@@ -9,9 +9,9 @@ use cooper/ui/style
 
 test fn yoga_direct_basis_preserves_explicit_cache_but_recomputes_definite_dimensions() Void!Str {
   let state = cache::new_state()
-  let available = Float32::from(20.0)
-  let owner = Float32::from(40.0)
-  let padding = Float32::from(9.0)
+  let available: Float32 = 20.0
+  let owner: Float32 = 40.0
+  let padding: Float32 = 9.0
   try testing::assert(
     basis::resolve_without_measurement(
       state,
@@ -107,12 +107,12 @@ test fn yoga_zero_available_space_still_selects_explicit_basis() Void!Str {
 }
 
 test fn yoga_basis_fallback_measures_scroll_main_axis_and_stretches_cross_axis_once() Void!Str {
-  let owner = Float32::from(40.0)
-  let margin = Float32::from(3.0)
+  let owner: Float32 = 40.0
+  let margin: Float32 = 3.0
   let parent = measure::Axis{
-    available: Float32::from(20.0),
+    available: 20.0,
     mode: cache::SizingMode::stretch_fit,
-    padding_border: Float32::from(4.0),
+    padding_border: 4.0,
     minimum: numeric::undefined(),
     maximum: numeric::undefined(),
   }
@@ -146,7 +146,7 @@ test fn yoga_basis_fallback_measures_scroll_main_axis_and_stretches_cross_axis_o
     if input.width_mode != measure::Mode::undefined or input.height_mode != measure::Mode::exactly or input.height != 13.0 {
       panic("Expected unconstrained width and exact content height13")
     }
-    measure::Size{width: Float32::from(31.0), height: Float32::from(2.0)}
+    measure::Size{width: 31.0, height: 2.0}
   })
   child.measure_leaf_basis(main, cross, margin, margin, true, 1)
   child.measure_leaf_basis(main, cross, margin, margin, true, 1)

@@ -21,9 +21,9 @@ test fn text_style_defaults_rgb_and_defaults_attributes() Void!Str {
   let rgb = color::rgb(12, 34, 56)
   let plain = text::style(foreground: rgb)
 
-  try testing::assert(rgb.red == Uint8::from(12), "Expected red channel")
-  try testing::assert(rgb.green == Uint8::from(34), "Expected green channel")
-  try testing::assert(rgb.blue == Uint8::from(56), "Expected blue channel")
+  try testing::assert(rgb.red == 12, "Expected red channel")
+  try testing::assert(rgb.green == 34, "Expected green channel")
+  try testing::assert(rgb.blue == 56, "Expected blue channel")
   testing::assert(
     (not plain.bold) and (not plain.dim) and (not plain.italic) and (not plain.underline) and (not plain.blink) and (not plain.reverse) and (not plain.strike) and (not plain.hidden),
     "Expected default cell attributes",
@@ -50,7 +50,7 @@ test fn painted_cells_preserve_and_clear_style_across_wide_spans() Void!Str {
   let lead = buffer.cell_at(0, 0).expect("styled lead")
   let continuation = buffer.cell_at(1, 0).expect("styled continuation")
   try testing::assert(
-    lead.style.background.expect("background").blue == Uint8::from(123),
+    lead.style.background.expect("background").blue == 123,
     "Expected painted background",
   )
   try testing::assert(
@@ -72,21 +72,21 @@ test fn painted_cells_preserve_and_clear_style_across_wide_spans() Void!Str {
     "Expected overwrite to clear hyperlink metadata",
   )
   try testing::assert(
-    buffer.cell_at(1, 0).expect("plain overwrite").style.foreground.expect("inherited foreground").red == Uint8::from(12),
+    buffer.cell_at(1, 0).expect("plain overwrite").style.foreground.expect("inherited foreground").red == 12,
     "Expected a plain overwrite to inherit the wide span foreground",
   )
   try testing::assert(
     buffer.cell_at(
       0,
       0,
-    ).expect("cleared lead background").style.background.expect("preserved background").blue == Uint8::from(123),
+    ).expect("cleared lead background").style.background.expect("preserved background").blue == 123,
     "Expected clearing an overlapped wide lead to preserve its background",
   )
   testing::assert(
     buffer.cell_at(
       1,
       0,
-    ).expect("plain overwrite background").style.background.expect("inherited background").blue == Uint8::from(123),
+    ).expect("plain overwrite background").style.background.expect("inherited background").blue == 123,
     "Expected a plain overwrite to inherit the wide span background",
   )
 }
@@ -180,7 +180,7 @@ test fn clipped_wide_text_preserves_existing_background() Void!Str {
   clipped.write(0, 0, "界")
 
   testing::assert(
-    buffer.cell_at(1, 0).expect("clipped cell").style.background.expect("preserved background").blue == Uint8::from(9),
+    buffer.cell_at(1, 0).expect("clipped cell").style.background.expect("preserved background").blue == 9,
     "Expected clipped wide text not to erase the existing background",
   )
 }

@@ -33,7 +33,7 @@ test fn rgba_images_keep_alpha_and_composite_the_cell_fallback_over_the_matte() 
   let half = solid(1, 1, 255, 0, 0, 128)
   try testing::assert(same(half.pixels.at(0), 128, 0, 100), "a translucent pixel blends with the matte")
   testing::assert(
-    half.rgba.size() == 4 and half.rgba.at(3).or(Byte::from(0)) == Byte::from(128),
+    half.rgba.size() == 4 and half.rgba.at(3).or(Byte::from(0)) == 128,
     "native output keeps straight alpha",
   )
 }

@@ -238,7 +238,7 @@ test fn unicode_word_wrap_handles_cjk_emoji_latin_and_style_boundaries() Void!St
     "Expected CJK break opportunities",
   )
   try testing::assert(
-    application.frame().cell(4, 0).expect("second CJK glyph").style.foreground.expect("CJK style").green == Uint8::from(180),
+    application.frame().cell(4, 0).expect("second CJK glyph").style.foreground.expect("CJK style").green == 180,
     "Expected styles across Unicode wrapping",
   )
   try testing::assert(
@@ -652,7 +652,7 @@ test fn horizontal_ellipsis_replaces_complete_glyph_and_clamps_selection() Void!
     "Expected configured ellipsis without source mutation",
   )
   try testing::assert(
-    marker.grapheme == "…" and (not marker.style.italic) and marker.style.foreground.expect("ellipsis inherited style").red == Uint8::from(180),
+    marker.grapheme == "…" and (not marker.style.italic) and marker.style.foreground.expect("ellipsis inherited style").red == 180,
     "Expected ellipsis style immediately before final omitted source",
   )
   try testing::assert(marker.hyperlink.is_none(), "Expected synthetic ellipsis without hyperlink")
@@ -710,7 +710,7 @@ test fn vertical_ellipsis_uses_last_visible_row_and_preceding_style() Void!Str {
     "Expected visible wrapped prefix",
   )
   try testing::assert(
-    marker.grapheme == "…" and marker.style.italic and marker.style.foreground.expect("vertical marker style").blue == Uint8::from(210),
+    marker.grapheme == "…" and marker.style.italic and marker.style.foreground.expect("vertical marker style").blue == 210,
     "Expected marker after last visible source",
   )
   try testing::assert(marker.hyperlink.is_none(), "Expected vertical ellipsis to clear source hyperlink")
@@ -782,7 +782,7 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
   let inherited = linked_cell.style
   try testing::assert(label.content() == "RED plain", "Expected flattened rich content")
   try testing::assert(
-    emphasized.foreground.expect("span foreground").red == Uint8::from(220),
+    emphasized.foreground.expect("span foreground").red == 220,
     "Expected span foreground override",
   )
   try testing::assert(
@@ -794,7 +794,7 @@ test fn styled_text_paints_inherited_span_overrides_and_snapshots() Void!Str {
     "Expected explicit false and hidden span overrides",
   )
   try testing::assert(
-    inherited.background.expect("common background").blue == Uint8::from(6),
+    inherited.background.expect("common background").blue == 6,
     "Expected common color inheritance through span",
   )
   try testing::assert(
@@ -862,7 +862,7 @@ test fn styled_text_uses_first_scalar_style_for_cross_span_grapheme() Void!Str {
   let painted = application.frame().cell(0, 0).expect("cross-span grapheme")
   try testing::assert(painted.grapheme == "é", "Expected one cross-span grapheme")
   try testing::assert(
-    painted.style.foreground.expect("first scalar foreground").red == Uint8::from(200),
+    painted.style.foreground.expect("first scalar foreground").red == 200,
     "Expected first scalar color",
   )
   try testing::assert(
@@ -978,11 +978,11 @@ test fn common_colors_inherit_through_visible_overflow() Void!Str {
   let painted = application.frame().cell(1, 0).expect("overflowing Text")
   try testing::assert(painted.grapheme == "x", "Expected visible overflow paint")
   try testing::assert(
-    painted.style.foreground.expect("inherited foreground").blue == Uint8::from(9),
+    painted.style.foreground.expect("inherited foreground").blue == 9,
     "Expected foreground inheritance outside parent bounds",
   )
   try testing::assert(
-    painted.style.background.expect("inherited background").blue == Uint8::from(12),
+    painted.style.background.expect("inherited background").blue == 12,
     "Expected background inheritance outside parent bounds",
   )
 
@@ -1020,17 +1020,17 @@ test fn text_exposes_styles_content_wrapping_and_common_api() Void!Str {
     "Expected common style getter",
   )
   try testing::assert(
-    label.style().foreground.expect("common foreground").green == Uint8::from(30),
+    label.style().foreground.expect("common foreground").green == 30,
     "Expected color in common Style",
   )
   let painted = application.frame().cell(0, 0).expect("styled Text cell")
   try testing::assert(painted.style.bold, "Expected bold Text paint")
   try testing::assert(
-    painted.style.foreground.expect("Text foreground override").red == Uint8::from(200),
+    painted.style.foreground.expect("Text foreground override").red == 200,
     "Expected TextStyle to override common foreground",
   )
   try testing::assert(
-    painted.style.background.expect("common background").blue == Uint8::from(70),
+    painted.style.background.expect("common background").blue == 70,
     "Expected inherited common background",
   )
 

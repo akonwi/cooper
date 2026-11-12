@@ -31,8 +31,8 @@ test fn opposite_insets_size_and_place_border_box_with_asymmetric_margins() Void
   root.border = 2
   // The public contract receives the 80x40 padding box after subtracting the
   // asymmetric-independent two border edges from this 84x44 border box.
-  root.measured_width = Float32::from(84.0)
-  root.measured_height = Float32::from(44.0)
+  root.measured_width = 84.0
+  root.measured_height = 44.0
   let child = layout::new()
   child.value = style::new(
     position: style::Position::absolute,

@@ -175,7 +175,7 @@ fn prepare(
   }
 
   let flowing: &mut [&mut layout::Node] = &mut []
-  mut total = Float32::from(0.0)
+  mut total: Float32 = 0.0
   for child in flattened {
     if child.value.display == style::Display::none {
       zero_none(child)

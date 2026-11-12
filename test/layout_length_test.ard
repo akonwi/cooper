@@ -38,8 +38,8 @@ test fn yoga_lengths_distinguish_zero_owner_from_indefinite_owner() Void!Str {
 test fn yoga_processed_dimensions_compare_units_before_resolving_bounds() Void!Str {
   let preferred = style::cells(3)
   let minimum = style::cells(7)
-  let close = style::Length{kind: style::LengthKind::cells, value: Float32::from(7.00005)}
-  let farther = style::Length{kind: style::LengthKind::cells, value: Float32::from(7.0002)}
+  let close = style::Length{kind: style::LengthKind::cells, value: 7.00005}
+  let farther = style::Length{kind: style::LengthKind::cells, value: 7.0002}
   let processed = length::processed_dimension(preferred, minimum, close)
   try testing::assert(
     processed.value == close.value,

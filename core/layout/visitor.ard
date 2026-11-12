@@ -319,8 +319,8 @@ fn translated_visit(
         items.push(axis_item(child, row, owner_width, inner_height))
       }
       mut index = 0
-      mut natural_main = Float32::from(0.0)
-      mut natural_cross = Float32::from(0.0)
+      mut natural_main: Float32 = 0.0
+      mut natural_cross: Float32 = 0.0
       mut line_count = 0
       let lines = &mut List::new<[&mut layout::Node]>()
       let cross_extents = &mut List::new<Float32>()
@@ -369,7 +369,7 @@ fn translated_visit(
             size_based_on_content = true
           }
         }
-        mut remaining = Float32::from(0.0)
+        mut remaining: Float32 = 0.0
         if size_based_on_content == false and numeric::is_defined(available_main) {
           remaining = available_main - line.size_consumed
         } else if line.size_consumed < 0.0 {
@@ -380,7 +380,7 @@ fn translated_visit(
             flex::Distribution{
               sizes: [],
               remaining_free_space: remaining,
-              distributed_free_space: Float32::from(0.0),
+              distributed_free_space: 0.0,
               total_flex_grow_factors: line.total_flex_grow_factors,
               total_flex_shrink_scaled_factors: line.total_flex_shrink_scaled_factors,
             }
@@ -400,10 +400,10 @@ fn translated_visit(
             }
           },
         }
-        mut line_main = Float32::from(0.0)
-        mut line_cross = Float32::from(0.0)
-        mut baseline_ascent = Float32::from(0.0)
-        mut baseline_descent = Float32::from(0.0)
+        mut line_main: Float32 = 0.0
+        mut line_cross: Float32 = 0.0
+        mut baseline_ascent: Float32 = 0.0
+        mut baseline_descent: Float32 = 0.0
         mut has_baseline = false
         mut local = 0
         let stretching = &mut List::new<StretchVisit>()
@@ -621,7 +621,7 @@ fn translated_visit(
           true => remaining_cross / Float32::fit(line_count),
           false => Float32::from(0.0),
         }
-        mut lead_per_line = Float32::from(0.0)
+        mut lead_per_line: Float32 = 0.0
         if remaining_cross > 0.0 {
           lead_per_line = match node.value.align_content {
             style::Align::space_around => remaining_cross / Float32::fit(line_count),
@@ -636,7 +636,7 @@ fn translated_visit(
           }
         }
         for line_children in lines {
-          mut extent = Float32::from(0.0)
+          mut extent: Float32 = 0.0
           for child in line_children {
             let item = axis_item(child, row == false, inner_width, inner_height)
             extent = numeric::max_or_defined(

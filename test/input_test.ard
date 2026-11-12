@@ -1019,14 +1019,14 @@ test fn input_inherits_colors_from_common_style() Void!Str {
     application.frame().cell(
       0,
       0,
-    ).expect("Input value").style.foreground.expect("common foreground").blue == Uint8::from(3),
+    ).expect("Input value").style.foreground.expect("common foreground").blue == 3,
     "Expected Input text to inherit its common foreground",
   )
   try testing::assert(
     application.frame().cell(
       2,
       0,
-    ).expect("Input tail").style.background.expect("common background").blue == Uint8::from(6),
+    ).expect("Input tail").style.background.expect("common background").blue == 6,
     "Expected common background to fill Input bounds",
   )
 
@@ -1063,7 +1063,7 @@ test fn input_exposes_placeholder_styles_and_fills_text_background() Void!Str {
     application.frame().cell(
       5,
       0,
-    ).expect("Input background tail").style.background.expect("Input background").blue == Uint8::from(6),
+    ).expect("Input background tail").style.background.expect("Input background").blue == 6,
     "Expected complete Input TextStyle background fill",
   )
 

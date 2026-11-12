@@ -57,7 +57,7 @@ fn key(received: vaxis::Key) &mut event::KeyEvent {
       Keycode: received.Keycode,
       ShiftedCode: received.ShiftedCode,
       BaseLayoutCode: received.BaseLayoutCode,
-      Modifiers: vaxis::ModifierMask::from(0),
+      Modifiers: 0,
       EventType: vaxis::EventPress,
     }
     name = strings::ToLower(normalized.String())

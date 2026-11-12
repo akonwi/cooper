@@ -3,7 +3,7 @@
 // Translated from Yoga 8ba025e, numeric/Comparison.h (Float32 scalar paths).
 
 fn undefined() Float32 {
-  let zero = Float32::from(0.0)
+  let zero: Float32 = 0.0
   zero / zero
 }
 

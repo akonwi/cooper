@@ -435,7 +435,7 @@ test fn select_popup_preserves_inherited_colors_and_marker_row_background() Void
     application.frame().cell(
       1,
       0,
-    ).expect("inherited trigger").style.background.expect("trigger background").blue == Uint8::from(51),
+    ).expect("inherited trigger").style.background.expect("trigger background").blue == 51,
     "Expected trigger inheritance",
   )
   let _ = control.open()
@@ -444,21 +444,21 @@ test fn select_popup_preserves_inherited_colors_and_marker_row_background() Void
   let marker = application.frame().cell(0, 1).expect("highlight marker")
   let label = application.frame().cell(2, 1).expect("highlight label")
   try testing::assert(
-    marker.style.background.expect("marker background").blue == Uint8::from(204),
+    marker.style.background.expect("marker background").blue == 204,
     "Expected marker to retain row background",
   )
   try testing::assert(
-    label.style.background.expect("label background").blue == Uint8::from(204),
+    label.style.background.expect("label background").blue == 204,
     "Expected highlighted row background",
   )
   let inherited = application.frame().cell(2, 2).expect("inherited popup row")
   try testing::assert(inherited.grapheme == "O", "Expected second popup option, got {inherited.grapheme}")
   try testing::assert(
-    inherited.style.background.expect("popup background").blue == Uint8::from(51),
+    inherited.style.background.expect("popup background").blue == 51,
     "Expected popup inherited background",
   )
   try testing::assert(
-    inherited.style.foreground.expect("popup foreground").blue == Uint8::from(255),
+    inherited.style.foreground.expect("popup foreground").blue == 255,
     "Expected popup inherited foreground",
   )
 

@@ -664,7 +664,7 @@ test fn retained_z_index_controls_stable_paint_and_hit_order() Void!Str {
     0,
     0,
   ).expect("z-index paint cell").style.background.expect("front background")
-  try testing::assert(initial_background.red == Uint8::from(200), "Expected higher z-index paint")
+  try testing::assert(initial_background.red == 200, "Expected higher z-index paint")
 
   back_style.z_index = 3
   back.set_style(back_style.*)
@@ -679,10 +679,7 @@ test fn retained_z_index_controls_stable_paint_and_hit_order() Void!Str {
     0,
     0,
   ).expect("raised paint cell").style.background.expect("back background")
-  try testing::assert(
-    raised_background.blue == Uint8::from(200),
-    "Expected changed z-index to invalidate paint order",
-  )
+  try testing::assert(raised_background.blue == 200, "Expected changed z-index to invalidate paint order")
 
   ctx.destroy_detached()
   testing::assert(back.node().is_destroyed(), "Expected z-index tree cleanup")

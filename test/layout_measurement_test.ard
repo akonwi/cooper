@@ -67,8 +67,8 @@ test fn yoga_leaf_measurement_modes_use_content_space_and_bound_border_box_resul
   for wm in modes {
     for hm in modes {
       let seen = &mut measure::Input{
-        width: Float32::from(-1.0),
-        height: Float32::from(-1.0),
+        width: -1.0,
+        height: -1.0,
         width_mode: measure::Mode::undefined,
         height_mode: measure::Mode::undefined,
       }
@@ -82,7 +82,7 @@ test fn yoga_leaf_measurement_modes_use_content_space_and_bound_border_box_resul
           seen.height = input.height
           seen.width_mode = input.width_mode
           seen.height_mode = input.height_mode
-          measure::Size{width: Float32::from(7.0), height: Float32::from(2.0)}
+          measure::Size{width: 7.0, height: 2.0}
         },
       )
       let expected_width = match wm == cache::SizingMode::stretch_fit {
@@ -120,21 +120,21 @@ test fn yoga_leaf_measurement_modes_use_content_space_and_bound_border_box_resul
     }
   }
   let width = &mut axis(cache::SizingMode::stretch_fit, 2, 4)
-  width.maximum = Float32::from(1.0)
+  width.maximum = 1.0
   let size = measure::without_children(width.*, axis(cache::SizingMode::max_content, 10, 3))
   try testing::assert(
     size.width == 4.0 and size.height == 3.0,
     "Empty leaf preserves inset floor even above maximum",
   )
   let bounded_width = &mut axis(cache::SizingMode::fit_content, 14, 4)
-  bounded_width.maximum = Float32::from(9.0)
+  bounded_width.maximum = 9.0
   let bounded_height = &mut axis(cache::SizingMode::fit_content, 10, 3)
-  bounded_height.minimum = Float32::from(8.0)
+  bounded_height.minimum = 8.0
   let bounded = measure::with_callback(
     bounded_width.*,
     bounded_height.*,
     fn(input: measure::Input) measure::Size {
-      measure::Size{width: Float32::from(7.0), height: Float32::from(2.0)}
+      measure::Size{width: 7.0, height: 2.0}
     },
   )
   testing::assert(
@@ -145,7 +145,7 @@ test fn yoga_leaf_measurement_modes_use_content_space_and_bound_border_box_resul
 
 test fn yoga_leaf_visits_reuse_bounded_results_and_only_layout_commits_dimensions() Void!Str {
   let leaf = layout::new()
-  let content = &mut measure::Size{width: Float32::from(7.0), height: Float32::from(2.0)}
+  let content = &mut measure::Size{width: 7.0, height: 2.0}
   mut calls = 0
   leaf.set_measure(fn(input: measure::Input) measure::Size {
     calls =+ 1
@@ -153,8 +153,8 @@ test fn yoga_leaf_visits_reuse_bounded_results_and_only_layout_commits_dimension
   })
   let w = axis(cache::SizingMode::fit_content, 20, 4)
   let h = axis(cache::SizingMode::max_content, 10, 3)
-  let two = Float32::from(2.0)
-  let zero = Float32::from(0.0)
+  let two: Float32 = 2.0
+  let zero: Float32 = 0.0
   try testing::assert(leaf.calculate_leaf(w, h, two, zero, 1, false), "First measurement visits")
   try testing::assert(
     calls == 1 and leaf.measured_width == 11.0 and leaf.measured_height == 5.0,
@@ -180,7 +180,7 @@ test fn yoga_leaf_visits_reuse_bounded_results_and_only_layout_commits_dimension
     leaf.calculate_leaf(w, h, two, zero, 2, true) == false and calls == 1,
     "Clean next generation makes no callbacks",
   )
-  content.width = Float32::from(13.0)
+  content.width = 13.0
   leaf.mark_dirty()
   try testing::assert(leaf.calculate_leaf(w, h, two, zero, 3, true), "Dirty next generation recomputes")
   testing::assert(
@@ -191,7 +191,7 @@ test fn yoga_leaf_visits_reuse_bounded_results_and_only_layout_commits_dimension
 
 test fn yoga_axis_constraints_preserve_mode_margins_and_inner_bound_order() Void!Str {
   let width = &mut axis(cache::SizingMode::max_content, 40, 4)
-  width.maximum = Float32::from(13.0)
+  width.maximum = 13.0
   let constrained = width.constrain_max(Float32::from(3.0))
   try testing::assert(
     constrained.mode == cache::SizingMode::fit_content and constrained.available == 16.0,
@@ -202,7 +202,7 @@ test fn yoga_axis_constraints_preserve_mode_margins_and_inner_bound_order() Void
     "Constraint calculation does not mutate the caller's axis",
   )
   width.mode = cache::SizingMode::stretch_fit
-  width.available = Float32::from(11.0)
+  width.available = 11.0
   let smaller = width.constrain_max(Float32::from(3.0))
   try testing::assert(
     smaller.available == 11.0 and smaller.mode == cache::SizingMode::stretch_fit,
@@ -217,14 +217,14 @@ test fn yoga_axis_constraints_preserve_mode_margins_and_inner_bound_order() Void
     numeric::is_undefined(width.available_inner_dimension()),
     "Inner bounds do not manufacture definite space from undefined availability",
   )
-  width.available = Float32::from(2.0)
-  width.minimum = Float32::from(0.0)
+  width.available = 2.0
+  width.minimum = 0.0
   try testing::assert(
     width.available_inner_dimension() == -2.0 and width.inner_size() == 0.0,
     "Container inner bounds differ from the nonnegative callback content size",
   )
-  width.available = Float32::from(40.0)
-  width.minimum = Float32::from(19.0)
+  width.available = 40.0
+  width.minimum = 19.0
   try testing::assert(
     width.available_inner_dimension() == 15.0,
     "Inner maximum applies first, then minimum wins: max13/min19 minus inset4 gives15",

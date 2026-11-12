@@ -67,19 +67,10 @@ test fn style_new_configures_the_complete_public_vocabulary() Void!Str {
     z_index: 7,
   )
 
-  try testing::assert(
-    configured.foreground.expect("foreground").blue == Uint8::from(3),
-    "Expected foreground",
-  )
-  try testing::assert(
-    configured.background.expect("background").blue == Uint8::from(6),
-    "Expected background",
-  )
+  try testing::assert(configured.foreground.expect("foreground").blue == 3, "Expected foreground")
+  try testing::assert(configured.background.expect("background").blue == 6, "Expected background")
   try testing::assert(configured.border == style::Border::double, "Expected border")
-  try testing::assert(
-    configured.border_color.expect("border color").blue == Uint8::from(9),
-    "Expected border color",
-  )
+  try testing::assert(configured.border_color.expect("border color").blue == 9, "Expected border color")
   try testing::assert(configured.flex_direction == style::FlexDirection::row, "Expected flex direction")
   try testing::assert(configured.flex_wrap == style::FlexWrap::wrap, "Expected flex wrapping")
   try testing::assert(configured.flex_basis.value == 4.0, "Expected flex basis")

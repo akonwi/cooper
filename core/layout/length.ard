@@ -12,7 +12,7 @@ fn resolve(value: style::Length, reference: Float32) Float32 {
   match value.kind {
     // Preserve Yoga's Float32 multiplication order, not division by 100.
     style::LengthKind::cells => value.value,
-    style::LengthKind::percent => value.value * reference * Float32::from(0.01),
+    style::LengthKind::percent => value.value * reference * 0.01,
     _ => numeric::undefined(),
   }
 }

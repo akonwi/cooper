@@ -54,8 +54,8 @@ fn style(
   hidden: Bool?,
 ) TextStyle {
   TextStyle{
-    foreground: foreground,
-    background: background,
+    foreground,
+    background,
     bold: bold.or(false),
     dim: dim.or(false),
     italic: italic.or(false),
@@ -98,7 +98,7 @@ struct LinkEvent {
 }
 
 private fn new_link_event(url: Str) &mut LinkEvent {
-  &mut LinkEvent{url: url, internal_state: &mut LinkEventState{default_prevented: false}}
+  &mut LinkEvent{url, internal_state: &mut LinkEventState{default_prevented: false}}
 }
 
 private fn link_event_state(value: Any) &mut LinkEventState {
@@ -151,7 +151,7 @@ private struct LinkState {
 
 private fn new_link_state(open_url: fn(Str) Void!Error) Any {
   &mut LinkState{
-    open_url: open_url,
+    open_url,
     armed_link: Maybe::new<Str>(),
     armed_attachment_generation: 0,
     armed_press_at_ms: 0,
@@ -219,16 +219,16 @@ fn span_style(
   hidden: Bool?,
 ) SpanStyle {
   SpanStyle{
-    foreground: foreground,
-    background: background,
-    bold: bold,
-    dim: dim,
-    italic: italic,
-    underline: underline,
-    blink: blink,
-    reverse: reverse,
-    strike: strike,
-    hidden: hidden,
+    foreground,
+    background,
+    bold,
+    dim,
+    italic,
+    underline,
+    blink,
+    reverse,
+    strike,
+    hidden,
   }
 }
 
@@ -250,9 +250,9 @@ private fn validate_link(value: Str?) {
 fn span(text: Str, style: SpanStyle?, link: Str?) Span {
   validate_link(link)
   Span{
-    text: text,
+    text,
     style: style.or(span_style()),
-    link: link,
+    link,
   }
 }
 
@@ -283,7 +283,7 @@ private fn snapshot_content(content: TextContent) ContentSnapshot {
   for value in styled.spans {
     parts.push(value.text)
   }
-  ContentSnapshot{content: strings::Join(parts, ""), styled: styled}
+  ContentSnapshot{content: strings::Join(parts, ""), styled}
 }
 
 private fn default_selection_style(value: &mut TextStyle) {
@@ -409,7 +409,7 @@ private struct StyleCache {
 }
 
 private fn new_style_cache(runs: [StyleRun]) Any {
-  &mut StyleCache{runs: runs}
+  &mut StyleCache{runs}
 }
 
 private fn cached_style_runs(value: Any) [StyleRun] {
@@ -448,7 +448,7 @@ private fn styled_runs(content: StyledText, base: TextStyle, selection_patch: fn
       runs.push(
         StyleRun{
           start: offset,
-          end: end,
+          end,
           style: resolved,
           selected_style: apply_style_patch(resolved, selection_patch),
           link: paint_link(value.link),
@@ -704,7 +704,7 @@ private fn source_glyphs(content: Str, runs: [StyleRun], measure: fn(Str) Int) [
             output.push(
               SourceGlyph{
                 text: character.Grapheme,
-                width: width,
+                width,
                 source_start: grapheme.Start,
                 source_end: grapheme.End,
                 offset_start: offset,
@@ -753,8 +753,8 @@ private fn visual_glyphs(content: Str, layout: Layout, runs: [StyleRun], measure
                   source_end: candidate.source_end,
                   offset_start: candidate.offset_start,
                   offset_end: candidate.offset_end,
-                  x: x,
-                  y: y,
+                  x,
+                  y,
                   style_index: candidate.style_index,
                 },
               )
@@ -909,7 +909,7 @@ private fn wrap_segments(content: Str, measure: fn(Str) Int) [WrapSegment] {
         output.push(
           WrapSegment{
             text: strings::Join(parts, ""),
-            width: width,
+            width,
             newline: hard_break,
           },
         )
@@ -921,7 +921,7 @@ private fn wrap_segments(content: Str, measure: fn(Str) Int) [WrapSegment] {
 }
 
 private fn push_line(lines: &mut [Line], text: Str, width: Int) {
-  lines.push(Line{text: text, width: width})
+  lines.push(Line{text, width})
 }
 
 private fn finish(lines: &mut [Line]) Layout {
@@ -936,7 +936,7 @@ private fn finish(lines: &mut [Line]) Layout {
   }
   Layout{
     lines: lines.*,
-    width: width,
+    width,
     height: lines.size(),
   }
 }
@@ -1377,7 +1377,7 @@ impl Text {
                   x: glyph.x,
                   y: glyph.y,
                   width: glyph.width,
-                  url: url,
+                  url,
                 },
               )
             },
@@ -1661,10 +1661,10 @@ impl Text {
       }
       Maybe::new<node::SelectionExpansion>(
         node::SelectionExpansion{
-          anchor_x: anchor_x,
-          anchor_y: anchor_y,
-          focus_x: focus_x,
-          focus_y: focus_y,
+          anchor_x,
+          anchor_y,
+          focus_x,
+          focus_y,
           logical_range: node::SelectionRange{start: range_start, end: range_end},
           source_range: node::SelectionRange{start: value.start, end: value.end},
           source_revision: self.source_revision,
@@ -1820,13 +1820,13 @@ impl Text {
       }
       Maybe::new<node::SelectionExpansion>(
         node::SelectionExpansion{
-          anchor_x: anchor_x,
-          anchor_y: anchor_y,
-          focus_x: focus_x,
-          focus_y: focus_y,
-          logical_range: logical_range,
-          source_range: source_range,
-          source_revision: source_revision,
+          anchor_x,
+          anchor_y,
+          focus_x,
+          focus_y,
+          logical_range,
+          source_range,
+          source_revision,
         },
       )
     }
@@ -1957,7 +1957,7 @@ impl Text {
           has_selection: true,
           start: start_offset,
           end: end_offset,
-          source_text: source_text,
+          source_text,
           fragments: fragments.*,
         }
       }
@@ -2115,7 +2115,7 @@ impl Text {
     }
     let id = state.next_listener_id
     state.next_listener_id =+ 1
-    state.listeners.push(LinkListener{id: id, handler: handler})
+    state.listeners.push(LinkListener{id, handler})
     fn() {
       self.remove_link_listener(id)
     }
@@ -2210,7 +2210,7 @@ test fn clipped_text_skips_measurement_but_clears_links_and_keeps_selection() Vo
   ] {
     let visible = &mut paint::Context{
       buffer: paint::new_buffer(6, 3),
-      bounds: bounds,
+      bounds,
       clip: bounds,
     }
     label.paint(visible)
@@ -2218,8 +2218,8 @@ test fn clipped_text_skips_measurement_but_clears_links_and_keeps_selection() Vo
     let before = calls.size()
     let clipped = &mut paint::Context{
       buffer: paint::new_buffer(6, 3),
-      bounds: bounds,
-      clip: clip,
+      bounds,
+      clip,
     }
     label.paint(clipped)
     try testing::assert(
@@ -2274,13 +2274,13 @@ test fn unwrapped_paint_streams_once_and_preserves_normalized_cells() Void!Str {
     }
     let actual = &mut paint::Context{
       buffer: paint::new_buffer(12, 7),
-      bounds: bounds,
-      clip: clip,
+      bounds,
+      clip,
     }
     let expected = &mut paint::Context{
       buffer: paint::new_buffer(12, 7),
-      bounds: bounds,
-      clip: clip,
+      bounds,
+      clip,
     }
     let before = calls.size()
     label.paint(actual)
@@ -2351,7 +2351,7 @@ test fn text_paint_reuses_layout_for_links_styles_and_ellipsis() Void!Str {
     }
     let surface = &mut paint::Context{
       buffer: paint::new_buffer(4, 1),
-      bounds: bounds,
+      bounds,
       clip: bounds,
     }
     label.paint(surface)

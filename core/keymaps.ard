@@ -30,7 +30,7 @@ struct Registry {
 
 fn new(token: &mut node::ContextToken) &mut Registry {
   &mut Registry{
-    token: token,
+    token,
     entries: [],
     listeners: [],
     serial: 0,
@@ -157,7 +157,7 @@ impl Registry {
       }
       self.serial =+ 1
       let entry = &mut Entry{
-        layer: layer,
+        layer,
         active: true,
         serial: self.serial,
       }
@@ -192,8 +192,8 @@ impl Registry {
         let rank = distance(snapshot.scope, focused, root)
         if include_inactive or rank >= 0 and (snapshot.enabled)() {
           let candidate = Candidate{
-            entry: entry,
-            snapshot: snapshot,
+            entry,
+            snapshot,
             distance: rank,
           }
           result.push(candidate)
@@ -259,8 +259,8 @@ impl Registry {
             command: binding.invocation.command,
             scope: candidate.snapshot.scope,
             priority: candidate.snapshot.priority,
-            eligible: eligible,
-            shadowed: shadowed,
+            eligible,
+            shadowed,
           },
         )
       }

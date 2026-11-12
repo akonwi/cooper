@@ -399,7 +399,7 @@ private fn suffix_delta(cache: &mut [SuffixDelta], prefix: Segmentation, suffix:
           started: prefix.started,
           previous: prefix.previous,
           state: prefix.state,
-          delta: delta,
+          delta,
         },
       )
       delta

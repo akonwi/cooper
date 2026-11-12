@@ -40,7 +40,7 @@ private struct Probe {
 private fn probe(ctx: &mut runtime::Runtime) &mut Probe {
   let retained = ctx.create_node(style::new())
   let owner = &mut Probe{
-    retained: retained,
+    retained,
     paints: &mut [],
     events: 0,
   }

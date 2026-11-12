@@ -123,7 +123,7 @@ struct DispatchQueue {
 fn new_dispatch_queue() DispatchQueue {
   let mutex = &mut sync::Mutex{}
   DispatchQueue{
-    mutex: mutex,
+    mutex,
     pending: [],
     head: 0,
     wake: Chan::new<Bool>(1),

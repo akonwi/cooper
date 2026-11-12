@@ -240,10 +240,10 @@ private fn metric_tile(
   content.add(detail)
   panel.add(content)
   MetricTile{
-    panel: panel,
-    value: value,
-    gauge: gauge,
-    detail: detail,
+    panel,
+    value,
+    gauge,
+    detail,
   }
 }
 
@@ -447,7 +447,7 @@ private fn append_log(
   state.rows.push(
     LogRow{
       sequence: state.sequence,
-      manual: manual,
+      manual,
       control: row,
     },
   )
@@ -633,7 +633,7 @@ fn main() {
     samples: seed_samples(),
     rows: [],
     theme: terminal_theme,
-    terminal_theme: terminal_theme,
+    terminal_theme,
     theme_choice: ThemeChoice::terminal,
   }
 
@@ -830,21 +830,21 @@ fn main() {
   application.root.add(root)
 
   let view = DashboardView{
-    root: root,
-    header: header,
-    title: title,
-    picker: picker,
-    subtitle: subtitle,
+    root,
+    header,
+    title,
+    picker,
+    subtitle,
     cpu: cpu_tile,
     memory: memory_tile,
     network: network_tile,
     latency: latency_tile,
-    chart_panel: chart_panel,
-    chart: chart,
-    log_panel: log_panel,
-    footer: footer,
-    status: status,
-    help: help,
+    chart_panel,
+    chart,
+    log_panel,
+    footer,
+    status,
+    help,
   }
 
   mut initial = 0

@@ -59,7 +59,7 @@ fn capture_autofocus(root: mut node::Renderable, target: &mut node::Node) AutoFo
         Maybe::new<AutoFocusCandidate>(
           AutoFocusCandidate{
             root: root_node,
-            target: target,
+            target,
             target_generation: target.attachment_generation(),
             ancestor: candidate,
             ancestor_generation: candidate.attachment_generation(),

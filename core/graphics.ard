@@ -46,8 +46,8 @@ fn regions(buffer: &mut paint::Buffer, image: paint::ImagePlacement) [geometry::
           result.push(
             geometry::Rect{
               x: start,
-              y: y,
-              width: width,
+              y,
+              width,
               height: 1,
             },
           )
@@ -67,8 +67,8 @@ fn source_rect(image: paint::ImagePlacement, region: geometry::Rect) geometry::R
   let right = ((region.x + region.width - image.destination.x) * image.width + image.destination.width - 1) / image.destination.width
   let bottom = ((region.y + region.height - image.destination.y) * image.height + image.destination.height - 1) / image.destination.height
   geometry::Rect{
-    x: x,
-    y: y,
+    x,
+    y,
     width: right - x,
     height: bottom - y,
   }

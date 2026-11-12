@@ -127,16 +127,16 @@ private fn make_layer(
   group.set_focusable(true)
 
   let layer = &mut Layer{
-    name: name,
-    group: group,
-    panel: panel,
-    x: x,
-    y: y,
-    z: z,
+    name,
+    group,
+    panel,
+    x,
+    y,
+    z,
     home_x: x,
     home_y: y,
-    fill: fill,
-    border: border,
+    fill,
+    border,
   }
   layer
 }

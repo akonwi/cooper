@@ -202,11 +202,11 @@ fn new(
   let internal_parts = &mut Parts{
     runtime: ctx,
     destroying: false,
-    wrapper: wrapper,
-    viewport_column: viewport_column,
-    viewport: viewport,
-    vertical_bar: vertical_bar,
-    horizontal_bar: horizontal_bar,
+    wrapper,
+    viewport_column,
+    viewport,
+    vertical_bar,
+    horizontal_bar,
     key_bindings: default_bindings(),
   }
   let scroll_box = &mut ScrollBox{node_ref: retained, internal: internal_parts}

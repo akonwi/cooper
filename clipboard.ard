@@ -34,13 +34,13 @@ fn internal_new(
   let lifecycle = &mut sync::Mutex{}
   let read_guard = &mut sync::Mutex{}
   let state = &mut State{
-    lifecycle: lifecycle,
-    read_guard: read_guard,
-    read_action: read_action,
-    write_action: write_action,
-    suspend_action: suspend_action,
-    resume_action: resume_action,
-    stop_action: stop_action,
+    lifecycle,
+    read_guard,
+    read_action,
+    write_action,
+    suspend_action,
+    resume_action,
+    stop_action,
     suspended: false,
     stopped: false,
   }
@@ -86,7 +86,7 @@ private struct Memory {
 
 fn internal_memory() &mut Clipboard {
   let mutex = &mut sync::Mutex{}
-  let memory = &mut Memory{mutex: mutex, value: ""}
+  let memory = &mut Memory{mutex, value: ""}
   internal_new(
     fn() Str!Error {
       memory.mutex.Lock()

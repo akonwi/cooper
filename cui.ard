@@ -87,18 +87,18 @@ fn virtual_list(
     build: fn(index: Int) View {
       render_item(snapshot.at(index).expect("virtual row index"))
     },
-    estimate: estimate,
+    estimate,
     overscan: extra,
-    row_height: row_height,
+    row_height,
     scrollbar_options: scrollbar_options.or(ui::scrollbar_options()),
     styles: styles.or(ui::style(flex_grow: 1.0)),
-    ref: ref,
-    on_key: on_key,
-    on_mouse: on_mouse,
-    sticky_scroll: sticky_scroll,
-    on_update: on_update,
+    ref,
+    on_key,
+    on_mouse,
+    sticky_scroll,
+    on_update,
   }
-  child(virtual::new, virtual::Props{source: source}, key: key)
+  child(virtual::new, virtual::Props{source}, key: key)
 }
 
 // Both types are inferred from the ordinary constructor and props value.
@@ -113,7 +113,7 @@ fn child(
 ) View {
   view::child(
     view::Specification{
-      props: props,
+      props,
       matches: fn(instance: Any, previous_props: Any) Bool {
         unsafe::cast<&mut $C>(instance).is_some() and unsafe::cast<$P>(previous_props).is_some()
       },
@@ -122,8 +122,8 @@ fn child(
         let concrete = create(&mut current)
         let component = unsafe::cast<mut Component>(concrete).expect("child must implement Component")
         &mut view::Instance{
-          concrete: concrete,
-          component: component,
+          concrete,
+          component,
           receive: fn(next: Any) {
             current = unsafe::cast<$P>(next).expect("matching component props")
           },

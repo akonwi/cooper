@@ -287,7 +287,7 @@ private fn placeholder_paint_style(value: text::TextStyle, placeholder: text::Te
   }
   text::TextStyle{
     foreground: placeholder.foreground,
-    background: background,
+    background,
     bold: placeholder.bold,
     dim: placeholder.dim,
     italic: placeholder.italic,
@@ -403,7 +403,7 @@ fn new(
   let area = &mut TextArea{
     node_ref: retained,
     viewport_ref: viewport.node_ref,
-    vertical_bar: vertical_bar,
+    vertical_bar,
     editor_state: &mut editor::new(initial_value),
     placeholder_text: normalize_newlines(placeholder.or("")),
     wrap_mode: wrap.or(text::TextWrap::word),
@@ -844,7 +844,7 @@ impl TextArea {
             start: area_layout::offset_at(laid_out, start),
             end: area_layout::offset_at(laid_out, end),
           },
-          source_range: node::SelectionRange{start: start, end: end},
+          source_range: node::SelectionRange{start, end},
           source_revision: self.source_revision,
         },
       )

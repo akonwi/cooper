@@ -383,11 +383,11 @@ fn axis_reference() {
           for maximum in bounds {
             for margin in [Float32::from(0.0), Float32::from(3.0)] {
               let axis = measure::Axis{
-                available: available,
-                mode: mode,
+                available,
+                mode,
                 padding_border: padding,
-                minimum: minimum,
-                maximum: maximum,
+                minimum,
+                maximum,
               }
               let constrained = axis.constrain_max(margin)
               fmt::Print("axis")

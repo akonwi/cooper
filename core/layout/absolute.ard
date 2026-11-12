@@ -37,9 +37,9 @@ fn axis(
   padding_border: Float32,
 ) measure::Axis {
   measure::Axis{
-    available: available,
-    mode: mode,
-    padding_border: padding_border,
+    available,
+    mode,
+    padding_border,
     minimum: length::resolve(minimum, reference),
     maximum: length::resolve(maximum, reference),
   }

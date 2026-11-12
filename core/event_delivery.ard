@@ -53,13 +53,13 @@ fn context(
   dispatch: (fn(fn()) Void!event::DispatchError)?,
 ) &mut Context {
   &mut Context{
-    key_event: key_event,
-    paste_event: paste_event,
-    mouse_event: mouse_event,
-    local_x: local_x,
-    local_y: local_y,
-    focused: focused,
-    outcome: outcome,
+    key_event,
+    paste_event,
+    mouse_event,
+    local_x,
+    local_y,
+    focused,
+    outcome,
     focus_request: focus_request.or(reject_focus),
     dispatch: dispatch.or(stopped_dispatch),
   }

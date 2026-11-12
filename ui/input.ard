@@ -299,7 +299,7 @@ private fn placeholder_paint_style(value: text::TextStyle, placeholder: text::Te
   }
   text::TextStyle{
     foreground: placeholder.foreground,
-    background: background,
+    background,
     bold: placeholder.bold,
     dim: placeholder.dim,
     italic: placeholder.italic,
@@ -394,7 +394,7 @@ private fn input_view(value: Str, placeholder: Str, cursor: Int, width: Int, mea
     View{
       text: visible,
       cursor_x: cursor_width - dropped_width,
-      start: start,
+      start,
     }
   }
 }
@@ -427,7 +427,7 @@ private fn input_view_from_start(
     View{
       text: visible,
       cursor_x: display_offset(value, cursor, measure) - display_offset(value, start, measure),
-      start: start,
+      start,
     }
   }
 }
@@ -710,9 +710,9 @@ impl Input {
       }
       Maybe::new<node::SelectionExpansion>(
         node::SelectionExpansion{
-          anchor_x: anchor_x,
+          anchor_x,
           anchor_y: 0,
-          focus_x: focus_x,
+          focus_x,
           focus_y: 0,
           logical_range: node::SelectionRange{start: value.start, end: value.end},
           source_range: node::SelectionRange{start: value.start, end: value.end},

@@ -29,9 +29,9 @@ private struct Rgb {
 
 private fn rgb(r: Int, g: Int, b: Int) Rgb {
   Rgb{
-    r: r,
-    g: g,
-    b: b,
+    r,
+    g,
+    b,
   }
 }
 
@@ -111,8 +111,8 @@ fn internal_service(action: fn(context::Context) TerminalColors) &mut Service {
   let state = &mut ServiceState{
     lifecycle: &mut sync::Mutex{},
     query_guard: &mut sync::Mutex{},
-    lifetime: lifetime,
-    action: action,
+    lifetime,
+    action,
     current: from_terminal(empty_colors()),
     suspended: false,
     stopped: false,
@@ -258,8 +258,8 @@ fn internal_query(ctx: context::Context, terminal: &mut vaxis::Vaxis) TerminalCo
     index =+ 1
   }
   TerminalColors{
-    foreground: foreground,
-    background: background,
+    foreground,
+    background,
     palette: palette.*,
   }
 }
@@ -555,7 +555,7 @@ private fn derive(p: Palette, mode: Mode, background: Rgb?, foreground: Rgb?) To
   )
   let light = mode == Mode::light
   Tones{
-    mode: mode,
+    mode,
     background: bg,
     foreground: fg,
     surface: match light {

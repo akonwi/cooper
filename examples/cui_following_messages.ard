@@ -32,7 +32,7 @@ private fn body(id: Int, tall: Bool) Str {
 
 private fn message(id: Int, tall: Bool?) Message {
   Message{
-    id: id,
+    id,
     author: author(id),
     body: body(id, tall.or(false)),
   }
@@ -301,7 +301,7 @@ fn main() {
     next_id: 18,
     list: cui::virtual_list_ref(),
   }
-  let renderer = cui::mount(application, cui::child(screen, Props{model: model}))
+  let renderer = cui::mount(application, cui::child(screen, Props{model}))
   defer renderer.destroy()
   let _ = application.context.dispatch(fn() {
     let _ = model.list.current.map(fn(list) {

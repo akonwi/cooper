@@ -43,10 +43,10 @@ fn intersect(left: Rect, right: Rect) Rect {
     height = bottom - y
   }
   Rect{
-    x: x,
-    y: y,
-    width: width,
-    height: height,
+    x,
+    y,
+    width,
+    height,
   }
 }
 

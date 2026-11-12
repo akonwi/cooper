@@ -56,10 +56,10 @@ struct KeyEvent {
 
 fn key(name: Str, text: Str, event_type: KeyEventType, modifiers: Modifiers) &mut KeyEvent {
   &mut KeyEvent{
-    name: name,
-    text: text,
-    event_type: event_type,
-    modifiers: modifiers,
+    name,
+    text,
+    event_type,
+    modifiers,
     internal_state: new_propagation_state(),
   }
 }
@@ -92,7 +92,7 @@ struct PasteEvent {
 }
 
 fn paste(text: Str) &mut PasteEvent {
-  &mut PasteEvent{text: text, internal_state: new_propagation_state()}
+  &mut PasteEvent{text, internal_state: new_propagation_state()}
 }
 
 impl PasteEvent {
@@ -162,13 +162,13 @@ fn mouse(
   is_dragging: Bool?,
 ) &mut MouseEvent {
   &mut MouseEvent{
-    event_type: event_type,
-    button: button,
-    x: x,
-    y: y,
+    event_type,
+    button,
+    x,
+    y,
     local_x: x,
     local_y: y,
-    modifiers: modifiers,
+    modifiers,
     scroll_x: scroll_x.or(0),
     scroll_y: scroll_y.or(0),
     is_dragging: is_dragging.or(false),

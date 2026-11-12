@@ -38,7 +38,7 @@ fn app(exit_on_ctrl_c: Bool?, auto_focus: Bool?, use_mouse: Bool?, screen: scree
   let root = application_root::new(runtime)
   runtime.commit_construction()
   runtime.start_signal_monitor()
-  Result::ok(App{context: runtime, root: root})
+  Result::ok(App{context: runtime, root})
 }
 
 impl App {

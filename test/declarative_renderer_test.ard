@@ -52,7 +52,7 @@ struct Root {
 }
 
 private fn root(props: &mut Draw) &mut Root {
-  &mut Root{props: props}
+  &mut Root{props}
 }
 
 impl d::Component for Root {
@@ -77,7 +77,7 @@ struct Row {
 
 private fn row(props: &mut RowProps) &mut Row {
   props.log.created =+ 1
-  &mut Row{props: props, value: props.name}
+  &mut Row{props, value: props.name}
 }
 
 impl d::Component for Row {
@@ -143,9 +143,9 @@ private fn collection(model: &mut Rows, record: &mut Log, keyed: Bool?) d::View 
       d::child(
         row,
         RowProps{
-          name: name,
-          label: label,
-          ref: ref,
+          name,
+          label,
+          ref,
           log: record,
           changed: fn(value: Str) {
             model.latest = label + ":" + value
@@ -273,7 +273,7 @@ struct Group {
 }
 
 private fn group(props: &mut GroupProps) &mut Group {
-  &mut Group{props: props}
+  &mut Group{props}
 }
 
 impl d::Component for Group {
@@ -298,7 +298,7 @@ test fn nested_teardown_cancels_all_descendant_events_before_bottom_up_cleanup_a
   let renderer = renderer::mount(
     app.context,
     app.root,
-    d::child(group, GroupProps{model: model, log: record}),
+    d::child(group, GroupProps{model, log: record}),
   )
   let other_record = log()
   let other_model = rows()
@@ -508,7 +508,7 @@ struct Other {
 }
 
 private fn other(props: &mut RowProps) &mut Other {
-  &mut Other{props: props}
+  &mut Other{props}
 }
 
 impl d::Component for Other {

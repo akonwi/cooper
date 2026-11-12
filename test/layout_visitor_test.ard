@@ -10,7 +10,7 @@ use cooper/ui/style
 fn axis(size: Float64, mode: cache::SizingMode) measure::Axis {
   measure::Axis{
     available: Float32::fit(size),
-    mode: mode,
+    mode,
     padding_border: Float32::from(0.0),
     minimum: numeric::undefined(),
     maximum: numeric::undefined(),

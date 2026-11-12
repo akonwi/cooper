@@ -179,10 +179,10 @@ fn internal_backend(terminal_id: fn() Str, getenv: fn(Str) Str, emit: fn(Str, St
   let id = terminal_id()
   let mutex = &mut sync::Mutex{}
   let policy = &mut Policy{
-    mutex: mutex,
+    mutex,
     protocol: select_protocol(id, getenv),
     progress_supported: supports_progress(id, getenv),
-    emit: emit,
+    emit,
   }
   &mut Backend{
     notify: fn(message: Str, title: Str) Bool {

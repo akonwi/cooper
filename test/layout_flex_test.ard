@@ -9,9 +9,9 @@ fn f(value: Float64) Float32 {
 
 fn item(basis: Float32, minimum: Float32, maximum: Float32, grow: Float32, shrink: Float32) flex::Item {
   flex::Item{
-    basis: basis,
-    minimum: minimum,
-    maximum: maximum,
+    basis,
+    minimum,
+    maximum,
     padding_border: Float32::from(0.0),
     margin: Float32::from(0.0),
     flex_grow: grow,

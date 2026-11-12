@@ -46,8 +46,8 @@ fn data(width: Int, height: Int, pixels: [color::Color]) ImageData {
     rgba.push(Byte::from(255))
   }
   ImageData{
-    width: width,
-    height: height,
+    width,
+    height,
     pixels: snapshot.*,
     rgba: rgba.*,
   }
@@ -97,8 +97,8 @@ fn rgba(width: Int, height: Int, bytes: [Byte], matte: color::Color?) ImageData 
     index =+ 4
   }
   ImageData{
-    width: width,
-    height: height,
+    width,
+    height,
     pixels: pixels.*,
     rgba: copied.*,
   }
@@ -195,8 +195,8 @@ private fn snapshot(source: decoded_image::Image, background: color::Color) Imag
     y =+ 1
   }
   ImageData{
-    width: width,
-    height: height,
+    width,
+    height,
     pixels: pixels.*,
     rgba: rgba.*,
   }
@@ -228,8 +228,8 @@ private fn fitted(source: ImageData, bounds: geometry::Rect, cell_width: Int, ce
     geometry::Rect{
       x: bounds.x + (bounds.width - width) / 2,
       y: bounds.y + (bounds.height - height) / 2,
-      width: width,
-      height: height,
+      width,
+      height,
     }
   }
 }
@@ -299,7 +299,7 @@ impl node::Renderable for Image {
               width: source.width,
               height: source.height,
               rgba: source.rgba,
-              destination: destination,
+              destination,
               clip: visible,
             },
           )

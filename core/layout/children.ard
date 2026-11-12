@@ -121,9 +121,9 @@ fn axis(
   owner: Float32,
 ) measure::Axis {
   measure::Axis{
-    available: available,
-    mode: mode,
-    padding_border: padding_border,
+    available,
+    mode,
+    padding_border,
     minimum: length::resolve(minimum, owner),
     maximum: length::resolve(maximum, owner),
   }

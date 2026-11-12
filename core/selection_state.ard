@@ -228,7 +228,7 @@ private fn walk(
             focus_y: focus.y - bounds.y,
             logical_range: current_range,
             source_range: current_source,
-            prefer_source_text: prefer_source_text,
+            prefer_source_text,
             clip: geometry::Rect{
               x: clip.x - bounds.x,
               y: clip.y - bounds.y,
@@ -236,10 +236,10 @@ private fn walk(
               height: clip.height,
             },
             is_active: true,
-            is_dragging: is_dragging,
+            is_dragging,
             allow_edge_pan: edge_pan_version == version,
-            generation: generation,
-            version: version,
+            generation,
+            version,
           },
         ),
       )
@@ -388,16 +388,16 @@ impl State {
           anchor: Anchor{
             control: target,
             root: root.node(),
-            local_x: local_x,
-            local_y: local_y,
+            local_x,
+            local_y,
           },
-          focus: geometry::Point{x: x, y: y},
+          focus: geometry::Point{x, y},
           focus_control: Maybe::new<&mut node::Node>(target),
           focus_local_x: local_x,
           focus_local_y: local_y,
           focus_tracks_control: true,
-          resolved_anchor: geometry::Point{x: x, y: y},
-          resolved_focus: geometry::Point{x: x, y: y},
+          resolved_anchor: geometry::Point{x, y},
+          resolved_focus: geometry::Point{x, y},
           container: match target.parent {
             parent => parent,
             _ => root.node(),
@@ -408,7 +408,7 @@ impl State {
           source_revision: 0,
           logical_reversed: false,
           prefer_source_text: false,
-          generation: generation,
+          generation,
           version: 0,
           edge_pan_version: -1,
         },
@@ -509,8 +509,8 @@ impl State {
       active => {
         mut active = active
         let updated = &mut active
-        updated.focus = geometry::Point{x: x, y: y}
-        updated.resolved_focus = geometry::Point{x: x, y: y}
+        updated.focus = geometry::Point{x, y}
+        updated.resolved_focus = geometry::Point{x, y}
         updated.focus_control = target
         match target {
           control => {
@@ -760,7 +760,7 @@ impl State {
             }
             self.snapshot = Maybe::new<selection::Selection>(
               selection::Selection{
-                anchor: anchor,
+                anchor,
                 focus: current_session.focus,
                 bounds: geometry::Rect{
                   x: min_x,

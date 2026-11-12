@@ -744,7 +744,7 @@ test fn setters_validate_property_specific_units_scalar_payloads_and_flex_factor
     style::LengthKind::stretch,
   ] {
     let value = &mut style::new()
-    value.width = style::Length{kind: kind, value: 1.0}
+    value.width = style::Length{kind, value: 1.0}
     try rejects_style(child, value, "does not accept a numeric value")
   }
   for length in [style::auto(), style::max_content(), style::fit_content(), style::stretch()] {

@@ -22,9 +22,9 @@ struct Option {
 
 fn Option::new(label: Str, description: Str?, value: Str?) Option {
   Option{
-    label: label,
-    description: description,
-    value: value,
+    label,
+    description,
+    value,
   }
 }
 
@@ -183,19 +183,19 @@ fn appearance(
   scrollbar: scrollbar_control::Appearance?,
 ) Appearance {
   Appearance{
-    normal: normal,
-    description: description,
-    focused: focused,
-    highlighted: highlighted,
-    selected: selected,
-    selected_description: selected_description,
-    indicator: indicator,
-    marker: marker,
-    left_arrow: left_arrow,
-    right_arrow: right_arrow,
-    closed_arrow: closed_arrow,
-    open_arrow: open_arrow,
-    scrollbar: scrollbar,
+    normal,
+    description,
+    focused,
+    highlighted,
+    selected,
+    selected_description,
+    indicator,
+    marker,
+    left_arrow,
+    right_arrow,
+    closed_arrow,
+    open_arrow,
+    scrollbar,
   }
 }
 
@@ -513,7 +513,7 @@ private fn fit(value: Str, width: Int, measure_width: fn(Str) Int) Str {
 
 private fn selection_at(model: &mut Model, index: Int) Selection? {
   match model.options.at(index) {
-    value => Maybe::new<Selection>(Selection{index: index, option: value}),
+    value => Maybe::new<Selection>(Selection{index, option: value}),
     _ => Maybe::new<Selection>(),
   }
 }
@@ -918,10 +918,10 @@ private fn popup_anchor(popup: &mut Popup) PopupAnchor {
     y = owner.y - height
   }
   PopupAnchor{
-    x: x,
-    y: y,
-    width: width,
-    height: height,
+    x,
+    y,
+    width,
+    height,
   }
 }
 
@@ -1189,10 +1189,10 @@ private fn internal_new(
   })
   let popup = &mut Popup{
     node_ref: popup_node,
-    model: model,
+    model,
     owner: retained,
     scrollbar: bar,
-    measure_width: measure_width,
+    measure_width,
     anchor_x: -1,
     anchor_y: -1,
     anchor_width: -1,
@@ -1201,11 +1201,11 @@ private fn internal_new(
     inherited_background: Maybe::new<color::Color>(),
   }
   let shared = &mut InternalState{
-    model: model,
-    popup: popup,
-    remove_scroll_listener: remove_scroll_listener,
+    model,
+    popup,
+    remove_scroll_listener,
     layout_style: styles.or(layout_style::new()),
-    measure_width: measure_width,
+    measure_width,
     runtime: context_state,
   }
   let created = &mut Select{node_ref: retained, internal: shared}
@@ -1943,7 +1943,7 @@ impl Select {
       },
       Action::submit => { changed = self.submit() },
     }
-    ActionResult{handled: handled, changed: changed}
+    ActionResult{handled, changed}
   }
 
   fn mut perform(action: Action) Bool {
@@ -2193,7 +2193,7 @@ impl Select {
     self.require_live()
     let model = internal_state(self.internal).model
     let id = self.next_listener()
-    model.highlight_listeners.push(Listener{id: id, handler: handler})
+    model.highlight_listeners.push(Listener{id, handler})
     fn() {
       let retained = &mut List::new<Listener>()
       for listener in model.highlight_listeners {
@@ -2209,7 +2209,7 @@ impl Select {
     self.require_live()
     let model = internal_state(self.internal).model
     let id = self.next_listener()
-    model.change_listeners.push(Listener{id: id, handler: handler})
+    model.change_listeners.push(Listener{id, handler})
     fn() {
       let retained = &mut List::new<Listener>()
       for listener in model.change_listeners {
@@ -2225,7 +2225,7 @@ impl Select {
     self.require_live()
     let model = internal_state(self.internal).model
     let id = self.next_listener()
-    model.submit_listeners.push(Listener{id: id, handler: handler})
+    model.submit_listeners.push(Listener{id, handler})
     fn() {
       let retained = &mut List::new<Listener>()
       for listener in model.submit_listeners {

@@ -449,35 +449,35 @@ private fn state(
     },
   }
   &mut State{
-    clipboard: clipboard,
-    theme_service: theme_service,
-    dispatch: dispatch,
+    clipboard,
+    theme_service,
+    dispatch,
     cancellation: cancellation_signal.receiver(),
-    terminal: terminal,
+    terminal,
     screen_config: presentation,
     pending_output: [],
     output_history: [],
     render_error: Maybe::new<Error>(),
     graphics: graphics::new(),
-    notification_action: notification_action,
-    terminal_progress_action: terminal_progress_action,
-    terminal_title_action: terminal_title_action,
-    terminal_title_supported: terminal_title_supported,
+    notification_action,
+    terminal_progress_action,
+    terminal_title_action,
+    terminal_title_supported,
     bell_action: ignore_bell,
     program_status_action: reject_program_status,
     program_status_detected: undetected_program_status,
     program_status_records: program_status::internal_records(),
     render_request: retained_render_request,
     width_measurer: retained_width_measurer,
-    open_url_action: open_url_action,
+    open_url_action,
     terminal_title: "",
     terminal_title_initialized: false,
     terminal_progress_state: terminal_progress::State::remove,
     terminal_progress_percent: Maybe::new<Int>(),
-    terminal_io: terminal_io,
+    terminal_io,
     terminal_suspended: false,
     terminal_closed: not terminal.is_some(),
-    signal_watcher: signal_watcher,
+    signal_watcher,
     system_wake: Chan::new<Bool>(1),
     animation_control_wake: Chan::new<Bool>(1),
     animation_frame_wake: Chan::new<Bool>(1),
@@ -491,16 +491,16 @@ private fn state(
     springs: [],
     pending_resize_cols: -1,
     pending_resize_rows: -1,
-    lifecycle: lifecycle,
+    lifecycle,
     phase: 0,
     resources_stopped: false,
-    construction_committed: construction_committed,
+    construction_committed,
     pump_started: false,
     test_flushing: false,
     shutdown: Chan::new<Bool>(1),
-    wake: wake,
-    updates: updates,
-    cancellation_signal: cancellation_signal,
+    wake,
+    updates,
+    cancellation_signal,
     cancellation_closed: false,
     startup_done: Chan::new<Void>(),
     startup_published: false,
@@ -509,7 +509,7 @@ private fn state(
     completion_published: false,
     completion_error: Maybe::new<Error>(),
     next_node_id: 1,
-    context_token: context_token,
+    context_token,
     keymaps: keymaps::new(context_token),
     keymap_focus: Maybe::new<&mut node::Node>(),
     nodes: [],
@@ -524,10 +524,10 @@ private fn state(
     has_frame: false,
     post_frame_quit: false,
     suppress_focus_reveal: false,
-    exit_on_ctrl_c: exit_on_ctrl_c,
-    auto_focus: auto_focus,
-    headless: headless,
-    detached: detached,
+    exit_on_ctrl_c,
+    auto_focus,
+    headless,
+    detached,
     test_now_ms: 0,
     clock_started: time::Now(),
     headless_width: width,
@@ -1754,7 +1754,7 @@ impl State {
         retained.push(hook)
       }
     }
-    let hook = &mut LayoutHook{active: true, handler: handler}
+    let hook = &mut LayoutHook{active: true, handler}
     retained.push(hook)
     self.layout_hooks = retained.*
     fn() {
@@ -1774,7 +1774,7 @@ impl State {
         retained.push(hook)
       }
     }
-    let hook = &mut CommitHook{active: true, handler: handler}
+    let hook = &mut CommitHook{active: true, handler}
     retained.push(hook)
     self.commit_hooks = retained.*
     fn() {
@@ -2300,7 +2300,7 @@ impl State {
     let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 7
     mut accepted = false
     if active and not self.resources_stopped {
-      accepted = (self.program_status_action)(program_status::Clear{id: id})
+      accepted = (self.program_status_action)(program_status::Clear{id})
       if accepted {
         self.program_status_records.internal_remove(id)
       }
@@ -2375,7 +2375,7 @@ impl State {
 
   fn mut on_key(handler: fn(&mut event::KeyEvent)) fn() {
     let id = self.next_listener()
-    self.key_listeners.push(KeyListener{id: id, handler: handler})
+    self.key_listeners.push(KeyListener{id, handler})
     fn() {
       self.remove_key_listener(id)
     }
@@ -2393,7 +2393,7 @@ impl State {
 
   fn mut on_paste(handler: fn(&mut event::PasteEvent)) fn() {
     let id = self.next_listener()
-    self.paste_listeners.push(PasteListener{id: id, handler: handler})
+    self.paste_listeners.push(PasteListener{id, handler})
     fn() {
       self.remove_paste_listener(id)
     }
@@ -2415,7 +2415,7 @@ impl State {
 
   fn mut on_terminal_focus(handler: fn(event::TerminalFocus)) fn() {
     let id = self.next_listener()
-    self.terminal_focus_listeners.push(TerminalFocusListener{id: id, handler: handler})
+    self.terminal_focus_listeners.push(TerminalFocusListener{id, handler})
     fn() {
       self.remove_terminal_focus_listener(id)
     }
@@ -2462,7 +2462,7 @@ impl State {
     if self.theme_listeners.size() == 0 {
       self.notified_theme = self.theme_service.current()
     }
-    self.theme_listeners.push(ThemeListener{id: id, handler: handler})
+    self.theme_listeners.push(ThemeListener{id, handler})
     fn() {
       self.remove_theme_listener(id)
     }
@@ -2528,7 +2528,7 @@ impl State {
 
   fn mut on_selection_change(handler: fn(public_selection::Selection?)) fn() {
     let id = self.next_listener()
-    self.selection_listeners.push(SelectionListener{id: id, handler: handler})
+    self.selection_listeners.push(SelectionListener{id, handler})
     fn() {
       self.remove_selection_listener(id)
     }
@@ -3443,10 +3443,10 @@ impl keymap::Host for Runtime {
                     key: binding.key,
                     trigger: binding.trigger,
                     command: binding.invocation.command,
-                    scope: scope,
+                    scope,
                     priority: 0,
                     eligible: binding.invocation.command.enabled() and not reserved,
-                    shadowed: shadowed,
+                    shadowed,
                   },
                 )
               }

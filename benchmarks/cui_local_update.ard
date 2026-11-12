@@ -20,7 +20,7 @@ struct Row {
   props: &mut RowProps,
 }
 private fn row(props: &mut RowProps) &mut Row {
-  &mut Row{props: props}
+  &mut Row{props}
 }
 impl cui::Component for Row {
   fn mut render() cui::View {
@@ -45,7 +45,7 @@ struct Screen {
   props: &mut Props,
 }
 private fn screen(props: &mut Props) &mut Screen {
-  &mut Screen{props: props}
+  &mut Screen{props}
 }
 impl cui::Component for Screen {
   fn mut render() cui::View {

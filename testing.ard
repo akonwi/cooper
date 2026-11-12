@@ -199,7 +199,7 @@ fn new(
         false
       } else {
         notification_log.mutex.Lock()
-        notification_log.values.push(notification::Notification{message: message, title: title})
+        notification_log.values.push(notification::Notification{message, title})
         notification_log.mutex.Unlock()
         true
       }
@@ -208,7 +208,7 @@ fn new(
       if not progress_supported {
         false
       } else {
-        let report = terminal_progress::Report{state: progress_state, percent: percent}
+        let report = terminal_progress::Report{state: progress_state, percent}
         match on_terminal_progress {
           observe => observe(report),
           _ => (),
@@ -244,13 +244,13 @@ fn new(
   runtime.start_test(root)
   TestApp{
     context: runtime,
-    root: root,
-    opened: opened,
-    notification_log: notification_log,
-    terminal_progress_log: terminal_progress_log,
-    terminal_title_log: terminal_title_log,
-    bell_log: bell_log,
-    program_status_log: program_status_log,
+    root,
+    opened,
+    notification_log,
+    terminal_progress_log,
+    terminal_title_log,
+    bell_log,
+    program_status_log,
   }
 }
 
@@ -523,8 +523,8 @@ test fn frame_text_preserves_unicode_blank_rows_and_empty_dimensions() Void!Str 
     height: 3,
   }
   let ctx = &mut paint::Context{
-    buffer: buffer,
-    bounds: bounds,
+    buffer,
+    bounds,
     clip: bounds,
   }
   ctx.write(0, 0, "你é")

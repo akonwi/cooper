@@ -170,7 +170,7 @@ fn main() {
     application,
     cui::child(
       editor,
-      Props{state: state, quit: fn() Bool {
+      Props{state, quit: fn() Bool {
         runtime.destroy_live()
         true
       }},

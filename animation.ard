@@ -270,16 +270,16 @@ fn internal_new(duration: Int, wake: fn(), loop: Bool?, alternate: Bool?, on_com
     panic("Timeline duration must be positive")
   }
   let shared = &mut State{
-    duration: duration,
+    duration,
     loop: loop.or(false),
     alternate: alternate.or(false),
-    on_complete: on_complete,
+    on_complete,
     status: Status::paused,
     current_time: 0,
     iteration: 0,
     tracks: [],
     calls: [],
-    wake: wake,
+    wake,
     configuration_closed: false,
     dirty: false,
     revision: 0,
@@ -348,10 +348,10 @@ private fn evaluate_at(
               false => forward_linear,
             }
             let frame = Frame{
-              progress: progress,
-              linear_progress: linear_progress,
-              elapsed: elapsed,
-              delta: delta,
+              progress,
+              linear_progress,
+              elapsed,
+              delta,
               iteration: shared.iteration,
             }
             let completed = elapsed >= track.duration
@@ -436,12 +436,12 @@ impl Timeline {
     }
     shared.tracks.push(
       &mut Track{
-        start: start,
-        duration: duration,
+        start,
+        duration,
         ease: ease.or(linear),
-        update: update,
-        on_start: on_start,
-        on_complete: on_complete,
+        update,
+        on_start,
+        on_complete,
         started: false,
         completion_pending: false,
         completed: false,
@@ -466,8 +466,8 @@ impl Timeline {
     }
     shared.calls.push(
       &mut ScheduledCall{
-        start: start,
-        action: action,
+        start,
+        action,
         executed: false,
       },
     )

@@ -19,7 +19,7 @@ struct Screen {
   props: &mut Draw,
 }
 private fn screen(props: &mut Draw) &mut Screen {
-  &mut Screen{props: props}
+  &mut Screen{props}
 }
 impl cui::Component for Screen {
   fn mut render() cui::View {
@@ -49,7 +49,7 @@ test fn described_focus_is_applied_after_attachment_and_reconciled() Void!Str {
       ],
     ),
   }
-  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Draw{model}))
   app.flush()
   let original = panel.current.expect("attached panel")
   try testing::assert(original.is_focused(), "focus without a key listener or lifecycle hook")
@@ -213,7 +213,7 @@ test fn autofocus_runs_once_per_control_mount_including_late_mounts() Void!Str {
       ],
     ),
   }
-  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model}))
   defer mounted.destroy()
   app.flush()
   let original = first.current.expect("first attached")
@@ -258,7 +258,7 @@ test fn explicit_false_blurs_but_omitted_focus_leaves_user_focus_alone() Void!St
   defer app.destroy()
   let field = cui::input_ref()
   let model = &mut Model{context: Maybe::new<cui::Context>(), view: cui::input("field", ref: field, focused: false)}
-  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model}))
   defer mounted.destroy()
   app.flush()
   try testing::assert(field.current.expect("field").focus(), "imperative focus succeeds until commit")
@@ -284,7 +284,7 @@ test fn deferred_ref_focus_resolves_after_commit_and_expires_when_absent() Void!
     context: Maybe::new<cui::Context>(),
     view: cui::box([cui::input("other", key: "other", ref: other, autofocus: true)]),
   }
-  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model}))
   defer mounted.destroy()
   app.flush()
   let ctx = model.context.expect("mounted context")
@@ -444,7 +444,7 @@ test fn autofocus_rejects_controlled_focus_and_does_not_wait_for_visibility() Vo
     context: Maybe::new<cui::Context>(),
     view: cui::input("hidden", ref: target, autofocus: true, styles: ui::style(display: ui::Display::none)),
   }
-  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model: model}))
+  let mounted = renderer::mount(app.context, app.root, cui::child(screen, Draw{model}))
   defer mounted.destroy()
   app.flush()
   mounted.update(fn() {

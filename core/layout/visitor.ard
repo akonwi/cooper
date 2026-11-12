@@ -218,8 +218,8 @@ fn axis_item(child: &mut layout::Node, row: Bool, owner_width: Float32, owner_he
   let end = choose_length(row, value.margin.right, value.margin.bottom)
   flex::Item{
     basis: child.cache_state.computed_flex_basis,
-    minimum: minimum,
-    maximum: maximum,
+    minimum,
+    maximum,
     padding_border: padding,
     margin: resolved_zero(start, owner_width) + resolved_zero(end, owner_width),
     flex_grow: value.flex_grow,
@@ -502,7 +502,7 @@ fn translated_visit(
           if requires_stretch and perform_layout {
             stretching.push(
               StretchVisit{
-                child: child,
+                child,
                 main: child_main,
                 cross: child_cross,
                 margin_row: mr,

@@ -281,9 +281,9 @@ private fn prepare(
     }
     result.push(
       Prepared{
-        description: description,
+        description,
         previous: found,
-        instance: instance,
+        instance,
         children: prepare(children, child_views, refs),
       },
     )
@@ -546,10 +546,10 @@ private fn validate_control_refs(
 fn mount(runtime: &mut runtime::Runtime, root: &mut root::Root, view: view::View) Renderer {
   let container = ui::box(runtime, styles: ui::style(display: ui::Display::contents))
   let renderer = &mut State{
-    runtime: runtime,
+    runtime,
     scope: scopes::new_mount_scope(),
-    view: view,
-    container: container,
+    view,
+    container,
     children: [],
     active: true,
     pending: false,
@@ -749,18 +749,18 @@ impl State {
       effective_value = text_area(control).value()
     }
     let mounted = &mut Mounted{
-      description: description,
-      control: control,
+      description,
+      control,
       children: [],
       parent: Maybe::new<&mut Mounted>(),
-      instance: instance,
+      instance,
       context: inherited,
-      scope: scope,
+      scope,
       active: true,
       applying: false,
       autofocus_pending: description.autofocus,
       requested_value: description.value,
-      effective_value: effective_value,
+      effective_value,
       remove_key: fn() {},
       remove_mouse: fn() {},
       key_layer: Maybe::new<&mut keymap::Layer>(),

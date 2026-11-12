@@ -118,7 +118,7 @@ fn collect_line(
   }
   Line{
     items: selected.*,
-    start_index: start_index,
+    start_index,
     next_index: index,
     size_consumed: consumed,
     auto_margin_count: auto_margins,

@@ -104,13 +104,13 @@ fn appearance(
   arrow_style: text::SpanStyle?,
 ) Appearance {
   Appearance{
-    track_glyph: track_glyph,
-    thumb_glyph: thumb_glyph,
-    start_arrow: start_arrow,
-    end_arrow: end_arrow,
-    track_style: track_style,
-    thumb_style: thumb_style,
-    arrow_style: arrow_style,
+    track_glyph,
+    thumb_glyph,
+    start_arrow,
+    end_arrow,
+    track_style,
+    thumb_style,
+    arrow_style,
   }
 }
 
@@ -123,7 +123,7 @@ fn options(visibility: Visibility?, show_arrows: Bool?, scroll_step: Int?, appea
     visibility: visibility.or(Visibility::automatic),
     show_arrows: show_arrows.or(false),
     scroll_step: step,
-    appearance: appearance,
+    appearance,
   }
 }
 
@@ -142,7 +142,7 @@ private fn normalize_state(value: State) State {
     position = maximum
   }
   State{
-    position: position,
+    position,
     viewport_size: value.viewport_size,
     content_size: value.content_size,
   }
@@ -374,13 +374,13 @@ fn internal_new(
   )
   let shared = &mut InternalState{
     runtime: context_state,
-    orientation: orientation,
+    orientation,
     value: normalize_state(initial_state),
     options: initial_options,
     resolved_appearance: resolved,
     layout_style: styles,
-    measure_width: measure_width,
-    focusable: focusable,
+    measure_width,
+    focusable,
     live: true,
     dragging: false,
     drag_offset: 0,
@@ -469,10 +469,10 @@ private fn track_geometry(shared: &mut InternalState, size: Int) TrackGeometry {
     )
   }
   TrackGeometry{
-    start: start,
-    length: length,
-    thumb_start: thumb_start,
-    thumb_size: thumb_size,
+    start,
+    length,
+    thumb_start,
+    thumb_size,
   }
 }
 
@@ -734,7 +734,7 @@ impl Scrollbar {
     }
     let id = shared.next_listener_id
     shared.next_listener_id =+ 1
-    shared.listeners.push(Listener{id: id, handler: handler})
+    shared.listeners.push(Listener{id, handler})
     fn() {
       let retained = &mut List::new<Listener>()
       for listener in shared.listeners {

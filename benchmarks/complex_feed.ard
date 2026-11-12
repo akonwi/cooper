@@ -198,7 +198,7 @@ fn prepare(eager: Bool) Session {
   while index < mounted {
     let created = card(application.context, index)
     cards.push(created)
-    state.cards.push(Mounted{index: index, view: created})
+    state.cards.push(Mounted{index, view: created})
     content.add(created)
     index =+ 1
   }

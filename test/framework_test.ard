@@ -472,8 +472,8 @@ test fn retained_paint_clears_partially_clipped_wide_spans() Void!Str {
     height: 1,
   }
   let full = &mut paint::Context{
-    buffer: buffer,
-    bounds: bounds,
+    buffer,
+    bounds,
     clip: bounds,
     foreground: Maybe::new<color::Color>(),
     background: Maybe::new<color::Color>(),
@@ -487,8 +487,8 @@ test fn retained_paint_clears_partially_clipped_wide_spans() Void!Str {
     height: 1,
   }
   let clipped = &mut paint::Context{
-    buffer: buffer,
-    bounds: bounds,
+    buffer,
+    bounds,
     clip: narrow,
     foreground: Maybe::new<color::Color>(),
     background: Maybe::new<color::Color>(),
@@ -514,8 +514,8 @@ test fn retained_paint_clears_overwritten_wide_spans() Void!Str {
     height: 1,
   }
   let ctx = &mut paint::Context{
-    buffer: buffer,
-    bounds: bounds,
+    buffer,
+    bounds,
     clip: bounds,
     foreground: Maybe::new<color::Color>(),
     background: Maybe::new<color::Color>(),
@@ -1085,8 +1085,8 @@ test fn retained_later_wide_paint_invalidates_cursor_on_continuation() Void!Str 
     height: 1,
   }
   let ctx = &mut paint::Context{
-    buffer: buffer,
-    bounds: bounds,
+    buffer,
+    bounds,
     clip: bounds,
     foreground: Maybe::new<color::Color>(),
     background: Maybe::new<color::Color>(),

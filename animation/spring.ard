@@ -94,9 +94,9 @@ fn internal_new(value: Float64, update: fn(Frame), wake: fn(), options: Config?,
     status: Status::paused,
     fresh: true,
     revision: 0,
-    update: update,
-    on_complete: on_complete,
-    wake: wake,
+    update,
+    on_complete,
+    wake,
   }
   &mut Spring{internal: shared}
 }

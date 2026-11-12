@@ -77,7 +77,7 @@ test fn declarative_text_selection_style_applies_and_updates_in_place() Void!Str
   let renderer = renderer::mount(
     app.context,
     app.root,
-    cui::child(selection_label, SelectionProps{model: model}),
+    cui::child(selection_label, SelectionProps{model}),
   )
   defer renderer.destroy()
   app.flush()
@@ -129,7 +129,7 @@ test fn declarative_text_area_selection_style_defaults_and_updates_in_place() Vo
   let renderer = renderer::mount(
     app.context,
     app.root,
-    cui::child(selection_area, SelectionProps{model: model}),
+    cui::child(selection_area, SelectionProps{model}),
   )
   defer renderer.destroy()
   app.flush()
@@ -186,7 +186,7 @@ test fn text_selection_is_opt_in_and_drag_capture_survives_reconciliation() Void
     ends: 0,
     releases: 0,
   }
-  let renderer = renderer::mount(app.context, app.root, cui::child(card, Props{model: model}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(card, Props{model}))
   defer renderer.destroy()
   app.flush()
   app.mouse_down(2, 0)
@@ -281,7 +281,7 @@ struct CopyProvider {
 }
 
 private fn copy_provider(props: &mut CopyProps) &mut CopyProvider {
-  &mut CopyProvider{props: props}
+  &mut CopyProvider{props}
 }
 
 impl cui::Component for CopyProvider {
@@ -298,11 +298,7 @@ test fn declarative_box_refreshes_semantic_copy_text_for_an_active_selection() V
   let app = headless::new(8, 2)
   defer app.destroy()
   let model = &mut CopyModel{value: Maybe::new("first")}
-  let renderer = renderer::mount(
-    app.context,
-    app.root,
-    cui::child(copy_provider, CopyProps{model: model}),
-  )
+  let renderer = renderer::mount(app.context, app.root, cui::child(copy_provider, CopyProps{model}))
   defer renderer.destroy()
   app.flush()
   app.drag(0, 0, 2, 0)

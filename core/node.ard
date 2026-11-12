@@ -276,8 +276,8 @@ fn create(
     height: 0,
   }
   let node = &mut Node{
-    id: id,
-    context_token: context_token,
+    id,
+    context_token,
     owner: Maybe::new<Any>(),
     parent: Maybe::new<&mut Node>(),
     children: [],
@@ -329,8 +329,8 @@ fn create(
     requested_scroll_y: 0,
     children_offset_x: 0,
     children_offset_y: 0,
-    request_render: request_render,
-    on_destroy: on_destroy,
+    request_render,
+    on_destroy,
   }
   node.apply_style(initial_style)
   node
@@ -652,7 +652,7 @@ impl Node {
 
   fn mut on_key(handler: fn(&mut event::KeyEvent)) fn() {
     let id = self.next_listener()
-    self.key_listeners.push(KeyListener{id: id, handler: handler})
+    self.key_listeners.push(KeyListener{id, handler})
     fn() {
       self.remove_key_listener(id)
     }
@@ -670,7 +670,7 @@ impl Node {
 
   fn mut on_paste(handler: fn(&mut event::PasteEvent)) fn() {
     let id = self.next_listener()
-    self.paste_listeners.push(PasteListener{id: id, handler: handler})
+    self.paste_listeners.push(PasteListener{id, handler})
     fn() {
       self.remove_paste_listener(id)
     }
@@ -689,7 +689,7 @@ impl Node {
   fn mut on_mouse(handler: fn(&mut event::MouseEvent)) fn() {
     let id = self.next_listener()
     let was_empty = self.mouse_listeners.size() == 0
-    self.mouse_listeners.push(MouseListener{id: id, handler: handler})
+    self.mouse_listeners.push(MouseListener{id, handler})
     if was_empty {
       self.request_redraw()
     }
@@ -714,7 +714,7 @@ impl Node {
 
   fn mut on_focus(handler: fn()) fn() {
     let id = self.next_listener()
-    self.focus_listeners.push(VoidListener{id: id, handler: handler})
+    self.focus_listeners.push(VoidListener{id, handler})
     fn() {
       self.remove_focus_listener(id)
     }
@@ -732,7 +732,7 @@ impl Node {
 
   fn mut on_blur(handler: fn()) fn() {
     let id = self.next_listener()
-    self.blur_listeners.push(VoidListener{id: id, handler: handler})
+    self.blur_listeners.push(VoidListener{id, handler})
     fn() {
       self.remove_blur_listener(id)
     }
@@ -752,9 +752,9 @@ impl Node {
     let id = self.next_listener()
     self.value_listeners.push(
       ValueListener{
-        id: id,
-        kind: kind,
-        handler: handler,
+        id,
+        kind,
+        handler,
       },
     )
     fn() {
@@ -1521,8 +1521,8 @@ impl Node {
     self.viewport = geometry::Rect{
       x: 0,
       y: 0,
-      width: width,
-      height: height,
+      width,
+      height,
     }
     // Scroll setters already synchronize translations. An unchanged layout
     // needs no second walk, unless a formerly attached root retains an offset.
@@ -1540,7 +1540,7 @@ impl Node {
       width: local.width,
       height: local.height,
     }
-    self.geometry = geometry::Geometry{local: local, screen: screen}
+    self.geometry = geometry::Geometry{local, screen}
     self.sync_children_geometry()
 
     if self.current_style.overflow == style::Overflow::scroll and self.current_style.display == style::Display::flex {
@@ -1609,11 +1609,11 @@ impl Node {
         _ => inherited_clip,
       }
       let ctx = &mut paint::Context{
-        buffer: buffer,
-        bounds: bounds,
+        buffer,
+        bounds,
         clip: node_clip,
-        foreground: foreground,
-        background: background,
+        foreground,
+        background,
       }
       if self.current_style.display != style::Display::contents {
         if self.current_style.background.is_some() {

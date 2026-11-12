@@ -18,7 +18,7 @@ struct JobRow {
 
 private fn job_row(props: &mut JobRowProps) &mut JobRow {
   &mut JobRow{
-    props: props,
+    props,
     note: "",
     details: false,
     field: props.ref,
@@ -173,10 +173,7 @@ fn main() {
   let application = cooper::app().expect("create declarative jobs example")
   defer application.destroy()
   let initial_focus = d::input_ref()
-  let renderer = d::mount(
-    application,
-    d::child(jobs_screen, ScreenProps{initial_focus: initial_focus}),
-  )
+  let renderer = d::mount(application, d::child(jobs_screen, ScreenProps{initial_focus}))
   defer renderer.destroy()
   let _ = initial_focus.current.expect("mounted Alpha input").focus()
   application.run().expect("run declarative jobs example")

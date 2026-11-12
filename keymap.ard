@@ -14,7 +14,7 @@ fn key(name: Str, shift: Bool?, ctrl: Bool?, alt: Bool?, super: Bool?) Key {
     panic("key name must not be empty")
   }
   Key{
-    name: name,
+    name,
     modifiers: event::Modifiers{
       shift: shift.or(false),
       ctrl: ctrl.or(false),
@@ -122,7 +122,7 @@ fn command(id: Str, title: Str, handler: fn($Args) Bool, enabled: (fn() Bool)?, 
     available: enabled.or(fn() Bool {
       true
     }),
-    handler: handler,
+    handler,
   }
 }
 
@@ -190,7 +190,7 @@ fn simple_command(id: Str, title: Str, handler: fn() Bool, enabled: (fn() Bool)?
     available: enabled.or(fn() Bool {
       true
     }),
-    handler: handler,
+    handler,
   }
 }
 
@@ -244,8 +244,8 @@ struct Binding {
 
 fn binding(key: Key, invocation: Invocation, trigger: Trigger?) Binding {
   Binding{
-    key: key,
-    invocation: invocation,
+    key,
+    invocation,
     trigger: trigger.or(Trigger::press),
   }
 }
@@ -303,7 +303,7 @@ fn layer(
       true
     }),
     commands: commands.or([]),
-    bindings: bindings,
+    bindings,
     internal_after_run: fn() {},
   }
 }
@@ -439,12 +439,12 @@ struct Bindings<$Action> {
 }
 
 fn bindings(entries: [Mapping<$Action>]) Bindings<$Action> {
-  Bindings{entries: entries}
+  Bindings{entries}
 }
 
 fn mapping(key: Key, action: $Action, trigger: Trigger?) Mapping<$Action> {
   Mapping{
-    key: key,
+    key,
     action: Maybe::new(action),
     trigger: trigger.or(Trigger::press_or_repeat),
   }
@@ -507,7 +507,7 @@ impl Bindings {
     let next = &mut self.unbind(key, trigger)
     next.entries.push(
       Mapping{
-        key: key,
+        key,
         trigger: trigger.or(Trigger::press_or_repeat),
         action: Maybe::new<$Action>(),
       },

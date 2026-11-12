@@ -177,7 +177,7 @@ struct IssueCard {
   props: &mut CardProps,
 }
 private fn issue_card(props: &mut CardProps) &mut IssueCard {
-  &mut IssueCard{props: props}
+  &mut IssueCard{props}
 }
 impl cui::Component for IssueCard {
   fn mut render() cui::View {
@@ -239,7 +239,7 @@ struct IssueDetail {
 }
 private fn issue_detail(props: &mut DetailProps) &mut IssueDetail {
   &mut IssueDetail{
-    props: props,
+    props,
     section: "description",
     request: 0,
     status: "loading",
@@ -367,11 +367,11 @@ private fn notices() [Notice] {
   let result = &mut List::new<Notice>()
   for issue in issues() {
     if issue.id == "TIN-142" {
-      result.push(Notice{issue: issue, activity: "Maya mentioned you"})
+      result.push(Notice{issue, activity: "Maya mentioned you"})
     } else if issue.id == "TIN-119" {
-      result.push(Notice{issue: issue, activity: "Noah requested a review"})
+      result.push(Notice{issue, activity: "Noah requested a review"})
     } else if issue.id == "TIN-104" {
-      result.push(Notice{issue: issue, activity: "Iris completed this issue"})
+      result.push(Notice{issue, activity: "Iris completed this issue"})
     }
   }
   result.*
@@ -393,7 +393,7 @@ struct Inbox {
 }
 private fn inbox(props: &mut InboxProps) &mut Inbox {
   &mut Inbox{
-    props: props,
+    props,
     items: notices(),
     selected: 0,
     preview: Maybe::new<Issue>(),
@@ -673,7 +673,7 @@ struct Search {
 }
 private fn search(props: &mut SearchProps) &mut Search {
   &mut Search{
-    props: props,
+    props,
     query: "",
     results: [],
     selected: 0,
@@ -885,7 +885,7 @@ struct Toast {
   offset: Int,
 }
 private fn toast(props: &mut ToastProps) &mut Toast {
-  &mut Toast{props: props, offset: 40}
+  &mut Toast{props, offset: 40}
 }
 impl cui::Lifecycle for Toast {
   fn mut mounted(ctx: cui::Context) {
@@ -979,7 +979,7 @@ private fn tinear_screen(props: &mut ScreenProps) &mut TinearScreen {
   &mut TinearScreen{
     items: issues(),
     board: cui::scroll_box_ref(),
-    columns: columns,
+    columns,
     pressed: "",
     dragging: false,
     start_x: 0,

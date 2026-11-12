@@ -97,7 +97,7 @@ fn new() &mut State {
 
 private fn handle(root: mut node::Renderable, target: &mut node::Node) AttachmentHandle {
   AttachmentHandle{
-    target: target,
+    target,
     root: root.node(),
     generation: target.attachment_generation(),
   }
@@ -504,7 +504,7 @@ impl State {
                         y: received.y,
                         at_ms: now_ms,
                         selection_generation: generation,
-                        click_count: click_count,
+                        click_count,
                       },
                     )
                   } else {

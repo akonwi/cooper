@@ -59,9 +59,9 @@ fn main() {
   }
   for count in [250, 500, 1000] {
     let app = testing::new(100, 30)
-    let model = &mut Model{count: count, selected: 0}
+    let model = &mut Model{count, selected: 0}
     let start = time::Now()
-    let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+    let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model}))
     app.flush()
     let mount = time::Since(start)
     let update_start = time::Now()

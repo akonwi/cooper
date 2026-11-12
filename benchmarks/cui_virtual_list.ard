@@ -105,10 +105,10 @@ fn main() {
     metrics: &mut Metrics{builds: 0},
     virtual_ref: cui::virtual_list_ref(),
     eager_ref: cui::scroll_box_ref(),
-    eager: eager,
+    eager,
   }
   let mounted = time::Now()
-  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model: model}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{model}))
   app.flush()
   let mount_us = time::Since(mounted).Microseconds()
   if not app.frame().text().contains("row=0") {

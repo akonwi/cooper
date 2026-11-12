@@ -86,15 +86,15 @@ private fn make_card(
   let card = &mut DraggableCard{
     panel: ui::box(ctx),
     content: content_view,
-    x: x,
-    y: y,
-    width: width,
-    height: height,
-    z: z,
+    x,
+    y,
+    width,
+    height,
+    z,
     dragging: false,
     drag_offset_x: 0,
     drag_offset_y: 0,
-    background: background,
+    background,
   }
   card.panel.set_style(card_style(card))
   card.panel.add(content_view)

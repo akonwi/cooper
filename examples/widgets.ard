@@ -446,9 +446,9 @@ private fn make_tab_demo(ctx: &mut cooper::Runtime) &mut TabDemo {
   root.add(details)
 
   &mut TabDemo{
-    root: root,
-    control: control,
-    status: status,
+    root,
+    control,
+    status,
     show_description: true,
     show_arrows: true,
     wrap: false,
@@ -604,9 +604,9 @@ private fn make_select_demo(ctx: &mut cooper::Runtime) &mut SelectDemo {
   root.add(side)
 
   &mut SelectDemo{
-    root: root,
-    control: control,
-    status: status,
+    root,
+    control,
+    status,
     show_description: true,
     show_indicator: true,
     wrap: false,
@@ -732,18 +732,18 @@ private fn make_horizontal_slider(
   panel.add(value_label)
   panel.add(track)
   let slider = &mut LocalSlider{
-    name: name,
-    panel: panel,
-    track: track,
-    value_label: value_label,
+    name,
+    panel,
+    track,
+    value_label,
     orientation: SliderOrientation::horizontal,
-    minimum: minimum,
-    maximum: maximum,
-    value: value,
-    step: step,
-    thickness: thickness,
+    minimum,
+    maximum,
+    value,
+    step,
+    thickness,
     track_width: 48,
-    tint: tint,
+    tint,
     direction: 1,
   }
   render_slider(slider)
@@ -806,18 +806,18 @@ private fn make_vertical_slider(
   panel.add(track)
   panel.add(value_label)
   let slider = &mut LocalSlider{
-    name: name,
-    panel: panel,
-    track: track,
-    value_label: value_label,
+    name,
+    panel,
+    track,
+    value_label,
     orientation: SliderOrientation::vertical,
-    minimum: minimum,
-    maximum: maximum,
-    value: value,
-    step: step,
+    minimum,
+    maximum,
+    value,
+    step,
     thickness: 1,
-    track_width: track_width,
-    tint: tint,
+    track_width,
+    tint,
     direction: 1,
   }
   render_slider(slider)
@@ -914,7 +914,7 @@ private fn make_slider_page(ctx: &mut cooper::Runtime) SliderDemo {
   vertical.add(va.panel)
   root.add(horizontal)
   root.add(vertical)
-  SliderDemo{root: root, sliders: [h1, h2, h3, v1, v2, v3, va]}
+  SliderDemo{root, sliders: [h1, h2, h3, v1, v2, v3, va]}
 }
 
 private fn nav_style(active: Bool) ui::Style {

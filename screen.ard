@@ -13,8 +13,8 @@ struct Config {
 
 fn config(mode: Mode, height: Int?, clear_on_exit: Bool?) Config {
   let value = Config{
-    mode: mode,
-    height: height,
+    mode,
+    height,
     clear_on_exit: clear_on_exit.or(mode != Mode::inline),
   }
   value.internal_validate()

@@ -260,8 +260,8 @@ private fn default_selection_style(value: &mut ui::TextStyle) {
 
 private fn base(kind: Kind, key: Str?, styles: ui::Style?) Description {
   Description{
-    kind: kind,
-    key: key,
+    kind,
+    key,
     styles: styles.or(ui::style()),
     children: [],
     content: "",

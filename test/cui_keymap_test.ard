@@ -92,7 +92,7 @@ test fn declarative_layers_retain_identity_update_callbacks_and_clean_up() Void!
   }
   let mounted = cui::mount(
     cooper::App{context: application.context, root: application.root},
-    cui::child(screen, Props{model: model}),
+    cui::child(screen, Props{model}),
   )
   application.flush()
 
@@ -142,7 +142,7 @@ test fn component_context_owns_layers_and_rejects_registration_after_cancellatio
   }
   let mounted = cui::mount(
     cooper::App{context: application.context, root: application.root},
-    cui::child(screen, Props{model: model}),
+    cui::child(screen, Props{model}),
   )
   application.flush()
   let ctx = model.context.expect("mounted context")
@@ -174,7 +174,7 @@ test fn declarative_control_remaps_notify_discovery_without_render_loops() Void!
   }
   let mounted = cui::mount(
     cooper::App{context: application.context, root: application.root},
-    cui::child(screen, Props{model: model}),
+    cui::child(screen, Props{model}),
   )
   defer mounted.destroy()
   application.flush()

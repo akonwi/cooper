@@ -132,11 +132,11 @@ private fn source_segments(content: Str, measure: fn(Str) Int) [Segment] {
         output.push(
           Segment{
             glyphs: glyphs.*,
-            width: width,
-            newline_start: newline_start,
-            newline_end: newline_end,
-            newline_offset_start: newline_offset_start,
-            newline_offset_end: newline_offset_end,
+            width,
+            newline_start,
+            newline_end,
+            newline_offset_start,
+            newline_offset_end,
           },
         )
       },
@@ -151,7 +151,7 @@ impl Builder {
     self.lines.push(
       Line{
         start: self.line_start,
-        end: end,
+        end,
         width: self.x,
         y: self.y,
       },
@@ -224,7 +224,7 @@ private fn build(content: Str, wrap: text::TextWrap, requested_limit: Int, measu
     y: 0,
     line_start: 0,
     maximum_width: 0,
-    limit: limit,
+    limit,
   }
   for segment in source_segments(content, measure) {
     match wrap {
@@ -331,7 +331,7 @@ fn caret(value: Layout, cursor: Int) Caret {
       }
     }
   }
-  Caret{x: x, y: target.y}
+  Caret{x, y: target.y}
 }
 
 fn cursor_at(value: Layout, column: Int, row: Int) Int {

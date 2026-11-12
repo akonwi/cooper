@@ -39,8 +39,8 @@ test fn painted_cells_preserve_and_clear_style_across_wide_spans() Void!Str {
     height: 1,
   }
   let ctx = &mut paint::Context{
-    buffer: buffer,
-    bounds: bounds,
+    buffer,
+    bounds,
     clip: bounds,
     foreground: color::rgb(12, 34, 56),
     background: color::rgb(78, 90, 123),
@@ -100,8 +100,8 @@ test fn paint_runs_snapshot_styles_and_overwrites_clear_only_affected_cursor() V
     height: 1,
   }
   let ctx = &mut paint::Context{
-    buffer: buffer,
-    bounds: bounds,
+    buffer,
+    bounds,
     clip: bounds,
   }
   let requested = &mut styled_cell()
@@ -157,8 +157,8 @@ test fn clipped_wide_text_preserves_existing_background() Void!Str {
     height: 1,
   }
   let full = &mut paint::Context{
-    buffer: buffer,
-    bounds: bounds,
+    buffer,
+    bounds,
     clip: bounds,
     foreground: Maybe::new<color::Color>(),
     background: color::rgb(7, 8, 9),
@@ -166,8 +166,8 @@ test fn clipped_wide_text_preserves_existing_background() Void!Str {
   full.fill(paint::style(background: color::rgb(7, 8, 9)))
 
   let clipped = &mut paint::Context{
-    buffer: buffer,
-    bounds: bounds,
+    buffer,
+    bounds,
     clip: geometry::Rect{
       x: 1,
       y: 0,

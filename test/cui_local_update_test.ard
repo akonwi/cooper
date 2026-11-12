@@ -23,16 +23,16 @@ struct Component {
   props: &mut Props,
 }
 private fn component(props: &mut Props) &mut Component {
-  &mut Component{props: props}
+  &mut Component{props}
 }
 private fn model(label: Str, children: [&mut Model]) &mut Model {
   &mut Model{
-    label: label,
+    label,
     value: 0,
     renders: 0,
     mounts: 0,
     unmounts: 0,
-    children: children,
+    children,
     context: Maybe::new<cui::Context>(),
     ref: cui::box_ref(),
   }

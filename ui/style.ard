@@ -82,7 +82,7 @@ private fn finite(value: Float32) Bool {
 }
 
 private fn scalar(kind: LengthKind) Length {
-  Length{kind: kind, value: 0.0}
+  Length{kind, value: 0.0}
 }
 
 fn undefined() Length {
@@ -306,10 +306,10 @@ fn new(
   z_index: Int?,
 ) Style {
   let value = Style{
-    foreground: foreground,
-    background: background,
+    foreground,
+    background,
     border: border.or(Border::none),
-    border_color: border_color,
+    border_color,
     display: display.or(Display::flex),
     position: position.or(Position::relative),
     overflow: overflow.or(Overflow::visible),

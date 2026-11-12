@@ -49,8 +49,8 @@ test fn box_refs_retain_focus_and_clear_on_teardown() Void!Str {
   let first = cui::box_ref()
   let second = cui::box_ref()
   let props = &mut Panels{
-    first: first,
-    second: second,
+    first,
+    second,
     reverse: false,
     enabled: true,
     calls: 0,

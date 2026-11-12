@@ -106,9 +106,9 @@ private fn lane(context: &mut cooper::Runtime, parent: &mut ui::Box, preset: Pre
     },
   )
   Lane{
-    motion: motion,
-    guide: guide,
-    metrics: metrics,
+    motion,
+    guide,
+    metrics,
   }
 }
 

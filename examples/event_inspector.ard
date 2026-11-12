@@ -83,7 +83,7 @@ private fn make_marker(ctx: &mut cooper::Runtime, z: Int) &mut Marker {
     overflow: ui::TextOverflow::clip,
   )
   let marker = &mut Marker{
-    view: view,
+    view,
     x: 0,
     y: 0,
     visible: false,
@@ -166,22 +166,22 @@ private fn make_card(
     text_style: ui::text_style(foreground: ui::hex("#E2E8F0")),
   )
   let placeholder = &mut Card{
-    name: name,
+    name,
     panel: ui::box(ctx),
-    specimen: specimen,
-    label: label,
-    default_label: default_label,
+    specimen,
+    label,
+    default_label,
     latched: false,
-    x: x,
-    y: y,
+    x,
+    y,
     home_x: x,
     home_y: y,
-    width: width,
-    height: height,
+    width,
+    height,
     z: 100,
-    fill: fill,
-    drag_fill: drag_fill,
-    border: border,
+    fill,
+    drag_fill,
+    border,
   }
   placeholder.panel.set_style(card_style(placeholder, false))
   placeholder.panel.set_title(name)
@@ -512,7 +512,7 @@ fn main() {
     moved: false,
     next_z: 101,
     last_event: "ready",
-    cursor: cursor,
+    cursor,
     trails: prepared_trails.*,
     activations: prepared_activations.*,
   }

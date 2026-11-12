@@ -99,8 +99,8 @@ struct VirtualList {
 fn new(props: &mut Props) &mut VirtualList {
   let source = props.source
   &mut VirtualList{
-    props: props,
-    source: source,
+    props,
+    source,
     index: virtual_extent::new(source.keys, source.row_height.or(source.estimate)),
     scroll: view::scroll_box_ref(),
     rows: [],
@@ -231,7 +231,7 @@ impl VirtualList {
         end =+ 1
       }
     }
-    Range{start: first, end: end}
+    Range{start: first, end}
   }
 
   private fn state(maximum_scroll_top: Int) State {
@@ -241,7 +241,7 @@ impl VirtualList {
       last_item_visible: self.last_item_visible(),
       visible_range: self.visible_range(),
       scroll_top: self.top,
-      maximum_scroll_top: maximum_scroll_top,
+      maximum_scroll_top,
       total_height: self.index.total(),
       viewport_height: self.height,
     }
@@ -273,9 +273,9 @@ impl VirtualList {
               self.pending_state = Maybe::new<State>()
               handler(
                 Update{
-                  state: state,
-                  initial: initial,
-                  user_scroll: user_scroll,
+                  state,
+                  initial,
+                  user_scroll,
                   moved: user_scroll.is_some() and state.scroll_top != user_start.or(state.scroll_top),
                 },
                 ctx,
@@ -816,7 +816,7 @@ impl view::Component for VirtualList {
           ),
         ),
       )
-      rows.push(Row{key: key, ref: ref})
+      rows.push(Row{key, ref})
     }
     self.rows = rows.*
     view::scroll_box(

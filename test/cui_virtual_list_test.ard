@@ -78,7 +78,7 @@ test fn variable_rows_are_lazy_and_reveal_settles_before_paint() Void!Str {
     builds: 0,
     ref: cui::virtual_list_ref(),
   }
-  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data}))
   defer renderer.destroy()
   app.flush()
   let list = data.ref.current.expect("mounted list")
@@ -118,7 +118,7 @@ test fn insert_reorder_remove_and_empty_preserve_a_keyed_anchor() Void!Str {
     builds: 0,
     ref: cui::virtual_list_ref(),
   }
-  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data}))
   defer renderer.destroy()
   app.flush()
   let list = data.ref.current.expect("list")
@@ -478,7 +478,7 @@ struct StyledList {
   props: &mut StyledListProps,
 }
 private fn styled_list(props: &mut StyledListProps) &mut StyledList {
-  &mut StyledList{props: props}
+  &mut StyledList{props}
 }
 impl cui::Component for StyledList {
   fn mut render() cui::View {
@@ -503,7 +503,7 @@ test fn scrollbar_options_apply_update_hide_and_restore() Void!Str {
   defer app.destroy()
   let ref = cui::virtual_list_ref()
   let data = &mut StyledListState{
-    ref: ref,
+    ref,
     options: ui::scrollbar_options(
       appearance: ui::scrollbar_appearance(
         track_glyph: ".",
@@ -606,7 +606,7 @@ test fn following_edge_tracks_growth_until_scrolling_away_and_can_be_controlled(
   let renderer = renderer::mount(
     app.context,
     app.root,
-    cui::child(following_screen, FollowingProps{data: data}),
+    cui::child(following_screen, FollowingProps{data}),
   )
   defer renderer.destroy()
   app.flush()
@@ -833,7 +833,7 @@ test fn following_start_tracks_prepends_until_scrolling_away() Void!Str {
   let renderer = renderer::mount(
     app.context,
     app.root,
-    cui::child(start_following_screen, StartFollowingProps{data: data}),
+    cui::child(start_following_screen, StartFollowingProps{data}),
   )
   defer renderer.destroy()
   app.flush()
@@ -897,7 +897,7 @@ test fn declarative_edge_change_replaces_a_pending_opposite_jump() Void!Str {
   let renderer = renderer::mount(
     app.context,
     app.root,
-    cui::child(start_following_screen, StartFollowingProps{data: data}),
+    cui::child(start_following_screen, StartFollowingProps{data}),
   )
   defer renderer.destroy()
   app.flush()
@@ -971,7 +971,7 @@ test fn virtual_list_updates_publish_final_committed_state_and_user_intent() Voi
   let renderer = renderer::mount(
     app.context,
     app.root,
-    cui::child(update_screen, UpdateProps{data: data}),
+    cui::child(update_screen, UpdateProps{data}),
   )
   defer renderer.destroy()
   app.flush()
@@ -1162,7 +1162,7 @@ test fn removing_a_pinned_selection_endpoint_clears_selection_and_releases_the_r
     builds: 0,
     ref: cui::virtual_list_ref(),
   }
-  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data: data}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(screen, Props{data}))
   defer renderer.destroy()
   app.flush()
   app.double_click(1, 0)

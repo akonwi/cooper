@@ -31,8 +31,8 @@ fn style(
   hyperlink: Str?,
 ) CellStyle {
   CellStyle{
-    foreground: foreground,
-    background: background,
+    foreground,
+    background,
     bold: bold.or(false),
     dim: dim.or(false),
     italic: italic.or(false),
@@ -41,7 +41,7 @@ fn style(
     reverse: reverse.or(false),
     strike: strike.or(false),
     hidden: hidden.or(false),
-    hyperlink: hyperlink,
+    hyperlink,
   }
 }
 
@@ -71,7 +71,7 @@ private fn continuation(style: &mut CellStyle) StoredCell {
   StoredCell{
     grapheme: "",
     width: 0,
-    style: style,
+    style,
   }
 }
 
@@ -119,8 +119,8 @@ fn new_buffer(width: Int, height: Int) &mut Buffer {
     index =+ 1
   }
   &mut Buffer{
-    width: width,
-    height: height,
+    width,
+    height,
     cells: cells.*,
     cursor: Maybe::new<Cursor>(),
     native_images: false,
@@ -140,13 +140,7 @@ impl Buffer {
     self.native_images = true
     self.cell_pixel_width = cell_width
     self.cell_pixel_height = cell_height
-    let orders = &mut List::new<Int>(self.width * self.height)
-    mut index = 0
-    while index < self.width * self.height {
-      orders.set(index, 0)
-      index =+ 1
-    }
-    self.cell_orders = orders.*
+    self.cell_orders = List::new<Int>(self.width * self.height)
   }
 
   fn mut add_image(image: ImagePlacement) {
@@ -276,9 +270,9 @@ impl Buffer {
       x,
       y,
       StoredCell{
-        grapheme: grapheme,
-        width: width,
-        style: style,
+        grapheme,
+        width,
+        style,
       },
     )
     part = 1

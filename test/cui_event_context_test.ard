@@ -102,7 +102,7 @@ test fn all_event_contexts_belong_to_nearest_component_without_lifecycle_hooks()
     value: "",
     calls: 0,
   }
-  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model: model}))
+  let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model}))
   app.flush()
   let field = model.field.current.expect("input")
   let _ = field.focus()

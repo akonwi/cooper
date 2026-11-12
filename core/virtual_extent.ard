@@ -66,13 +66,13 @@ private fn build(keys: [Str], estimate: Int, measured: [Str: Int]) Index {
     }
   }
   Index{
-    keys: keys,
+    keys,
     positions: positions.*,
     measured: retained.*,
     heights: heights.*,
     tree: tree.*,
     steps: steps.*,
-    extent: extent,
+    extent,
   }
 }
 

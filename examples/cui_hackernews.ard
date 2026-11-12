@@ -58,7 +58,7 @@ struct Page {
 
 private fn page(props: &mut PageProps) &mut Page {
   &mut Page{
-    props: props,
+    props,
     roots: [],
     queue: [],
     seen: &mut Map::new<Bool>(),
@@ -249,7 +249,7 @@ impl Page {
       match self.items.get(id.to_str()) {
         _ => {
           if self.errors.has(id.to_str()) {
-            rows.push(CommentRow{id: id, depth: depth})
+            rows.push(CommentRow{id, depth})
           }
         },
         item => {
@@ -257,7 +257,7 @@ impl Page {
             self.selected = id
           }
           self.visible.push(id)
-          rows.push(CommentRow{id: id, depth: depth})
+          rows.push(CommentRow{id, depth})
           let closed = id != self.props.story and self.collapsed.get(id.to_str()).or(true)
           if self.props.story != 0 and not closed {
             for child in item.kids.or([]) {

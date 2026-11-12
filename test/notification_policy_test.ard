@@ -33,7 +33,7 @@ test fn notification_protocols_format_and_sanitize_payloads() Void!Str {
     },
     empty_environment,
     fn(title: Str, body: Str) {
-      log.calls.push(Call{title: title, body: body})
+      log.calls.push(Call{title, body})
     },
   )
   try testing::assert(backend.notify("build;done\nnow\x1b", "Cooper; CI"), "expected OSC 777")
@@ -58,7 +58,7 @@ test fn notification_sanitization_distinguishes_malformed_bytes_from_replacement
     },
     empty_environment,
     fn(title: Str, body: Str) {
-      log.calls.push(Call{title: title, body: body})
+      log.calls.push(Call{title, body})
     },
   )
   let malformed = &mut strings::Builder{}
@@ -80,7 +80,7 @@ test fn empty_notification_fields_preserve_original_protocol_forms() Void!Str {
     },
     empty_environment,
     fn(title: Str, body: Str) {
-      log.calls.push(Call{title: title, body: body})
+      log.calls.push(Call{title, body})
     },
   )
   try testing::assert(osc777.notify("", ""), "expected OSC 777")
@@ -90,7 +90,7 @@ test fn empty_notification_fields_preserve_original_protocol_forms() Void!Str {
     },
     empty_environment,
     fn(title: Str, body: Str) {
-      log.calls.push(Call{title: title, body: body})
+      log.calls.push(Call{title, body})
     },
   )
   try testing::assert(osc9.notify("", ""), "expected OSC 9")
@@ -145,7 +145,7 @@ test fn term_features_codes_and_protocol_precedence_are_preserved() Void!Str {
       }
     },
     fn(title: Str, body: Str) {
-      identity_wins.calls.push(Call{title: title, body: body})
+      identity_wins.calls.push(Call{title, body})
     },
   )
   try testing::assert(identified.notify("message", ""), "terminal identity must be selected")
@@ -169,7 +169,7 @@ test fn term_features_codes_and_protocol_precedence_are_preserved() Void!Str {
       }
     },
     fn(title: Str, body: Str) {
-      features_win.calls.push(Call{title: title, body: body})
+      features_win.calls.push(Call{title, body})
     },
   )
   try testing::assert(featured.notify("message", ""), "features must be selected")
@@ -187,7 +187,7 @@ test fn osc9_combines_title_and_unsupported_protocols_do_not_emit() Void!Str {
     },
     empty_environment,
     fn(title: Str, body: Str) {
-      log.calls.push(Call{title: title, body: body})
+      log.calls.push(Call{title, body})
     },
   )
   try testing::assert(osc9.notify("tests;passed\u009d", "Cooper"), "expected OSC 9")
@@ -202,7 +202,7 @@ test fn osc9_combines_title_and_unsupported_protocols_do_not_emit() Void!Str {
     },
     empty_environment,
     fn(title: Str, body: Str) {
-      log.calls.push(Call{title: title, body: body})
+      log.calls.push(Call{title, body})
     },
   )
   try testing::assert(not unsupported.notify("ignored", ""), "OSC 99 remains unsupported")
@@ -223,7 +223,7 @@ test fn environment_precedence_and_multiplexer_guards_are_preserved() Void!Str {
       }
     },
     fn(title: Str, body: Str) {
-      log.calls.push(Call{title: title, body: body})
+      log.calls.push(Call{title, body})
     },
   )
   try testing::assert(forced.notify("done", "Cooper"), "forced OSC 9 should win")
@@ -246,7 +246,7 @@ test fn environment_precedence_and_multiplexer_guards_are_preserved() Void!Str {
       }
     },
     fn(title: Str, body: Str) {
-      log.calls.push(Call{title: title, body: body})
+      log.calls.push(Call{title, body})
     },
   )
   try testing::assert(not multiplexed.notify("ignored", ""), "multiplexers remain unsupported")
@@ -433,7 +433,7 @@ test fn ghostty_progress_payloads_and_validation_are_preserved() Void!Str {
     },
     empty_environment,
     fn(title: Str, body: Str) {
-      log.calls.push(Call{title: title, body: body})
+      log.calls.push(Call{title, body})
     },
   )
   try testing::assert(backend.set_progress(0, Maybe::new<Int>()), "remove")

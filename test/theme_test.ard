@@ -27,9 +27,9 @@ fn same(got: ui::Color, want: ui::Color) Bool {
 
 fn terminal(foreground: ui::Color?, background: ui::Color?, palette: [ui::Color?]) theme::TerminalColors {
   theme::TerminalColors{
-    foreground: foreground,
-    background: background,
-    palette: palette,
+    foreground,
+    background,
+    palette,
   }
 }
 

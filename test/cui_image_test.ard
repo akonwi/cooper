@@ -52,7 +52,7 @@ struct Host {
 }
 
 private fn host(props: &mut Props) &mut Host {
-  &mut Host{props: props}
+  &mut Host{props}
 }
 
 impl cui::Component for Host {
@@ -74,7 +74,7 @@ test fn declarative_images_paint_and_replace_their_source_by_identity() Void!Str
   let mounted = renderer::mount(
     application.context,
     application.root,
-    cui::child(host, Props{model: model}),
+    cui::child(host, Props{model}),
   )
   defer mounted.destroy()
   application.flush()

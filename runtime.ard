@@ -15,7 +15,6 @@ use cooper/core/runtime as dispatch_runtime
 use cooper/core/selection_state
 use cooper/core/terminal_events
 use cooper/event
-use go:cooper/ffi/numberbridge as numbers
 use go:cooper/ffi/signalwatch
 use go:cooper/ffi/urlopen
 use go:cooper/ffi/vaxisbridge
@@ -1043,7 +1042,7 @@ impl State {
       if self.animation_clock_initialized {
         let elapsed = now - self.animation_last_ms
         if elapsed > 0 {
-          delta = numbers::IntFromInt64(elapsed).expect("animation frame delta exceeds Int range")
+          delta = Int::try(elapsed).expect("animation frame delta exceeds Int range")
         }
       }
       self.animation_clock_initialized = true

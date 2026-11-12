@@ -129,7 +129,6 @@ core/            unsupported runtime mechanisms
   virtual_extent.ard
 ffi/             isolated Go bridges, one directory per package
   contextbridge/ adapts Go context/cancel return pairs
-  numberbridge/  numeric conversions missing from Ard
   vaxisbridge/   Vaxis modifier-bit testing
   signalwatch/   OS signal subscriptions and terminal-size queries
   urlopen/       platform URL handlers

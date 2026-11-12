@@ -4,7 +4,6 @@ use cooper/core/layout/children
 use cooper/core/layout/length
 use cooper/core/layout/measure
 use cooper/core/layout/numeric
-use go:cooper/ffi/numberbridge as numbers
 use cooper/ui/style
 
 // Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -189,10 +188,10 @@ fn layout_child(
   } else if (not main_row) and (parent.value.justify_content == style::Justify::center or parent.value.justify_content == style::Justify::space_around or parent.value.justify_content == style::Justify::space_evenly) or main_row and alignment == style::Align::center {
     y = (parent.measured_height - child_height - margin_column - parent_padding_top - parent_padding_bottom) / Float32::from(2.0) + margin_top + parent_padding_top
   }
-  child.x = numbers::Widen(x)
-  child.y = numbers::Widen(y)
-  child.width = numbers::Widen(child_width)
-  child.height = numbers::Widen(child_height)
+  child.x = Float64::from(x)
+  child.y = Float64::from(y)
+  child.width = Float64::from(child_width)
+  child.height = Float64::from(child_height)
   measured
 }
 
@@ -225,10 +224,10 @@ fn walk(
           visit,
         ) or changed
         if defined(child.value.left, containing_width) or defined(child.value.right, containing_width) {
-          child.x = child.x - numbers::Widen(offset_x)
+          child.x = child.x - Float64::from(offset_x)
         }
         if defined(child.value.top, containing_height) or defined(child.value.bottom, containing_height) {
-          child.y = child.y - numbers::Widen(offset_y)
+          child.y = child.y - Float64::from(offset_y)
         }
       } else if child.value.display == style::Display::contents or child.value.position == style::Position::static {
         let next_parent = match child.value.display == style::Display::contents {

@@ -1,7 +1,6 @@
 use cooper/core/layout/cache
 use cooper/core/layout/measure as measurement
 use cooper/core/layout/numeric
-use go:cooper/ffi/numberbridge as numbers
 use cooper/ui/geometry
 use cooper/ui/style
 
@@ -229,8 +228,8 @@ impl Node {
       }
     }
     if perform_layout {
-      self.width = numbers::Widen(self.measured_width)
-      self.height = numbers::Widen(self.measured_height)
+      self.width = Float64::from(self.measured_width)
+      self.height = Float64::from(self.measured_height)
       self.dirty = false
     }
     self.cache_state.complete(generation, 0, cache::Direction::ltr)

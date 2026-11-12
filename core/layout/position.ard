@@ -2,7 +2,6 @@ use cooper/core/layout
 use cooper/core/layout/cache
 use cooper/core/layout/length
 use cooper/core/layout/numeric
-use go:cooper/ffi/numberbridge as numbers
 use cooper/ui/style
 
 // Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -347,8 +346,8 @@ fn apply(
         true => cross_position,
         false => main_position,
       }
-      child.x = numbers::Widen(x + relative(child, true, owner_width, owner_height))
-      child.y = numbers::Widen(y + relative(child, false, owner_width, owner_height))
+      child.x = Float64::from(x + relative(child, true, owner_width, owner_height))
+      child.y = Float64::from(y + relative(child, false, owner_width, owner_height))
     }
     line_cursor = line_cursor + line_extent
     if line_index + 1 < lines.size() {

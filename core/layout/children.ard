@@ -4,7 +4,6 @@ use cooper/core/layout/cache
 use cooper/core/layout/length
 use cooper/core/layout/measure
 use cooper/core/layout/numeric
-use go:cooper/ffi/numberbridge as numbers
 use cooper/ui/geometry
 use cooper/ui/style
 
@@ -40,12 +39,12 @@ fn intrinsic_basis(value: style::Length, natural: Float32, available: Float32) F
 fn resolve_insets(node: &mut layout::Node, owner_width: Float32) {
   let border = Float32::fit(node.border)
   node.insets = layout::Insets{
-    left: numbers::Widen(resolved_or_zero(node.value.padding.left, owner_width) + border),
-    right: numbers::Widen(resolved_or_zero(node.value.padding.right, owner_width) + border),
-    top: numbers::Widen(resolved_or_zero(node.value.padding.top, owner_width) + border),
-    bottom: numbers::Widen(resolved_or_zero(node.value.padding.bottom, owner_width) + border),
+    left: Float64::from(resolved_or_zero(node.value.padding.left, owner_width) + border),
+    right: Float64::from(resolved_or_zero(node.value.padding.right, owner_width) + border),
+    top: Float64::from(resolved_or_zero(node.value.padding.top, owner_width) + border),
+    bottom: Float64::from(resolved_or_zero(node.value.padding.bottom, owner_width) + border),
   }
-  node.percent_width = numbers::Widen(owner_width)
+  node.percent_width = Float64::from(owner_width)
 }
 
 fn zero_own_geometry(node: &mut layout::Node) {

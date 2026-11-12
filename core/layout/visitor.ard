@@ -8,7 +8,6 @@ use cooper/core/layout/measure
 use cooper/core/layout/numeric
 use cooper/core/layout/position
 use cooper/core/layout/redistribute
-use go:cooper/ffi/numberbridge as numbers
 use cooper/ui/style
 
 // Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -77,8 +76,8 @@ fn calculate_transaction(node: &mut layout::Node, width: Int, height: Int) {
     generation,
     true,
   )
-  node.x = numbers::Widen(position::relative(node, true, available_width, available_height))
-  node.y = numbers::Widen(position::relative(node, false, available_width, available_height))
+  node.x = Float64::from(position::relative(node, true, available_width, available_height))
+  node.y = Float64::from(position::relative(node, false, available_width, available_height))
   // Freeze every horizontal edge before projected-width height replay. The
   // second pass may recompute vertical line extents and baselines, but its
   // horizontal results and cache/basis writes are transaction-local.
@@ -757,8 +756,8 @@ fn translated_visit(
       }
     }
     if perform_layout {
-      node.width = numbers::Widen(node.measured_width)
-      node.height = numbers::Widen(node.measured_height)
+      node.width = Float64::from(node.measured_width)
+      node.height = Float64::from(node.measured_height)
       node.dirty = false
     }
     node.cache_state.complete(generation, 0, cache::Direction::ltr)

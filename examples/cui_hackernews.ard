@@ -573,7 +573,7 @@ impl cui::Component for News {
     }
     mut shortcuts: [keymap::Shortcut] = []
     match self.context {
-      ctx => { shortcuts = (ctx.shortcuts)() },
+      ctx => { shortcuts = ctx.shortcuts() },
       _ => (),
     }
     let pages = &mut List::new<cui::View>()

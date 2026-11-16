@@ -1129,13 +1129,11 @@ impl State {
     for child in children {
       if child.autofocus_pending {
         child.autofocus_pending = false
-        let _ = (child.context.internal_focus)(
-          fn() {
-            if self.active and live(child) {
-              let _ = child.control.node().focus()
-            }
-          },
-        )
+        let _ = child.context.internal_focus(fn() {
+          if self.active and live(child) {
+            let _ = child.control.node().focus()
+          }
+        })
       }
       match child.description.focused {
         focused => {

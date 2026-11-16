@@ -97,8 +97,8 @@ test fn scoped_animation_starts_eases_invalidates_and_completes() Void!Str {
   try testing::assert(end.progress == 1.0 and end.elapsed == 100, "completion clamped to duration")
   try testing::assert(data.renders == before + 3, "completion invalidates too")
   try testing::assert(not app.animations_active(), "completion releases timeline")
-  (data.cancel)()
-  (data.cancel)()
+  data.cancel()
+  data.cancel()
   app.advance_time(100)
   testing::assert(data.frames.size() == 3, "no callbacks after completion")
 }
@@ -109,8 +109,8 @@ test fn scoped_animation_cancellation_is_idempotent_and_default_easing_is_linear
   let data = model()
   let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model: data}))
   defer renderer.destroy()
-  (data.cancel)()
-  (data.cancel)()
+  data.cancel()
+  data.cancel()
   let ctx = data.context.expect("mounted context")
   let cancel = ctx.animate(80, fn(frame: animation::Frame) {
     data.frames.push(frame)
@@ -170,7 +170,7 @@ test fn renderer_destroyed_inside_frame_suppresses_other_timelines_in_same_tick(
   defer app.destroy()
   let data = model()
   let renderer = renderer::mount(app.context, app.root, cui::child(parent, Props{model: data}))
-  (data.cancel)()
+  data.cancel()
   let ctx = data.context.expect("mounted context")
   let cancel = ctx.animate(100, fn(frame: animation::Frame) {
     renderer.destroy()

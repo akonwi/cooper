@@ -2242,7 +2242,7 @@ impl State {
     let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 7
     mut accepted = false
     if active and not self.resources_stopped {
-      accepted = (self.notification_action)(message, normalized)
+      accepted = self.notification_action(message, normalized)
     }
     accepted
   }
@@ -2280,7 +2280,7 @@ impl State {
     let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 7
     mut accepted = false
     if active and not self.resources_stopped {
-      accepted = (self.terminal_progress_action)(progress_state, percent)
+      accepted = self.terminal_progress_action(progress_state, percent)
       if accepted {
         self.terminal_progress_state = progress_state
         self.terminal_progress_percent = percent
@@ -2302,7 +2302,7 @@ impl State {
     let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 7
     mut accepted = false
     if active and not self.resources_stopped {
-      accepted = (self.program_status_action)(normalized)
+      accepted = self.program_status_action(normalized)
       if accepted {
         self.program_status_records.internal_store(normalized)
       }
@@ -2325,7 +2325,7 @@ impl State {
     let active = self.phase == 0 or self.phase == 1 or self.phase == 2 or self.phase == 7
     mut accepted = false
     if active and not self.resources_stopped {
-      accepted = (self.program_status_action)(program_status::Clear{id})
+      accepted = self.program_status_action(program_status::Clear{id})
       if accepted {
         self.program_status_records.internal_remove(id)
       }
@@ -2334,12 +2334,12 @@ impl State {
   }
 
   fn mut program_status_supported() Bool {
-    (self.program_status_detected)()
+    self.program_status_detected()
   }
 
   private fn mut send_program_status_updates_locked(updates: [program_status::Update]) {
     for update in updates {
-      let _ = (self.program_status_action)(update)
+      let _ = self.program_status_action(update)
     }
   }
 

@@ -186,7 +186,7 @@ impl Registry {
       if entry.active {
         let snapshot = entry.layer.*
         let rank = distance(snapshot.scope, focused, root)
-        if include_inactive or rank >= 0 and (snapshot.enabled)() {
+        if include_inactive or rank >= 0 and snapshot.enabled() {
           let candidate = Candidate{
             entry,
             snapshot,
@@ -220,7 +220,7 @@ impl Registry {
           }
           if binding.key.matches(received.*) and keymap::matches_trigger(binding.trigger, received.event_type) {
             handled = binding.invocation.invoke()
-            (candidate.snapshot.internal_after_run)()
+            candidate.snapshot.internal_after_run()
             if handled {
               received.prevent_default()
               break
@@ -238,7 +238,7 @@ impl Registry {
   fn shortcuts(root: (&mut node::Node)?, focused: (&mut node::Node)?, reserved_ctrl_c: Bool) [keymap::Shortcut] {
     let result = &mut List::new<keymap::Shortcut>()
     for candidate in self.ordered(root, focused, true) {
-      let active = candidate.distance >= 0 and (candidate.snapshot.enabled)()
+      let active = candidate.distance >= 0 and candidate.snapshot.enabled()
       for binding in candidate.snapshot.bindings {
         let reserved = reserved_ctrl_c and binding.key.name == "c" and binding.key.modifiers.ctrl and (not binding.key.modifiers.shift) and (not binding.key.modifiers.alt) and (not binding.key.modifiers.super) and binding.trigger != keymap::Trigger::release
         let eligible = active and binding.invocation.command.enabled() and (not reserved)

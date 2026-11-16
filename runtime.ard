@@ -16,7 +16,6 @@ use cooper/core/selection_state
 use cooper/core/signals
 use cooper/core/terminal_events
 use cooper/event
-use go:cooper/ffi/vaxisbridge
 use cooper/keymap
 use cooper/notification
 use cooper/program_status
@@ -45,7 +44,7 @@ private fn vaxis_color(value: color::Color?) vaxis::Color {
         match color.index {
           index => vaxis::IndexColor(Byte::from(index)),
           _ => {
-            let packed = Uint32::from(color.red) * 65536 + Uint32::from(color.green) * 256 + Uint32::from(color.blue)
+            let packed = Uint32::from(color.red) << 16 | Uint32::from(color.green) << 8 | Uint32::from(color.blue)
             vaxis::HexColor(packed)
           },
         }
@@ -2939,9 +2938,9 @@ impl State {
     if self.screen_config.mode == screen::Mode::alt {
       Maybe::new<&mut event::MouseEvent>(converted)
     } else {
-      let position = vaxisbridge::ScreenPosition(self.terminal.expect("mouse terminal"))
-      if position.Valid and mouse.SurfaceGeneration == position.Generation {
-        converted.y = converted.y - position.Row
+      let row, generation, valid = self.terminal.expect("mouse terminal").PrimaryScreenOrigin()
+      if valid and mouse.SurfaceGeneration == generation {
+        converted.y = converted.y - row
         Maybe::new<&mut event::MouseEvent>(converted)
       } else if converted.event_type == event::MouseEventType::up {
         // A stale release must end capture without clicking a new placement.

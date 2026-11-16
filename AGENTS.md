@@ -15,7 +15,8 @@ events, listeners, scrolling, controls, and application helpers in Ard. Direct
 Go interop is limited to Vaxis, the internal layout backend, and platform
 services such as OS signals. Select platform-specific Go APIs with Ard
 `#platform(...)` declarations rather than Go build tags. Tess/Yoga types and
-fallible setters must remain hidden behind Cooper's validated API and remain replaceable by an Ard-native implementation.
+fallible setters must remain hidden behind Cooper's validated API and remain
+replaceable by an Ard-native implementation.
 
 `cooper.ard` is the canonical application entry point and owns App plus the
 `app(...)` constructor. `ui.ard` is the canonical view-construction facade over
@@ -27,8 +28,9 @@ and testing remain at the package root. App owns one Runtime lifetime, exposes
 that Runtime as `application.context`, and binds its Root to the same identity.
 Cooper has no separate application Context type. Keep only unsupported runtime
 mechanisms with no public counterpart beneath `core/`: Node, paint, focus, hit
-testing, routing, and scheduling. Backend bindings stay beneath
-`ffi/`, with one directory per Go package and no additional category nesting.
+testing, routing, and scheduling. Call Go APIs directly from Ard, including
+multi-result functions through tuples. Add a Go bridge beneath `ffi/`, one
+directory per Go package, only for behavior Ard cannot express.
 
 Import Vaxis as `vaxis`; do not alias it as `raw`.
 
@@ -73,7 +75,6 @@ Validation entry points:
 ```sh
 ard test          # headless unit and integration tests
 ard check cooper.ard --all-platforms  # every #platform variant
-go test ./...     # Go bridge tests
 ```
 
 PTY tests live in `examples/test_*.py`. Run the one relevant to your change,
@@ -128,9 +129,6 @@ core/            unsupported runtime mechanisms
   signals.ard    OS shutdown/resize signals, selected per platform
   terminal_events.ard
   virtual_extent.ard
-ffi/             isolated Go bridges, one directory per package
-  contextbridge/ adapts Go context/cancel return pairs
-  vaxisbridge/   Vaxis modifier bits and multi-result screen origin
 test/            deterministic integration tests
 examples/        curated runnable applications and PTY tests
   fixtures/      focused non-gallery regression programs

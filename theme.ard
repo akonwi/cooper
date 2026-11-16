@@ -1,10 +1,10 @@
 use ard/unsafe
 
 use go:context
-use go:cooper/ffi/contextbridge
 use cooper/ui/color
 use go:math
 use go:sync
+use go:time
 use go:vaxis
 
 // Contrast-aware palette derivation, ported from the vaxis/ui theme
@@ -75,7 +75,8 @@ struct Theme {
 
 private struct QueryLifetime {
   mutex: &mut sync::Mutex,
-  current: contextbridge::Cancellation,
+  context: context::Context,
+  cancel: fn(),
 }
 
 private struct ServiceState {
@@ -107,7 +108,12 @@ private fn empty_colors() TerminalColors {
 }
 
 fn internal_service(action: fn(context::Context) TerminalColors) &mut Service {
-  let lifetime = &mut QueryLifetime{mutex: &mut sync::Mutex{}, current: contextbridge::WithCancel(context::Background())}
+  let initial, cancel = context::WithCancel(context::Background())
+  let lifetime = &mut QueryLifetime{
+    mutex: &mut sync::Mutex{},
+    context: initial,
+    cancel,
+  }
   let state = &mut ServiceState{
     lifecycle: &mut sync::Mutex{},
     query_guard: &mut sync::Mutex{},
@@ -376,11 +382,11 @@ impl Service {
       current
     } else {
       state.lifetime.mutex.Lock()
-      let parent = state.lifetime.current.Context
+      let parent = state.lifetime.context
       state.lifetime.mutex.Unlock()
-      let timeout = contextbridge::WithTimeout(parent, 200)
-      let queried = (state.action)(timeout.Context)
-      timeout.Cancel()
+      let deadline, release = context::WithTimeout(parent, time::Millisecond * 200)
+      let queried = (state.action)(deadline)
+      release()
       let resolved = from_terminal(queried)
       state.lifecycle.Lock()
       let accepted = (not state.stopped) and not state.suspended
@@ -417,7 +423,7 @@ impl Service {
     if (not state.stopped) and not state.suspended {
       state.suspended = true
       state.lifetime.mutex.Lock()
-      state.lifetime.current.Cancel()
+      state.lifetime.cancel()
       state.lifetime.mutex.Unlock()
       changed = true
     }
@@ -430,7 +436,9 @@ impl Service {
     state.lifecycle.Lock()
     if (not state.stopped) and state.suspended {
       state.lifetime.mutex.Lock()
-      state.lifetime.current = contextbridge::WithCancel(context::Background())
+      let renewed, cancel = context::WithCancel(context::Background())
+      state.lifetime.context = renewed
+      state.lifetime.cancel = cancel
       state.lifetime.mutex.Unlock()
       state.suspended = false
     }
@@ -443,7 +451,7 @@ impl Service {
     if not state.stopped {
       state.stopped = true
       state.lifetime.mutex.Lock()
-      state.lifetime.current.Cancel()
+      state.lifetime.cancel()
       state.lifetime.mutex.Unlock()
     }
     state.lifecycle.Unlock()

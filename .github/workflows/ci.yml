@@ -50,7 +50,7 @@ jobs:
         run: go mod download
 
       - name: Test Ard framework
-        run: ard test
+        run: ard test --race
 
       - name: Check platform-specific declarations
         if: runner.os == 'Linux'

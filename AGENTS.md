@@ -74,6 +74,7 @@ Validation entry points:
 
 ```sh
 ard test          # headless unit and integration tests
+ard test --race   # the same tests under Go's race detector, as CI runs them
 ard check cooper.ard --all-platforms  # every #platform variant
 ```
 

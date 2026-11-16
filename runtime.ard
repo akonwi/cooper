@@ -13,9 +13,9 @@ use cooper/core/pointer
 use cooper/core/router
 use cooper/core/runtime as dispatch_runtime
 use cooper/core/selection_state
+use cooper/core/signals
 use cooper/core/terminal_events
 use cooper/event
-use go:cooper/ffi/signalwatch
 use go:cooper/ffi/vaxisbridge
 use cooper/keymap
 use cooper/notification
@@ -341,7 +341,7 @@ private struct State {
   terminal_io: &mut sync::Mutex,
   terminal_suspended: Bool,
   terminal_closed: Bool,
-  signal_watcher: (&mut signalwatch::Watcher)?,
+  signal_watcher: (&mut signals::Watcher)?,
   system_wake: Chan<Bool>,
   animation_control_wake: Chan<Bool>,
   animation_frame_wake: Chan<Bool>,
@@ -432,7 +432,7 @@ private fn state(
   render_request: fn()?,
   width_measurer: (fn(Str) Int)?,
   open_url_action: fn(Str) Void!Error,
-  signal_watcher: (&mut signalwatch::Watcher)?,
+  signal_watcher: (&mut signals::Watcher)?,
   exit_on_ctrl_c: Bool,
   auto_focus: Bool,
   width: Int,
@@ -610,7 +610,7 @@ private fn new_live_state(
       }
     },
   }
-  let watcher = signalwatch::New()
+  let watcher = signals::watch()
   let terminal_io = &mut sync::Mutex{}
   match vaxis::New(options) {
     ok(terminal) => {
@@ -668,7 +668,7 @@ private fn new_live_state(
           })
           Result::ok(())
         },
-        Maybe::new<&mut signalwatch::Watcher>(watcher),
+        Maybe::new<&mut signals::Watcher>(watcher),
         exit_on_ctrl_c,
         auto_focus,
         0,
@@ -701,7 +701,7 @@ private fn new_live_state(
       Result::ok(created)
     },
     err(error) => {
-      watcher.Close()
+      watcher.close()
       Result::err(error)
     },
   }
@@ -734,7 +734,7 @@ private fn new_headless_state(
     Maybe::new<fn()>(),
     Maybe::new<fn(Str) Int>(),
     open_url,
-    Maybe::new<&mut signalwatch::Watcher>(),
+    Maybe::new<&mut signals::Watcher>(),
     true,
     true,
     width,
@@ -766,7 +766,7 @@ private fn new_detached_state(request_render: fn()?, width_measurer: (fn(Str) In
     request_render,
     width_measurer,
     reject_url,
-    Maybe::new<&mut signalwatch::Watcher>(),
+    Maybe::new<&mut signals::Watcher>(),
     true,
     true,
     0,
@@ -1492,7 +1492,7 @@ impl State {
       self.terminal_closed = true
       self.terminal_io.Unlock()
       match self.signal_watcher {
-        watcher => watcher.Close(),
+        watcher => watcher.close(),
         _ => (),
       }
       self.publish_completion(Maybe::new<Error>())
@@ -1722,7 +1722,7 @@ impl State {
 
     if terminal_finished {
       match self.signal_watcher {
-        watcher => watcher.Close(),
+        watcher => watcher.close(),
         _ => (),
       }
     }
@@ -2099,37 +2099,26 @@ impl State {
     match self.signal_watcher {
       watcher => {
         async::start(fn() {
-          let events = watcher.Events()
           mut watching = true
           while watching {
-            match events.recv() {
-              signaled => {
-                mut draining = true
-                while draining {
-                  let received = watcher.Next()
-                  if received.Kind == signalwatch::Shutdown {
-                    self.handle_system_shutdown()
-                    draining = false
-                  } else if received.Kind == signalwatch::Resize {
-                    self.lifecycle.Lock()
-                    let available = self.phase != 3 and self.phase != 4
-                    if available {
-                      self.pending_resize_cols = received.Cols
-                      self.pending_resize_rows = received.Rows
-                    }
-                    self.lifecycle.Unlock()
-                    if available {
-                      select {
-                        self.system_wake.send(true) => (),
-                        _ => (),
-                      }
-                    }
-                  } else {
-                    draining = false
+            match watcher.next() {
+              signals::Shutdown(_) => self.handle_system_shutdown(),
+              signals::Resize(size) => {
+                self.lifecycle.Lock()
+                let available = self.phase != 3 and self.phase != 4
+                if available {
+                  self.pending_resize_cols = size.cols
+                  self.pending_resize_rows = size.rows
+                }
+                self.lifecycle.Unlock()
+                if available {
+                  select {
+                    self.system_wake.send(true) => (),
+                    _ => (),
                   }
                 }
               },
-              _ => { watching = false },
+              signals::Closed(_) => { watching = false },
             }
           }
         })

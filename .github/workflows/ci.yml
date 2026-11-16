@@ -55,6 +55,13 @@ jobs:
       - name: Test Ard framework
         run: ard test
 
+      - name: Check platform-specific declarations
+        if: runner.os == 'Linux'
+        run: |
+          ard check cooper.ard --all-platforms
+          cd examples
+          ard build quickstart.ard --platform windows/amd64 --out "$RUNNER_TEMP/cooper-quickstart.exe"
+
       - name: Check Python scripts
         if: runner.os == 'Linux'
         run: |

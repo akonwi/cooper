@@ -12,10 +12,10 @@ sub-agent and verify the smallest shape with the current compiler.
 
 Implement Nodes, styles, colors, cells, layout semantics, geometry, focus,
 events, listeners, scrolling, controls, and application helpers in Ard. Direct
-Go interop is limited to Vaxis, the internal layout backend, and isolated
-platform services that Ard cannot express, such as per-platform OS signal
-handling. Tess/Yoga types and fallible setters must remain hidden behind
-Cooper's validated API and remain replaceable by an Ard-native implementation.
+Go interop is limited to Vaxis, the internal layout backend, and platform
+services such as OS signals. Select platform-specific Go APIs with Ard
+`#platform(...)` declarations rather than Go build tags. Tess/Yoga types and
+fallible setters must remain hidden behind Cooper's validated API and remain replaceable by an Ard-native implementation.
 
 `cooper.ard` is the canonical application entry point and owns App plus the
 `app(...)` constructor. `ui.ard` is the canonical view-construction facade over
@@ -72,6 +72,7 @@ Validation entry points:
 
 ```sh
 ard test          # headless unit and integration tests
+ard check cooper.ard --all-platforms  # every #platform variant
 go test ./...     # Go bridge tests
 ```
 
@@ -124,12 +125,12 @@ core/            unsupported runtime mechanisms
   router.ard
   runtime.ard
   selection_state.ard
+  signals.ard    OS shutdown/resize signals, selected per platform
   terminal_events.ard
   virtual_extent.ard
 ffi/             isolated Go bridges, one directory per package
   contextbridge/ adapts Go context/cancel return pairs
   vaxisbridge/   Vaxis modifier bits and multi-result screen origin
-  signalwatch/   OS signal subscriptions and terminal-size queries
 test/            deterministic integration tests
 examples/        curated runnable applications and PTY tests
   fixtures/      focused non-gallery regression programs

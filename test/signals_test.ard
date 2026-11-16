@@ -1,0 +1,46 @@
+use ard/async
+use ard/testing
+
+use cooper/core/signals
+use go:os
+
+private fn label(event: signals::Event) Str {
+  match event {
+    signals::Shutdown(_) => "shutdown",
+    signals::Resize(size) => "resize {size.cols}x{size.rows}",
+    signals::Closed(_) => "closed",
+  }
+}
+
+test fn signal_watcher_prioritizes_shutdown_and_coalesces_resizes() Void!Str {
+  mut measurements = 0
+  let watcher = signals::unsubscribed(fn() signals::Resize {
+    measurements =+ 1
+    signals::Resize{cols: 120, rows: 40}
+  })
+  watcher.resizes.send(os::Interrupt)
+  watcher.resizes.send(os::Interrupt)
+  watcher.shutdowns.send(os::Interrupt)
+
+  try testing::assert(label(watcher.next()) == "shutdown", "Expected shutdown before pending resizes")
+  try testing::assert(label(watcher.next()) == "resize 120x40", "Expected the latest terminal size")
+  try testing::assert(measurements == 1, "Expected pending resizes to coalesce into one measurement")
+  watcher.close()
+  testing::assert(label(watcher.next()) == "closed", "Expected closed after close")
+}
+
+test fn signal_watcher_close_is_idempotent_and_wakes_next() Void!Str {
+  let watcher = signals::unsubscribed(fn() signals::Resize {
+    signals::Resize{cols: 0, rows: 0}
+  })
+  let received = Chan::new<Str>(1)
+  async::start(fn() {
+    received.send(label(watcher.next()))
+  })
+  watcher.close()
+  watcher.close()
+  try testing::assert(received.recv().or("") == "closed", "Expected close to wake a blocked next")
+  watcher.shutdowns.send(os::Interrupt)
+  watcher.resizes.send(os::Interrupt)
+  testing::assert(label(watcher.next()) == "closed", "Expected closed to win over later signals")
+}

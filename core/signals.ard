@@ -1,0 +1,161 @@
+use go:golang.org/x/term
+use go:os
+use go:os/signal
+use go:sync
+use go:syscall
+
+// A request to end the application, such as an interrupt or termination signal.
+struct Shutdown {}
+
+// The terminal size measured after a resize signal. Both dimensions are zero
+// when no terminal can be measured.
+struct Resize {
+  cols: Int,
+  rows: Int,
+}
+
+// The watcher has been closed and reports no further signals.
+struct Closed {}
+
+type Event = Shutdown | Resize | Closed
+
+// Watches OS signals while the terminal is owned. Vaxis runs with NoSignals, so
+// Cooper alone decides how shutdown and resize signals reach the Runtime.
+struct Watcher {
+  shutdowns: Chan<os::Signal>,
+  resizes: Chan<os::Signal>,
+  done: Chan<Void>,
+  once: &mut sync::Once,
+  measure: fn() Resize,
+  // Signals already received but not yet reported. Only the goroutine calling
+  // next reads or writes them.
+  shutdown_pending: Bool,
+  resize_pending: Bool,
+}
+
+private fn shutdown_signals() [os::Signal] {
+  [os::Interrupt]
+}
+
+#platform(unix)
+private fn shutdown_signals() [os::Signal] {
+  let signals: [os::Signal] = [os::Interrupt, syscall::SIGHUP, syscall::SIGQUIT, syscall::SIGTERM]
+  signals
+}
+
+// Only unix terminals report resizes as a signal.
+private fn notify_resize(resizes: Sender<os::Signal>) {}
+
+#platform(unix)
+private fn notify_resize(resizes: Sender<os::Signal>) {
+  signal::Notify(resizes, syscall::SIGWINCH)
+}
+
+// Starts watching this platform's shutdown and resize signals.
+fn watch() &mut Watcher {
+  let watcher = unsubscribed(terminal_size)
+  signal::Notify(watcher.shutdowns.sender(), shutdown_signals()...)
+  notify_resize(watcher.resizes.sender())
+  watcher
+}
+
+// Creates a watcher that is not subscribed to OS signals, for tests.
+fn unsubscribed(measure: fn() Resize) &mut Watcher {
+  &mut Watcher{
+    shutdowns: Chan::new<os::Signal>(8),
+    resizes: Chan::new<os::Signal>(8),
+    done: Chan::new<Void>(),
+    once: &mut sync::Once{},
+    measure,
+    shutdown_pending: false,
+    resize_pending: false,
+  }
+}
+
+impl Watcher {
+  // Blocks until the next event. Closed takes priority over Shutdown, which
+  // takes priority over Resize, among everything received when next decides.
+  // Pending resizes coalesce into one measurement, and every call after close
+  // returns Closed.
+  fn mut next() Event {
+    while not self.collect() {
+      // Wake on any channel and keep what was received; collect then reports
+      // by priority, including signals that arrived while this one woke.
+      select {
+        self.done.recv() => (),
+        self.shutdowns.recv() => { self.shutdown_pending = true },
+        self.resizes.recv() => { self.resize_pending = true },
+      }
+    }
+    match (received(self.done), self.shutdown_pending) {
+      (true, _) => Closed{},
+      (false, true) => {
+        self.shutdown_pending = false
+        Shutdown{}
+      },
+      (false, false) => {
+        self.resize_pending = false
+        while received(self.resizes) {}
+        self.measure()
+      },
+    }
+  }
+
+  // Records ready signals without blocking and reports whether next has an
+  // event to return.
+  private fn mut collect() Bool {
+    self.shutdown_pending = self.shutdown_pending or received(self.shutdowns)
+    self.resize_pending = self.resize_pending or received(self.resizes)
+    received(self.done) or self.shutdown_pending or self.resize_pending
+  }
+
+  // Stops signal delivery and wakes a blocked next. Closing is idempotent.
+  // A mut receiver is a pointer, so closing does not copy fields that next
+  // writes on another goroutine.
+  fn mut close() {
+    self.once.Do(fn() {
+      signal::Stop(self.shutdowns.sender())
+      signal::Stop(self.resizes.sender())
+      self.done.close()
+    })
+  }
+}
+
+// Receives one value without blocking and reports whether one was ready. A closed
+// channel is always ready.
+private fn received(channel: Chan<$T>) Bool {
+  select {
+    channel.recv() => true,
+    _ => false,
+  }
+}
+
+private fn file_size(file: &mut os::File) Resize? {
+  match term::GetSize(Int::fit(file.Fd())) {
+    ok((cols, rows)) => Maybe::new(Resize{cols, rows}),
+    err(_) => Maybe::new<Resize>(),
+  }
+}
+
+// Measures the controlling terminal through the standard streams, falling back
+// to /dev/tty when all of them are redirected.
+private fn terminal_size() Resize {
+  mut measured = Maybe::new<Resize>()
+  for file in [os::Stdout, os::Stdin, os::Stderr] {
+    if measured.is_none() {
+      measured = file_size(file)
+    }
+  }
+  match measured {
+    size => size,
+    _ => {
+      match os::Open("/dev/tty") {
+        ok(tty) => {
+          defer tty.Close()
+          file_size(tty).or(Resize{cols: 0, rows: 0})
+        },
+        err(_) => Resize{cols: 0, rows: 0},
+      }
+    },
+  }
+}

@@ -435,18 +435,6 @@ fn new(value: Str) State {
   }
 }
 
-private fn same_optional_int(left: Int?, right: Int?) Bool {
-  match left {
-    left_value => {
-      match right {
-        right_value => left_value == right_value,
-        _ => false,
-      }
-    },
-    _ => right.is_none(),
-  }
-}
-
 private fn outcome(
   state: State,
   previous_value: Str,
@@ -458,7 +446,7 @@ private fn outcome(
     handled: true,
     text_changed: state.value_text != previous_value,
     cursor_changed: state.cursor_byte != previous_cursor,
-    selection_changed: (not same_optional_int(state.anchor_byte, previous_anchor)) or (state.anchor_byte.is_some() or previous_anchor.is_some()) and state.cursor_byte != previous_cursor,
+    selection_changed: state.anchor_byte != previous_anchor or (state.anchor_byte.is_some() or previous_anchor.is_some()) and state.cursor_byte != previous_cursor,
     submit_requested: submit_requested.or(false),
   }
 }

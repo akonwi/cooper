@@ -329,18 +329,6 @@ private fn same_text_style(left: TextStyle, right: TextStyle) Bool {
   same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike and left.hidden == right.hidden
 }
 
-private fn same_optional_bool(left: Bool?, right: Bool?) Bool {
-  match left {
-    left_value => {
-      match right {
-        right_value => left_value == right_value,
-        _ => false,
-      }
-    },
-    _ => right.is_none(),
-  }
-}
-
 private fn paint_link(value: Str?) Str? {
   match value {
     link => {
@@ -364,20 +352,8 @@ private fn style_runs_have_links(runs: [StyleRun]) Bool {
   found
 }
 
-private fn same_optional_str(left: Str?, right: Str?) Bool {
-  match left {
-    left_value => {
-      match right {
-        right_value => left_value == right_value,
-        _ => false,
-      }
-    },
-    _ => right.is_none(),
-  }
-}
-
 private fn same_span_style(left: SpanStyle, right: SpanStyle) Bool {
-  same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and same_optional_bool(left.bold, right.bold) and same_optional_bool(left.dim, right.dim) and same_optional_bool(left.italic, right.italic) and same_optional_bool(left.underline, right.underline) and same_optional_bool(left.blink, right.blink) and same_optional_bool(left.reverse, right.reverse) and same_optional_bool(left.strike, right.strike) and same_optional_bool(left.hidden, right.hidden)
+  same_color(left.foreground, right.foreground) and same_color(left.background, right.background) and left.bold == right.bold and left.dim == right.dim and left.italic == right.italic and left.underline == right.underline and left.blink == right.blink and left.reverse == right.reverse and left.strike == right.strike and left.hidden == right.hidden
 }
 
 private fn same_styled_text(left: StyledText, right: StyledText) Bool {
@@ -387,7 +363,7 @@ private fn same_styled_text(left: StyledText, right: StyledText) Bool {
     mut same = true
     for value, index in left.spans {
       let other = right.spans.at(index).expect("styled Text comparison span")
-      if value.text != other.text or (not same_span_style(value.style, other.style)) or (not same_optional_str(value.link, other.link)) {
+      if value.text != other.text or (not same_span_style(value.style, other.style)) or value.link != other.link {
         same = false
         break
       }
@@ -1114,7 +1090,7 @@ private fn paint_visual_glyphs(
     while collecting and index < glyphs.size() {
       let next = glyphs.at(index).expect("visual paint run glyph")
       let next_run = runs.at(next.style_index).expect("visual paint next style run")
-      if next.y == y and next.x == end_x and same_text_style(first_run.style, next_run.style) and same_optional_str(first_run.link, next_run.link) {
+      if next.y == y and next.x == end_x and same_text_style(first_run.style, next_run.style) and first_run.link == next_run.link {
         parts.push(next.text)
         end_x = end_x + next.width
         index =+ 1
@@ -1149,7 +1125,7 @@ private fn paint_selected_glyphs(
     mut collecting = true
     while collecting and index < glyphs.size() {
       let next = glyphs.at(index).expect("selected paint run glyph")
-      if next.y == y and next.x == end_x and same_text_style(first.style, next.style) and same_optional_str(first.link, next.link) {
+      if next.y == y and next.x == end_x and same_text_style(first.style, next.style) and first.link == next.link {
         parts.push(next.text)
         end_x = end_x + next.width
         index =+ 1

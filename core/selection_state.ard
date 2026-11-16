@@ -651,33 +651,29 @@ impl State {
         let root_node = root.node()
         let mapped = &mut active
         mut mapping_valid = true
-        match active.logical_range {
-          logical_range => {
-            match active.source_range {
-              source_range => {
-                match active.anchor.control.resolve_selection(logical_range, source_range, active.source_revision) {
-                  expansion => {
-                    if active.logical_reversed {
-                      mapped.anchor.local_x = expansion.focus_x
-                      mapped.anchor.local_y = expansion.focus_y
-                      mapped.focus_local_x = expansion.anchor_x
-                      mapped.focus_local_y = expansion.anchor_y
-                    } else {
-                      mapped.anchor.local_x = expansion.anchor_x
-                      mapped.anchor.local_y = expansion.anchor_y
-                      mapped.focus_local_x = expansion.focus_x
-                      mapped.focus_local_y = expansion.focus_y
-                    }
-                    mapped.logical_range = Maybe::new<node::SelectionRange>(expansion.logical_range)
-                    mapped.source_range = Maybe::new<node::SelectionRange>(expansion.source_range)
-                  },
-                  _ => { mapping_valid = false },
+        match (active.logical_range, active.source_range) {
+          (some(logical_range), some(source_range)) => {
+            match active.anchor.control.resolve_selection(logical_range, source_range, active.source_revision) {
+              expansion => {
+                if active.logical_reversed {
+                  mapped.anchor.local_x = expansion.focus_x
+                  mapped.anchor.local_y = expansion.focus_y
+                  mapped.focus_local_x = expansion.anchor_x
+                  mapped.focus_local_y = expansion.anchor_y
+                } else {
+                  mapped.anchor.local_x = expansion.anchor_x
+                  mapped.anchor.local_y = expansion.anchor_y
+                  mapped.focus_local_x = expansion.focus_x
+                  mapped.focus_local_y = expansion.focus_y
                 }
+                mapped.logical_range = Maybe::new<node::SelectionRange>(expansion.logical_range)
+                mapped.source_range = Maybe::new<node::SelectionRange>(expansion.source_range)
               },
               _ => { mapping_valid = false },
             }
           },
-          _ => (),
+          (some(_), none) => { mapping_valid = false },
+          (none, _) => (),
         }
         if not mapping_valid {
           self.session = Maybe::new<Session>()

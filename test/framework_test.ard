@@ -132,13 +132,8 @@ impl node::Renderable for EventProbe {
       target => target.destroy(),
       _ => (),
     }
-    match self.reparent_on_event {
-      target => {
-        match self.reparent_destination {
-          destination => destination.add(target),
-          _ => (),
-        }
-      },
+    match (self.reparent_on_event, self.reparent_destination) {
+      (some(target), some(destination)) => destination.add(target),
       _ => (),
     }
     if self.stop_event {

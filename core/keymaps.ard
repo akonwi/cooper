@@ -40,14 +40,10 @@ fn new(token: &mut node::ContextToken) &mut Registry {
 }
 
 fn same_target(left: (&mut node::Node)?, right: (&mut node::Node)?) Bool {
-  match left {
-    target => {
-      match right {
-        other => target == other,
-        _ => false,
-      }
-    },
-    _ => right.is_none(),
+  match (left, right) {
+    (some(target), some(other)) => target == other,
+    (none, none) => true,
+    _ => false,
   }
 }
 

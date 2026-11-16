@@ -166,16 +166,12 @@ private fn live(mounted: &mut Mounted) Bool {
 
 private fn same_identity(previous: &mut Mounted, next: view::Description) Bool {
   mut same = previous.description.kind == next.kind and previous.description.key == next.key
-  match next.component {
-    specification => {
-      match previous.instance {
-        instance => {
-          same = same and specification.matches(instance.concrete, previous.description.component.expect("component").props)
-        },
-        _ => { same = false },
-      }
+  match (next.component, previous.instance) {
+    (some(specification), some(instance)) => {
+      same = same and specification.matches(instance.concrete, previous.description.component.expect("component").props)
     },
-    _ => (),
+    (some(_), none) => { same = false },
+    (none, _) => (),
   }
   same
 }

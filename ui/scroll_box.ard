@@ -254,20 +254,16 @@ impl node::Renderable for ScrollBox {
   }
 
   fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
-    match ctx.mouse_event {
-      mouse => self.handle_mouse(ctx, mouse),
-      _ => {
-        match ctx.key_event {
-          key => {
-            if ctx.focused {
-              self.handle_key(ctx, key)
-            } else {
-              event_delivery::Disposition::ignored
-            }
-          },
-          _ => event_delivery::Disposition::ignored,
+    match (ctx.mouse_event, ctx.key_event) {
+      (some(mouse), _) => self.handle_mouse(ctx, mouse),
+      (none, some(key)) => {
+        if ctx.focused {
+          self.handle_key(ctx, key)
+        } else {
+          event_delivery::Disposition::ignored
         }
       },
+      (none, none) => event_delivery::Disposition::ignored,
     }
   }
 }

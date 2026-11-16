@@ -1,7 +1,6 @@
 use ard/unsafe
 
 use go:context
-use go:cooper/ffi/contextbridge
 use go:sync
 
 private struct State {
@@ -49,21 +48,27 @@ fn internal_new(
 
 private struct ReadLifetime {
   mutex: &mut sync::Mutex,
-  current: contextbridge::Cancellation,
+  context: context::Context,
+  cancel: fn(),
 }
 
 // Runtime supplies terminal I/O; Ard owns the cancellable read lifetime.
 fn internal_terminal(read: fn(context::Context) Str!Error, write: fn(Str)) &mut Clipboard {
-  let lifetime = &mut ReadLifetime{mutex: &mut sync::Mutex{}, current: contextbridge::WithCancel(context::Background())}
+  let initial, cancel_initial = context::WithCancel(context::Background())
+  let lifetime = &mut ReadLifetime{
+    mutex: &mut sync::Mutex{},
+    context: initial,
+    cancel: cancel_initial,
+  }
   let cancel = fn() {
     lifetime.mutex.Lock()
     defer lifetime.mutex.Unlock()
-    lifetime.current.Cancel()
+    lifetime.cancel()
   }
   internal_new(
     fn() Str!Error {
       lifetime.mutex.Lock()
-      let current = lifetime.current.Context
+      let current = lifetime.context
       lifetime.mutex.Unlock()
       try current.Err()
       read(current)
@@ -73,7 +78,9 @@ fn internal_terminal(read: fn(context::Context) Str!Error, write: fn(Str)) &mut 
     fn() {
       lifetime.mutex.Lock()
       defer lifetime.mutex.Unlock()
-      lifetime.current = contextbridge::WithCancel(context::Background())
+      let renewed, cancel_renewed = context::WithCancel(context::Background())
+      lifetime.context = renewed
+      lifetime.cancel = cancel_renewed
     },
     cancel,
   )

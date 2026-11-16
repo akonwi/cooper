@@ -1,7 +1,6 @@
 use ard/unsafe
 
 use cooper/event
-use go:cooper/ffi/vaxisbridge as bridge
 use go:strings
 use go:sync
 use go:unicode
@@ -23,7 +22,7 @@ fn valid_hyperlink(value: Str) Bool {
 }
 
 private fn has_modifier(value: vaxis::ModifierMask, flag: vaxis::ModifierMask) Bool {
-  bridge::HasModifier(value, flag)
+  value & flag != 0
 }
 
 private fn modifiers(value: vaxis::ModifierMask) event::Modifiers {

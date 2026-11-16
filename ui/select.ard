@@ -386,16 +386,12 @@ private fn validate_presentation(value: Presentation) {
 }
 
 private fn same_optional_color(first: color::Color?, second: color::Color?) Bool {
-  match first {
-    left => {
-      match second {
-        right => {
-          left.red == right.red and left.green == right.green and left.blue == right.blue and left.index == right.index and left.terminal_default == right.terminal_default
-        },
-        _ => false,
-      }
+  match (first, second) {
+    (some(left), some(right)) => {
+      left.red == right.red and left.green == right.green and left.blue == right.blue and left.index == right.index and left.terminal_default == right.terminal_default
     },
-    _ => not second.is_some(),
+    (none, none) => true,
+    _ => false,
   }
 }
 
@@ -1739,20 +1735,16 @@ impl node::Renderable for Select {
     if ctx.is_default_prevented() {
       event_delivery::Disposition::ignored
     } else {
-      match ctx.mouse_event {
-        mouse => self.handle_mouse(ctx, mouse),
-        _ => {
-          match ctx.key_event {
-            key => {
-              if ctx.focused {
-                self.handle_key(ctx, key)
-              } else {
-                event_delivery::Disposition::ignored
-              }
-            },
-            _ => event_delivery::Disposition::ignored,
+      match (ctx.mouse_event, ctx.key_event) {
+        (some(mouse), _) => self.handle_mouse(ctx, mouse),
+        (none, some(key)) => {
+          if ctx.focused {
+            self.handle_key(ctx, key)
+          } else {
+            event_delivery::Disposition::ignored
           }
         },
+        (none, none) => event_delivery::Disposition::ignored,
       }
     }
   }

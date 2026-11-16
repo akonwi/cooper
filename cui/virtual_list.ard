@@ -153,20 +153,8 @@ private fn nonnegative(value: Int) Int {
   }
 }
 
-private fn same_edge(left: Edge?, right: Edge?) Bool {
-  match left {
-    left_edge => {
-      match right {
-        right_edge => left_edge == right_edge,
-        _ => false,
-      }
-    },
-    _ => right.is_none(),
-  }
-}
-
 private fn same_state(left: State, right: State) Bool {
-  same_edge(left.following_edge, right.following_edge) and left.first_item_visible == right.first_item_visible and left.last_item_visible == right.last_item_visible and left.visible_range.start == right.visible_range.start and left.visible_range.end == right.visible_range.end and left.scroll_top == right.scroll_top and left.maximum_scroll_top == right.maximum_scroll_top and left.total_height == right.total_height and left.viewport_height == right.viewport_height
+  left.following_edge == right.following_edge and left.first_item_visible == right.first_item_visible and left.last_item_visible == right.last_item_visible and left.visible_range.start == right.visible_range.start and left.visible_range.end == right.visible_range.end and left.scroll_top == right.scroll_top and left.maximum_scroll_top == right.maximum_scroll_top and left.total_height == right.total_height and left.viewport_height == right.viewport_height
 }
 
 impl VirtualList {
@@ -192,24 +180,15 @@ impl VirtualList {
   }
 
   private fn edge_enabled(edge: Edge) Bool {
-    match self.enabled_edge {
-      enabled => enabled == edge,
-      _ => false,
-    }
+    self.enabled_edge == Maybe::new(edge)
   }
 
   private fn edge_following(edge: Edge) Bool {
-    match self.following_edge {
-      followed => followed == edge,
-      _ => false,
-    }
+    self.following_edge == Maybe::new(edge)
   }
 
   private fn edge_settling(edge: Edge) Bool {
-    match self.settling_edge {
-      settling => settling == edge,
-      _ => false,
-    }
+    self.settling_edge == Maybe::new(edge)
   }
 
   fn mounted_count() Int {
@@ -636,21 +615,17 @@ impl VirtualList {
               self.top = observed
               self.following_edge = Maybe::new<Edge>()
               match self.enabled_edge {
-                edge => {
-                  match edge {
-                    Edge::start => {
-                      if self.top == 0 {
-                        self.following_edge = Maybe::new(Edge::start)
-                      }
-                    },
-                    Edge::end => {
-                      if self.top == self.clamp_top(self.index.total() - self.height) {
-                        self.following_edge = Maybe::new(Edge::end)
-                      }
-                    },
+                some(Edge::start) => {
+                  if self.top == 0 {
+                    self.following_edge = Maybe::new(Edge::start)
                   }
                 },
-                _ => (),
+                some(Edge::end) => {
+                  if self.top == self.clamp_top(self.index.total() - self.height) {
+                    self.following_edge = Maybe::new(Edge::end)
+                  }
+                },
+                none => (),
               }
             }
             self.capture_anchor(self.top)
@@ -725,22 +700,14 @@ impl VirtualList {
             _ => (),
           }
           match self.following_edge {
-            edge => {
-              match edge {
-                Edge::start => { desired = 0 },
-                Edge::end => { desired = self.index.total() - self.height },
-              }
-            },
-            _ => (),
+            some(Edge::start) => { desired = 0 },
+            some(Edge::end) => { desired = self.index.total() - self.height },
+            none => (),
           }
           match self.settling_edge {
-            edge => {
-              match edge {
-                Edge::start => { desired = 0 },
-                Edge::end => { desired = self.index.total() - self.height },
-              }
-            },
-            _ => (),
+            some(Edge::start) => { desired = 0 },
+            some(Edge::end) => { desired = self.index.total() - self.height },
+            none => (),
           }
           desired = self.clamp_top(desired)
           if desired != self.top {

@@ -216,19 +216,10 @@ impl State {
   }
 
   private fn mut change(next: (&mut node::Node)?) {
-    mut changed = true
-    match self.focused_node {
-      current => {
-        match next {
-          candidate => { changed = current != candidate },
-          _ => (),
-        }
-      },
-      _ => {
-        if not next.is_some() {
-          changed = false
-        }
-      },
+    let changed = match (self.focused_node, next) {
+      (some(current), some(candidate)) => current != candidate,
+      (none, none) => false,
+      _ => true,
     }
 
     if changed {

@@ -322,31 +322,15 @@ fn default() Theme {
   from_terminal(empty_colors())
 }
 
-private fn same_index(left: Uint8?, right: Uint8?) Bool {
-  match left {
-    value => {
-      match right {
-        other => value == other,
-        _ => false,
-      }
-    },
-    _ => right.is_none(),
-  }
-}
-
 private fn same_color(left: color::Color, right: color::Color) Bool {
-  left.red == right.red and left.green == right.green and left.blue == right.blue and left.terminal_default == right.terminal_default and same_index(left.index, right.index)
+  left.red == right.red and left.green == right.green and left.blue == right.blue and left.terminal_default == right.terminal_default and left.index == right.index
 }
 
 private fn same_optional_color(left: color::Color?, right: color::Color?) Bool {
-  match left {
-    value => {
-      match right {
-        other => same_color(value, other),
-        _ => false,
-      }
-    },
-    _ => right.is_none(),
+  match (left, right) {
+    (some(value), some(other)) => same_color(value, other),
+    (none, none) => true,
+    _ => false,
   }
 }
 
@@ -515,19 +499,14 @@ private fn resolve_terminal(foreground: Rgb?, background: Rgb?, palette: [Rgb?])
     },
     _ => (),
   }
-  match foreground {
-    fg => {
-      match background {
-        bg => {
-          if mode == Mode::light {
-            base.black = fg
-            base.white = bg
-          } else {
-            base.black = bg
-            base.white = fg
-          }
-        },
-        _ => (),
+  match (foreground, background) {
+    (some(fg), some(bg)) => {
+      if mode == Mode::light {
+        base.black = fg
+        base.white = bg
+      } else {
+        base.black = bg
+        base.white = fg
       }
     },
     _ => (),

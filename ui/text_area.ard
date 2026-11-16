@@ -236,16 +236,12 @@ private fn normalize_newlines(value: Str) Str {
 }
 
 private fn same_color(left: color::Color?, right: color::Color?) Bool {
-  match left {
-    left_color => {
-      match right {
-        right_color => {
-          left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue and left_color.index == right_color.index and left_color.terminal_default == right_color.terminal_default
-        },
-        _ => false,
-      }
+  match (left, right) {
+    (some(left_color), some(right_color)) => {
+      left_color.red == right_color.red and left_color.green == right_color.green and left_color.blue == right_color.blue and left_color.index == right_color.index and left_color.terminal_default == right_color.terminal_default
     },
-    _ => not right.is_some(),
+    (none, none) => true,
+    _ => false,
   }
 }
 
@@ -608,31 +604,23 @@ impl node::Renderable for TextArea {
   }
 
   fn mut event(ctx: &mut event_delivery::Context) event_delivery::Disposition {
-    match ctx.mouse_event {
-      mouse => self.handle_mouse(ctx, mouse),
-      _ => {
-        match ctx.paste_event {
-          paste => {
-            if ctx.focused {
-              self.insert_text(paste.text)
-            } else {
-              event_delivery::Disposition::ignored
-            }
-          },
-          _ => {
-            match ctx.key_event {
-              key => {
-                if ctx.focused {
-                  self.handle_key(ctx, key)
-                } else {
-                  event_delivery::Disposition::ignored
-                }
-              },
-              _ => event_delivery::Disposition::ignored,
-            }
-          },
+    match (ctx.mouse_event, ctx.paste_event, ctx.key_event) {
+      (some(mouse), _, _) => self.handle_mouse(ctx, mouse),
+      (none, some(paste), _) => {
+        if ctx.focused {
+          self.insert_text(paste.text)
+        } else {
+          event_delivery::Disposition::ignored
         }
       },
+      (none, none, some(key)) => {
+        if ctx.focused {
+          self.handle_key(ctx, key)
+        } else {
+          event_delivery::Disposition::ignored
+        }
+      },
+      (none, none, none) => event_delivery::Disposition::ignored,
     }
   }
 }

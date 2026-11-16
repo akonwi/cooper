@@ -259,7 +259,7 @@ impl VirtualList {
                 },
                 ctx,
               )
-              (ctx.invalidate_root)()
+              ctx.invalidate_root()
             },
             _ => (),
           }
@@ -767,7 +767,7 @@ impl view::Component for VirtualList {
       }
       children.push(
         view::box(
-          [(self.source.build)(index)],
+          [self.source.build(index)],
           key: key,
           ref: ref,
           styles: ui::style(

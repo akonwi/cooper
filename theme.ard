@@ -369,7 +369,7 @@ impl Service {
       let parent = state.lifetime.context
       state.lifetime.mutex.Unlock()
       let deadline, release = context::WithTimeout(parent, time::Millisecond * 200)
-      let queried = (state.action)(deadline)
+      let queried = state.action(deadline)
       release()
       let resolved = from_terminal(queried)
       state.lifecycle.Lock()

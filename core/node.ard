@@ -517,19 +517,19 @@ impl Node {
   }
 
   fn mut start_selection(local_x: Int, local_y: Int) Bool {
-    (self.selection_start_base)(self.id, local_x, local_y)
+    self.selection_start_base(self.id, local_x, local_y)
   }
 
   fn mut update_selection(local_x: Int, local_y: Int, finish: Bool) Bool {
-    (self.selection_update_base)(self.id, local_x, local_y, finish)
+    self.selection_update_base(self.id, local_x, local_y, finish)
   }
 
   fn owns_global_selection() Bool {
-    (self.selection_owns_base)(self.id)
+    self.selection_owns_base(self.id)
   }
 
   fn retains_global_selection() Bool {
-    (self.selection_retains_base)(self.id)
+    self.selection_retains_base(self.id)
   }
 
   fn selection_copy_text() Str? {
@@ -544,7 +544,7 @@ impl Node {
   }
 
   fn clear_global_selection() {
-    (self.selection_clear_base)()
+    self.selection_clear_base()
   }
 
   fn selection_accepts(local_x: Int, local_y: Int) Bool {

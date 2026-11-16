@@ -152,8 +152,8 @@ test fn runtime_subscriptions_deliver_synchronously_and_invalidate_only_the_comp
     app.frame().text().contains("focus=1") and data.roots == roots,
     "Delivery invalidates only owning component",
   )
-  (data.remove_focus)()
-  (data.remove_focus)()
+  data.remove_focus()
+  data.remove_focus()
   let renders = data.renders
   app.set_terminal_focus(event::TerminalFocus::gained)
   app.flush()
@@ -252,7 +252,7 @@ test fn subscriptions_follow_mount_lifetime_including_hidden_components_and_remo
     data.focus =+ 1000
   })
   remove()
-  (data.remove_focus)()
+  data.remove_focus()
   testing::assert(
     old.terminal_focus().is_none() and old.current_selection().is_none() and data.cleanup_cancelled,
     "Retired contexts cannot access services or register after Runtime teardown",
@@ -267,10 +267,10 @@ test fn unsubscribe_and_renderer_destruction_suppress_callbacks_in_runtime_snaps
   defer renderer.destroy()
   app.flush()
   let ctx = data.context.expect("mounted")
-  (data.remove_focus)()
+  data.remove_focus()
   mut calls = 0
   let first = ctx.on_terminal_focus(fn(value: event::TerminalFocus) {
-    (data.remove_focus)()
+    data.remove_focus()
   })
   data.remove_focus = ctx.on_terminal_focus(fn(value: event::TerminalFocus) {
     calls =+ 1

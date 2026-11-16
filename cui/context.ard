@@ -47,7 +47,7 @@ impl Context {
     if duration <= 0 {
       panic("animation duration must be positive")
     }
-    (self.internal_animate)(duration, update, ease.or(animation::linear))
+    self.internal_animate(duration, update, ease.or(animation::linear))
   }
 }
 

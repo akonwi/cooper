@@ -50,13 +50,11 @@ struct InputRef {
 impl InputRef {
   // UI-thread-only. Resolve once after pending commits; cancelled on ctx unmount.
   fn mut focus(ctx: context::Context) fn() {
-    (ctx.internal_focus)(
-      fn() {
-        self.current.map(fn(control) {
-          let _ = control.focus()
-        })
-      },
-    )
+    ctx.internal_focus(fn() {
+      self.current.map(fn(control) {
+        let _ = control.focus()
+      })
+    })
   }
 }
 
@@ -101,17 +99,15 @@ impl TextAreaRef {
   // cancels a placement that has not run yet.
   fn mut set_cursor(ctx: context::Context, offset: Int) fn() {
     let placement = &mut Placement{done: false, cancel: fn() {}}
-    let cancel = (ctx.internal_commit)(
-      fn() {
-        if not placement.done {
-          placement.done = true
-          placement.cancel()
-          self.current.map(fn(control) {
-            control.set_cursor(offset)
-          })
-        }
-      },
-    )
+    let cancel = ctx.internal_commit(fn() {
+      if not placement.done {
+        placement.done = true
+        placement.cancel()
+        self.current.map(fn(control) {
+          control.set_cursor(offset)
+        })
+      }
+    })
     placement.cancel = cancel
     fn() {
       placement.done = true
@@ -120,13 +116,11 @@ impl TextAreaRef {
   }
 
   fn mut focus(ctx: context::Context) fn() {
-    (ctx.internal_focus)(
-      fn() {
-        self.current.map(fn(control) {
-          let _ = control.focus()
-        })
-      },
-    )
+    ctx.internal_focus(fn() {
+      self.current.map(fn(control) {
+        let _ = control.focus()
+      })
+    })
   }
 }
 fn text_area_ref() &mut TextAreaRef {
@@ -139,13 +133,11 @@ struct SelectRef {
 }
 impl SelectRef {
   fn mut focus(ctx: context::Context) fn() {
-    (ctx.internal_focus)(
-      fn() {
-        self.current.map(fn(control) {
-          let _ = control.focus()
-        })
-      },
-    )
+    ctx.internal_focus(fn() {
+      self.current.map(fn(control) {
+        let _ = control.focus()
+      })
+    })
   }
 }
 fn select_ref() &mut SelectRef {
@@ -158,13 +150,11 @@ struct BoxRef {
 
 impl BoxRef {
   fn mut focus(ctx: context::Context) fn() {
-    (ctx.internal_focus)(
-      fn() {
-        self.current.map(fn(control) {
-          let _ = control.focus()
-        })
-      },
-    )
+    ctx.internal_focus(fn() {
+      self.current.map(fn(control) {
+        let _ = control.focus()
+      })
+    })
   }
 }
 
@@ -178,13 +168,11 @@ struct ScrollBoxRef {
 
 impl ScrollBoxRef {
   fn mut focus(ctx: context::Context) fn() {
-    (ctx.internal_focus)(
-      fn() {
-        self.current.map(fn(control) {
-          let _ = control.focus()
-        })
-      },
-    )
+    ctx.internal_focus(fn() {
+      self.current.map(fn(control) {
+        let _ = control.focus()
+      })
+    })
   }
 }
 

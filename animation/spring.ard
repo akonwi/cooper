@@ -222,7 +222,7 @@ impl Spring {
       shared.fresh = shared.fresh or shared.status != Status::playing
       shared.status = Status::playing
       shared.revision =+ 1
-      (shared.wake)()
+      shared.wake()
       true
     }
   }
@@ -236,7 +236,7 @@ impl Spring {
       shared.status = Status::playing
       shared.fresh = true
       shared.revision =+ 1
-      (shared.wake)()
+      shared.wake()
       true
     }
   }
@@ -249,7 +249,7 @@ impl Spring {
     } else {
       shared.status = Status::paused
       shared.revision =+ 1
-      (shared.wake)()
+      shared.wake()
       true
     }
   }
@@ -261,7 +261,7 @@ impl Spring {
       shared.revision =+ 1
       shared.update = fn(frame: Frame) {}
       shared.on_complete = Maybe::new<fn()>()
-      (shared.wake)()
+      shared.wake()
     }
   }
 
@@ -293,7 +293,7 @@ impl Spring {
         shared.value = shared.target
         shared.velocity = 0.0
       }
-      (shared.update)(
+      shared.update(
         Frame{
           value: shared.value,
           velocity: shared.velocity,

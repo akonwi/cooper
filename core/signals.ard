@@ -39,8 +39,7 @@ private fn shutdown_signals() [os::Signal] {
 
 #platform(unix)
 private fn shutdown_signals() [os::Signal] {
-  let signals: [os::Signal] = [os::Interrupt, syscall::SIGHUP, syscall::SIGQUIT, syscall::SIGTERM]
-  signals
+  [os::Interrupt, syscall::SIGHUP, syscall::SIGQUIT, syscall::SIGTERM]
 }
 
 // Only unix terminals report resizes as a signal.
